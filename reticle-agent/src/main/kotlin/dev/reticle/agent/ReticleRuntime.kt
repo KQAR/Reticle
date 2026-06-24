@@ -5,6 +5,7 @@ import android.os.Process
 import android.util.Log
 import dev.reticle.core.LogEntry
 import dev.reticle.core.MetadataValue
+import dev.reticle.core.PortMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -36,16 +37,25 @@ class ReticleRuntime private constructor() {
         }
         if (server != null) return
 
-        val port = (System.getenv("RETICLE_PORT")?.toIntOrNull()) ?: DEFAULT_PORT
+        // Port selection: an explicit RETICLE_PORT wins; otherwise derive a
+        // stable per-app port from the package name so multiple linked apps on
+        // one device don't all collide on the same fixed port (only the first to
+        // start would bind it, leaving the rest silently serverless and the host
+        // forward landing on the wrong app). The CLI derives the same value.
+        val packageName = context.packageName
+        val port = (System.getenv("RETICLE_PORT")?.toIntOrNull()) ?: PortMap.derivePort(packageName)
         val bindHost = System.getenv("RETICLE_BIND_HOST") ?: "127.0.0.1"
 
         val srv = ReticleServer(this)
         try {
             srv.start(port = port, bindHost = bindHost)
             server = srv
-            Log.i(TAG, "Reticle started on $bindHost:$port (pid=${Process.myPid()})")
+            Log.i(TAG, "Reticle started on $bindHost:$port for $packageName (pid=${Process.myPid()})")
         } catch (t: Throwable) {
-            Log.e(TAG, "Reticle server failed to start on $bindHost:$port", t)
+            // Most often EADDRINUSE: another process already holds this port.
+            // Log loudly with the package so `reticle debug logcat` can diagnose
+            // a bind failure vs an unlinked agent.
+            Log.e(TAG, "Reticle server FAILED to bind $bindHost:$port for $packageName (port in use?)", t)
         }
     }
 
@@ -82,8 +92,9 @@ class ReticleRuntime private constructor() {
         }
 
     companion object {
-        const val DEFAULT_PORT = 8765
-        const val VERSION = "0.1.0"
+        /** Historical fixed default; real port is derived per-app via [PortMap]. */
+        const val DEFAULT_PORT = PortMap.BASE_PORT
+        const val VERSION = "0.2.0"
         private const val TAG = "Reticle"
 
         @JvmStatic

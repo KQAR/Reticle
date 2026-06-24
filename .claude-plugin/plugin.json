@@ -1,6 +1,6 @@
 {
   "name": "reticle",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime UI evidence + action harness for Android apps: capture the live view / accessibility / Compose-semantics tree, resolve precise selectors (including multi-region controls), drive real input via adb, and patch UI properties without rebuilding.",
   "author": {
     "name": "KQAR"

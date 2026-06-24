@@ -31,7 +31,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
-        run: ./gradlew :reticle-core:test --stacktrace
+        run: ./gradlew :reticle-core:test :reticle-cli:test --stacktrace
 
       - name: Assemble all modules
         run: ./gradlew assemble --stacktrace
@@ -44,7 +44,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: reticle-core/build/reports/tests/
+          path: |
+            reticle-core/build/reports/tests/
+            reticle-cli/build/reports/tests/
           if-no-files-found: ignore
 
   plugin-validate:

@@ -10,8 +10,10 @@ Steps:
 1. Run `reticle doctor` to confirm adb and a connected device/emulator. If no
    device, stop and tell the user.
 2. Run `reticle app launch --package <pkg>` to launch + forward + wait for the
-   in-process runtime. If it times out, the app likely doesn't link the
-   reticle-agent — report that honestly (see the reticle skill for injection
+   in-process runtime. If it fails or times out, run `reticle status --package
+   <pkg>` to classify why (UNREACHABLE = agent not linked / app not running;
+   UNRESPONSIVE = stale socket, force-stop + relaunch; CONFLICT = another app
+   holds the port). Report that honestly (see the reticle skill for injection
    options) instead of fabricating output.
 3. Run `reticle ui report --package <pkg> --output reticle-report`.
 4. Run `reticle ui compact reticle-report/snapshot.json` and summarize the

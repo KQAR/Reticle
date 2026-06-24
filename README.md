@@ -37,7 +37,7 @@ input.
 | Concern | Mechanism |
 | --- | --- |
 | Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For apps without the AAR: `wrap.sh` + `LD_PRELOAD` (debuggable) or Frida/root (release). |
-| Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. |
+| Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. The port is derived per-app from the `applicationId` (agent and CLI compute the same value), so multiple linked apps never collide on one fixed port. |
 | Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
 | Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
 | Selector resolution | Accessibility tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
@@ -74,7 +74,7 @@ reticle act tap --package <pkg> --test-id agreement --region "用户协议"
 ## Install as a Claude Code plugin
 
 Reticle ships as a Claude Code plugin. Add this repo as a marketplace and
-install — no manual clone or build needed (the CLI builds itself on first use):
+install:
 
 ```text
 /plugin marketplace add KQAR/Reticle
@@ -89,11 +89,38 @@ This makes the `reticle` CLI available on the Bash PATH and adds:
 - **`/reticle:tap`** — tap an element by selector (or by phrase via `--region`)
   and verify the result.
 
-Requirements on the host: a connected Android device/emulator with `adb`, and
-JDK 17 (used once to build the CLI). Run `reticle doctor` to check.
+### How the CLI is obtained
+
+The launcher resolves the actual CLI binary in this order (first hit wins):
+
+1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
+2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
+3. A **prebuilt release** auto-downloaded from
+   [GitHub Releases](https://github.com/KQAR/Reticle/releases) and cached under
+   `~/.reticle/cli` (needs `curl`+`unzip`; **no JDK required**).
+4. A **source build** via the bundled Gradle (needs JDK 17) — used from a full
+   checkout or when the download is unavailable.
+
+So the host needs *either* network access to fetch the prebuilt CLI *or* JDK 17
+to build once. Verify with `reticle version`; run `reticle doctor` to check adb
+and devices. Override the download with `RETICLE_NO_DOWNLOAD=1`, or pin a repo
+with `RETICLE_REPO`.
+
+Requirements on the host: a connected Android device/emulator with `adb`, plus
+network access **or** JDK 17 as above.
 
 To develop or test locally without installing: `claude --plugin-dir ./` from the
 repo root.
+
+### Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds and
+attaches to a GitHub Release:
+
+- `reticle-cli.zip` / `reticle-cli.tar` — the host CLI distribution (what the
+  launcher downloads);
+- `reticle-agent.aar` — the agent library to link into a host app build;
+- `SHA256SUMS` — checksums for verification.
 
 ## Modules
 
