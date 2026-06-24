@@ -5,11 +5,16 @@ import dev.reticle.core.CompactObservation
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.Point
+import dev.reticle.core.PortMap
 import dev.reticle.core.ReticleJson
+import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.Selector
 import dev.reticle.core.Snapshot
 import java.io.File
 import kotlin.system.exitProcess
+
+/** CLI version. Kept in lockstep with the agent and plugin manifest. */
+const val RETICLE_VERSION = "0.2.0"
 
 /**
  * Reticle host CLI. Command surface:
@@ -23,9 +28,12 @@ import kotlin.system.exitProcess
  *   reticle act swipe   --package <pkg> --from x,y --to x,y [--duration ms]
  *   reticle act drag    --package <pkg> --from x,y --to x,y [--duration ms]
  *   reticle act type    --package <pkg> --text "..."
- *   reticle debug logs  --package <pkg> [--output file]
+ *   reticle debug logs   --package <pkg> [--output file]
+ *   reticle debug logcat [--serial s]
  *   reticle mutate      --package <pkg> (selector) --property p --value v
+ *   reticle status      [--package <pkg>] [--serial s] [--port p]
  *   reticle doctor
+ *   reticle version
  */
 fun main(rawArgs: Array<String>) {
     val args = ArgList(rawArgs.toList())
@@ -39,6 +47,8 @@ fun main(rawArgs: Array<String>) {
             "debug" -> debugGroup(args)
             "mutate" -> mutateCommand(args)
             "doctor" -> doctor()
+            "status" -> statusCommand(args)
+            "version", "--version", "-v" -> println("reticle $RETICLE_VERSION")
             "help", "--help", "-h" -> printUsage()
             else -> {
                 System.err.println("unknown command group: $group")
@@ -48,6 +58,9 @@ fun main(rawArgs: Array<String>) {
         }
     } catch (e: CliError) {
         System.err.println("error: ${e.message}")
+        exitProcess(1)
+    } catch (e: AdbDeviceError) {
+        System.err.println("device: ${e.message}")
         exitProcess(1)
     }
 }
@@ -59,21 +72,27 @@ private fun appGroup(args: ArgList) {
         "launch" -> {
             val pkg = args.require("--package")
             val serial = args.optional("--serial") ?: defaultSerial()
-            val devicePort = args.optional("--port")?.toInt() ?: 8765
-            val hostPort = args.optional("--host-port")?.toInt() ?: pickHostPort(devicePort)
+            val record = RuntimeRegistry.load(serial ?: "?", pkg)
+            val devicePort = resolveDevicePort(args, pkg, record)
+            val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
             val adb = Adb(serial = serial)
+            adb.ensureDeviceReady()
 
             // Launch the app. Reticle's agent auto-starts via its ContentProvider,
-            // so no special launch env is needed.
-            val launch = adb.shell("monkey -p $pkg -c android.intent.category.LAUNCHER 1")
-            if (!launch.ok) throw CliError("failed to launch $pkg: ${launch.stderr}")
+            // so no special launch env is needed. Retry once: the launch monkey
+            // goes over the adb shell channel, which can transiently time out.
+            var launch = adb.shell("monkey -p $pkg -c android.intent.category.LAUNCHER 1")
+            if (!launch.ok) {
+                Thread.sleep(500)
+                launch = adb.shell("monkey -p $pkg -c android.intent.category.LAUNCHER 1")
+            }
+            if (!launch.ok) throw CliError("failed to launch $pkg: ${launch.stderr.ifBlank { "adb shell did not complete" }}")
 
             val client = RuntimeClient(adb, hostPort, devicePort)
             client.setUpForward()
-            waitForRuntime(client)
+            val info = waitForRuntime(client, pkg, hostPort, devicePort)
             RuntimeRegistry.store(RuntimeRegistry.Record(serial ?: "?", pkg, hostPort, devicePort))
 
-            val info = client.runtime()
             println("launched ${info.packageName} pid=${info.pid} sdk=${info.sdkInt} agent=${info.agentVersion}")
             println("forwarded host tcp:$hostPort -> device tcp:$devicePort")
         }
@@ -103,6 +122,36 @@ private fun uiGroup(args: ArgList) {
                 println("wrote report to ${outputDir.path}")
                 println("nodes: ${snapshot.nodes.size}, compact items: ${compact.items.size}")
             }
+        }
+        "screenshot" -> {
+            // A screenshot path that works even WITHOUT the agent: prefer the
+            // agent's /screenshot when the runtime is reachable, else fall back to
+            // `adb exec-out screencap`. This is the honest degraded mode for apps
+            // that don't link the agent — you can still see the screen.
+            val pkg = args.optional("--package")
+            val out = File(args.optional("--output") ?: "screenshot.png")
+            val serial = args.optional("--serial") ?: defaultSerial()
+            val adb = Adb(serial = serial)
+            adb.ensureDeviceReady()
+
+            var via: String? = null
+            if (pkg != null) {
+                val record = RuntimeRegistry.load(serial ?: "?", pkg)
+                val devicePort = resolveDevicePort(args, pkg, record)
+                val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
+                val client = RuntimeClient(adb, hostPort, devicePort)
+                client.setUpForward()
+                if (client.probe() is RuntimeHealth.Healthy) {
+                    runCatching { client.screenshot(out) }.onSuccess { via = "agent /screenshot" }
+                }
+            }
+            if (via == null) {
+                val bytes = adb.screencap()
+                if (bytes.isEmpty()) throw CliError("screencap returned no data (device ready?)")
+                out.writeBytes(bytes)
+                via = "adb screencap"
+            }
+            println("wrote ${out.path} (${out.length()} bytes) via $via")
         }
         "tree" -> {
             val snapshotFile = File(args.requirePositional("snapshot.json"))
@@ -171,6 +220,7 @@ private fun actGroup(args: ArgList) {
     val pkg = args.require("--package")
     val serial = args.optional("--serial") ?: defaultSerial()
     val adb = Adb(serial = serial)
+    adb.ensureDeviceReady()
     val input = InputBackend(adb)
 
     when (sub) {
@@ -222,6 +272,23 @@ private fun debugGroup(args: ArgList) {
                 }
             }
         }
+        "logcat" -> {
+            // The agent's OWN logcat lines — works even when the runtime is
+            // unreachable over HTTP (which `debug logs` requires). This is how you
+            // tell "agent not linked" (no Reticle lines at all) from "linked but
+            // failed to bind its port" (a FAILED-to-bind line).
+            args.optional("--package") // accepted for symmetry; logcat is process-wide
+            val serial = args.optional("--serial") ?: defaultSerial()
+            val adb = Adb(serial = serial)
+            val lines = adb.reticleLogcat()
+            if (lines.isEmpty()) {
+                println("(no '${Adb.LOG_TAG}' logcat lines)")
+                println("  the agent has not logged — it is likely not linked into the app,")
+                println("  or logcat was cleared. Confirm the reticle-agent AAR is a dependency.")
+            } else {
+                lines.forEach { println(it) }
+            }
+        }
         else -> throw CliError("unknown debug subcommand: $sub")
     }
 }
@@ -248,16 +315,130 @@ private fun mutateCommand(args: ArgList) {
 
 private fun doctor() {
     val adb = Adb()
+    println("reticle: $RETICLE_VERSION")
     println("adb: ${Adb.resolveAdbPath()}")
     val version = adb.run("version")
     println(version.stdout.lineSequence().firstOrNull() ?: "adb not found")
-    val devices = adb.listDevices()
-    if (devices.isEmpty()) {
-        println("devices: none (start an emulator or connect a device)")
-    } else {
-        println("devices: ${devices.joinToString(", ")}")
+    val states = adb.listDeviceStates()
+    when {
+        states.isEmpty() -> println("devices: none (start an emulator or connect a device)")
+        states.all { it.state == "device" } -> println("devices: ${states.joinToString(", ") { it.serial }}")
+        else -> {
+            // Surface non-ready devices explicitly — `offline`/`unauthorized` is the
+            // single most common reason commands later "hang" or fail mysteriously.
+            println("devices:")
+            states.forEach { s ->
+                val hint = when (s.state) {
+                    "device" -> "ready"
+                    "offline" -> "OFFLINE — re-plug USB / `adb reconnect`"
+                    "unauthorized" -> "UNAUTHORIZED — accept the debugging prompt on the device"
+                    else -> s.state
+                }
+                println("  ${s.serial}  [$hint]")
+            }
+        }
     }
     println("registry: ${RuntimeRegistry.all().size} stored runtime(s)")
+}
+
+// --- status --------------------------------------------------------------
+
+/**
+ * Report the live health of a package's Reticle runtime: device state, whether
+ * the app process is up, the forwarded port, and a classified probe of
+ * `/runtime` (healthy / unreachable / unresponsive / foreign + conflict). This
+ * is the diagnostic to run *before* a snapshot when something looks wrong.
+ */
+private fun statusCommand(args: ArgList) {
+    val pkg = args.optional("--package")
+    val serial = args.optional("--serial") ?: defaultSerial()
+    val adb = Adb(serial = serial)
+
+    println("reticle: $RETICLE_VERSION")
+    val states = adb.listDeviceStates()
+    val target = serial ?: states.singleOrNull { it.state == "device" }?.serial
+    val targetState = states.firstOrNull { it.serial == target }?.state
+    println("device: ${target ?: "none"}${targetState?.let { " [$it]" } ?: ""}")
+    if (target == null) {
+        println("  no ready device — connect one or pass --serial")
+        return
+    }
+    if (targetState != null && targetState != "device") {
+        println("  device not ready ($targetState); fix that before probing the runtime")
+        return
+    }
+    if (pkg == null) {
+        // No package: just list what the registry knows so the user can pick one.
+        val records = RuntimeRegistry.all()
+        if (records.isEmpty()) {
+            println("registry: empty — run `reticle app launch --package <pkg>` first")
+        } else {
+            println("registry:")
+            records.forEach { println("  ${it.packageName}  host tcp:${it.hostPort} -> device tcp:${it.devicePort} (serial ${it.serial})") }
+            println("re-run with --package <pkg> for a live health probe")
+        }
+        return
+    }
+
+    val running = adb.pidOf(pkg)
+    println("app: $pkg ${running?.let { "running (pid=$it)" } ?: "NOT running"}")
+
+    val record = RuntimeRegistry.load(serial ?: "?", pkg)
+    val devicePort = resolveDevicePort(args, pkg, record)
+    val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
+    val client = RuntimeClient(adb, hostPort, devicePort)
+    client.setUpForward()
+    println("forward: host tcp:$hostPort -> device tcp:$devicePort")
+
+    when (val health = client.probe()) {
+        is RuntimeHealth.Healthy -> {
+            val info = health.info
+            val match = info.packageName == pkg
+            println("runtime: HEALTHY — ${info.packageName} pid=${info.pid} sdk=${info.sdkInt} agent=${info.agentVersion} port=${info.port}")
+            if (match) {
+                println("identity: OK (serving the requested package)")
+            } else {
+                println("identity: CONFLICT — port is served by '${info.packageName}', not '$pkg'")
+                println("  device loopback ports are process-global; another linked app holds tcp:$devicePort.")
+                println("  → target it with --package ${info.packageName}, or give '$pkg' a different RETICLE_PORT and pass --port.")
+            }
+        }
+        is RuntimeHealth.Unreachable -> {
+            println("runtime: UNREACHABLE — connection refused on tcp:$devicePort")
+            if (running == null) {
+                println("  the app isn't running. Launch it: reticle app launch --package $pkg")
+            } else {
+                // Use the agent's own logcat to turn a guess into a determination:
+                // a "FAILED to bind" line means the agent IS linked but lost the
+                // port race; no Reticle lines at all means it isn't linked.
+                val agentLog = adb.reticleLogcat()
+                val bindFailed = agentLog.any { it.contains("FAILED to bind", ignoreCase = true) }
+                val started = agentLog.any { it.contains("Reticle started", ignoreCase = true) }
+                when {
+                    bindFailed -> {
+                        println("  the reticle-agent IS linked but FAILED to bind its port (see logcat):")
+                        agentLog.filter { it.contains("bind", ignoreCase = true) }.takeLast(2).forEach { println("    $it") }
+                        println("  → another process holds tcp:$devicePort; give '$pkg' a distinct RETICLE_PORT.")
+                    }
+                    started -> println("  the agent logged a start but isn't answering now — try relaunching the app.")
+                    agentLog.isEmpty() -> {
+                        println("  no '${Adb.LOG_TAG}' logcat lines: the agent is likely NOT linked into this")
+                        println("  build (see SKILL.md prerequisites). Confirm via: reticle debug logcat")
+                    }
+                    else -> println("  the app is running but no server is listening — see: reticle debug logcat")
+                }
+            }
+        }
+        is RuntimeHealth.Unresponsive -> {
+            println("runtime: UNRESPONSIVE — connected but no response (${health.detail})")
+            println("  stale/zombie listen socket or a hung server thread.")
+            println("  → adb shell am force-stop $pkg && reticle app launch --package $pkg")
+        }
+        is RuntimeHealth.Foreign -> {
+            println("runtime: FOREIGN — port answered but not as a Reticle runtime (${health.sample})")
+            println("  another server squats on tcp:$devicePort; choose a different --port.")
+        }
+    }
 }
 
 // --- shared helpers ------------------------------------------------------
@@ -270,13 +451,63 @@ private fun withRuntime(
 ) {
     val serial = args.optional("--serial") ?: defaultSerial()
     val adb = existingAdb ?: Adb(serial = serial)
+    adb.ensureDeviceReady()
     val record = RuntimeRegistry.load(serial ?: "?", pkg)
-    val devicePort = args.optional("--port")?.toInt() ?: record?.devicePort ?: 8765
+    val devicePort = resolveDevicePort(args, pkg, record)
     val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
     val client = RuntimeClient(adb, hostPort, devicePort)
     client.setUpForward()
+    // Gate the heavy endpoints behind a fast, classifying health + identity probe
+    // so a dead/foreign/hung server fails in ~2s with a precise message instead of
+    // hanging for 15s and dumping a SocketTimeoutException stack trace.
+    assertHealthyRuntime(client, pkg, hostPort, devicePort)
     RuntimeRegistry.store(RuntimeRegistry.Record(serial ?: "?", pkg, hostPort, devicePort))
     block(client)
+}
+
+/**
+ * Probe `/runtime` once and turn anything but a matching, healthy agent into an
+ * actionable [CliError]. The identity check is the conflict guard: device
+ * loopback ports are process-global, so a forward can silently land on a
+ * *different* app's Reticle server (or a stale one) — we refuse to act on it.
+ */
+private fun assertHealthyRuntime(
+    client: RuntimeClient,
+    pkg: String,
+    hostPort: Int,
+    devicePort: Int,
+) {
+    when (val health = client.probe()) {
+        is RuntimeHealth.Healthy -> {
+            val running = health.info.packageName
+            if (running != pkg) {
+                throw CliError(
+                    "port conflict: device tcp:$devicePort is served by '$running', not '$pkg'.\n" +
+                        "  Another Reticle-linked app holds the runtime port. Either:\n" +
+                        "    - target that app:           --package $running\n" +
+                        "    - or give this app its own:  relaunch with --port <other> (set RETICLE_PORT in that app)\n" +
+                        "  Inspect with: reticle status --package $pkg"
+                )
+            }
+        }
+        is RuntimeHealth.Unreachable -> throw CliError(
+            "no Reticle runtime on device tcp:$devicePort (connection refused).\n" +
+                "  The app '$pkg' is not exposing the agent. Either it isn't running, or the\n" +
+                "  reticle-agent AAR is not linked into this build (see SKILL.md prerequisites).\n" +
+                "  Launch first with: reticle app launch --package $pkg"
+        )
+        is RuntimeHealth.Unresponsive -> throw CliError(
+            "Reticle runtime on device tcp:$devicePort connected but did not respond (${health.detail}).\n" +
+                "  Usually a stale/zombie listen socket from a previous process, or a hung server.\n" +
+                "  Fix: force-stop and relaunch the app, then retry:\n" +
+                "    adb shell am force-stop $pkg && reticle app launch --package $pkg\n" +
+                "  Diagnose with: reticle status --package $pkg"
+        )
+        is RuntimeHealth.Foreign -> throw CliError(
+            "device tcp:$devicePort answered but not with a Reticle runtime (got: ${health.sample}).\n" +
+                "  Some other server is squatting on this port. Pick a different port with --port <n>."
+        )
+    }
 }
 
 private fun resolvePoint(client: RuntimeClient, args: ArgList): Point {
@@ -319,24 +550,72 @@ private fun readSnapshot(file: File): Snapshot {
     return ReticleJson.instance.decodeFromString(Snapshot.serializer(), file.readText())
 }
 
-private fun waitForRuntime(client: RuntimeClient, attempts: Int = 30) {
-    repeat(attempts) { i ->
-        try {
-            client.runtime()
-            return
-        } catch (_: Throwable) {
-            Thread.sleep(250)
+/**
+ * Poll `/runtime` until the agent for [pkg] answers, then return its info.
+ *
+ * Distinguishes the two launch failure modes the old loop hid:
+ *  - a *foreign* healthy server already on the port (a different app) is a hard
+ *    conflict — fail immediately, don't waste the timeout budget;
+ *  - merely unreachable/unresponsive during cold start is expected — keep waiting.
+ */
+private fun waitForRuntime(
+    client: RuntimeClient,
+    pkg: String,
+    hostPort: Int,
+    devicePort: Int,
+    attempts: Int = 30,
+): RuntimeInfo {
+    var last: RuntimeHealth? = null
+    repeat(attempts) {
+        val health = client.probe()
+        last = health
+        when (health) {
+            is RuntimeHealth.Healthy -> {
+                if (health.info.packageName == pkg) return health.info
+                // A different app already serves this port — waiting won't help.
+                assertHealthyRuntime(client, pkg, hostPort, devicePort)
+            }
+            else -> Thread.sleep(250) // still coming up; keep polling.
         }
     }
-    throw CliError("timed out waiting for the Reticle runtime; is the agent linked into the app?")
+    // Exhausted attempts: surface the most informative classification we saw.
+    when (val h = last) {
+        is RuntimeHealth.Unresponsive -> throw CliError(
+            "timed out waiting for '$pkg': the runtime port connected but never responded (${h.detail}).\n" +
+                "  Likely a stale socket from a prior run. Try: adb shell am force-stop $pkg, then relaunch."
+        )
+        else -> throw CliError(
+            "timed out waiting for the Reticle runtime for '$pkg'.\n" +
+                "  Is the reticle-agent AAR linked into this build? (see SKILL.md prerequisites)\n" +
+                "  Diagnose with: reticle status --package $pkg"
+        )
+    }
 }
 
 private fun defaultSerial(): String? {
     val devices = Adb().listDevices()
-    return devices.singleOrNull()
+    return when (devices.size) {
+        0 -> null // let downstream device-readiness checks produce the message
+        1 -> devices.single()
+        // Multiple ready devices: refuse to guess — an action on the wrong device
+        // is worse than a clear error asking which one.
+        else -> throw CliError(
+            "multiple devices connected (${devices.joinToString(", ")}); pass --serial <one> to choose."
+        )
+    }
 }
 
 private fun pickHostPort(devicePort: Int): Int = devicePort
+
+/**
+ * The device loopback port to forward to, in precedence order:
+ *   1. an explicit `--port`,
+ *   2. a previously recorded port for this serial+package,
+ *   3. the per-app port derived from the package name (matches what the agent
+ *      binds), so different apps don't collide on a single fixed port.
+ */
+private fun resolveDevicePort(args: ArgList, pkg: String, record: RuntimeRegistry.Record?): Int =
+    args.optional("--port")?.toInt() ?: record?.devicePort ?: PortMap.derivePort(pkg)
 
 private fun printViewTree(snapshot: Snapshot, maxDepth: Int) {
     fun walk(ref: String, depth: Int) {
@@ -380,6 +659,7 @@ private fun printUsage() {
 
         app launch   --package <pkg> [--serial <s>] [--port <devicePort>]
         ui report    --package <pkg> [--output <dir>]
+        ui screenshot [--package <pkg>] [--output <file>]   # agent if linked, else adb screencap
         ui tree      <snapshot.json> [--accessibility] [--depth N]
         ui compact   <snapshot.json>
         ui node      <snapshot.json> (--test-id|--resource-id|--ref)
@@ -389,8 +669,11 @@ private fun printUsage() {
         act drag     --package <pkg> --from x,y --to x,y [--duration ms]
         act type     --package <pkg> --text "..."
         debug logs   --package <pkg> [--output <file>]
+        debug logcat [--serial <s>]                  # the agent's own startup logs
         mutate       --package <pkg> (selector) --property <p> --value <v>
+        status       [--package <pkg>] [--serial <s>] [--port <devicePort>]
         doctor
+        version
         """.trimIndent()
     )
 }

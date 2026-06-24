@@ -16,9 +16,10 @@ Use this file as a map. Deeper architecture lives in `Docs/Architecture.md`.
   view-tree + Compose-semantics capture, allowlisted runtime mutation,
   in-process screenshot, app-authored log/metadata bridge, and an auto-start
   `ContentProvider`.
-- `reticle-cli`: host JVM CLI for report, compact, node, tree, regions,
-  tap/swipe/drag/type, logs, mutate, launch, doctor. Talks to the agent over
-  `adb forward`.
+- `reticle-cli`: host JVM CLI for report, screenshot, compact, node, tree,
+  regions, tap/swipe/drag/type, logs, logcat, mutate, launch, status, doctor,
+  version. Talks to the agent over `adb forward`; gates every runtime call
+  behind a fast classified `/runtime` probe (health + package identity).
 - `sample-app`: demo app that links the agent and proves the round trip.
 
 ## Claude Code plugin packaging
@@ -31,8 +32,10 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
 - `.claude-plugin/marketplace.json` — marketplace catalog; the plugin entry uses
   `source: "./"` (the repo root is the plugin).
 - `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled;
-  resolves `${CLAUDE_PLUGIN_ROOT}`, builds `:reticle-cli:installDist` on first
-  use, then execs the real CLI.
+  resolves the CLI in order `$RETICLE_CLI` → `$RETICLE_HOME` → a SHA256-verified
+  prebuilt release downloaded+cached under `~/.reticle/cli` → a source build via
+  `:reticle-cli:installDist` (needs JDK 17), then execs it. `release.yml`
+  publishes the prebuilt CLI + agent AAR on a `v*` tag.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
 - `commands/report.md`, `commands/tap.md` — slash commands (`/reticle:report`,
   `/reticle:tap`).
@@ -103,9 +106,15 @@ Expected: tap resolves via `accessibility:testId`, the status text flips to
 
 ## Known Boundary
 
-- `app launch` uses `monkey ... LAUNCHER`; the agent auto-starts via its
-  `ContentProvider`, so no special launch env is needed for linked apps.
+- `app launch` uses `monkey ... LAUNCHER` (retried once on a transient adb-shell
+  timeout); the agent auto-starts via its `ContentProvider`, so no special launch
+  env is needed for linked apps.
+- The loopback port is derived per-app from the `applicationId` via
+  `PortMap.derivePort` in `reticle-core` (shared verbatim by agent and CLI), so
+  multiple linked apps don't collide on one fixed port. `RETICLE_PORT` (app) +
+  `--port` (CLI) override it. Changing the hash desyncs both sides — the pinned
+  vectors in `PortMapTest` guard against that.
 - In-process `/screenshot` won't capture `SurfaceView` / secure windows; the
-  CLI can fall back to `adb exec-out screencap` for those.
+  CLI can fall back to `adb exec-out screencap` for those (`reticle ui screenshot`).
 - Injection into apps without the AAR requires `wrap.sh` (debuggable) or
   Frida/root (release). See `Docs/Architecture.md`.

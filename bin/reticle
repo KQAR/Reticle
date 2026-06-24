@@ -1,42 +1,143 @@
 #!/usr/bin/env bash
 #
 # Reticle CLI launcher, shipped inside the Claude Code plugin so `reticle …`
-# works on the Bash PATH once the plugin is enabled. It resolves the plugin
-# root, builds the CLI distribution on first use (cached afterward), then execs
-# the real Kotlin CLI with all arguments forwarded.
+# works on the Bash PATH once the plugin is enabled.
 #
-# No local/absolute paths are baked in: the root is taken from
-# ${CLAUDE_PLUGIN_ROOT} (set by Claude Code) or, when run standalone, from this
-# script's own location.
+# Resolution order for the actual CLI binary (first hit wins):
+#   1. $RETICLE_CLI            — explicit path to a `reticle` launch script.
+#   2. $RETICLE_HOME/bin/reticle — an unpacked release distribution.
+#   3. A release downloaded + cached under ~/.reticle/cli (auto, if `curl`+`unzip`
+#      are available and the repo can be reached).
+#   4. The bundled install dir, built once from source via Gradle (needs JDK 17).
+#
+# The download path means users do NOT need a local JDK/Gradle toolchain: the
+# plugin fetches the prebuilt CLI from GitHub Releases on first use. The source
+# build remains as an offline / from-checkout fallback.
 set -euo pipefail
 
+# --- locate the plugin/repo root ---------------------------------------------
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 if [[ -z "${ROOT}" ]]; then
   # Standalone fallback: repo root is one level up from this script's dir.
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
-CLI_BIN="${ROOT}/reticle-cli/build/install/reticle/bin/reticle"
-GRADLEW="${ROOT}/gradlew"
+# Pin this to the plugin version; bump in lockstep with plugin.json / RETICLE_VERSION.
+RETICLE_VERSION="${RETICLE_VERSION:-0.2.0}"
+REPO="${RETICLE_REPO:-KQAR/Reticle}"
+CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
 
-build_cli() {
-  if [[ ! -x "${GRADLEW}" ]]; then
-    echo "reticle: cannot find gradlew at ${GRADLEW}" >&2
-    echo "reticle: the plugin must be installed from the full repository (it builds the CLI on first use)." >&2
+GRADLEW="${ROOT}/gradlew"
+SRC_CLI_BIN="${ROOT}/reticle-cli/build/install/reticle/bin/reticle"
+
+log() { echo "reticle: $*" >&2; }
+
+# --- 1. explicit override -----------------------------------------------------
+if [[ -n "${RETICLE_CLI:-}" ]]; then
+  if [[ ! -x "${RETICLE_CLI}" ]]; then
+    log "RETICLE_CLI is set but not executable: ${RETICLE_CLI}"
     exit 1
   fi
-  echo "reticle: building the CLI (first run only)…" >&2
+  exec "${RETICLE_CLI}" "$@"
+fi
+
+# --- 2. an unpacked release dir ----------------------------------------------
+if [[ -n "${RETICLE_HOME:-}" && -x "${RETICLE_HOME}/bin/reticle" ]]; then
+  exec "${RETICLE_HOME}/bin/reticle" "$@"
+fi
+
+# --- 3. cached download -------------------------------------------------------
+CACHED_BIN="${CACHE_DIR}/${RETICLE_VERSION}/reticle/bin/reticle"
+download_release() {
+  # Best-effort fetch of the prebuilt CLI zip from GitHub Releases. Returns
+  # non-zero (without aborting the script) so the caller can fall back to source.
+  command -v curl >/dev/null 2>&1 || { log "curl not found; cannot download prebuilt CLI"; return 1; }
+  command -v unzip >/dev/null 2>&1 || { log "unzip not found; cannot unpack prebuilt CLI"; return 1; }
+  local base="https://github.com/${REPO}/releases/download/v${RETICLE_VERSION}"
+  local dest="${CACHE_DIR}/${RETICLE_VERSION}"
+  local tmp
+  tmp="$(mktemp -d)"
+  log "downloading prebuilt CLI ${RETICLE_VERSION} from ${REPO}…"
+  if ! curl -fsSL "${base}/reticle-cli.zip" -o "${tmp}/reticle-cli.zip"; then
+    log "download failed (${base}/reticle-cli.zip)"
+    rm -rf "${tmp}"
+    return 1
+  fi
+
+  # Verify the download against the release's SHA256SUMS before unpacking, so a
+  # truncated or tampered artifact can't be executed. Best-effort: if checksums
+  # or a sha256 tool are unavailable we warn and proceed (a corrupt zip then
+  # fails to unpack anyway), but a present-and-mismatched sum is a hard stop.
+  if curl -fsSL "${base}/SHA256SUMS" -o "${tmp}/SHA256SUMS" 2>/dev/null; then
+    local expected actual
+    expected="$(awk '/reticle-cli\.zip$/ {print $1; exit}' "${tmp}/SHA256SUMS")"
+    if [[ -n "${expected}" ]]; then
+      if command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "${tmp}/reticle-cli.zip" | awk '{print $1}')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "${tmp}/reticle-cli.zip" | awk '{print $1}')"
+      fi
+      if [[ -n "${actual:-}" && "${actual}" != "${expected}" ]]; then
+        log "checksum MISMATCH for reticle-cli.zip (expected ${expected}, got ${actual}); refusing it"
+        rm -rf "${tmp}"
+        return 1
+      fi
+      [[ -z "${actual:-}" ]] && log "no sha256 tool; skipping checksum verification"
+    fi
+  else
+    log "no SHA256SUMS published; skipping checksum verification"
+  fi
+
+  mkdir -p "${dest}"
+  if ! unzip -q -o "${tmp}/reticle-cli.zip" -d "${dest}"; then
+    log "unpack failed"
+    rm -rf "${tmp}"
+    return 1
+  fi
+  rm -rf "${tmp}"
+  [[ -x "${CACHED_BIN}" ]]
+}
+
+if [[ -x "${CACHED_BIN}" ]]; then
+  exec "${CACHED_BIN}" "$@"
+fi
+
+# Try a download unless the user opted out (RETICLE_NO_DOWNLOAD=1) or we're
+# clearly running from a full source checkout (prefer the local build then).
+if [[ "${RETICLE_NO_DOWNLOAD:-0}" != "1" && ! -x "${GRADLEW}" ]]; then
+  if download_release; then
+    exec "${CACHED_BIN}" "$@"
+  fi
+fi
+
+# --- 4. build from source (needs the full repo + JDK 17) ---------------------
+build_from_source() {
+  if [[ ! -x "${GRADLEW}" ]]; then
+    log "no prebuilt CLI available and cannot build from source."
+    log "fix one of:"
+    log "  • install a release:   set RETICLE_HOME to an unpacked reticle-cli dist"
+    log "  • allow auto-download:  ensure curl+unzip work and ${REPO} is reachable"
+    log "  • build from source:    install the plugin from the full repo (needs JDK 17 + adb)"
+    log "  • download manually:    https://github.com/${REPO}/releases/tag/v${RETICLE_VERSION}"
+    exit 1
+  fi
+  if ! command -v java >/dev/null 2>&1; then
+    log "building from source needs a JDK (17+), but \`java\` is not on PATH."
+    log "either install JDK 17, or download a prebuilt release:"
+    log "  https://github.com/${REPO}/releases/tag/v${RETICLE_VERSION}"
+    exit 1
+  fi
+  log "building the CLI from source (first run only)…"
   ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:installDist ) >&2
 }
 
-# Build on first use, or whenever sources changed since the last build.
-if [[ ! -x "${CLI_BIN}" ]]; then
-  build_cli
+if [[ ! -x "${SRC_CLI_BIN}" ]]; then
+  build_from_source
 fi
 
-if [[ ! -x "${CLI_BIN}" ]]; then
-  echo "reticle: CLI build did not produce ${CLI_BIN}" >&2
+if [[ ! -x "${SRC_CLI_BIN}" ]]; then
+  log "CLI build did not produce ${SRC_CLI_BIN}"
   exit 1
 fi
 
-exec "${CLI_BIN}" "$@"
+exec "${SRC_CLI_BIN}" "$@"

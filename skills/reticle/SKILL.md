@@ -21,27 +21,87 @@ runs a tiny HTTP server inside the app process (loopback) and a host CLI talks
 to it over `adb forward`. Prefer Reticle over guessing from screenshots when you
 need precise selectors, coordinates, or live UI state.
 
-The CLI is on PATH as `reticle` while this plugin is enabled. The first
-invocation builds the CLI from the bundled sources (one-time, ~30s); later calls
-are instant.
+The CLI is on PATH as `reticle` while this plugin is enabled.
+
+## Install (how the `reticle` binary is obtained)
+
+The launcher (`bin/reticle`) resolves the actual CLI in this order, first hit wins:
+1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
+2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
+3. A **prebuilt release** auto-downloaded from GitHub Releases and cached under
+   `~/.reticle/cli` (needs `curl`+`unzip` and network; no JDK required).
+4. A **source build** via the bundled Gradle (needs JDK 17), used when running
+   from a full checkout or when the download is unavailable.
+
+So a user needs *either* network access to fetch the prebuilt CLI *or* a local
+JDK 17 to build once. If neither is present, the launcher prints what to fix and
+links the release page. `reticle version` confirms which CLI is active.
 
 ## Prerequisites (check, don't assume)
 
-- A booted device/emulator: `reticle doctor` (lists adb path + devices).
-- `ANDROID_HOME` set, or adb on PATH. The launcher needs JDK 17 to build once.
+- The CLI is installed/buildable: `reticle version` (any output means it's ready).
+- A booted device/emulator in the **`device`** state: `reticle doctor`. It now
+  flags `offline`/`unauthorized` devices explicitly — those can't be driven until
+  fixed (re-plug USB / accept the on-device debugging prompt).
+- `ANDROID_HOME` set, or adb on PATH.
 - The target app must expose the Reticle in-process server. Two cases:
   - **Linked app** (you control the build): add the `reticle-agent` AAR — a
     no-op ContentProvider auto-starts the server, no code changes.
   - **App without the agent**: requires an injection path (wrap.sh for
     debuggable, or Frida/root). Without it, `reticle ui report` cannot reach the
-    app — say so rather than inventing data. The bundled `sample-app` links the
-    agent and is the easiest way to see the full loop.
+    app — say so rather than inventing data (use `reticle debug logcat` to
+    confirm no agent is present, and `reticle ui screenshot` to still see the
+    screen). The bundled `sample-app` links the agent and is the easiest way to
+    see the full loop.
+
+## Ports are per-app (no more 8765 collisions)
+
+Device loopback ports are **process-global**, so if every linked app bound one
+fixed port only the first to start would win and a host `adb forward` could land
+on the *wrong* app. Reticle derives each app's port from its `applicationId`
+(stable FNV-1a hash into `8765..9764`); the agent binds it and the CLI computes
+the same value from `--package`, so no two apps collide and no discovery
+round-trip is needed. Override with `RETICLE_PORT` in the app + `--port` on the
+CLI. You normally never pass `--port`.
+
+## Health & conflict checks (run when something looks wrong)
+
+Before any snapshot/act/mutate Reticle does a fast (~2s) classified probe of
+`/runtime` and fails with a precise message instead of hanging ~15s on a socket
+timeout. Use `status` to inspect the live state:
+
+```bash
+reticle status                       # device readiness + what the registry knows
+reticle status --package <pkg>       # full probe: app running? port? runtime health + identity
+reticle debug logcat                 # the agent's OWN startup lines (works even when HTTP is dead)
+```
+
+`status` reports one of: **HEALTHY** (and whether the identity matches the
+requested package — a mismatch is a port **CONFLICT** with another linked app),
+**UNREACHABLE** (connection refused — app not running or agent not linked; status
+cross-checks `debug logcat` to tell *not-linked* from *bound-port-failed*),
+**UNRESPONSIVE** (connected but no response — stale socket / hung server; fix
+with `adb shell am force-stop <pkg>` then relaunch), or **FOREIGN** (some other
+server on the port — pick a different `--port`).
+
+`doctor`/commands also pre-check device readiness: an `offline` device triggers a
+bounded `adb reconnect`, and `unauthorized`/`offline` produce an actionable error
+instead of a 30s hang.
+
+## Screenshots without the agent
+
+`reticle ui screenshot [--package <pkg>] [--output shot.png]` uses the agent's
+`/screenshot` when the runtime is reachable, and otherwise falls back to
+`adb exec-out screencap`. This is the honest degraded mode for apps that don't
+link the agent: you can still see the screen (and drive it via `adb`-backed
+`act`/`--point`) even when no structured tree is available.
 
 ## Core workflow
 
 ```bash
-reticle doctor                                   # verify adb + devices
+reticle doctor                                   # verify adb + devices (flags offline/unauthorized)
 reticle app launch  --package <pkg>              # launch + adb forward + wait for runtime
+reticle status      --package <pkg>              # probe runtime health + identity if anything's off
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
 reticle ui node     reticle-report/snapshot.json --test-id <id>   # full view-tree node

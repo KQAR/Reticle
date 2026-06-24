@@ -10,7 +10,9 @@ import dev.reticle.core.ReticleJson
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.Snapshot
 import java.io.File
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 
 /**
@@ -28,7 +30,11 @@ class RuntimeClient(
 
     fun setUpForward() {
         val result = adb.forward(hostPort, devicePort)
-        check(result.ok) { "adb forward tcp:$hostPort tcp:$devicePort failed: ${result.stderr}" }
+        if (!result.ok) {
+            throw CliError(
+                "adb forward tcp:$hostPort -> tcp:$devicePort failed: ${result.stderr.ifBlank { "is the device connected?" }}"
+            )
+        }
     }
 
     fun tearDownForward() {
@@ -37,6 +43,42 @@ class RuntimeClient(
 
     fun runtime(): RuntimeInfo =
         ReticleJson.instance.decodeFromString(RuntimeInfo.serializer(), getString(Endpoints.RUNTIME))
+
+    /**
+     * Probe the lightweight `/runtime` endpoint and classify the outcome.
+     *
+     * This is the health/conflict gate the heavier endpoints sit behind.
+     * `/runtime` does no UI work (just process metadata), so it answers fast when
+     * the agent is alive — which lets us tell apart four very different failures
+     * the old code collapsed into one opaque 15s `SocketTimeoutException`:
+     *
+     *  - [RuntimeHealth.Unreachable]  — connection refused: forward is up but
+     *    nothing is listening on the device port (agent not linked / not started).
+     *  - [RuntimeHealth.Unresponsive] — connected, but the read timed out: a
+     *    zombie listen socket or a hung server thread. This is the exact state we
+     *    hit when the forwarded port belonged to a backgrounded process.
+     *  - [RuntimeHealth.Foreign]      — answered, but not with a RuntimeInfo: some
+     *    other HTTP server (or a different app) is squatting on the port.
+     *  - [RuntimeHealth.Healthy]      — a valid RuntimeInfo came back.
+     *
+     * @param timeoutMillis short per-attempt read timeout; the probe must be cheap.
+     */
+    fun probe(timeoutMillis: Int = 2500): RuntimeHealth {
+        val raw = try {
+            getString(Endpoints.RUNTIME, connectTimeout = 1500, readTimeout = timeoutMillis)
+        } catch (e: ConnectException) {
+            return RuntimeHealth.Unreachable(e.message ?: "connection refused")
+        } catch (e: SocketTimeoutException) {
+            return RuntimeHealth.Unresponsive(e.message ?: "read timed out")
+        } catch (e: Throwable) {
+            return RuntimeHealth.Unreachable(e.message ?: e.javaClass.simpleName)
+        }
+        return try {
+            RuntimeHealth.Healthy(ReticleJson.instance.decodeFromString(RuntimeInfo.serializer(), raw))
+        } catch (_: Throwable) {
+            RuntimeHealth.Foreign(raw.take(120))
+        }
+    }
 
     fun snapshot(): Snapshot =
         ReticleJson.instance.decodeFromString(Snapshot.serializer(), getString(Endpoints.SNAPSHOT))
@@ -65,19 +107,23 @@ class RuntimeClient(
 
     private fun url(path: String) = URL("http://127.0.0.1:$hostPort$path")
 
-    private fun getString(path: String): String {
+    private fun getString(
+        path: String,
+        connectTimeout: Int = DEFAULT_CONNECT_TIMEOUT,
+        readTimeout: Int = DEFAULT_READ_TIMEOUT,
+    ): String {
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
-        conn.connectTimeout = 5000
-        conn.readTimeout = 15000
+        conn.connectTimeout = connectTimeout
+        conn.readTimeout = readTimeout
         return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
     }
 
     private fun getBytes(path: String): ByteArray {
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
-        conn.connectTimeout = 5000
-        conn.readTimeout = 15000
+        conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
+        conn.readTimeout = DEFAULT_READ_TIMEOUT
         return conn.inputStream.use { it.readBytes() }
     }
 
@@ -85,10 +131,33 @@ class RuntimeClient(
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
-        conn.connectTimeout = 5000
-        conn.readTimeout = 15000
+        conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
+        conn.readTimeout = DEFAULT_READ_TIMEOUT
         conn.setRequestProperty("Content-Type", "application/json")
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
     }
+
+    private companion object {
+        const val DEFAULT_CONNECT_TIMEOUT = 5000
+        const val DEFAULT_READ_TIMEOUT = 15000
+    }
+}
+
+/**
+ * Classified outcome of probing the in-app server's `/runtime` endpoint. Lets
+ * the CLI give a precise diagnosis instead of a raw socket exception.
+ */
+sealed interface RuntimeHealth {
+    /** A valid RuntimeInfo came back. The agent is alive and answering. */
+    data class Healthy(val info: RuntimeInfo) : RuntimeHealth
+
+    /** Connection refused — nothing is listening on the forwarded device port. */
+    data class Unreachable(val detail: String) : RuntimeHealth
+
+    /** Connected, but no response within the timeout — zombie socket / hung server. */
+    data class Unresponsive(val detail: String) : RuntimeHealth
+
+    /** Answered, but not with a RuntimeInfo — some other server is on this port. */
+    data class Foreign(val sample: String) : RuntimeHealth
 }
