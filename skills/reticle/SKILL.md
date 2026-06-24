@@ -28,14 +28,16 @@ The CLI is on PATH as `reticle` while this plugin is enabled.
 The launcher (`bin/reticle`) resolves the actual CLI in this order, first hit wins:
 1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
 2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
-3. A **prebuilt release** auto-downloaded from GitHub Releases and cached under
-   `~/.reticle/cli` (needs `curl`+`unzip` and network; no JDK required).
-4. A **source build** via the bundled Gradle (needs JDK 17), used when running
-   from a full checkout or when the download is unavailable.
+3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build via the bundled Gradle
+   (needs JDK 17); for development / offline work only.
+4. A **prebuilt release** — cached under `~/.reticle/cli`, else downloaded
+   (SHA256-verified) from GitHub Releases. **This is the default** (needs
+   `curl`+`unzip` and network; no JDK).
 
-So a user needs *either* network access to fetch the prebuilt CLI *or* a local
-JDK 17 to build once. If neither is present, the launcher prints what to fix and
-links the release page. `reticle version` confirms which CLI is active.
+By default the prebuilt release is always used — there is **no silent source
+build**. If it can't be obtained the launcher stops with actionable guidance
+(restore network / set `RETICLE_HOME` to a manual download / re-run with
+`RETICLE_FROM_SOURCE=1`). `reticle version` confirms which CLI is active.
 
 ## Prerequisites (check, don't assume)
 
