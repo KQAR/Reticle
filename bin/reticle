@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Reticle CLI launcher, shipped inside the Claude Code plugin so `reticle …`
+# works on the Bash PATH once the plugin is enabled. It resolves the plugin
+# root, builds the CLI distribution on first use (cached afterward), then execs
+# the real Kotlin CLI with all arguments forwarded.
+#
+# No local/absolute paths are baked in: the root is taken from
+# ${CLAUDE_PLUGIN_ROOT} (set by Claude Code) or, when run standalone, from this
+# script's own location.
+set -euo pipefail
+
+ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [[ -z "${ROOT}" ]]; then
+  # Standalone fallback: repo root is one level up from this script's dir.
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
+CLI_BIN="${ROOT}/reticle-cli/build/install/reticle/bin/reticle"
+GRADLEW="${ROOT}/gradlew"
+
+build_cli() {
+  if [[ ! -x "${GRADLEW}" ]]; then
+    echo "reticle: cannot find gradlew at ${GRADLEW}" >&2
+    echo "reticle: the plugin must be installed from the full repository (it builds the CLI on first use)." >&2
+    exit 1
+  fi
+  echo "reticle: building the CLI (first run only)…" >&2
+  ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:installDist ) >&2
+}
+
+# Build on first use, or whenever sources changed since the last build.
+if [[ ! -x "${CLI_BIN}" ]]; then
+  build_cli
+fi
+
+if [[ ! -x "${CLI_BIN}" ]]; then
+  echo "reticle: CLI build did not produce ${CLI_BIN}" >&2
+  exit 1
+fi
+
+exec "${CLI_BIN}" "$@"

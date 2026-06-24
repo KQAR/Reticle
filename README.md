@@ -1,0 +1,164 @@
+# Reticle
+
+Reticle helps AI coding agents build and verify native app interfaces on
+**Android** by inspecting the app that is actually running — not just the source
+code or a screenshot.
+
+Where a loupe is the lens you look *through*, a **reticle** is the etched
+crosshair in the eyepiece you use to *locate and measure* what you see. That is
+exactly Reticle's job: resolve stable selectors and precise coordinates from the
+live view / accessibility / Compose-semantics tree so an agent can act on the
+right element with confidence.
+
+Tools like `adb`, Espresso, and UiAutomator can build, launch, or drive an app.
+Reticle adds the runtime UI layer: structured evidence from the app that is
+actually running, so agents can inspect, probe, and verify native interface
+work.
+
+## Why use Reticle
+
+- **Less guessing from screenshots.** Agents inspect the running app through
+  native view trees, accessibility/semantics metadata, screenshots, and logs.
+- **Fewer missed UI issues.** Reticle checks layout, hit testing, and design
+  drift against the live interface.
+- **Precise targeting inside one View.** Agreement rows, "highlighted = link"
+  text, and self-drawn controls often pack several tap targets into a single
+  node. Reticle resolves them down to the specific phrase (see below).
+- **Faster development loops.** Compact observations and runtime UI mutations
+  let agents try small fixes before another build/run cycle.
+
+## How it works
+
+Reticle runs a tiny HTTP server **inside** the app process, bound to loopback,
+and a host-side CLI talks to it over `adb forward`. The agent captures the live
+UI tree from inside the process; the CLI resolves selectors and dispatches real
+input.
+
+| Concern | Mechanism |
+| --- | --- |
+| Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For apps without the AAR: `wrap.sh` + `LD_PRELOAD` (debuggable) or Frida/root (release). |
+| Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. |
+| Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
+| Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
+| Selector resolution | Accessibility tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
+
+See `Docs/Architecture.md` for the full design, including the Compose-semantics
+boundary and the injection trade-offs.
+
+## Multi-region controls
+
+A single View can carry several tap targets — the classic case is an agreement
+row: *"I have read and agree to 《Terms》《Privacy》"*, where the text toggles a
+checkbox and each 《…》 opens a different page. Both the view tree and the
+accessibility tree collapse this into one node. Reticle decomposes it through
+several channels:
+
+- **`span`** — real `ClickableSpan` / `URLSpan` ranges, with per-line pixel
+  hit-rects and the link's color.
+- **`a11yVirtual`** — virtual accessibility sub-nodes (`ExploreByTouchHelper`).
+- **`touchDelegate`** — extended/forwarded hit-rects.
+- **`textMarker`** — one region per in-text 《…》 / markdown link on self-drawn
+  rows, each with its own rect.
+- **`colorSpan`** — a re-colored run (the "highlight = link" pattern), surfaced
+  with its actual color.
+- **char grid** — exact per-character X positions from the laid-out text, so an
+  agent can hit any phrase by substring even when nothing structural marks it
+  (robust across font, size, letter/line spacing — all read from `Layout`).
+
+```bash
+reticle ui regions snapshot.json
+reticle act tap --package <pkg> --test-id agreement --region "《Privacy》"
+reticle act tap --package <pkg> --test-id agreement --region "用户协议"
+```
+
+## Install as a Claude Code plugin
+
+Reticle ships as a Claude Code plugin. Add this repo as a marketplace and
+install — no manual clone or build needed (the CLI builds itself on first use):
+
+```text
+/plugin marketplace add KQAR/Reticle
+/plugin install reticle@reticle
+```
+
+This makes the `reticle` CLI available on the Bash PATH and adds:
+
+- the **`reticle`** skill — teaches the agent when and how to inspect/drive a
+  running Android app;
+- **`/reticle:report`** — capture a runtime UI report and summarize the screen;
+- **`/reticle:tap`** — tap an element by selector (or by phrase via `--region`)
+  and verify the result.
+
+Requirements on the host: a connected Android device/emulator with `adb`, and
+JDK 17 (used once to build the CLI). Run `reticle doctor` to check.
+
+To develop or test locally without installing: `claude --plugin-dir ./` from the
+repo root.
+
+## Modules
+
+- `reticle-core` — pure JVM snapshot / accessibility / compact-observation
+  models and the wire protocol. No Android dependency.
+- `reticle-agent` — Android library (AAR). In-process HTTP server + view and
+  Compose-semantics capture, region detection, runtime mutation, screenshots,
+  auto-started by a no-op `ContentProvider`.
+- `reticle-cli` — host JVM CLI. `adb forward` + loopback evidence + an
+  `adb input` action backend.
+- `sample-app` — demo app that links the agent end to end.
+
+## Quick Start
+
+```bash
+# Build everything
+./gradlew assemble
+
+# Install the sample app on a booted emulator/device
+adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
+
+# Run the CLI (via the generated start script)
+./gradlew :reticle-cli:installDist
+CLI=reticle-cli/build/install/reticle/bin/reticle
+
+# Launch + forward + wait for the in-app runtime
+$CLI app launch --package dev.reticle.sample
+
+# Capture a runtime report
+$CLI ui report --package dev.reticle.sample --output reticle-report
+$CLI ui compact reticle-report/snapshot.json
+$CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
+
+# Act on the app (accessibility/selector first, frame fallback)
+$CLI act tap --package dev.reticle.sample --test-id checkout.payButton
+
+# Multi-region controls: one View, several click targets (agreement rows etc.)
+$CLI ui regions reticle-report/snapshot.json
+$CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "《用户协议》"
+$CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "《隐私政策》"
+
+# Read app-authored runtime logs
+$CLI debug logs --package dev.reticle.sample
+
+# Live-patch an allowlisted property without rebuilding
+$CLI mutate --package dev.reticle.sample --test-id checkout.status \
+    --property text --value "Paid!"
+```
+
+## Toolchain
+
+- Android SDK (compileSdk 35), build-tools, platform-tools (`adb`)
+- JDK 17 for Gradle/AGP
+- Gradle 8.13 (via the wrapper)
+
+See `AGENTS.md` for the agent-facing map and architecture rules.
+
+## Inspiration
+
+Reticle was inspired by [Loupe](https://github.com/heoblitz/Loupe), a runtime UI
+inspection and action harness for Apple platforms. Reticle applies the same idea
+— inspect the app that is actually running, not its source or a screenshot — to
+Android, with its own mechanisms for injection, UI capture, and input.
+
+## License
+
+Reticle is released under the [MIT License](LICENSE), following Loupe's MIT
+license.

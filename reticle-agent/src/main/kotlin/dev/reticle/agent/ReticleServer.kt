@@ -1,0 +1,237 @@
+package dev.reticle.agent
+
+import android.os.Build
+import android.os.Process
+import android.util.Log
+import dev.reticle.core.AccessibilityTree
+import dev.reticle.core.CompactObservation
+import dev.reticle.core.Endpoints
+import dev.reticle.core.LogBatch
+import dev.reticle.core.MutationRequest
+import dev.reticle.core.ReticleJson
+import dev.reticle.core.RuntimeInfo
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.nio.charset.StandardCharsets
+import kotlin.concurrent.thread
+
+/**
+ * In-process HTTP server bound to loopback: a tiny raw-socket HTTP server on
+ * 127.0.0.1 that the host CLI reaches through `adb forward`, which bridges the
+ * device loopback to the host.
+ *
+ * Deliberately dependency-free (no NanoHTTPD): a hand-rolled socket server keeps
+ * the AAR tiny.
+ */
+class ReticleServer(private val runtime: ReticleRuntime) {
+
+    @Volatile
+    private var serverSocket: ServerSocket? = null
+
+    @Volatile
+    private var running = false
+
+    private var boundPort: Int = 0
+
+    fun start(port: Int, bindHost: String) {
+        stop()
+        val address = InetAddress.getByName(bindHost)
+        val socket = ServerSocket(port, 50, address)
+        serverSocket = socket
+        boundPort = socket.localPort
+        running = true
+
+        thread(name = "reticle-server", isDaemon = true) {
+            while (running) {
+                val client = try {
+                    socket.accept()
+                } catch (t: Throwable) {
+                    if (running) Log.w(TAG, "accept failed", t)
+                    break
+                }
+                // Handle each request on its own short-lived thread.
+                thread(isDaemon = true) { handle(client) }
+            }
+        }
+    }
+
+    fun stop() {
+        running = false
+        try {
+            serverSocket?.close()
+        } catch (_: Throwable) {
+        }
+        serverSocket = null
+    }
+
+    private fun handle(client: Socket) {
+        client.use { socket ->
+            try {
+                // Read the request line + headers byte-wise, then the body as
+                // exactly Content-Length BYTES. A char-based reader would read
+                // Content-Length *chars*, which over-reads for multibyte UTF-8
+                // bodies (e.g. Chinese text) and blocks until the socket times
+                // out — even though the request was complete.
+                val input = socket.getInputStream()
+                val requestLine = readHeaderLine(input) ?: return
+                val parts = requestLine.split(" ")
+                if (parts.size < 2) return
+                val method = parts[0]
+                val path = parts[1].substringBefore('?')
+
+                var contentLength = 0
+                while (true) {
+                    val line = readHeaderLine(input) ?: break
+                    if (line.isEmpty()) break
+                    if (line.lowercase().startsWith("content-length:")) {
+                        contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                    }
+                }
+
+                val body = if (contentLength > 0) {
+                    val bytes = ByteArray(contentLength)
+                    var read = 0
+                    while (read < contentLength) {
+                        val n = input.read(bytes, read, contentLength - read)
+                        if (n < 0) break
+                        read += n
+                    }
+                    String(bytes, 0, read, StandardCharsets.UTF_8)
+                } else ""
+
+                route(socket.getOutputStream(), method, path, body)
+            } catch (t: Throwable) {
+                Log.w(TAG, "request handling failed", t)
+            }
+        }
+    }
+
+    /**
+     * Read one CRLF-terminated header line as ASCII bytes (headers are ASCII).
+     * Returns the line without the trailing CRLF, or null at end of stream.
+     */
+    private fun readHeaderLine(input: java.io.InputStream): String? {
+        val sb = StringBuilder()
+        var sawAny = false
+        while (true) {
+            val b = input.read()
+            if (b < 0) return if (sawAny) sb.toString() else null
+            sawAny = true
+            if (b == '\n'.code) break
+            if (b != '\r'.code) sb.append(b.toChar())
+        }
+        return sb.toString()
+    }
+
+    private fun route(out: OutputStream, method: String, path: String, body: String) {
+        val context = runtime.appContext
+        if (context == null) {
+            writeText(out, 503, "agent context unavailable")
+            return
+        }
+        when {
+            method == "GET" && path == Endpoints.RUNTIME -> {
+                val info = RuntimeInfo(
+                    packageName = context.packageName,
+                    processName = currentProcessName(),
+                    pid = Process.myPid(),
+                    sdkInt = Build.VERSION.SDK_INT,
+                    agentVersion = runtime.agentVersion,
+                    port = boundPort,
+                )
+                writeJson(out, ReticleJson.instance.encodeToString(RuntimeInfo.serializer(), info))
+            }
+
+            method == "GET" && path == Endpoints.SNAPSHOT -> {
+                val snapshot = SnapshotCapture(context).capture()
+                writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.Snapshot.serializer(), snapshot))
+            }
+
+            method == "GET" && path == Endpoints.ACCESSIBILITY -> {
+                val snapshot = SnapshotCapture(context).capture()
+                val tree = AccessibilityTree.build(snapshot)
+                writeJson(out, ReticleJson.instance.encodeToString(AccessibilityTree.serializer(), tree))
+            }
+
+            method == "GET" && path == Endpoints.COMPACT -> {
+                val snapshot = SnapshotCapture(context).capture()
+                val compact = CompactObservation.from(snapshot)
+                writeJson(out, ReticleJson.instance.encodeToString(CompactObservation.serializer(), compact))
+            }
+
+            method == "GET" && path == Endpoints.LOGS -> {
+                val batch = LogBatch(runtime.collectedLogs())
+                writeJson(out, ReticleJson.instance.encodeToString(LogBatch.serializer(), batch))
+            }
+
+            method == "GET" && path == Endpoints.SCREENSHOT -> {
+                val png = ScreenshotCapture(context).capturePng()
+                if (png == null) {
+                    writeText(out, 500, "screenshot unavailable")
+                } else {
+                    writeBytes(out, 200, "image/png", png)
+                }
+            }
+
+            method == "POST" && path == Endpoints.MUTATE -> {
+                val request = ReticleJson.instance.decodeFromString(MutationRequest.serializer(), body)
+                val result = MutationEngine(context).apply(request)
+                writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.MutationResult.serializer(), result))
+            }
+
+            else -> writeText(out, 404, "no route for $method $path")
+        }
+    }
+
+    // --- HTTP writers -----------------------------------------------------
+
+    private fun writeJson(out: OutputStream, json: String) {
+        writeBytes(out, 200, "application/json; charset=utf-8", json.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun writeText(out: OutputStream, status: Int, message: String) {
+        writeBytes(out, status, "text/plain; charset=utf-8", message.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun writeBytes(out: OutputStream, status: Int, contentType: String, payload: ByteArray) {
+        val header = buildString {
+            append("HTTP/1.1 ").append(status).append(' ').append(statusText(status)).append("\r\n")
+            append("Content-Type: ").append(contentType).append("\r\n")
+            append("Content-Length: ").append(payload.size).append("\r\n")
+            append("Connection: close\r\n")
+            append("\r\n")
+        }
+        out.write(header.toByteArray(StandardCharsets.UTF_8))
+        out.write(payload)
+        out.flush()
+    }
+
+    private fun statusText(status: Int): String = when (status) {
+        200 -> "OK"
+        404 -> "Not Found"
+        500 -> "Internal Server Error"
+        503 -> "Service Unavailable"
+        else -> "OK"
+    }
+
+    private fun currentProcessName(): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                android.app.Application.getProcessName()
+            } else {
+                BufferedReader(InputStreamReader(java.io.FileInputStream("/proc/self/cmdline")))
+                    .use { it.readLine()?.trim { c -> c.code == 0 } ?: "?" }
+            }
+        } catch (_: Throwable) {
+            "?"
+        }
+    }
+
+    private companion object {
+        const val TAG = "Reticle"
+    }
+}

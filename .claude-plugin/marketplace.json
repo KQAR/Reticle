@@ -1,0 +1,16 @@
+{
+  "name": "reticle",
+  "owner": {
+    "name": "KQAR"
+  },
+  "metadata": {
+    "description": "Reticle — a runtime UI evidence + action harness for Android apps, distributed as a Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "reticle",
+      "source": "./",
+      "description": "Runtime UI evidence + action harness for Android apps. Inspect the running app's view / accessibility / Compose-semantics tree, resolve precise selectors and per-phrase tap regions, drive real input through adb, and live-patch UI properties without rebuilding."
+    }
+  ]
+}
