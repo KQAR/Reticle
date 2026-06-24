@@ -95,19 +95,22 @@ The launcher resolves the actual CLI binary in this order (first hit wins):
 
 1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
 2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
-3. A **prebuilt release** auto-downloaded from
-   [GitHub Releases](https://github.com/KQAR/Reticle/releases) and cached under
-   `~/.reticle/cli` (needs `curl`+`unzip`; **no JDK required**).
-4. A **source build** via the bundled Gradle (needs JDK 17) — used from a full
-   checkout or when the download is unavailable.
+3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build via the bundled Gradle
+   (needs JDK 17). For development / offline work only.
+4. A **prebuilt release** — cached under `~/.reticle/cli`, or freshly downloaded
+   (SHA256-verified) from
+   [GitHub Releases](https://github.com/KQAR/Reticle/releases). **This is the
+   default**; it needs `curl`+`unzip` and network, but **no JDK**.
 
-So the host needs *either* network access to fetch the prebuilt CLI *or* JDK 17
-to build once. Verify with `reticle version`; run `reticle doctor` to check adb
-and devices. Override the download with `RETICLE_NO_DOWNLOAD=1`, or pin a repo
-with `RETICLE_REPO`.
+By default Reticle always uses the prebuilt release — no toolchain required and
+**no silent source build**. If the download can't be obtained, the launcher
+stops with guidance (restore network / set `RETICLE_HOME` to a manual download /
+opt into a source build) rather than falling back. Verify with `reticle
+version`; run `reticle doctor` to check adb and devices. Pin a fork with
+`RETICLE_REPO`.
 
-Requirements on the host: a connected Android device/emulator with `adb`, plus
-network access **or** JDK 17 as above.
+Requirements on the host: a connected Android device/emulator with `adb`, and
+network access for the prebuilt download (or `RETICLE_FROM_SOURCE=1` + JDK 17).
 
 To develop or test locally without installing: `claude --plugin-dir ./` from the
 repo root.

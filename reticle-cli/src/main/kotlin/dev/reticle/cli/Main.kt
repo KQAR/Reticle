@@ -14,7 +14,7 @@ import java.io.File
 import kotlin.system.exitProcess
 
 /** CLI version. Kept in lockstep with the agent and plugin manifest. */
-const val RETICLE_VERSION = "0.2.0"
+const val RETICLE_VERSION = "0.2.1"
 
 /**
  * Reticle host CLI. Command surface:

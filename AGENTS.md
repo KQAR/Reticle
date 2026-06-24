@@ -31,11 +31,13 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
 - `.claude-plugin/plugin.json` — plugin manifest (`name: reticle`).
 - `.claude-plugin/marketplace.json` — marketplace catalog; the plugin entry uses
   `source: "./"` (the repo root is the plugin).
-- `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled;
-  resolves the CLI in order `$RETICLE_CLI` → `$RETICLE_HOME` → a SHA256-verified
-  prebuilt release downloaded+cached under `~/.reticle/cli` → a source build via
-  `:reticle-cli:installDist` (needs JDK 17), then execs it. `release.yml`
-  publishes the prebuilt CLI + agent AAR on a `v*` tag.
+- `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled.
+  Default path ALWAYS uses the prebuilt release (SHA256-verified, cached under
+  `~/.reticle/cli` or downloaded from Releases) and never silently builds from
+  source; if the download fails it hard-stops with guidance. Order:
+  `$RETICLE_CLI` → `$RETICLE_HOME` → `RETICLE_FROM_SOURCE=1` (opt-in source build,
+  needs JDK 17) → prebuilt release. `release.yml` publishes the prebuilt CLI +
+  agent AAR on a `v*` tag.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
 - `commands/report.md`, `commands/tap.md` — slash commands (`/reticle:report`,
   `/reticle:tap`).
