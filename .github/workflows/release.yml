@@ -20,19 +20,19 @@ jobs:
     name: Build & publish artifacts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build CLI distribution (zip + tar)
         run: ./gradlew :reticle-cli:distZip :reticle-cli:distTar --stacktrace
@@ -54,7 +54,7 @@ jobs:
           ls -l dist
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: reticle-dist
           path: dist/
@@ -62,7 +62,7 @@ jobs:
       - name: Publish GitHub Release
         # Only attach to a Release when triggered by a tag push.
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/reticle-cli.zip
