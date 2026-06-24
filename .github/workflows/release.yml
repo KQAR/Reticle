@@ -54,7 +54,7 @@ jobs:
           ls -l dist
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: reticle-dist
           path: dist/
