@@ -89,6 +89,15 @@ This makes the `reticle` CLI available on the Bash PATH and adds:
 - **`/reticle:tap`** — tap an element by selector (or by phrase via `--region`)
   and verify the result.
 
+### Install in Cursor
+
+The same repo doubles as a Cursor plugin — the manifests under `.cursor-plugin/`
+mirror `.claude-plugin/` and share the identical `skills/` and `commands/`, so
+there is one source of truth for both editors. Add the marketplace and install
+`reticle` the same way you would any Cursor plugin; the launcher and CLI
+acquisition below are identical (the `reticle` CLI lands on PATH regardless of
+which editor installed it).
+
 ### How the CLI is obtained
 
 The launcher resolves the actual CLI binary in this order (first hit wins):

@@ -36,6 +36,12 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
 - `.claude-plugin/plugin.json` — plugin manifest (`name: reticle`).
 - `.claude-plugin/marketplace.json` — marketplace catalog; the plugin entry uses
   `source: "./"` (the repo root is the plugin).
+- `.cursor-plugin/plugin.json` + `.cursor-plugin/marketplace.json` — the Cursor
+  mirror of the two above. Same `name`/`version`/`source: "./"`; the plugin
+  manifest adds `displayName` and relative dir pointers (`skills`, `commands`).
+  Both editors share ONE `skills/` and `commands/` — never fork the content; only
+  the manifests differ. `claude plugin validate .` covers the Claude pair;
+  `scripts/validate_plugin.py` covers BOTH pairs.
 - `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled.
   Default path ALWAYS uses the prebuilt release (SHA256-verified, cached under
   `~/.reticle/cli` or downloaded from Releases) and never silently builds from
@@ -50,9 +56,12 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
 Validate after changing any manifest/skill/command: `claude plugin validate .`
 locally. CI runs a dependency-free check instead
 (`python3 scripts/validate_plugin.py`): well-formed JSON + required fields +
-in-repo source paths exist.
-Only `plugin.json` lives under `.claude-plugin/`; `skills/`, `commands/`, `bin/`
-stay at the repo (plugin) root.
+in-repo source paths exist, across BOTH the Claude and Cursor manifests, plus a
+**version-lockstep** check — every manifest version, the `bin/reticle` launcher
+default, and the `RETICLE_VERSION`/`VERSION` constants must all agree. When you
+bump the version, change all of them together (the validator fails loudly on
+skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
+`skills/`, `commands/`, `bin/` stay at the repo (plugin) root and are shared.
 
 ## Architecture Rules
 
