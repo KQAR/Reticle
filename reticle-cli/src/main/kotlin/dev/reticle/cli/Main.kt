@@ -14,7 +14,7 @@ import java.io.File
 import kotlin.system.exitProcess
 
 /** CLI version. Kept in lockstep with the agent and plugin manifest. */
-const val RETICLE_VERSION = "0.3.0"
+const val RETICLE_VERSION = "0.3.1"
 
 /**
  * Reticle host CLI. Command surface:
@@ -294,6 +294,14 @@ private fun debugGroup(args: ArgList) {
                 if (output != null) {
                     File(output).writeText(json)
                     println("wrote ${batch.entries.size} log entries to $output")
+                } else if (batch.entries.isEmpty()) {
+                    // Reaching here means the runtime ANSWERED (withRuntime's health
+                    // gate passed) but returned no entries. Say so explicitly — an
+                    // empty stdout is otherwise indistinguishable from a failure, and
+                    // most apps simply never call the agent's logging API.
+                    println("(runtime reachable, but it has 0 app-authored log entries)")
+                    println("  these are logs the APP emits via Reticle's logging API, not logcat.")
+                    println("  for the agent's own startup/lifecycle lines, use: reticle debug logcat")
                 } else {
                     batch.entries.forEach { println("[${it.level}] ${it.message} ${it.metadata}") }
                 }
@@ -624,6 +632,24 @@ private fun waitForRuntime(
 }
 
 private fun defaultSerial(): String? {
+    // Honor the adb-standard $ANDROID_SERIAL the same way adb itself does, so a
+    // shell that already exported it (the common multi-device setup) doesn't have
+    // to repeat --serial on every command. Precedence matches adb: an explicit
+    // --serial (handled by callers) wins; then $ANDROID_SERIAL; then a lone
+    // device; otherwise we refuse to guess.
+    System.getenv("ANDROID_SERIAL")?.trim()?.takeIf { it.isNotEmpty() }?.let { envSerial ->
+        val states = Adb().listDeviceStates()
+        // Validate it — a stale/typo'd env var pointing at an absent device should
+        // fail loudly here, not later as a confusing "device offline" deep in adb.
+        if (states.none { it.serial == envSerial }) {
+            throw CliError(
+                "\$ANDROID_SERIAL is '$envSerial' but no such device is attached " +
+                    "(${states.joinToString(", ") { it.serial }.ifEmpty { "none" }}). " +
+                    "Unset it or pass --serial <one>."
+            )
+        }
+        return envSerial
+    }
     val devices = Adb().listDevices()
     return when (devices.size) {
         0 -> null // let downstream device-readiness checks produce the message
@@ -631,7 +657,8 @@ private fun defaultSerial(): String? {
         // Multiple ready devices: refuse to guess — an action on the wrong device
         // is worse than a clear error asking which one.
         else -> throw CliError(
-            "multiple devices connected (${devices.joinToString(", ")}); pass --serial <one> to choose."
+            "multiple devices connected (${devices.joinToString(", ")}); " +
+                "pass --serial <one>, or export ANDROID_SERIAL=<one>."
         )
     }
 }

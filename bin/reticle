@@ -26,8 +26,35 @@ if [[ -z "${ROOT}" ]]; then
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
+# --- 0. self-heal against stale plugin-cache version skew --------------------
+# Claude Code unpacks each plugin version into its own cache dir
+# (…/reticle/reticle/<version>/) and puts that dir's bin/ on PATH. When the
+# plugin updates, an OLD cache dir can stay first on PATH while a newer version
+# sits right beside it — so `reticle` (an old launcher) ends up driving an old
+# CLI even though a newer one is installed. That skew is invisible and brutal:
+# the skill text and the binary diverge (e.g. the skill says `app inject` but the
+# stale CLI has no such subcommand). Defend against it here: if we live in a
+# versioned cache dir and a NEWER sibling version has an executable launcher,
+# re-exec into it so `reticle` always matches the newest installed version.
+# RETICLE_NO_REDIRECT guards against loops and lets callers pin a version.
+if [[ -z "${RETICLE_NO_REDIRECT:-}" ]]; then
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # …/<version>
+  _parent="$(dirname "${_self_dir}")"                            # …/reticle/reticle
+  _self_ver="$(basename "${_self_dir}")"
+  if [[ "${_parent}" == */reticle/reticle ]]; then
+    _newest="$(ls -1 "${_parent}" 2>/dev/null | sort -V | tail -1)"
+    if [[ -n "${_newest}" && "${_newest}" != "${_self_ver}" ]] \
+       && [[ "$(printf '%s\n%s\n' "${_self_ver}" "${_newest}" | sort -V | tail -1)" == "${_newest}" ]] \
+       && [[ -x "${_parent}/${_newest}/bin/reticle" ]]; then
+      echo "reticle: this PATH entry is the stale ${_self_ver}; redirecting to the newer cached ${_newest}." >&2
+      echo "reticle: (clear the stale cache, or restart the session, to fix PATH permanently.)" >&2
+      RETICLE_NO_REDIRECT=1 exec "${_parent}/${_newest}/bin/reticle" "$@"
+    fi
+  fi
+fi
+
 # Pin this to the plugin version; bump in lockstep with plugin.json / RETICLE_VERSION.
-RETICLE_VERSION="${RETICLE_VERSION:-0.3.0}"
+RETICLE_VERSION="${RETICLE_VERSION:-0.3.1}"
 REPO="${RETICLE_REPO:-KQAR/Reticle}"
 CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
 
