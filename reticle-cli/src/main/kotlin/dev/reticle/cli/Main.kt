@@ -14,7 +14,7 @@ import java.io.File
 import kotlin.system.exitProcess
 
 /** CLI version. Kept in lockstep with the agent and plugin manifest. */
-const val RETICLE_VERSION = "0.2.1"
+const val RETICLE_VERSION = "0.3.0"
 
 /**
  * Reticle host CLI. Command surface:
@@ -95,6 +95,33 @@ private fun appGroup(args: ArgList) {
 
             println("launched ${info.packageName} pid=${info.pid} sdk=${info.sdkInt} agent=${info.agentVersion}")
             println("forwarded host tcp:$hostPort -> device tcp:$devicePort")
+        }
+        "inject" -> {
+            // The UNLINKED path: load + start the runtime inside a debuggable app
+            // that does NOT link the agent AAR, over JDWP (no root, no repackage).
+            // The app must already be running (we inject into a live process).
+            val pkg = args.require("--package")
+            val serial = args.optional("--serial") ?: defaultSerial()
+            val adb = Adb(serial = serial)
+            adb.ensureDeviceReady()
+
+            val injected = Injector.inject(adb, pkg)
+            println("injected into $pkg pid=${injected.pid} (Bootstrap.start() -> ${injected.reportedPort})")
+
+            // The reported port is a hint; the real proof is the loopback server
+            // answering over HTTP. Forward to it and reuse the same health gate
+            // every other command relies on.
+            val record = RuntimeRegistry.load(serial ?: "?", pkg)
+            val devicePort = resolveDevicePort(args, pkg, record)
+            val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
+            val client = RuntimeClient(adb, hostPort, devicePort)
+            client.setUpForward()
+            val info = waitForRuntime(client, pkg, hostPort, devicePort)
+            RuntimeRegistry.store(RuntimeRegistry.Record(serial ?: "?", pkg, hostPort, devicePort))
+
+            println("runtime live: ${info.packageName} pid=${info.pid} sdk=${info.sdkInt} agent=${info.agentVersion} port=${info.port}")
+            println("forwarded host tcp:$hostPort -> device tcp:$devicePort")
+            println("now drive it: reticle ui report --package $pkg")
         }
         else -> throw CliError("unknown app subcommand: $sub")
     }
@@ -225,7 +252,7 @@ private fun actGroup(args: ArgList) {
 
     when (sub) {
         "tap" -> {
-            withRuntime(pkg, args, adb) { client ->
+            withRuntime(pkg, args, adb, serial) { client ->
                 val point = resolvePoint(client, args)
                 input.tap(point.x.toInt(), point.y.toInt())
                 println("tap ${point.x.toInt()},${point.y.toInt()}")
@@ -447,9 +474,13 @@ private fun withRuntime(
     pkg: String,
     args: ArgList,
     existingAdb: Adb? = null,
+    existingSerial: String? = null,
     block: (RuntimeClient) -> Unit,
 ) {
-    val serial = args.optional("--serial") ?: defaultSerial()
+    // When the caller already built the Adb (e.g. actGroup), it also already
+    // consumed `--serial`; re-reading it here would return null and wrongly fall
+    // back to defaultSerial() (which throws with >1 device). Reuse the caller's.
+    val serial = if (existingAdb != null) existingSerial else (args.optional("--serial") ?: defaultSerial())
     val adb = existingAdb ?: Adb(serial = serial)
     adb.ensureDeviceReady()
     val record = RuntimeRegistry.load(serial ?: "?", pkg)
@@ -658,6 +689,7 @@ private fun printUsage() {
         reticle — runtime UI evidence + action harness for Android apps
 
         app launch   --package <pkg> [--serial <s>] [--port <devicePort>]
+        app inject   --package <pkg> [--serial <s>]   # start the runtime in a running debuggable app w/o the AAR (JDWP)
         ui report    --package <pkg> [--output <dir>]
         ui screenshot [--package <pkg>] [--output <file>]   # agent if linked, else adb screencap
         ui tree      <snapshot.json> [--accessibility] [--depth N]

@@ -21,6 +21,14 @@ class ReticleRuntime private constructor() {
     var appContext: Context? = null
         private set
 
+    /**
+     * The loopback port the server actually bound, or -1 if it isn't running.
+     * Exposed so the injection bootstrap can report a concrete port back to the
+     * host CLI over JDWP (the linked/ContentProvider path doesn't need it — it
+     * reads the port from `/runtime`).
+     */
+    val boundPort: Int get() = server?.boundPort ?: -1
+
     private val logs = CopyOnWriteArrayList<LogEntry>()
 
     /** testId -> app-attached scalar metadata. */
@@ -94,7 +102,7 @@ class ReticleRuntime private constructor() {
     companion object {
         /** Historical fixed default; real port is derived per-app via [PortMap]. */
         const val DEFAULT_PORT = PortMap.BASE_PORT
-        const val VERSION = "0.2.1"
+        const val VERSION = "0.3.0"
         private const val TAG = "Reticle"
 
         @JvmStatic

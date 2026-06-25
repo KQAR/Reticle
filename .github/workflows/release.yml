@@ -40,15 +40,32 @@ jobs:
       - name: Build agent AAR
         run: ./gradlew :reticle-agent:assembleRelease --stacktrace
 
+      - name: Build injectable payload dex
+        # Needed by `reticle app inject`. The CLI looks for it under <install>/lib,
+        # so it must be repacked into the CLI distribution archives below.
+        run: ./gradlew :reticle-agent:dexPayload --stacktrace
+
       - name: Stage artifacts
         run: |
           set -euo pipefail
           mkdir -p dist
-          # The application plugin names these reticle.zip / reticle.tar.
-          cp reticle-cli/build/distributions/reticle.zip dist/reticle-cli.zip
-          cp reticle-cli/build/distributions/reticle.tar dist/reticle-cli.tar
-          # Agent AAR for linking into a host app build.
+          PAYLOAD=reticle-agent/build/reticle-payload/reticle-agent-payload.jar
+          test -f "$PAYLOAD" || { echo "payload dex missing: $PAYLOAD"; exit 1; }
+
+          # Repack the payload dex into the CLI archives under reticle/lib/ — the
+          # path Injector.locatePayloadDex() resolves from a release install.
+          # (gradle's distZip/distTar are already built; inject the extra file.)
+          work="$(mktemp -d)"
+          unzip -q reticle-cli/build/distributions/reticle.zip -d "$work"
+          cp "$PAYLOAD" "$work/reticle/lib/reticle-agent-payload.jar"
+          ( cd "$work" && zip -q -r "$OLDPWD/dist/reticle-cli.zip" reticle )
+          tar -C "$work" -cf dist/reticle-cli.tar reticle
+          rm -rf "$work"
+
+          # Agent AAR for linking into a host app build, and the bare dex for
+          # advanced users who set RETICLE_PAYLOAD_DEX explicitly.
           cp reticle-agent/build/outputs/aar/reticle-agent-release.aar dist/reticle-agent.aar
+          cp "$PAYLOAD" dist/reticle-agent-payload.jar
           # Checksums so the launcher / users can verify a download.
           ( cd dist && sha256sum * > SHA256SUMS )
           ls -l dist
@@ -68,6 +85,7 @@ jobs:
             dist/reticle-cli.zip
             dist/reticle-cli.tar
             dist/reticle-agent.aar
+            dist/reticle-agent-payload.jar
             dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true

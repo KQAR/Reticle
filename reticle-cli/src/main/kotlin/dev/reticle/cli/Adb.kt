@@ -66,8 +66,26 @@ class Adb(
     fun forward(hostPort: Int, devicePort: Int): Result =
         run("forward", "tcp:$hostPort", "tcp:$devicePort")
 
+    /**
+     * Forward a host TCP port to a debuggable process's JDWP channel. This is the
+     * root-free code-injection channel: every debuggable app exposes JDWP (even on
+     * a `user` build where `wrap.<pkg>` is blocked). Reached over the same host
+     * loopback as a TCP forward, but the device side is `jdwp:<pid>`.
+     */
+    fun forwardJdwp(hostPort: Int, pid: Int): Result =
+        run("forward", "tcp:$hostPort", "jdwp:$pid")
+
     fun removeForward(hostPort: Int): Result =
         run("forward", "--remove", "tcp:$hostPort")
+
+    /**
+     * Run [args] as the app uid via `run-as <pkg>`. Only works for debuggable
+     * apps, and is how we stage a payload into a private data dir without root.
+     * Passes each arg separately (no nested `sh -c`) to avoid double-shell quoting
+     * surprises with paths.
+     */
+    fun runAs(packageName: String, vararg args: String, timeoutSeconds: Long = 30): Result =
+        run("shell", "run-as", packageName, *args, timeoutSeconds = timeoutSeconds)
 
     fun listDevices(): List<String> = listDeviceStates()
         .filter { it.state == "device" }

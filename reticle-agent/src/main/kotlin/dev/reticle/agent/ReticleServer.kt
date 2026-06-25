@@ -35,7 +35,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
     @Volatile
     private var running = false
 
-    private var boundPort: Int = 0
+    @Volatile
+    var boundPort: Int = 0
+        private set
 
     fun start(port: Int, bindHost: String) {
         stop()

@@ -17,10 +17,15 @@ Use this file as a map. Deeper architecture lives in `Docs/Architecture.md`.
   in-process screenshot, app-authored log/metadata bridge, and an auto-start
   `ContentProvider`.
 - `reticle-cli`: host JVM CLI for report, screenshot, compact, node, tree,
-  regions, tap/swipe/drag/type, logs, logcat, mutate, launch, status, doctor,
-  version. Talks to the agent over `adb forward`; gates every runtime call
-  behind a fast classified `/runtime` probe (health + package identity).
-- `sample-app`: demo app that links the agent and proves the round trip.
+  regions, tap/swipe/drag/type, logs, logcat, mutate, launch, **inject**, status,
+  doctor, version. Talks to the agent over `adb forward`; gates every runtime
+  call behind a fast classified `/runtime` probe (health + package identity).
+  `app inject` (`Injector.kt` + `Jdwp.kt`, a dependency-free JDWP client) loads
+  the payload dex into a debuggable app over the debugger channel and starts the
+  runtime — no AAR, no repackage, no root.
+- `sample-app`: demo app that links the agent and proves the round trip. Has two
+  flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
+  classes, declares `INTERNET`) — the honest test target for `app inject`.
 
 ## Claude Code plugin packaging
 
@@ -106,6 +111,25 @@ Expected: tap resolves via `accessibility:testId`, the status text flips to
 "Paid!" after the tap, and the logs include `checkout_visible` /
 `checkout_paid`.
 
+Prove the **unlinked** (JDWP injection) path on the `noagent` flavor:
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew \
+  :reticle-cli:installDist :reticle-agent:dexPayload :sample-app:assembleNoagentDebug
+adb install -r -t sample-app/build/outputs/apk/noagent/debug/sample-app-noagent-debug.apk
+adb shell monkey -p dev.reticle.sample.noagent -c android.intent.category.LAUNCHER 1
+
+CLI=reticle-cli/build/install/reticle/bin/reticle
+$CLI app inject --package dev.reticle.sample.noagent   # loads the dex over JDWP, starts the runtime
+$CLI ui report  --package dev.reticle.sample.noagent --output /tmp/reticle-noagent
+```
+
+Expected: `app inject` prints `runtime live: … port=…`, and `ui report` returns a
+non-empty tree (`#checkout.payButton`, the agreement rows) — proving the runtime
+is serving inside an app that carries none of `dev.reticle.agent.*`. Set
+`RETICLE_JDWP_DEBUG=1` for a step trace if it stalls. The dex must be read-only
+on-device (the CLI does this) or ART's W^X policy rejects it.
+
 ## Known Boundary
 
 - `app launch` uses `monkey ... LAUNCHER` (retried once on a transient adb-shell
@@ -118,5 +142,9 @@ Expected: tap resolves via `accessibility:testId`, the status text flips to
   vectors in `PortMapTest` guard against that.
 - In-process `/screenshot` won't capture `SurfaceView` / secure windows; the
   CLI can fall back to `adb exec-out screencap` for those (`reticle ui screenshot`).
-- Injection into apps without the AAR requires `wrap.sh` (debuggable) or
-  Frida/root (release). See `Docs/Architecture.md`.
+- Injection into apps without the AAR: `reticle app inject` over JDWP for any
+  **debuggable** app (no repackage, no root — works on locked `user` builds where
+  `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:dexPayload`
+  and resolved via `$RETICLE_PAYLOAD_DEX` → gradle build output → `<cli>/lib/`.
+  Non-debuggable release builds still need Frida/root. See `Docs/Architecture.md`
+  for the JDWP sequence and its on-device constraints.
