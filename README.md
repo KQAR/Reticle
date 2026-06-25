@@ -36,7 +36,7 @@ input.
 
 | Concern | Mechanism |
 | --- | --- |
-| Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For apps without the AAR: `wrap.sh` + `LD_PRELOAD` (debuggable) or Frida/root (release). |
+| Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For a **debuggable** app without the AAR: `reticle app inject` loads a payload dex over JDWP and starts the runtime — no repackage, no root (works even on locked `user` builds where `wrap.sh` is blocked). Non-debuggable release builds still need Frida/root. |
 | Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. The port is derived per-app from the `applicationId` (agent and CLI compute the same value), so multiple linked apps never collide on one fixed port. |
 | Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
 | Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
@@ -149,8 +149,13 @@ adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
 ./gradlew :reticle-cli:installDist
 CLI=reticle-cli/build/install/reticle/bin/reticle
 
-# Launch + forward + wait for the in-app runtime
+# Launch + forward + wait for the in-app runtime (apps that LINK the agent)
 $CLI app launch --package dev.reticle.sample
+
+# Or, for a DEBUGGABLE app that does NOT link the agent: start it, then inject
+# the runtime over JDWP — no repackage, no root. After this, every command below
+# works against it unchanged. (See the `noagent` sample flavor.)
+$CLI app inject --package dev.reticle.sample.noagent
 
 # Capture a runtime report
 $CLI ui report --package dev.reticle.sample --output reticle-report

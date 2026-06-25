@@ -46,15 +46,20 @@ build**. If it can't be obtained the launcher stops with actionable guidance
   flags `offline`/`unauthorized` devices explicitly — those can't be driven until
   fixed (re-plug USB / accept the on-device debugging prompt).
 - `ANDROID_HOME` set, or adb on PATH.
-- The target app must expose the Reticle in-process server. Two cases:
+- The target app must expose the Reticle in-process server. Three cases:
   - **Linked app** (you control the build): add the `reticle-agent` AAR — a
     no-op ContentProvider auto-starts the server, no code changes.
-  - **App without the agent**: requires an injection path (wrap.sh for
-    debuggable, or Frida/root). Without it, `reticle ui report` cannot reach the
-    app — say so rather than inventing data (use `reticle debug logcat` to
-    confirm no agent is present, and `reticle ui screenshot` to still see the
-    screen). The bundled `sample-app` links the agent and is the easiest way to
-    see the full loop.
+  - **Debuggable app without the AAR**: run `reticle app inject --package <pkg>`
+    (the app must already be **running**). It loads a payload dex into the live
+    process over JDWP and starts the same runtime — **no repackage, no root**,
+    works even on locked `user` builds where `wrap.sh` is blocked. After it, every
+    other command works unchanged. The target must already hold the `INTERNET`
+    permission (real apps do); non-debuggable release builds still need Frida/root.
+  - **Truly unreachable** (non-debuggable, no AAR): without an injection path
+    `reticle ui report` cannot reach the app — say so rather than inventing data
+    (use `reticle debug logcat` to confirm no agent, and `reticle ui screenshot`
+    to still see the screen). The bundled `sample-app` links the agent (the
+    `noagent` flavor is the test target for `app inject`).
 
 ## Ports are per-app (no more 8765 collisions)
 
@@ -102,7 +107,8 @@ link the agent: you can still see the screen (and drive it via `adb`-backed
 
 ```bash
 reticle doctor                                   # verify adb + devices (flags offline/unauthorized)
-reticle app launch  --package <pkg>              # launch + adb forward + wait for runtime
+reticle app launch  --package <pkg>              # launch + adb forward + wait for runtime (LINKED apps)
+reticle app inject  --package <pkg>              # debuggable app w/o the AAR: load+start the runtime over JDWP
 reticle status      --package <pkg>              # probe runtime health + identity if anything's off
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
@@ -162,7 +168,8 @@ drive declarative UI through the app's own state.
 - Verify with evidence: after an action, re-`ui report` and check the changed
   node/state — don't claim success from the tap alone.
 - If the runtime is unreachable (app not linked / not injected), report that
-  honestly; never fabricate a tree or coordinates.
+  honestly; never fabricate a tree or coordinates. For a debuggable app without
+  the AAR, try `reticle app inject --package <pkg>` before giving up.
 - Authorized testing only: injecting into an app you don't own requires explicit
   authorization. Default to the bundled `sample-app` for demos.
 

@@ -17,13 +17,60 @@ three options, in order of practicality:
 | Mode | Mechanism | Works on |
 | --- | --- | --- |
 | **Linked** (default) | Add the `reticle-agent` AAR; a no-op `ContentProvider` (`ReticleInitProvider`) auto-starts the server during process init — no app code changes | Any build you can add a dependency to |
-| **wrap.sh** | `adb shell setprop wrap.<pkg> "LD_PRELOAD=..."` for debuggable apps | Debuggable APKs, no source |
-| **Frida / root** | `frida-server` or LSPosed injects into any process | Rooted device / emulator image, release APKs |
+| **JDWP injection** (`reticle app inject`) | Load a payload dex into the live process over the debugger channel and call `Bootstrap.start()` — no repackage, no root | Any **debuggable** APK (incl. release-signed user builds, where `wrap.<pkg>` is blocked) |
+| **Frida / root** | `frida-server` or LSPosed injects into any process | Rooted device / emulator image, release (non-debuggable) APKs |
 
 The `ContentProvider` trick is the same one androidx App Startup and Firebase
 use to self-initialize: it is instantiated before `Application.onCreate` returns
 control to UI, so the server is up before the first screen renders, with no app
 code changes. The demo (`sample-app`) uses the **linked** mode.
+
+#### JDWP injection (the unlinked path)
+
+For a **debuggable** app you don't build (so you can't add the AAR), `reticle
+app inject` gets the same runtime running with no repackage and no root. Every
+debuggable process exposes a JDWP (Java Debug Wire Protocol) channel — even on a
+locked `ro.debuggable=0` *user* build where `setprop wrap.<pkg>` is rejected by
+the kernel — and JDWP can invoke methods in the live VM. The host CLI
+(`Injector` + `Jdwp.kt`, pure `java.net`, no third-party JDWP lib):
+
+1. **stages the payload dex** (`reticle-agent` + `reticle-core` + kotlin-stdlib +
+   kotlinx-serialization, dexed by `d8` — see `:reticle-agent:dexPayload`) into
+   the app's private `code_cache` via `adb push` to `/data/local/tmp` then
+   `run-as <pkg> cp`. The staged dex is `chmod 0444` — **ART's W^X policy (API
+   26+) refuses to load a dex writable by the loading uid**;
+2. **`adb forward tcp:<h> jdwp:<pid>`** to reach the channel; handshake + IDSizes;
+3. **arms a one-shot BREAKPOINT** at `android.os.Handler.dispatchMessage` (a
+   single-method instrumentation, the chokepoint every main-looper message runs
+   through) with `Count(1)` so it fires once and ART drops the instrumentation;
+4. on the thread the breakpoint suspends, **invokes**
+   `PathClassLoader(dexPath, getSystemClassLoader())` → `loadClass` →
+   `Bootstrap.start()`, which calls `ReticleRuntime.start(ActivityThread
+   .currentApplication())` — no ContentProvider needed.
+
+The host then verifies over HTTP with the same `probe()`/`waitForRuntime()` gate
+every other command uses; success is the server *answering*, not the invoke
+returning.
+
+Hard constraints, each learned on-device and encoded in the injector:
+
+- **Never `METHOD_ENTRY` on a busy app.** It forces a whole-VM deoptimization and
+  ANR-kills a heavy app. A single-method `BREAKPOINT` is scoped and safe.
+- **Keep the suspended thread's work tiny.** The breakpoint suspends the *main*
+  thread; long work there → ANR. So invoke with the "resume all other threads"
+  option (not `INVOKE_SINGLE_THREADED`, which deadlocks against ART's dexopt/GC
+  daemons), and use `PathClassLoader` (ART self-optimizes) rather than the legacy
+  `DexClassLoader(…, optimizedDir, …)` ctor (NPEs on a null optimized dir).
+- **Pin every `CreateString` with `DisableCollection`.** A JDWP-created string is
+  held by no GC root; on a busy app it is collected before the next invoke and
+  surfaces as JDWP error 20 (`INVALID_OBJECT`).
+- **The target must already hold `INTERNET`.** The injected server opens a
+  loopback socket; without the permission the bind fails `Permission denied`.
+  Real apps have it; the `noagent` sample declares it to stay honest.
+
+Authorized testing only — injecting into an app you don't own requires explicit
+authorization. The bundled `sample-app` ships a `noagent` flavor (no AAR, no
+runtime classes) as the honest test target for this path.
 
 ### 2. Talking to the running app
 
