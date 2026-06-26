@@ -4,11 +4,9 @@ Reticle helps AI coding agents build and verify native app interfaces on
 **Android** by inspecting the app that is actually running — not just the source
 code or a screenshot.
 
-Where a loupe is the lens you look *through*, a **reticle** is the etched
-crosshair in the eyepiece you use to *locate and measure* what you see. That is
-exactly Reticle's job: resolve stable selectors and precise coordinates from the
-live view / accessibility / Compose-semantics tree so an agent can act on the
-right element with confidence.
+Reticle's job is to *locate and measure* what's on screen: resolve stable
+selectors and precise coordinates from the live view / accessibility /
+Compose-semantics tree so an agent can act on the right element with confidence.
 
 Tools like `adb`, Espresso, and UiAutomator can build, launch, or drive an app.
 Reticle adds the runtime UI layer: structured evidence from the app that is
@@ -208,5 +206,4 @@ Android, with its own mechanisms for injection, UI capture, and input.
 
 ## License
 
-Reticle is released under the [MIT License](LICENSE), following Loupe's MIT
-license.
+Reticle is released under the [MIT License](LICENSE).
