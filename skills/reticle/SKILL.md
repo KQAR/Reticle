@@ -121,6 +121,17 @@ Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.
 
+**`--live` — inspect the running app without writing a report.** Any `ui` view
+(`node`/`compact`/`tree`/`regions`) takes `--live --package <pkg>` instead of a
+snapshot path: it pulls the CURRENT tree straight from the runtime and prints it,
+writing nothing to disk. Use it for the cheap "what does that one node say right
+now?" check — no 300-node report to grep:
+
+```bash
+reticle ui node    --live --package <pkg> --resource-id rata   # one node, live
+reticle ui compact --live --package <pkg>                      # whole screen, live
+```
+
 ## Acting on the app
 
 Selector resolution is semantic-first, then view-tree frames, then a raw
@@ -139,6 +150,24 @@ even on apps that don't link/inject the agent. Non-ASCII (CJK, accented Latin,
 emoji — which `adb input text` silently drops) is staged on the device clipboard
 by the in-process agent and pasted into the focused field, so it **requires a
 reachable runtime** and a focused input. Tap the field first.
+
+**`--verify` — act and check the result in one command.** Add `--verify` to any
+`act` and Reticle captures the watched node before the gesture, acts, then polls
+until it changes (or a ~2s budget elapses) and prints the before→after diff.
+Bare `--verify` watches the node you're acting on; `--verify <selector>` watches a
+*different* node (tap a control, watch its effect). This is the "tap → did it
+change?" loop in one call — no follow-up `ui report` + grep:
+
+```bash
+reticle act tap --package <pkg> --test-id submit --verify              # watch the tapped node
+reticle act tap --package <pkg> --point 292,1273 --verify "@rata"      # tap a tab, watch #rata
+#   => verify @rata: changed (1 field)
+#        text: 3414,20 zł -> 6072,49 zł
+```
+
+A selector token is `#testId`, `@resourceId`, or a bare `ref`. "No change" is an
+honest result, not a failure — it means the node didn't move within the budget
+(raise it with `--verify-timeout <ms>`).
 
 ## Multi-region controls (one View, several tap targets)
 
@@ -179,8 +208,10 @@ drive declarative UI through the app's own state.
 
 ## Rules
 
-- Verify with evidence: after an action, re-`ui report` and check the changed
-  node/state — don't claim success from the tap alone.
+- Verify with evidence: check the changed node/state after an action — don't
+  claim success from the tap alone. Prefer the cheap paths: `act … --verify` to
+  see the before→after diff in the acting command, or `ui node --live` to read
+  one node. Fall back to a full re-`ui report` only when you need the whole tree.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.

@@ -15,10 +15,13 @@ Steps:
    `reticle ui report --package <pkg> --output reticle-report` and inspect
    `reticle ui compact reticle-report/snapshot.json` (and `ui regions` for
    multi-region controls) to pick the right selector.
-2. Dispatch the tap:
-   `reticle act tap --package <pkg> <selector> [--region "…"]`
-   The resolver prints which path it used (semantic / view frame / region
-   / char grid).
-3. Verify: re-run `reticle ui report …` and confirm the expected state change
-   in the affected node (`reticle ui node …`). Report success only with that
-   evidence; if nothing changed, say so and suggest next steps.
+2. Dispatch the tap, verifying the result in the same command:
+   `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|ref>]`
+   The resolver prints which path it used (semantic / view frame / region / char
+   grid), then `--verify` prints the watched node's before→after diff. Bare
+   `--verify` watches the tapped node; pass a selector to watch a different one
+   (e.g. tap a tab, watch the value it updates).
+3. Report success only with that diff as evidence. If `--verify` says "no change",
+   say so and suggest next steps — don't claim success from the tap alone. For a
+   broader check use `reticle ui node --live --package <pkg> <selector>` (one
+   node, no files) or a full `reticle ui report …`.

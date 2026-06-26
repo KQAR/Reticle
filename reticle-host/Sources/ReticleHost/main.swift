@@ -159,8 +159,35 @@ func cmdAct(_ c: HelperClient, _ args: Args) throws {
     for k in ["test-id", "resource-id", "ref", "point", "region", "from", "to", "duration", "text"] {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
+    // --verify [selector]: watch a node across the gesture and report the diff in
+    // this same command (no follow-up `ui report` + grep). Bare --verify watches
+    // the node being acted on; --verify <#id|@res|ref> watches a different one.
+    if let v = args.option("verify") { params["verify"] = v }      // "true" when flag had no value
+    if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
     let r = try c.call("act", params)
-    print(r.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
+    // Print the gesture result, minus the structured verify blob (printed below).
+    print(r.filter { $0.key != "verify" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
+    if let verify = r["verify"] as? [String: Any] { printVerify(verify) }
+}
+
+/// Render the act --verify result: a one-line verdict plus before→after per field.
+func printVerify(_ v: [String: Any]) {
+    let sel = v["selector"] as? String ?? "?"
+    let changed = (v["changed"] as? Bool) ?? false
+    let changes = (v["changes"] as? [[String: Any]]) ?? []
+    if let note = v["note"] as? String {
+        print("verify \(sel): \(note)")
+    } else if changed {
+        print("verify \(sel): changed (\(changes.count) field\(changes.count == 1 ? "" : "s"))")
+        for ch in changes {
+            let field = ch["field"] as? String ?? "?"
+            let before = ch["before"].map { "\($0)" } ?? "null"
+            let after = ch["after"].map { "\($0)" } ?? "null"
+            print("  \(field): \(before) -> \(after)")
+        }
+    } else {
+        print("verify \(sel): no change")
+    }
 }
 
 func cmdMutate(_ c: HelperClient, _ args: Args) throws {
@@ -207,11 +234,26 @@ func cmdScreenshot(_ c: HelperClient, _ args: Args) throws {
     print("wrote \(out) (\(data.count) bytes) via \(r["via"] ?? "?")")
 }
 
-/// Render a local snapshot view (tree/compact/node/regions) by delegating to the
+/// Render a snapshot view (tree/compact/node/regions) by delegating to the
 /// helper — the derivation stays in Kotlin; the host just prints the text.
+///
+/// Two sources:
+///   reticle ui <view> <snapshot.json>            — render a saved report (default)
+///   reticle ui <view> --live --package <pkg>     — render the CURRENT runtime
+///       tree without writing any files. The cheap "did that node change?" path:
+///       e.g. `reticle ui node --live --package <pkg> --resource-id rata`.
 func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
-    guard let snapshot = args.positional(2) else { throw HelperError("ui \(view) needs a snapshot.json path") }
-    var params: [String: Any] = ["view": view, "snapshot": snapshot]
+    var params: [String: Any] = ["view": view]
+    let live = args.option("live") != nil
+    if live {
+        params["live"] = "true"
+        params["package"] = try args.require("package")
+    } else {
+        guard let snapshot = args.positional(2) else {
+            throw HelperError("ui \(view) needs a snapshot.json path (or --live --package <pkg>)")
+        }
+        params["snapshot"] = snapshot
+    }
     if view == "tree", args.option("semantics") != nil { params["view"] = "semantics" }
     if let d = args.option("depth") { params["depth"] = Int(d) ?? 0 }
     for k in ["test-id", "resource-id", "ref"] { if let v = args.option(k) { params[selectorKey(k)] = v } }
