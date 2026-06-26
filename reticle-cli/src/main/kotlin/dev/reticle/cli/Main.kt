@@ -40,9 +40,31 @@ const val RETICLE_VERSION = "0.4.0"
  *   reticle doctor
  *   reticle version
  */
+/**
+ * This binary is primarily the **Android helper** behind the Swift host
+ * (`reticle-host`): its `helper` subcommand is the long-lived RPC server the
+ * host drives, and (compiled by GraalVM native-image) it ships as the no-JDK
+ * `reticle-helper`. To avoid a confusing "two CLIs", the direct user-facing
+ * commands (app/ui/act/debug/mutate/doctor/status) are **gated off by default**
+ * and only run with `RETICLE_DIRECT_CLI=1` (a development fallback). `helper`,
+ * `version`, and `help` always work. The code stays intact — it IS the helper's
+ * backing logic; only the direct entry points are hidden.
+ */
+private fun directCliEnabled(): Boolean = System.getenv("RETICLE_DIRECT_CLI") == "1"
+
 fun main(rawArgs: Array<String>) {
     val args = ArgList(rawArgs.toList())
     val group = args.shift() ?: run { printUsage(); exitProcess(1) }
+
+    val alwaysOn = group in setOf("helper", "version", "--version", "-v", "help", "--help", "-h")
+    if (!alwaysOn && !directCliEnabled()) {
+        System.err.println(
+            "reticle: '$group' is a direct-CLI command, gated off by default.\n" +
+                "  This binary is the Android helper for the Swift host; use `reticle-host` (the\n" +
+                "  `reticle` launcher drives it). Development fallback: RETICLE_DIRECT_CLI=1 reticle $group …"
+        )
+        exitProcess(2)
+    }
 
     try {
         when (group) {

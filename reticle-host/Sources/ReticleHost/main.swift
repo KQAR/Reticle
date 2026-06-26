@@ -206,14 +206,30 @@ func selectorKey(_ cliName: String) -> String {
 
 // --- entry -------------------------------------------------------------------
 
+let RETICLE_VERSION = "0.4.0"
+let USAGE = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|version> [options]"
+
 let argv = Array(CommandLine.arguments.dropFirst())
 let args = Args(argv)
 let command = args.positional(0)
 
 guard let command else {
-    FileHandle.standardError.write(Data("usage: reticle-host <doctor|devices|status|inject|launch|act|mutate|debug|ui> [options]\n".utf8))
+    FileHandle.standardError.write(Data("\(USAGE)\n".utf8))
     exit(2)
 }
+
+// Local commands that need no helper / no device.
+switch command {
+case "version", "--version", "-v":
+    print("reticle \(RETICLE_VERSION)")
+    exit(0)
+case "help", "--help", "-h":
+    print(USAGE)
+    exit(0)
+default:
+    break
+}
+
 guard let helper = resolveHelper(args) else {
     FileHandle.standardError.write(Data("could not find the reticle helper; set RETICLE_HELPER or pass --helper\n".utf8))
     exit(2)
@@ -228,6 +244,14 @@ do {
     case "doctor":  try cmdDoctor(client)
     case "devices": try cmdDevices(client)
     case "status":  try cmdStatus(client, args)
+    // `app launch` / `app inject` is the established surface (plugin + skill +
+    // the Kotlin CLI). Bare `launch` / `inject` are kept as aliases.
+    case "app":
+        switch args.positional(1) {
+        case "launch": try cmdLaunch(client, args)
+        case "inject": try cmdInject(client, args)
+        default: throw HelperError("unknown app subcommand: \(args.positional(1) ?? "<none>")")
+        }
     case "inject":  try cmdInject(client, args)
     case "launch":  try cmdLaunch(client, args)
     case "act":     try cmdAct(client, args)

@@ -92,32 +92,36 @@ PATH 上)。
 
 ### CLI 如何获取
 
-启动器按以下顺序解析真正的 CLI 二进制(命中即止):
+`reticle` 是 **Swift host**——一个无 JDK 的原生 macOS arm64 二进制,它通过相邻的
+**原生 helper**(`reticle-helper`,即由 GraalVM native-image 编译的 Kotlin Android
+层)驱动 Android。**仅支持 macOS arm64(Apple Silicon)。**
 
-1. `$RETICLE_CLI`——指向某个 `reticle` 启动脚本的显式路径。
-2. `$RETICLE_HOME/bin/reticle`——一个已解包的 release 发行包。
-3. `RETICLE_FROM_SOURCE=1`——通过内置 Gradle 进行**显式选择**的源码构建
-   (需要 JDK 17)。仅用于开发/离线场景。
+启动器按以下顺序解析它(命中即止):
+
+1. `$RETICLE_HOST`——指向某个 `reticle-host` 二进制的显式路径。
+2. `$RETICLE_HOME/bin`——一个已解包的 release(`reticle-host` + `reticle-helper`)。
+3. `RETICLE_FROM_SOURCE=1`——**显式选择**的源码构建(Swift host 用 `swift`,原生
+   helper 用内置 Gradle + 一个 GraalVM)。仅用于开发。
 4. 一个**预编译 release**——缓存在 `~/.reticle/cli`,或新鲜下载(带 SHA256 校验)
    自 [GitHub Releases](https://github.com/KQAR/Reticle/releases)。**这是默认项**;
    需要 `curl`+`unzip` 和网络,但**不需要 JDK**。
 
 默认情况下 Reticle 总是使用预编译 release——无需工具链,且**不会静默地从源码构建**。
-若无法获取下载,启动器会停下并给出指引(恢复网络 / 把 `RETICLE_HOME` 指向手动
-下载 / 用 `RETICLE_FROM_SOURCE=1` 选择源码构建),而不是回退。用 `reticle version`
-确认;用 `reticle doctor` 检查 adb 与设备。用 `RETICLE_REPO` 锁定到某个 fork。
+若无法获取下载,启动器会停下并给出指引,而不是回退。用 `reticle version` 确认;
+用 `reticle doctor` 检查 adb 与设备。用 `RETICLE_REPO` 锁定到某个 fork。
 
-host 侧要求:一台通过 `adb` 连接的 Android 设备/模拟器,以及预编译下载所需的
-网络(或 `RETICLE_FROM_SOURCE=1` + JDK 17)。
+host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备/模拟器,以及
+预编译下载所需的网络(或 `RETICLE_FROM_SOURCE=1` + Swift 工具链 + 一个 GraalVM)。
 
 要在不安装的情况下本地开发或测试:在仓库根目录运行 `claude --plugin-dir ./`。
 
 ### 发布
 
-推送一个 `v*` tag 会触发 `.github/workflows/release.yml`,它会构建并附加到一个
-GitHub Release:
+推送一个 `v*` tag 会触发 `.github/workflows/release.yml`(在 macOS arm64 runner
+上),它会构建并附加到一个 GitHub Release:
 
-- `reticle-cli.zip` / `reticle-cli.tar`——host CLI 发行包(启动器下载的就是它);
+- `reticle-macos-arm64.zip`——host + 原生 helper 发行包(启动器下载的就是它;运行
+  时无需 JDK);
 - `reticle-agent-android.aar`——供链接进 host 应用构建的 agent 库;
 - `SHA256SUMS`——用于校验的校验和。
 
@@ -129,8 +133,12 @@ GitHub Release:
   HTTP server + view 与 Compose-semantics 捕获、区域检测、运行时变更、截图,由一个
   空操作 `ContentProvider` 自动启动。(`reticle-agent/` 是为未来逐平台 agent
   预留的分组目录;目前只有 Android 子项是 Gradle 模块。)
-- `reticle-cli`——host 侧 JVM CLI。`adb forward` + loopback 证据 + 一个
-  `adb input` 动作后端。
+- `reticle-cli`——Kotlin 的 Android host 层:`adb forward` + loopback 证据 + 一个
+  `adb input` 动作后端 + JDWP 注入。以无 JDK 的原生 `reticle-helper`(GraalVM
+  native-image)分发;其 `helper` 子命令是 Swift host 驱动的 RPC server。(面向用户
+  的直接命令默认被 gate——开发后备用 `RETICLE_DIRECT_CLI=1`。)
+- `reticle-host`——**Swift host CLI**(SwiftPM,macOS arm64)。面向用户的 `reticle`;
+  不持有任何设备代码——每条命令都是一次到 helper 的 RPC 调用。
 - `sample-app`——端到端链接 agent 的演示应用。
 
 ## 快速开始
@@ -177,8 +185,13 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## 工具链
 
+*运行*预编译 release:Apple Silicon macOS + `adb`。无需 JDK。
+
+*从源码构建*(开发者):
+
 - Android SDK(compileSdk 35)、build-tools、platform-tools(`adb`)
-- 用于 Gradle/AGP 的 JDK 17
+- 用于 Gradle/AGP 的 JDK 17;用于原生 helper 的、带 `native-image` 的 **GraalVM**
+- 用于 host 的 **Swift** 工具链(Xcode)
 - Gradle 8.13(通过 wrapper)
 
 面向 agent 的导览图与架构规则见 `AGENTS.md`。

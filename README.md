@@ -104,12 +104,16 @@ which editor installed it).
 
 ### How the CLI is obtained
 
-The launcher resolves the actual CLI binary in this order (first hit wins):
+`reticle` is the **Swift host** — a no-JDK native macOS arm64 binary that drives
+Android through a sibling **native helper** (`reticle-helper`, the Kotlin Android
+layer compiled by GraalVM native-image). **macOS arm64 (Apple Silicon) only.**
 
-1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
-2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
-3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build via the bundled Gradle
-   (needs JDK 17). For development / offline work only.
+The launcher resolves it in this order (first hit wins):
+
+1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
+2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
+3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host via `swift`,
+   native helper via the bundled Gradle + a GraalVM). For development only.
 4. A **prebuilt release** — cached under `~/.reticle/cli`, or freshly downloaded
    (SHA256-verified) from
    [GitHub Releases](https://github.com/KQAR/Reticle/releases). **This is the
@@ -117,24 +121,23 @@ The launcher resolves the actual CLI binary in this order (first hit wins):
 
 By default Reticle always uses the prebuilt release — no toolchain required and
 **no silent source build**. If the download can't be obtained, the launcher
-stops with guidance (restore network / set `RETICLE_HOME` to a manual download /
-opt into a source build) rather than falling back. Verify with `reticle
-version`; run `reticle doctor` to check adb and devices. Pin a fork with
-`RETICLE_REPO`.
+stops with guidance rather than falling back. Verify with `reticle version`; run
+`reticle doctor` to check adb and devices. Pin a fork with `RETICLE_REPO`.
 
-Requirements on the host: a connected Android device/emulator with `adb`, and
-network access for the prebuilt download (or `RETICLE_FROM_SOURCE=1` + JDK 17).
+Requirements on the host: Apple Silicon macOS, a connected Android
+device/emulator with `adb`, and network for the prebuilt download (or
+`RETICLE_FROM_SOURCE=1` + Swift toolchain + a GraalVM).
 
 To develop or test locally without installing: `claude --plugin-dir ./` from the
 repo root.
 
 ### Releases
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds and
-attaches to a GitHub Release:
+Pushing a `v*` tag runs `.github/workflows/release.yml` (on a macOS arm64
+runner), which builds and attaches to a GitHub Release:
 
-- `reticle-cli.zip` / `reticle-cli.tar` — the host CLI distribution (what the
-  launcher downloads);
+- `reticle-macos-arm64.zip` — the host + native helper distribution (what the
+  launcher downloads; no JDK needed to run);
 - `reticle-agent-android.aar` — the agent library to link into a host app build;
 - `SHA256SUMS` — checksums for verification.
 
@@ -147,8 +150,13 @@ attaches to a GitHub Release:
   mutation, screenshots, auto-started by a no-op `ContentProvider`.
   (`reticle-agent/` is a grouping directory reserved for future per-platform
   agents; only the Android child is a Gradle module today.)
-- `reticle-cli` — host JVM CLI. `adb forward` + loopback evidence + an
-  `adb input` action backend.
+- `reticle-cli` — the Kotlin Android host layer: `adb forward` + loopback
+  evidence + an `adb input` action backend + JDWP injection. Ships as the no-JDK
+  native `reticle-helper` (GraalVM native-image); its `helper` subcommand is the
+  RPC server the Swift host drives. (Direct user-facing commands are gated off by
+  default — `RETICLE_DIRECT_CLI=1` for the dev fallback.)
+- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS arm64). The user-facing
+  `reticle`; owns no device code — every command is an RPC call to the helper.
 - `sample-app` — demo app that links the agent end to end.
 
 ## Quick Start
@@ -160,9 +168,11 @@ attaches to a GitHub Release:
 # Install the sample app on a booted emulator/device
 adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
 
-# Run the CLI (via the generated start script)
-./gradlew :reticle-cli:installDist
-CLI=reticle-cli/build/install/reticle/bin/reticle
+# The `reticle` launcher builds + runs the Swift host and native helper from
+# source when you opt in (needs the Swift toolchain + a GraalVM). It is the
+# user-facing CLI; `reticle-host` / `reticle-helper` are the binaries it drives.
+export RETICLE_FROM_SOURCE=1
+CLI="bin/reticle"
 
 # Launch + forward + wait for the in-app runtime (apps that LINK the agent)
 $CLI app launch --package dev.reticle.sample
@@ -195,8 +205,13 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## Toolchain
 
+To *run* a prebuilt release: Apple Silicon macOS + `adb`. No JDK.
+
+To *build from source* (developers):
+
 - Android SDK (compileSdk 35), build-tools, platform-tools (`adb`)
-- JDK 17 for Gradle/AGP
+- JDK 17 for Gradle/AGP; a **GraalVM** with `native-image` for the native helper
+- the **Swift** toolchain (Xcode) for the host
 - Gradle 8.13 (via the wrapper)
 
 See `AGENTS.md` for the agent-facing map and architecture rules.
