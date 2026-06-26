@@ -53,6 +53,7 @@ fun main(rawArgs: Array<String>) {
             "mutate" -> mutateCommand(args)
             "doctor" -> doctor()
             "status" -> statusCommand(args)
+            "helper" -> Helper.serve()
             "version", "--version", "-v" -> println("reticle $RETICLE_VERSION")
             "help", "--help", "-h" -> printUsage()
             else -> {
@@ -765,6 +766,7 @@ private fun printUsage() {
         mutate       --package <pkg> (selector) --property <p> --value <v>
         status       [--package <pkg>] [--serial <s>] [--port <devicePort>]
         doctor
+        helper                                       # long-lived JSONL stdio RPC (for a non-JVM host)
         version
         """.trimIndent()
     )
