@@ -151,40 +151,42 @@ Swift host(CLI + daemon + Web)
 但属于低风险、标准模式的工作。执行采取**spike 优先**:先证实 host↔helper RPC,
 再把通用核心移植到 Swift。
 
-### spike 结果(2026-06-26):RPC 边界已验证
+### 现状(2026-06-26):一个可用的 Swift host CLI 已存在
 
-最高风险点——Swift host 能否可靠地跨进程边界驱动 Kotlin helper——已**端到端验证**。
-当前已存在的:
+这个方向已越过 spike——存在一个**真正的 Swift host CLI**,在真机上端到端地经 Kotlin
+helper 驱动 Android。当前已存在的:
 
 - **Kotlin helper**——一个 `reticle helper` 子命令(`reticle-cli/.../Helper.kt`):
   长生命周期的 JSONL stdio RPC 循环(stdin 一行一个请求,stdout 一行一个响应;
-  stdout 只走协议,诊断走 stderr)。方法:`ping`、`listDevices`、`inject`、
-  `uiReport`——原样复用现有 `Platform` SPI 与 `RuntimeClient`(helper *就是*今天的
-  Android host 层,藏在 RPC 接缝后面)。它是常驻循环,不是 fork-per-call,且坏的/
-  未知的请求返回结构化错误而不会掀翻循环。
-- **Swift spike**——`spikes/swift-host/`(SwiftPM;在 Gradle 构建之外)。它 spawn
-  helper、经 JSONL 驱动它,并(针对一台真机)验证:`ping` 往返、`listDevices`
-  跨边界打到真实 `adb`、未知方法浮现为结构化错误、helper 在该错误后**仍存活**、
-  以及——带 `--package` 参数时——一次真实的 `inject` + `uiReport` 被送过边界,
-  helper 即使在 inject 失败时也存活。结果:PASS。
+  stdout 只走协议,诊断走 stderr)。方法:`ping`、`listDevices`、`status`、
+  `inject`、`uiReport`——原样复用现有 `Platform` SPI 与 `RuntimeClient`(helper
+  *就是*今天的 Android host 层,藏在 RPC 接缝后面)。常驻循环,不是 fork-per-call;
+  坏的/未知请求返回结构化错误而不会掀翻循环。`inject` 接受显式 `payloadDex`;
+  `uiReport` 在设备侧派生树并返回成品 `snapshot`/`semantics`/`compact` JSON。
+- **RPC 契约**——形式化在 `reticle-protocol/helper-rpc.md`(信封、方法清单、显式
+  payload 规则、inject 等待 runtime 起来的规则)。
+- **Swift host CLI**——`reticle-host/`(SwiftPM;在 Gradle 构建之外)。是真正的
+  CLI,不是 spike:`HelperClient`(常驻 JSONL RPC,带 id 关联)+ 命令 `doctor` /
+  `devices` / `status` / `inject` / `ui report`。它不持有任何设备代码——每条命令
+  都是一次 RPC 调用。`ui report` 把 helper 返回的树直接写到 `snapshot.json` /
+  `semantics.json` / `compact.json`(薄客户端边界的实践——host 从不重新派生)。
+  (`spikes/swift-host/` 作为最小边界证明保留。)
 
-所以这个边界不再是一个风险假设——它能工作,包括高价值的 `inject`/`uiReport` 调用
-(Swift host 发起它们,helper 执行并返回结构化结果或结构化错误;常驻 helper 在失败后
-存活)。两点值得带入后续:
+真机上已验证:`doctor`/`devices`/`status` 返回真实设备数据;**对链接版示例 app 跑
+`ui report` 得到 healthy runtime 并写出真实的 24KB `snapshot.json` + semantics +
+compact**(nodes=15、compact=8、semantic=10)。所以完整价值路径 Swift → helper →
+Android 是通的。
 
-- **helper 的 payload-dex 解析是相对 cwd 的。** 当 host 从别处 spawn 它时,要设置
-  工作目录或传 `RETICLE_PAYLOAD_DEX`——否则 `inject` 会以"payload dex not found"
-  失败。RPC 契约应当显式给出 payload 位置,而不是依赖 cwd。
-- **在这台 OEM 测试真机上,注入后 runtime 没起来**——注入完成但 `awaitRuntime`
-  超时,*与 CLI 自带的 `app inject` 表现完全一致*。所以这是该 ROM 的设备侧
-  JDWP/breakpoint 怪癖,与 Swift 边界正交(helper 逐字复现了 CLI 的行为,这正是
-  我们想要的正确性信号)。验证一次*成功*的端到端 inject 更适合在模拟器上做,且不是
-  本 spike 结论的阻塞项。
+一个设备侧注意点(与 host 正交):在这台 OEM 测试 ROM 上,`inject` 完成但之后
+runtime 起不来——*与 CLI 自带的 `app inject` 表现完全一致*,所以是该 ROM 的
+JDWP/breakpoint 怪癖,不是 host 或边界问题。因此 `ui report` 是用**链接版**示例 app
+(agent AAR,无需 JDWP)验证的;一次成功的端到端 *inject* 最好在模拟器上确认。
 
-**仍留待执行的:** 把 helper 的 RPC 契约形式化进 `reticle-protocol`(含显式 payload
-位置);两个常驻进程(Swift daemon + Kotlin helper)的监管;以及 helper 的分发
-(JVM jar vs 它自己的 native-image)。这条线排期时的下一步,是在这个已验证的接缝
-后面把通用核心移植到 Swift——而不是重写 JDWP。
+**当前阶段"Swift host"的含义:** host *CLI* 已完成。daemon、Web 面板、代理属于
+**Phase 2/3**,明确不在本次范围——它们需要先有事件总线和选定的代理引擎。**完整
+Swift host 仍待办的:** 移植其余一次性命令(`act`、`mutate`、`debug logs`、
+`screenshot`)——加 helper 方法 + host 命令;daemon 出现后监管两个常驻进程;决定
+helper 分发(JVM jar vs 它自己的 native-image)。JDWP 永不重写。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 

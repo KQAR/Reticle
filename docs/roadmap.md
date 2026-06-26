@@ -183,47 +183,49 @@ good host↔helper IPC contract + manage two resident processes" — real work, 
 low-risk, standard-pattern work. Execution is **spike-first**: prove the
 host↔helper RPC before porting the generic core to Swift.
 
-### Spike result (2026-06-26): the RPC boundary is proven
+### Status (2026-06-26): a working Swift host CLI exists
 
-The highest-risk part — can a Swift host reliably drive the Kotlin helper across
-a process boundary — has been **validated end-to-end**. What exists today:
+The direction is past spike — there is a **real Swift host CLI** driving Android
+through the Kotlin helper end-to-end on a real device. What exists today:
 
 - **Kotlin helper** — a `reticle helper` subcommand (`reticle-cli/.../Helper.kt`):
   a long-lived JSONL stdio RPC loop (one request per stdin line, one response per
-  stdout line; stdout is protocol-only, diagnostics to stderr). Methods: `ping`,
-  `listDevices`, `inject`, `uiReport` — reusing the existing `Platform` SPI and
-  `RuntimeClient` verbatim (the helper *is* today's Android host layer behind an
-  RPC seam). It is a resident loop, not fork-per-call, and a bad/unknown request
-  returns a structured error without taking the loop down.
-- **Swift spike** — `spikes/swift-host/` (SwiftPM; outside the Gradle build).
-  Spawns the helper, drives it over JSONL, and verifies (against a real device):
-  `ping` round-trip, `listDevices` reaching real `adb` across the boundary, an
-  unknown method surfacing as a structured error, the helper **surviving** that
-  error, and — with a `--package` arg — a real `inject` + `uiReport` carried
-  across the boundary, the helper surviving even an inject failure. Result: PASS.
+  stdout line; stdout protocol-only, diagnostics to stderr). Methods: `ping`,
+  `listDevices`, `status`, `inject`, `uiReport` — reusing the existing `Platform`
+  SPI and `RuntimeClient` verbatim (the helper *is* today's Android host layer
+  behind an RPC seam). Resident loop, not fork-per-call; a bad/unknown request
+  returns a structured error without taking the loop down. `inject` accepts an
+  explicit `payloadDex`; `uiReport` derives the trees device-side and returns the
+  finished `snapshot`/`semantics`/`compact` JSON.
+- **RPC contract** — formalized in `reticle-protocol/helper-rpc.md` (envelope,
+  methods, the explicit-payload rule, the inject-waits-for-liveness rule).
+- **Swift host CLI** — `reticle-host/` (SwiftPM; outside the Gradle build). A
+  real CLI, not a spike: `HelperClient` (resident JSONL RPC with id correlation)
+  + commands `doctor` / `devices` / `status` / `inject` / `ui report`. It owns no
+  device code — every command is an RPC call. `ui report` writes the
+  helper-returned trees straight to `snapshot.json` / `semantics.json` /
+  `compact.json` (the thin-client boundary in practice — the host never
+  re-derives). (`spikes/swift-host/` remains as the minimal boundary proof.)
 
-So the boundary is no longer a risk assumption — it works, including the
-high-value `inject`/`uiReport` calls (the Swift host sends them, the helper
-executes and returns a structured result or a structured error; the resident
-helper survives failures). Two findings worth carrying forward:
+Verified on a real device: `doctor`/`devices`/`status` return real device data;
+**`ui report` against the linked sample app produced a healthy runtime and wrote
+a real 24KB `snapshot.json` + semantics + compact** (nodes=15, compact=8,
+semantic=10). So the full value path works through Swift → helper → Android.
 
-- **The helper's payload-dex resolution is cwd-relative.** When a host spawns it
-  from elsewhere, set the working dir or pass `RETICLE_PAYLOAD_DEX` — otherwise
-  `inject` fails with "payload dex not found". The RPC contract should make the
-  payload location explicit rather than relying on cwd.
-- **On this OEM test device the runtime did not come up after injection** —
-  injection completed but `awaitRuntime` timed out, *identically to the CLI's own
-  `app inject`*. So this is a device-side JDWP/breakpoint quirk of that ROM,
-  orthogonal to the Swift boundary (the helper reproduced the CLI's behavior
-  verbatim, which is exactly the correctness signal we wanted). Verifying a
-  *successful* end-to-end inject is better done on an emulator and is not a
-  blocker for this spike's conclusion.
+One device-side caveat (orthogonal to the host): on the OEM test ROM, `inject`
+completes but the runtime does not come up afterward — *identically to the CLI's
+own `app inject`*, so it is a ROM JDWP/breakpoint quirk, not a host or boundary
+problem. `ui report` was therefore proven via the **linked** sample app (agent
+AAR, no JDWP needed); a successful end-to-end *inject* is best confirmed on an
+emulator.
 
-**Still deferred to execution:** the helper RPC contract formalized into
-`reticle-protocol` (incl. explicit payload location); supervision of the two
-resident processes (Swift daemon + Kotlin helper); and helper distribution (JVM
-jar vs its own native-image). The next step when this line is scheduled is to
-port the generic core to Swift behind this proven seam — not to rewrite JDWP.
+**What "Swift host" means at this stage:** the host *CLI* is done. The daemon,
+Web panel, and proxy are **Phase 2/3** and explicitly NOT part of this — they
+need the event bus and a chosen proxy engine first. **Still ahead for the full
+Swift host:** port the remaining one-shot commands (`act`, `mutate`, `debug
+logs`, `screenshot`) by adding helper methods + host commands; supervise the two
+resident processes once the daemon exists; decide helper distribution (JVM jar vs
+its own native-image). JDWP is never rewritten.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 

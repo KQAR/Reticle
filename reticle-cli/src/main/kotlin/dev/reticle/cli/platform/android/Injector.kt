@@ -111,10 +111,14 @@ object Injector : AppInjector {
      *   3. next to the CLI install (a shipped release — same layout as `bin/reticle`).
      */
     private fun locatePayloadDex(): File {
-        System.getenv("RETICLE_PAYLOAD_DEX")?.let {
+        // Explicit override, in precedence: the `reticle.payloadDex` system
+        // property (set-able at runtime — the helper RPC uses this so a host that
+        // spawns the helper from an arbitrary cwd can name the payload), then the
+        // RETICLE_PAYLOAD_DEX env var.
+        (System.getProperty("reticle.payloadDex") ?: System.getenv("RETICLE_PAYLOAD_DEX"))?.let {
             val f = File(it)
             if (f.isFile) return f
-            throw CliError("RETICLE_PAYLOAD_DEX is set to '$it' but no file is there.")
+            throw CliError("payload dex override points to '$it' but no file is there.")
         }
 
         val candidates = buildList {
