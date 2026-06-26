@@ -1,27 +1,31 @@
-package dev.reticle.cli
+package dev.reticle.cli.platform.android
+
+import dev.reticle.cli.platform.CommandResult
+import dev.reticle.cli.platform.DeviceController
+import dev.reticle.cli.platform.InputDispatcher
 
 /**
- * Real on-device input dispatch via the public `adb shell input` tool.
- * tap / swipe / text / keyevent all map directly to `input` subcommands; a drag
- * is a long-duration swipe.
+ * Android [InputDispatcher]: real on-device input via the public `adb shell input`
+ * tool. tap / swipe / text / keyevent all map directly to `input` subcommands; a
+ * drag is a long-duration swipe.
  *
  * (Multi-touch pinch is the one gesture `input` can't express; it would need
  * `sendevent` against the touchscreen device node. It is reserved but
  * unimplemented; the API shape is sketched below.)
  */
-class InputBackend(private val adb: Adb) {
+class InputBackend(private val adb: DeviceController) : InputDispatcher {
 
-    fun tap(x: Int, y: Int): Adb.Result =
+    override fun tap(x: Int, y: Int): CommandResult =
         adb.shell("input tap $x $y")
 
-    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int = 300): Adb.Result =
+    override fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): CommandResult =
         adb.shell("input swipe $x1 $y1 $x2 $y2 $durationMs")
 
     /** A drag is a slow swipe; longer default duration so views register a drag. */
-    fun drag(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int = 1000): Adb.Result =
+    override fun drag(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): CommandResult =
         adb.shell("input swipe $x1 $y1 $x2 $y2 $durationMs")
 
-    fun text(value: String): Adb.Result {
+    override fun text(value: String): CommandResult {
         // `input text` treats spaces specially and chokes on some punctuation;
         // encode spaces as %s and escape shell-significant characters.
         val escaped = value
@@ -35,11 +39,11 @@ class InputBackend(private val adb: Adb) {
         return adb.shell("input text \"$escaped\"")
     }
 
-    fun keyevent(keyCode: String): Adb.Result =
+    override fun keyevent(keyCode: String): CommandResult =
         adb.shell("input keyevent $keyCode")
 
     /** Paste the device clipboard into the focused field (KEYCODE_PASTE = 279). */
-    fun paste(): Adb.Result = keyevent("279")
+    override fun paste(): CommandResult = keyevent("279")
 
     companion object {
         /**

@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.cli.platform.android.JdwpClient
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket

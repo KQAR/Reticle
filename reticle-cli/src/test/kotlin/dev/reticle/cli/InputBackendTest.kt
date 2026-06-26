@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.cli.platform.android.InputBackend
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue

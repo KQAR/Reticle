@@ -10,6 +10,11 @@ import dev.reticle.core.ReticleJson
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.Selector
 import dev.reticle.core.Snapshot
+import dev.reticle.cli.platform.DeviceController
+import dev.reticle.cli.platform.DeviceError
+import dev.reticle.cli.platform.Platforms
+import dev.reticle.cli.platform.android.Adb
+import dev.reticle.cli.platform.android.InputBackend
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -59,7 +64,7 @@ fun main(rawArgs: Array<String>) {
     } catch (e: CliError) {
         System.err.println("error: ${e.message}")
         exitProcess(1)
-    } catch (e: AdbDeviceError) {
+    } catch (e: DeviceError) {
         System.err.println("device: ${e.message}")
         exitProcess(1)
     }
@@ -75,7 +80,7 @@ private fun appGroup(args: ArgList) {
             val record = RuntimeRegistry.load(serial ?: "?", pkg)
             val devicePort = resolveDevicePort(args, pkg, record)
             val hostPort = args.optional("--host-port")?.toInt() ?: record?.hostPort ?: pickHostPort(devicePort)
-            val adb = Adb(serial = serial)
+            val adb = Platforms.current().device(serial)
             adb.ensureDeviceReady()
 
             // Launch the app. Reticle's agent auto-starts via its ContentProvider,
@@ -102,10 +107,10 @@ private fun appGroup(args: ArgList) {
             // The app must already be running (we inject into a live process).
             val pkg = args.require("--package")
             val serial = args.optional("--serial") ?: defaultSerial()
-            val adb = Adb(serial = serial)
+            val adb = Platforms.current().device(serial)
             adb.ensureDeviceReady()
 
-            val injected = Injector.inject(adb, pkg)
+            val injected = Platforms.current().injector().inject(adb, pkg)
             println("injected into $pkg pid=${injected.pid} (Bootstrap.start() -> ${injected.reportedPort})")
 
             // The reported port is a hint; the real proof is the loopback server
@@ -163,7 +168,7 @@ private fun uiGroup(args: ArgList) {
             val pkg = args.optional("--package")
             val out = File(args.optional("--output") ?: "screenshot.png")
             val serial = args.optional("--serial") ?: defaultSerial()
-            val adb = Adb(serial = serial)
+            val adb = Platforms.current().device(serial)
             adb.ensureDeviceReady()
 
             var via: String? = null
@@ -251,9 +256,9 @@ private fun actGroup(args: ArgList) {
     val sub = args.shift() ?: throw CliError("act needs a subcommand")
     val pkg = args.require("--package")
     val serial = args.optional("--serial") ?: defaultSerial()
-    val adb = Adb(serial = serial)
+    val adb = Platforms.current().device(serial)
     adb.ensureDeviceReady()
-    val input = InputBackend(adb)
+    val input = Platforms.current().input(adb)
 
     when (sub) {
         "tap" -> {
@@ -338,8 +343,8 @@ private fun debugGroup(args: ArgList) {
             // failed to bind its port" (a FAILED-to-bind line).
             args.optional("--package") // accepted for symmetry; logcat is process-wide
             val serial = args.optional("--serial") ?: defaultSerial()
-            val adb = Adb(serial = serial)
-            val lines = adb.reticleLogcat()
+            val adb = Platforms.current().device(serial)
+            val lines = adb.agentLog()
             if (lines.isEmpty()) {
                 println("(no '${Adb.LOG_TAG}' logcat lines)")
                 println("  the agent has not logged — it is likely not linked into the app,")
@@ -411,7 +416,7 @@ private fun doctor() {
 private fun statusCommand(args: ArgList) {
     val pkg = args.optional("--package")
     val serial = args.optional("--serial") ?: defaultSerial()
-    val adb = Adb(serial = serial)
+    val adb = Platforms.current().device(serial)
 
     println("reticle: $RETICLE_VERSION")
     val states = adb.listDeviceStates()
@@ -470,7 +475,7 @@ private fun statusCommand(args: ArgList) {
                 // Use the agent's own logcat to turn a guess into a determination:
                 // a "FAILED to bind" line means the agent IS linked but lost the
                 // port race; no Reticle lines at all means it isn't linked.
-                val agentLog = adb.reticleLogcat()
+                val agentLog = adb.agentLog()
                 val bindFailed = agentLog.any { it.contains("FAILED to bind", ignoreCase = true) }
                 val started = agentLog.any { it.contains("Reticle started", ignoreCase = true) }
                 when {
@@ -505,7 +510,7 @@ private fun statusCommand(args: ArgList) {
 private fun withRuntime(
     pkg: String,
     args: ArgList,
-    existingAdb: Adb? = null,
+    existingAdb: DeviceController? = null,
     existingSerial: String? = null,
     block: (RuntimeClient) -> Unit,
 ) {
@@ -513,7 +518,7 @@ private fun withRuntime(
     // consumed `--serial`; re-reading it here would return null and wrongly fall
     // back to defaultSerial() (which throws with >1 device). Reuse the caller's.
     val serial = if (existingAdb != null) existingSerial else (args.optional("--serial") ?: defaultSerial())
-    val adb = existingAdb ?: Adb(serial = serial)
+    val adb = existingAdb ?: Platforms.current().device(serial)
     adb.ensureDeviceReady()
     val record = RuntimeRegistry.load(serial ?: "?", pkg)
     val devicePort = resolveDevicePort(args, pkg, record)

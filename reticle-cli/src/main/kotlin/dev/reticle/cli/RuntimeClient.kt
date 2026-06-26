@@ -9,6 +9,7 @@ import dev.reticle.core.MutationResult
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.Snapshot
+import dev.reticle.cli.platform.DeviceController
 import java.io.File
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -23,7 +24,7 @@ import java.net.URL
  * RuntimeRegistry.
  */
 class RuntimeClient(
-    private val adb: Adb,
+    private val adb: DeviceController,
     private val hostPort: Int,
     private val devicePort: Int,
 ) {
