@@ -170,6 +170,11 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
   multiple linked apps don't collide on one fixed port. `RETICLE_PORT` (app) +
   `--port` (CLI) override it. Changing the hash desyncs both sides — the pinned
   vectors in `PortMapTest` guard against that.
+- Device selection: a global `--serial <id>` scopes every command to one device
+  (the host injects it into every RPC call via `HelperClient`); absent that,
+  `Adb` falls back to `$ANDROID_SERIAL`. With multiple devices and neither set,
+  `deviceState()` throws a `DeviceError` naming the candidates rather than
+  guessing — `doctor`/`devices` still list them all. See `AdbDeviceSelectionTest`.
 - In-process `/screenshot` won't capture `SurfaceView` / secure windows; the
   CLI can fall back to `adb exec-out screencap` for those (`reticle ui screenshot`).
 - Injection into apps without the AAR: `reticle app inject` over JDWP for any
