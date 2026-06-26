@@ -41,11 +41,25 @@ struct Args {
     }
 }
 
-func resolveLauncher(_ args: Args) -> String? {
-    if let explicit = args.option("launcher") { return explicit }
-    if let env = ProcessInfo.processInfo.environment["RETICLE_LAUNCHER"] { return env }
-    let dev = "reticle-cli/build/install/reticle/bin/reticle"
-    return FileManager.default.fileExists(atPath: dev) ? dev : nil
+/// Locate the Kotlin helper executable to spawn. Preference order:
+///   1. --helper / $RETICLE_HELPER  (explicit; native binary or JVM launcher)
+///   2. a `reticle-helper` native binary next to this host executable (release)
+///   3. the dev native build  (reticle-cli/build/native/reticle-helper)
+///   4. the dev JVM launcher   (reticle-cli/build/install/reticle/bin/reticle)
+/// Cases 1–3 are no-JDK native binaries; case 4 needs a JVM (dev fallback).
+func resolveHelper(_ args: Args) -> String? {
+    let fm = FileManager.default
+    if let explicit = args.option("helper") { return explicit }
+    if let env = ProcessInfo.processInfo.environment["RETICLE_HELPER"] { return env }
+    // Next to the installed host binary.
+    let selfDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+    let beside = "\(selfDir)/reticle-helper"
+    if fm.isExecutableFile(atPath: beside) { return beside }
+    let devNative = "reticle-cli/build/native/reticle-helper"
+    if fm.isExecutableFile(atPath: devNative) { return devNative }
+    let devJvm = "reticle-cli/build/install/reticle/bin/reticle"
+    if fm.fileExists(atPath: devJvm) { return devJvm }
+    return nil
 }
 
 func printJSON(_ obj: Any) {
@@ -200,12 +214,14 @@ guard let command else {
     FileHandle.standardError.write(Data("usage: reticle-host <doctor|devices|status|inject|launch|act|mutate|debug|ui> [options]\n".utf8))
     exit(2)
 }
-guard let launcher = resolveLauncher(args) else {
-    FileHandle.standardError.write(Data("could not find the reticle launcher; set RETICLE_LAUNCHER or pass --launcher\n".utf8))
+guard let helper = resolveHelper(args) else {
+    FileHandle.standardError.write(Data("could not find the reticle helper; set RETICLE_HELPER or pass --helper\n".utf8))
     exit(2)
 }
 
-let client = HelperClient(launcher: launcher, javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"])
+// JAVA_HOME only matters when the helper is the dev JVM launcher; a native
+// reticle-helper binary ignores it. Pass it through harmlessly either way.
+let client = HelperClient(launcher: helper, javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"])
 do {
     try client.start()
     switch command {
