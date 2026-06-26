@@ -181,8 +181,33 @@ Risk posture: this **eliminates the JDWP-rewrite risk entirely** (the Android
 code is kept verbatim) and converts "rewrite the hardest code" into "design a
 good host↔helper IPC contract + manage two resident processes" — real work, but
 low-risk, standard-pattern work. Execution is **spike-first**: prove the
-host↔helper RPC (a Swift host driving the Kotlin helper through one `inject` and
-one `ui report`) before porting the generic core to Swift.
+host↔helper RPC before porting the generic core to Swift.
+
+### Spike result (2026-06-26): the RPC boundary is proven
+
+The highest-risk part — can a Swift host reliably drive the Kotlin helper across
+a process boundary — has been **validated end-to-end**. What exists today:
+
+- **Kotlin helper** — a `reticle helper` subcommand (`reticle-cli/.../Helper.kt`):
+  a long-lived JSONL stdio RPC loop (one request per stdin line, one response per
+  stdout line; stdout is protocol-only, diagnostics to stderr). Methods: `ping`,
+  `listDevices`, `inject`, `uiReport` — reusing the existing `Platform` SPI and
+  `RuntimeClient` verbatim (the helper *is* today's Android host layer behind an
+  RPC seam). It is a resident loop, not fork-per-call, and a bad/unknown request
+  returns a structured error without taking the loop down.
+- **Swift spike** — `spikes/swift-host/` (SwiftPM; outside the Gradle build).
+  Spawns the helper, drives it over JSONL, and verifies: `ping` round-trip,
+  `listDevices` reaching real `adb` across the boundary, an unknown method
+  surfacing as a structured error, and the helper **surviving** that error
+  (resident-service rule). Result: PASS, against a real device.
+
+So the boundary is no longer a risk assumption — it works. **Still unproven /
+deferred to execution:** `inject`/`uiReport` over the boundary on a real device
+(implemented in the helper, not yet exercised from Swift); the helper RPC
+contract formalized into `reticle-protocol`; supervision of the two resident
+processes (Swift daemon + Kotlin helper); and helper distribution (JVM jar vs
+its own native-image). The next step when this line is scheduled is to port the
+generic core to Swift behind this proven seam — not to rewrite JDWP.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 

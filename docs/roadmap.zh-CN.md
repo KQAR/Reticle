@@ -148,9 +148,30 @@ Swift host(CLI + daemon + Web)
 
 风险姿态:这**彻底消除了 JDWP 重写风险**(Android 代码原样保留),并把"重写最难的
 代码"转化为"设计一个好的 host↔helper IPC 契约 + 管理两个常驻进程"——是真实工作,
-但属于低风险、标准模式的工作。执行采取**spike 优先**:先证实 host↔helper RPC
-(一个 Swift host 通过一次 `inject` 和一次 `ui report` 驱动 Kotlin helper),再把
-通用核心移植到 Swift。
+但属于低风险、标准模式的工作。执行采取**spike 优先**:先证实 host↔helper RPC,
+再把通用核心移植到 Swift。
+
+### spike 结果(2026-06-26):RPC 边界已验证
+
+最高风险点——Swift host 能否可靠地跨进程边界驱动 Kotlin helper——已**端到端验证**。
+当前已存在的:
+
+- **Kotlin helper**——一个 `reticle helper` 子命令(`reticle-cli/.../Helper.kt`):
+  长生命周期的 JSONL stdio RPC 循环(stdin 一行一个请求,stdout 一行一个响应;
+  stdout 只走协议,诊断走 stderr)。方法:`ping`、`listDevices`、`inject`、
+  `uiReport`——原样复用现有 `Platform` SPI 与 `RuntimeClient`(helper *就是*今天的
+  Android host 层,藏在 RPC 接缝后面)。它是常驻循环,不是 fork-per-call,且坏的/
+  未知的请求返回结构化错误而不会掀翻循环。
+- **Swift spike**——`spikes/swift-host/`(SwiftPM;在 Gradle 构建之外)。它 spawn
+  helper、经 JSONL 驱动它,并验证:`ping` 往返、`listDevices` 跨边界打到真实
+  `adb`、未知方法浮现为结构化错误、以及 helper 在该错误后**仍存活**(常驻服务
+  规则)。结果:PASS,针对一台真机。
+
+所以这个边界不再是一个风险假设——它能工作。**仍未证实 / 留待执行的:** 真机上
+跨边界跑 `inject`/`uiReport`(helper 里已实现,尚未从 Swift 侧实跑);把 helper 的
+RPC 契约形式化进 `reticle-protocol`;两个常驻进程(Swift daemon + Kotlin helper)的
+监管;以及 helper 的分发(JVM jar vs 它自己的 native-image)。这条线排期时的下一步,
+是在这个已验证的接缝后面把通用核心移植到 Swift——而不是重写 JDWP。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 

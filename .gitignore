@@ -9,3 +9,5 @@ captures/
 .externalNativeBuild/
 .cxx/
 reticle-report*/
+# SwiftPM build output (e.g. the spikes/swift-host spike)
+.build/
