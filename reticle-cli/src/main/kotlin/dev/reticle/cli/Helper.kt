@@ -105,10 +105,35 @@ object Helper {
         val device = Platforms.current().device(serial)
         device.ensureDeviceReady()
         val injected = Platforms.current().injector().inject(device, pkg)
+
+        // Mirror `app inject`: the reported port is only a hint. Bootstrap.start()
+        // runs when the breakpoint next fires on a live frame, so the real proof
+        // is the loopback server answering over HTTP — forward to it and poll
+        // /runtime until it's healthy (or time out with a clear message).
+        val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
+        val hostPort = params.int("hostPort") ?: devicePort
+        val client = RuntimeClient(device, hostPort, devicePort)
+        client.setUpForward()
+        val info = awaitRuntime(client, pkg)
         return buildJsonObject {
-            put("pid", injected.pid)
+            put("pid", info.pid)
+            put("packageName", info.packageName)
+            put("port", info.port)
+            put("agentVersion", info.agentVersion)
             put("reportedPort", injected.reportedPort)
         }
+    }
+
+    /** Poll /runtime until the agent for [pkg] answers healthy, else throw. */
+    private fun awaitRuntime(client: RuntimeClient, pkg: String, attempts: Int = 40): dev.reticle.core.RuntimeInfo {
+        repeat(attempts) {
+            when (val health = client.probe()) {
+                is RuntimeHealth.Healthy -> if (health.info.packageName == pkg) return health.info
+                else -> {}
+            }
+            Thread.sleep(250)
+        }
+        throw CliError("timed out waiting for the runtime of '$pkg' to come up after inject")
     }
 
     private fun uiReport(params: JsonObject): JsonElement {
