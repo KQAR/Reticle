@@ -3,18 +3,16 @@
 
     <!--
       Loopback server only needs INTERNET to open a localhost socket. It binds
-      to 127.0.0.1 and is reached by the host CLI through `adb forward`, exactly
-      like Loupe's localhost-only LoupeServer.
+      to 127.0.0.1 and is reached by the host CLI through `adb forward`.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application>
         <!--
-          Auto-start hook. Mirrors Loupe's __attribute__((constructor)) +
-          dlsym("LoupeInjectorStart"): a content provider is instantiated very
-          early in process startup (before Application.onCreate returns control
-          to UI), so the host app does not need to call any Reticle code. This
-          is the same trick androidx App Startup / Firebase use to self-init.
+          Auto-start hook: a content provider is instantiated very early in
+          process startup (before Application.onCreate returns control to UI),
+          so the host app does not need to call any Reticle code. This is the
+          same trick androidx App Startup / Firebase use to self-init.
         -->
         <provider
             android:name="dev.reticle.agent.ReticleInitProvider"
