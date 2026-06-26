@@ -47,7 +47,12 @@ object Helper {
 
     fun serve() {
         val out = System.out.bufferedWriter()
-        System.err.println("reticle-helper: ready (JSONL stdio RPC)")
+        // The helper's lifecycle lines (ready / stdin closed) flow straight to the
+        // host's stderr, so they print on EVERY command and bracket otherwise-clean
+        // output. They're spawn diagnostics, not user-facing — gate them behind
+        // RETICLE_DEBUG. Real errors still surface as `ok:false` RPC responses.
+        val debug = System.getenv("RETICLE_DEBUG") == "1"
+        if (debug) System.err.println("reticle-helper: ready (JSONL stdio RPC)")
         generateSequence(::readLine).forEach { line ->
             if (line.isBlank()) return@forEach
             val response = handleLine(line)
@@ -57,7 +62,7 @@ object Helper {
                 out.flush()
             }
         }
-        System.err.println("reticle-helper: stdin closed, exiting")
+        if (debug) System.err.println("reticle-helper: stdin closed, exiting")
     }
 
     private fun handleLine(line: String): String {
