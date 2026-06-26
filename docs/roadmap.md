@@ -219,13 +219,21 @@ problem. `ui report` was therefore proven via the **linked** sample app (agent
 AAR, no JDWP needed); a successful end-to-end *inject* is best confirmed on an
 emulator.
 
-**What "Swift host" means at this stage:** the host *CLI* is done. The daemon,
-Web panel, and proxy are **Phase 2/3** and explicitly NOT part of this — they
-need the event bus and a chosen proxy engine first. **Still ahead for the full
-Swift host:** port the remaining one-shot commands (`act`, `mutate`, `debug
-logs`, `screenshot`) by adding helper methods + host commands; supervise the two
-resident processes once the daemon exists; decide helper distribution (JVM jar vs
-its own native-image). JDWP is never rewritten.
+**What "Swift host" means at this stage:** the host *CLI* is done and now at
+**functional parity** with the Kotlin CLI's one-shot surface. Beyond
+doctor/devices/status/inject/ui report, the Swift host also drives `launch`,
+`act` (tap/swipe/drag/type, incl. selector and `--region` resolution), `mutate`,
+`debug logs`/`logcat`, `ui screenshot` (PNG over base64), and local
+`ui tree`/`compact`/`node`/`regions` (rendered by the helper — derivation stays
+in Kotlin). All verified on a real device against the linked sample app
+(selector tap resolved to coordinates, mutate applied, logs read, a 1080×2412
+PNG written, `--region "《隐私政策》"` resolved to a precise point).
+
+The daemon, Web panel, and proxy remain **Phase 2/3** and are explicitly NOT part
+of this — they need the event bus and a chosen proxy engine first. **Still ahead
+for the full Swift host:** supervise the two resident processes once the daemon
+exists; decide helper distribution (JVM jar vs its own native-image); and a
+streaming `logs --follow`. JDWP is never rewritten.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
