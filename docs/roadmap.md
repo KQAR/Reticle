@@ -121,9 +121,68 @@ device tools. The cross-platform contract is the protocol, never shared code.
 This means: **the thing that makes the CLI clean is the derivation sink-down and
 thin-client shape — not the implementation language.** Rewriting the CLI in
 another language is therefore an optional preference, not an architectural
-necessity, and is deferred (see Deferred / open questions). JVM is a fine default
-for a host tool: mature cross-OS distribution, no macOS required to build (CI is
-Linux), and it shares `reticle-core` with the Android agent for free today.
+necessity. JVM is a fine default for a host tool: mature cross-OS distribution,
+no macOS required to build (CI is Linux), and it shares `reticle-core` with the
+Android agent for free today. The direction below (Swift host + Kotlin Android
+helper) is the chosen long-term shape; until it is executed, the host stays
+Kotlin/JVM.
+
+## Direction: Swift host + per-platform helpers (chosen, not yet built)
+
+Decided direction: unify the **host program** (CLI + daemon + Web panel — they
+are one process, `reticle serve`, not separate components) onto **Swift**, with
+each platform's device dirty-work kept in whatever language fits that platform,
+invoked across a process boundary.
+
+Why this shape, and not a full Swift rewrite of everything:
+
+- **JDWP injection cannot sink into the agent.** The whole point of JDWP
+  injection is to get the agent into a process that *doesn't have it yet* — the
+  agent is the *result* of injection, not a precondition. So the ~669-line JDWP
+  codec is irreducibly host-side, and irreducibly Android-specific.
+- **Android's dirty-work is most natural in the JVM** (JDWP, dex, `d8`). Rewriting
+  it in Swift is the single highest-risk part of any rewrite (every fix in its
+  git history is a hard-won ART/dexopt/GC edge case).
+- So: keep the **entire current `AndroidPlatform`** (adb + injector + JDWP +
+  input) as a **Kotlin `reticle-android-helper`**, and have the Swift host invoke
+  it. The existing `Platform` SPI moves out to a *process boundary* intact rather
+  than being rewritten.
+
+```
+Swift host (CLI + daemon + Web)
+├─ generic core: args / HTTP / JSON / event bus / proxy / Web panel
+└─ PlatformClient (Swift interface)
+   ├─ AndroidHelperClient → talks to `reticle-android-helper` (Kotlin: today's AndroidPlatform)
+   ├─ (future) iOS      → native in the Swift host (simctl / DYLD — same ecosystem, no helper)
+   └─ (future) harmony  → hdc / helper TBD
+```
+
+Note the asymmetry: a helper exists **only when a platform's dirty-work lives in
+a non-host ecosystem**. Android (JVM) warrants one; iOS does not (simctl/DYLD are
+already native to a Swift/macOS host). Do not over-generalize "helper" to every
+platform.
+
+Honest costs (this is not free, it trades rewrite risk for IPC complexity):
+
+- **A full Kotlin/JVM helper remains.** "Whole-Android-via-helper" means the
+  helper is the entire current Android host layer (~1137 lines), needing a JVM or
+  its own native-image. The JVM dependency is not eliminated — it is collapsed
+  into one isolated, language-justified executable.
+- **Every Android call becomes cross-process.** `forward`/`screencap`/`input`/
+  `logcat` are high-frequency; the helper therefore must be a **long-lived RPC
+  service**, not fork-per-call. Its request/response contract belongs in
+  `reticle-protocol` alongside the wire protocol.
+- **Two long-lived processes.** The Swift daemon and the Kotlin Android helper
+  are both resident; the host orchestrates both. The roadmap must keep these
+  distinct (a Swift daemon is not the Kotlin helper) to avoid a "two daemons"
+  muddle.
+
+Risk posture: this **eliminates the JDWP-rewrite risk entirely** (the Android
+code is kept verbatim) and converts "rewrite the hardest code" into "design a
+good host↔helper IPC contract + manage two resident processes" — real work, but
+low-risk, standard-pattern work. Execution is **spike-first**: prove the
+host↔helper RPC (a Swift host driving the Kotlin helper through one `inject` and
+one `ui report`) before porting the generic core to Swift.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
@@ -417,8 +476,10 @@ Android first and complete; everything else reserved behind the spec + SPI.
 
 ### Phase 4 — Multi-platform
 - iOS / HarmonyOS agents in their own build systems, conforming to the protocol
-  spec. The host CLI and panel are reused; only the three platform seams get new
-  implementations.
+  spec. The host and panel are reused; each new platform supplies its three seams
+  — natively in the host where the ecosystem matches (iOS: simctl/DYLD in a Swift
+  host) or as a helper where it doesn't (Android: the Kotlin `reticle-android-
+  helper`). See "Direction: Swift host + per-platform helpers".
 
 ## Honest boundaries (carry into every doc and the skill)
 
@@ -452,11 +513,15 @@ mistaken for settled. Revisit when the trigger arrives.
   reverse-drive is wanted, it forces a bidirectional transport (WebSocket over
   the current SSE) plus a meaningful chunk of front-end interaction work — decide
   before committing the Phase 3 transport so SSE-vs-WebSocket isn't reworked.
-- **CLI implementation language.** Stays Kotlin/JVM. A native single-binary
-  distribution (no JDK on the user's machine) is the only real pain a rewrite
-  was reaching for — and that is a *packaging* problem, solvable without changing
-  language (GraalVM `native-image` keeps all Kotlin code and the `reticle-core`
-  share; per-OS compilation is its main cost). Once the CLI is a thin client
-  (above), its language is a free choice, so any future switch is preference, not
-  necessity. *Trigger:* if "no-JDK native binary" becomes a must (agent/CI users
-  without a JDK), spike GraalVM native-image first — don't reach for a rewrite.
+- **Host language: Swift host + Kotlin Android helper (chosen, not scheduled).**
+  The long-term shape is decided (see "Direction: Swift host + per-platform
+  helpers"): the host program (CLI + daemon + Web) goes Swift, the entire current
+  Android layer stays Kotlin as a long-lived `reticle-android-helper` invoked over
+  an RPC contract. JDWP is *not* rewritten. This is a direction, not yet
+  scheduled — the host stays Kotlin/JVM until it is executed, and execution is
+  **spike-first** (prove host↔helper RPC before porting the core). *Open
+  sub-questions:* the helper RPC contract (goes in `reticle-protocol`); whether
+  the Kotlin helper ships as a JVM jar or its own GraalVM native-image; and how
+  the Swift daemon and Kotlin helper (two resident processes) are supervised.
+  *Trigger to schedule:* when the Swift Web service / daemon work begins, since
+  that is the same process as the host and forces the language decision.
