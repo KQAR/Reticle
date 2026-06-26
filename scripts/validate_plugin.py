@@ -124,15 +124,19 @@ def validate_marketplace(data, label):
 
 
 def collect_code_versions():
-    """Pull the version out of the launcher and the two in-code constants so the
+    """Pull the version out of the launcher and every in-code constant so the
     lockstep check spans manifests AND the things that actually report a version
-    at runtime — the surface the skew bug lived on."""
+    at runtime — the surface the skew bug lived on. This must cover EVERY binary
+    that prints a version: the launcher, the Kotlin helper, the Android agent, and
+    the Swift host (the user-facing CLI — its `reticle version`)."""
     sources = [
         ("bin/reticle", re.compile(r'RETICLE_VERSION="\$\{RETICLE_VERSION:-([^}"]+)\}"')),
         ("reticle-helper/src/main/kotlin/dev/reticle/cli/Main.kt",
          re.compile(r'RETICLE_VERSION\s*=\s*"([^"]+)"')),
         ("reticle-agent/android/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
          re.compile(r'VERSION\s*=\s*"([^"]+)"')),
+        ("reticle-host/Sources/ReticleHost/main.swift",
+         re.compile(r'let\s+RETICLE_VERSION\s*=\s*"([^"]+)"')),
     ]
     for rel, pat in sources:
         path = os.path.join(ROOT, rel)
