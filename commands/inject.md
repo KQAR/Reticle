@@ -21,7 +21,7 @@ Steps:
    - "is the app debuggable?" — only debuggable builds expose JDWP; a
      non-debuggable release needs Frida/root, not this path.
    - "payload dex not found" — build it with
-     `./gradlew :reticle-agent:dexPayload`, or set `RETICLE_PAYLOAD_DEX`.
+     `./gradlew :reticle-agent:android:dexPayload`, or set `RETICLE_PAYLOAD_DEX`.
    - a handshake/JDWP stall — set `RETICLE_JDWP_DEBUG=1` and retry for a trace;
      another debugger (Android Studio) attached to the same pid blocks it.
 4. Confirm it took: `reticle ui report --package <pkg> --output reticle-report`

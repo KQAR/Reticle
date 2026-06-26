@@ -133,16 +133,18 @@ attaches to a GitHub Release:
 
 - `reticle-cli.zip` / `reticle-cli.tar` — the host CLI distribution (what the
   launcher downloads);
-- `reticle-agent.aar` — the agent library to link into a host app build;
+- `reticle-agent-android.aar` — the agent library to link into a host app build;
 - `SHA256SUMS` — checksums for verification.
 
 ## Modules
 
 - `reticle-core` — pure JVM snapshot / semantic / compact-observation
   models and the wire protocol. No Android dependency.
-- `reticle-agent` — Android library (AAR). In-process HTTP server + view and
-  Compose-semantics capture, region detection, runtime mutation, screenshots,
-  auto-started by a no-op `ContentProvider`.
+- `reticle-agent/android` (`:reticle-agent:android`) — Android library (AAR). In-process
+  HTTP server + view and Compose-semantics capture, region detection, runtime
+  mutation, screenshots, auto-started by a no-op `ContentProvider`.
+  (`reticle-agent/` is a grouping directory reserved for future per-platform
+  agents; only the Android child is a Gradle module today.)
 - `reticle-cli` — host JVM CLI. `adb forward` + loopback evidence + an
   `adb input` action backend.
 - `sample-app` — demo app that links the agent end to end.

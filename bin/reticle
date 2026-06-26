@@ -95,7 +95,7 @@ if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
     log "building the CLI from source (RETICLE_FROM_SOURCE=1)…"
     # Also build the injectable payload dex so `app inject` works from a source
     # build; the CLI resolves it from the gradle output dir as a fallback.
-    ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:installDist :reticle-agent:dexPayload ) >&2
+    ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:installDist :reticle-agent:android:dexPayload ) >&2
   fi
   if [[ ! -x "${SRC_CLI_BIN}" ]]; then
     log "source build did not produce ${SRC_CLI_BIN}"

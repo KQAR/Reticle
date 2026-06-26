@@ -2,7 +2,7 @@ package dev.reticle.agent
 
 /**
  * No-op stand-in for the real `Reticle` facade, present ONLY in the `noagent`
- * sample flavor. The `noagent` flavor does not depend on :reticle-agent, so this
+ * sample flavor. The `noagent` flavor does not depend on :reticle-agent:android, so this
  * lets MainActivity compile and run with zero Reticle runtime classes in the APK.
  *
  * This is the honest test target for `reticle app inject`: an app that calls a

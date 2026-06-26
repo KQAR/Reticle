@@ -34,8 +34,8 @@ locked `ro.debuggable=0` *user* build where `setprop wrap.<pkg>` is rejected by
 the kernel — and JDWP can invoke methods in the live VM. The host CLI
 (`Injector` + `Jdwp.kt`, pure `java.net`, no third-party JDWP lib):
 
-1. **stages the payload dex** (`reticle-agent` + `reticle-core` + kotlin-stdlib +
-   kotlinx-serialization, dexed by `d8` — see `:reticle-agent:dexPayload`) into
+1. **stages the payload dex** (`reticle-agent:android` + `reticle-core` + kotlin-stdlib +
+   kotlinx-serialization, dexed by `d8` — see `:reticle-agent:android:dexPayload`) into
    the app's private `code_cache` via `adb push` to `/data/local/tmp` then
    `run-as <pkg> cp`. The staged dex is `chmod 0444` — **ART's W^X policy (API
    26+) refuses to load a dex writable by the loading uid**;
@@ -349,9 +349,13 @@ exposes), while `ui node` always returns the richer view-tree node.
 | Module | Kind | Contents |
 | --- | --- | --- |
 | `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol |
-| `reticle-agent` | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
+| `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-cli` | Host JVM CLI | adb wrapper, runtime client, input backend, selector resolver, command dispatch |
 | `sample-app` | Android app | Demo linking the agent, proving the round trip |
+
+(`reticle-agent/` is a grouping directory — no build script of its own; future
+`ios/` and `harmony/` agents are siblings of `android/`, built by SwiftPM/hvigor
+and invisible to Gradle.)
 
 ## What stays on disk vs. what goes to the agent
 

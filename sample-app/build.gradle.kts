@@ -28,7 +28,7 @@ android {
     }
 
     // Two flavors, differing ONLY in whether the agent is linked:
-    //   linked  — depends on :reticle-agent; the runtime auto-starts (the demo).
+    //   linked  — depends on :reticle-agent:android; the runtime auto-starts (the demo).
     //   noagent — NO agent dependency; a distinct applicationId. This is the test
     //             target for `reticle app inject`: it reproduces a real-world
     //             debuggable app that doesn't carry dev.reticle.agent.* classes,
@@ -67,6 +67,6 @@ dependencies {
     // The `noagent` flavor deliberately omits it and supplies a stub Reticle
     // facade (sample-app/src/noagent) so MainActivity still compiles, while the
     // APK carries none of the runtime classes.
-    "linkedImplementation"(project(":reticle-agent"))
+    "linkedImplementation"(project(":reticle-agent:android"))
     implementation("androidx.appcompat:appcompat:1.7.0")
 }
