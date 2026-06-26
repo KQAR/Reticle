@@ -61,3 +61,36 @@ jobs:
       # manifest (the most common cause of a plugin failing to install).
       - name: Validate plugin & marketplace manifests
         run: python3 scripts/validate_plugin.py
+
+  macos-host:
+    name: Build Swift host + native helper (macOS arm64)
+    # The shipped distribution is macOS arm64 only (Swift host + native-image
+    # helper). This job is the CI guard for those release-critical pieces, which
+    # the ubuntu build can't exercise.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up GraalVM (JDK 21, native-image)
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: "21"
+          distribution: graalvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the native helper
+        run: ./gradlew :reticle-cli:nativeHelper --stacktrace
+
+      - name: Build the Swift host
+        run: swift build -c release --package-path reticle-host
+
+      - name: Smoke-check the binaries (no device needed)
+        run: |
+          set -euo pipefail
+          HOST=reticle-host/.build/release/ReticleHost
+          HELPER=reticle-cli/build/native/reticle-helper
+          test -x "$HOST" && test -x "$HELPER"
+          # version needs no helper/device; proves the host binary runs.
+          "$HOST" version
+          # the native helper's RPC loop answers ping with no JDK.
+          printf '{"id":1,"method":"ping","params":{}}\n' | "$HELPER" helper

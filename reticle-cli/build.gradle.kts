@@ -66,6 +66,11 @@ val nativeHelper by tasks.registering(Exec::class) {
             "dev.reticle.cli.MainKt",
             "-o", outBin.get().asFile.absolutePath,
             "--no-fallback",
+            // RuntimeClient talks to the in-app loopback server over HTTP via
+            // java.net.URL; native-image disables URL protocols by default, so
+            // HTTP must be explicitly enabled or every device call fails with
+            // "URL protocol http ... not enabled".
+            "--enable-url-protocols=http",
             "-H:+ReportExceptionStackTraces",
         )
     }

@@ -1,45 +1,42 @@
 #!/usr/bin/env bash
 #
-# Reticle CLI launcher, shipped inside the Claude Code plugin so `reticle …`
-# works on the Bash PATH once the plugin is enabled.
+# Reticle CLI launcher, shipped inside the Claude Code / Cursor plugin so
+# `reticle …` works on the Bash PATH once the plugin is enabled.
 #
-# Policy: ALWAYS use the published prebuilt release by default. Users should not
-# need a JDK/Gradle toolchain. The launcher never silently builds from source —
-# a source build happens ONLY when the user explicitly opts in with
-# RETICLE_FROM_SOURCE=1 (for development / offline work).
+# What `reticle` IS now: the **Swift host** (`reticle-host`), a no-JDK native
+# macOS arm64 binary. It owns no device code — it drives Android through a
+# sibling **native helper** (`reticle-helper`, the Kotlin Android layer compiled
+# by GraalVM native-image). The launcher's job is to put a working host on PATH
+# with its helper beside it, then exec it. macOS arm64 only.
 #
-# Resolution order for the actual CLI binary (first hit wins):
-#   1. $RETICLE_CLI              — explicit path to a `reticle` launch script.
-#   2. $RETICLE_HOME/bin/reticle — an unpacked release distribution.
-#   3. RETICLE_FROM_SOURCE=1     — build from the bundled sources (needs JDK 17).
-#   4. A prebuilt release, cached under ~/.reticle/cli or freshly downloaded
-#      from GitHub Releases (SHA256-verified). THIS IS THE DEFAULT.
+# Policy: ALWAYS use the published prebuilt release by default; no JDK/toolchain
+# needed. A source build happens ONLY when the user opts in with
+# RETICLE_FROM_SOURCE=1 (developers; needs the Swift toolchain + a GraalVM).
 #
-# If the default (prebuilt) path can't produce a CLI, we hard-stop with
-# actionable guidance — we do NOT fall back to a source build.
+# Resolution order (first hit wins):
+#   1. $RETICLE_HOST             — explicit path to a reticle-host binary.
+#   2. $RETICLE_HOME/bin         — an unpacked release (reticle-host + reticle-helper).
+#   3. RETICLE_FROM_SOURCE=1     — build host (swift) + helper (gradle native).
+#   4. A prebuilt release, cached under ~/.reticle/cli or downloaded (SHA256). DEFAULT.
+#
+# If the default path can't produce a host, we hard-stop with guidance — we do
+# NOT silently fall back to a source build.
 set -euo pipefail
 
 # --- locate the plugin/repo root ---------------------------------------------
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 if [[ -z "${ROOT}" ]]; then
-  # Standalone fallback: repo root is one level up from this script's dir.
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
 # --- 0. self-heal against stale plugin-cache version skew --------------------
-# Claude Code unpacks each plugin version into its own cache dir
-# (…/reticle/reticle/<version>/) and puts that dir's bin/ on PATH. When the
-# plugin updates, an OLD cache dir can stay first on PATH while a newer version
-# sits right beside it — so `reticle` (an old launcher) ends up driving an old
-# CLI even though a newer one is installed. That skew is invisible and brutal:
-# the skill text and the binary diverge (e.g. the skill says `app inject` but the
-# stale CLI has no such subcommand). Defend against it here: if we live in a
-# versioned cache dir and a NEWER sibling version has an executable launcher,
-# re-exec into it so `reticle` always matches the newest installed version.
-# RETICLE_NO_REDIRECT guards against loops and lets callers pin a version.
+# Claude Code unpacks each plugin version into its own cache dir and puts that
+# dir's bin/ on PATH. When the plugin updates, an OLD cache dir can stay first
+# on PATH while a newer version sits beside it. Re-exec into the newest so
+# `reticle` always matches the newest installed version.
 if [[ -z "${RETICLE_NO_REDIRECT:-}" ]]; then
-  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # …/<version>
-  _parent="$(dirname "${_self_dir}")"                            # …/reticle/reticle
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  _parent="$(dirname "${_self_dir}")"
   _self_ver="$(basename "${_self_dir}")"
   if [[ "${_parent}" == */reticle/reticle ]]; then
     _newest="$(ls -1 "${_parent}" 2>/dev/null | sort -V | tail -1)"
@@ -47,7 +44,6 @@ if [[ -z "${RETICLE_NO_REDIRECT:-}" ]]; then
        && [[ "$(printf '%s\n%s\n' "${_self_ver}" "${_newest}" | sort -V | tail -1)" == "${_newest}" ]] \
        && [[ -x "${_parent}/${_newest}/bin/reticle" ]]; then
       echo "reticle: this PATH entry is the stale ${_self_ver}; redirecting to the newer cached ${_newest}." >&2
-      echo "reticle: (clear the stale cache, or restart the session, to fix PATH permanently.)" >&2
       RETICLE_NO_REDIRECT=1 exec "${_parent}/${_newest}/bin/reticle" "$@"
     fi
   fi
@@ -59,114 +55,115 @@ REPO="${RETICLE_REPO:-KQAR/Reticle}"
 CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
 
 GRADLEW="${ROOT}/gradlew"
-SRC_CLI_BIN="${ROOT}/reticle-cli/build/install/reticle/bin/reticle"
-CACHED_BIN="${CACHE_DIR}/${RETICLE_VERSION}/reticle/bin/reticle"
+SRC_HOST_BIN="${ROOT}/reticle-host/.build/release/ReticleHost"
+SRC_HELPER_BIN="${ROOT}/reticle-cli/build/native/reticle-helper"
+CACHED_DIR="${CACHE_DIR}/${RETICLE_VERSION}/reticle"
+CACHED_HOST="${CACHED_DIR}/bin/reticle-host"
 
 log() { echo "reticle: $*" >&2; }
 
+# Exec the host with the helper located beside it (unless the caller pinned one).
+# `reticle-host` resolves its helper as: $RETICLE_HELPER, then a `reticle-helper`
+# next to itself. We export RETICLE_HELPER when we know where it is.
+exec_host() {
+  local host="$1"; shift
+  local helper="$1"; shift
+  if [[ -n "${helper}" && -x "${helper}" ]]; then
+    RETICLE_HELPER="${helper}" exec "${host}" "$@"
+  else
+    exec "${host}" "$@"
+  fi
+}
+
 # --- 1. explicit override -----------------------------------------------------
-if [[ -n "${RETICLE_CLI:-}" ]]; then
-  if [[ ! -x "${RETICLE_CLI}" ]]; then
-    log "RETICLE_CLI is set but not executable: ${RETICLE_CLI}"
+if [[ -n "${RETICLE_HOST:-}" ]]; then
+  if [[ ! -x "${RETICLE_HOST}" ]]; then
+    log "RETICLE_HOST is set but not executable: ${RETICLE_HOST}"
     exit 1
   fi
-  exec "${RETICLE_CLI}" "$@"
+  exec_host "${RETICLE_HOST}" "${RETICLE_HELPER:-}" "$@"
 fi
 
 # --- 2. an unpacked release dir ----------------------------------------------
-if [[ -n "${RETICLE_HOME:-}" && -x "${RETICLE_HOME}/bin/reticle" ]]; then
-  exec "${RETICLE_HOME}/bin/reticle" "$@"
+if [[ -n "${RETICLE_HOME:-}" && -x "${RETICLE_HOME}/bin/reticle-host" ]]; then
+  exec_host "${RETICLE_HOME}/bin/reticle-host" "${RETICLE_HOME}/bin/reticle-helper" "$@"
 fi
 
 # --- 3. explicit source build (opt-in only) ----------------------------------
-# Off by default. Only when the user asks for it (development / offline). We do
-# NOT silently build from source just because gradlew happens to be present —
-# the prebuilt release is the supported path.
 if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
-  if [[ ! -x "${SRC_CLI_BIN}" ]]; then
+  if [[ ! -x "${SRC_HELPER_BIN}" ]]; then
     if [[ ! -x "${GRADLEW}" ]]; then
       log "RETICLE_FROM_SOURCE=1 but no gradlew at ${GRADLEW} (install from the full repo)."
       exit 1
     fi
-    if ! command -v java >/dev/null 2>&1; then
-      log "RETICLE_FROM_SOURCE=1 but \`java\` (JDK 17) is not on PATH."
+    log "building the native helper from source (needs a GraalVM with native-image)…"
+    ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:nativeHelper :reticle-agent:android:dexPayload ) >&2
+  fi
+  if [[ ! -x "${SRC_HOST_BIN}" ]]; then
+    if ! command -v swift >/dev/null 2>&1; then
+      log "RETICLE_FROM_SOURCE=1 but \`swift\` is not on PATH (needed to build the host)."
       exit 1
     fi
-    log "building the CLI from source (RETICLE_FROM_SOURCE=1)…"
-    # Also build the injectable payload dex so `app inject` works from a source
-    # build; the CLI resolves it from the gradle output dir as a fallback.
-    ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:installDist :reticle-agent:android:dexPayload ) >&2
+    log "building the Swift host from source…"
+    ( cd "${ROOT}/reticle-host" && swift build -c release ) >&2
   fi
-  if [[ ! -x "${SRC_CLI_BIN}" ]]; then
-    log "source build did not produce ${SRC_CLI_BIN}"
+  if [[ ! -x "${SRC_HOST_BIN}" ]]; then
+    log "source build did not produce ${SRC_HOST_BIN}"
     exit 1
   fi
-  exec "${SRC_CLI_BIN}" "$@"
+  exec_host "${SRC_HOST_BIN}" "${SRC_HELPER_BIN}" "$@"
 fi
 
 # --- 4. prebuilt release (DEFAULT) -------------------------------------------
 download_release() {
-  # Fetch + verify the prebuilt CLI zip from GitHub Releases into the cache.
-  command -v curl >/dev/null 2>&1 || { log "curl not found; cannot download the prebuilt CLI"; return 1; }
-  command -v unzip >/dev/null 2>&1 || { log "unzip not found; cannot unpack the prebuilt CLI"; return 1; }
+  command -v curl >/dev/null 2>&1 || { log "curl not found; cannot download the prebuilt release"; return 1; }
+  command -v unzip >/dev/null 2>&1 || { log "unzip not found; cannot unpack the prebuilt release"; return 1; }
   local base="https://github.com/${REPO}/releases/download/v${RETICLE_VERSION}"
   local dest="${CACHE_DIR}/${RETICLE_VERSION}"
-  local tmp
-  tmp="$(mktemp -d)"
-  log "downloading prebuilt CLI ${RETICLE_VERSION} from ${REPO}…"
-  if ! curl -fsSL "${base}/reticle-cli.zip" -o "${tmp}/reticle-cli.zip"; then
-    log "download failed (${base}/reticle-cli.zip)"
-    rm -rf "${tmp}"
-    return 1
+  local tmp; tmp="$(mktemp -d)"
+  log "downloading prebuilt Reticle ${RETICLE_VERSION} (macOS arm64) from ${REPO}…"
+  if ! curl -fsSL "${base}/reticle-macos-arm64.zip" -o "${tmp}/reticle.zip"; then
+    log "download failed (${base}/reticle-macos-arm64.zip)"
+    rm -rf "${tmp}"; return 1
   fi
-
-  # Verify against the release's SHA256SUMS before unpacking, so a truncated or
-  # tampered artifact can't be executed. A present-and-mismatched sum is a hard
-  # stop; a missing checksum file or sha256 tool only skips verification.
   if curl -fsSL "${base}/SHA256SUMS" -o "${tmp}/SHA256SUMS" 2>/dev/null; then
     local expected actual
-    expected="$(awk '/reticle-cli\.zip$/ {print $1; exit}' "${tmp}/SHA256SUMS")"
+    expected="$(awk '/reticle-macos-arm64\.zip$/ {print $1; exit}' "${tmp}/SHA256SUMS")"
     if [[ -n "${expected}" ]]; then
       if command -v shasum >/dev/null 2>&1; then
-        actual="$(shasum -a 256 "${tmp}/reticle-cli.zip" | awk '{print $1}')"
+        actual="$(shasum -a 256 "${tmp}/reticle.zip" | awk '{print $1}')"
       elif command -v sha256sum >/dev/null 2>&1; then
-        actual="$(sha256sum "${tmp}/reticle-cli.zip" | awk '{print $1}')"
+        actual="$(sha256sum "${tmp}/reticle.zip" | awk '{print $1}')"
       fi
       if [[ -n "${actual:-}" && "${actual}" != "${expected}" ]]; then
-        log "checksum MISMATCH for reticle-cli.zip (expected ${expected}, got ${actual}); refusing it"
-        rm -rf "${tmp}"
-        return 1
+        log "checksum MISMATCH for reticle-macos-arm64.zip (expected ${expected}, got ${actual}); refusing it"
+        rm -rf "${tmp}"; return 1
       fi
       [[ -z "${actual:-}" ]] && log "no sha256 tool; skipping checksum verification"
     fi
   else
     log "no SHA256SUMS published; skipping checksum verification"
   fi
-
   mkdir -p "${dest}"
-  if ! unzip -q -o "${tmp}/reticle-cli.zip" -d "${dest}"; then
-    log "unpack failed"
-    rm -rf "${tmp}"
-    return 1
+  if ! unzip -q -o "${tmp}/reticle.zip" -d "${dest}"; then
+    log "unpack failed"; rm -rf "${tmp}"; return 1
   fi
   rm -rf "${tmp}"
-  [[ -x "${CACHED_BIN}" ]]
+  [[ -x "${CACHED_HOST}" ]]
 }
 
-# Cached prebuilt for this version? Use it.
-if [[ -x "${CACHED_BIN}" ]]; then
-  exec "${CACHED_BIN}" "$@"
+if [[ -x "${CACHED_HOST}" ]]; then
+  exec_host "${CACHED_HOST}" "${CACHED_DIR}/bin/reticle-helper" "$@"
 fi
 
-# Otherwise download it. No fallback to source on the default path.
 if download_release; then
-  exec "${CACHED_BIN}" "$@"
+  exec_host "${CACHED_HOST}" "${CACHED_DIR}/bin/reticle-helper" "$@"
 fi
 
-log "could not obtain the prebuilt Reticle CLI ${RETICLE_VERSION}."
+log "could not obtain the prebuilt Reticle ${RETICLE_VERSION} (macOS arm64)."
 log "fix one of:"
 log "  • restore network access so the release can be downloaded from ${REPO};"
 log "  • download it manually and point RETICLE_HOME at the unpacked dir:"
 log "      https://github.com/${REPO}/releases/tag/v${RETICLE_VERSION}"
-log "  • build from source (developers): re-run with RETICLE_FROM_SOURCE=1 (needs JDK 17)."
+log "  • build from source (developers): re-run with RETICLE_FROM_SOURCE=1 (needs Swift + GraalVM)."
 exit 1

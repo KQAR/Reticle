@@ -28,6 +28,16 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   the Android implementation (`Adb`/`Injector`/`InputBackend`/`Jdwp`) lives under
   `platform/android`, selected via `--target` (default `android`). Adding a
   platform = a new `platform/<os>` implementation, no dispatcher changes.
+  This binary is primarily the **Android helper** for the Swift host: its
+  `helper` subcommand (`Helper.kt`) is a long-lived JSONL RPC server, and it
+  ships as the no-JDK native `reticle-helper` (GraalVM native-image, built by
+  `:reticle-cli:nativeHelper`). Direct user-facing commands are **gated off by
+  default** (`RETICLE_DIRECT_CLI=1` for the dev fallback). RPC contract:
+  `reticle-protocol/helper-rpc.md`.
+- `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS arm64,
+  outside the Gradle build). The user-facing `reticle`; owns no device code —
+  every command is an RPC call to the native helper it spawns. At command parity
+  with the direct CLI (`app`/`ui`/`act`/`mutate`/`debug`/`status`/`doctor`).
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.

@@ -1,15 +1,14 @@
 name: Release
 
-# Build the host CLI distribution and the agent AAR, then attach them to a
-# GitHub Release so users can install Reticle without a local JDK/Gradle build.
+# Build the no-JDK macOS arm64 distribution (Swift host + native helper) plus the
+# agent AAR, and attach them to a GitHub Release so users install Reticle with no
+# JDK/Gradle/Swift toolchain. The launcher (bin/reticle) downloads and runs these.
 #
-# Trigger: push a semver tag (e.g. `v0.1.0`). The CLI's launcher (bin/reticle)
-# prefers these prebuilt artifacts and only falls back to building from source.
+# Trigger: push a semver tag (e.g. `v0.1.0`). macOS arm64 is the only target.
 on:
   push:
     tags:
       - "v*"
-  # Allow building artifacts on demand without cutting a release.
   workflow_dispatch:
 
 permissions:
@@ -17,57 +16,59 @@ permissions:
 
 jobs:
   release:
-    name: Build & publish artifacts
-    runs-on: ubuntu-latest
+    name: Build & publish artifacts (macOS arm64)
+    # arm64 macOS runner — native-image and Swift are per-OS; this is the sole target.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
+      - name: Set up GraalVM (JDK 21, native-image)
+        uses: graalvm/setup-graalvm@v1
         with:
-          distribution: temurin
-          java-version: "17"
+          java-version: "21"
+          distribution: graalvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+      - name: Build the native helper (no-JDK reticle-helper)
+        run: ./gradlew :reticle-cli:nativeHelper --stacktrace
 
-      - name: Build CLI distribution (zip + tar)
-        run: ./gradlew :reticle-cli:distZip :reticle-cli:distTar --stacktrace
+      - name: Build the Swift host
+        run: swift build -c release --package-path reticle-host
 
-      - name: Build agent AAR
-        run: ./gradlew :reticle-agent:android:assembleRelease --stacktrace
-
-      - name: Build injectable payload dex
-        # Needed by `reticle app inject`. The CLI looks for it under <install>/lib,
-        # so it must be repacked into the CLI distribution archives below.
-        run: ./gradlew :reticle-agent:android:dexPayload --stacktrace
+      - name: Build agent AAR + payload dex
+        run: ./gradlew :reticle-agent:android:assembleRelease :reticle-agent:android:dexPayload --stacktrace
 
       - name: Stage artifacts
         run: |
           set -euo pipefail
           mkdir -p dist
+
+          HELPER=reticle-cli/build/native/reticle-helper
+          HOST=reticle-host/.build/release/ReticleHost
           PAYLOAD=reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar
+          test -x "$HELPER" || { echo "native helper missing: $HELPER"; exit 1; }
+          test -x "$HOST"   || { echo "swift host missing: $HOST"; exit 1; }
           test -f "$PAYLOAD" || { echo "payload dex missing: $PAYLOAD"; exit 1; }
 
-          # Repack the payload dex into the CLI archives under reticle/lib/ — the
-          # path Injector.locatePayloadDex() resolves from a release install.
-          # (gradle's distZip/distTar are already built; inject the extra file.)
+          # Lay out the dist the launcher expects: <root>/reticle/bin/{reticle-host,reticle-helper}.
+          # The native helper resolves its payload dex from <install>/lib, so place it there too.
           work="$(mktemp -d)"
-          unzip -q reticle-cli/build/distributions/reticle.zip -d "$work"
+          mkdir -p "$work/reticle/bin" "$work/reticle/lib"
+          cp "$HOST"   "$work/reticle/bin/reticle-host"
+          cp "$HELPER" "$work/reticle/bin/reticle-helper"
           cp "$PAYLOAD" "$work/reticle/lib/reticle-agent-payload.jar"
-          ( cd "$work" && zip -q -r "$OLDPWD/dist/reticle-cli.zip" reticle )
-          tar -C "$work" -cf dist/reticle-cli.tar reticle
+          chmod +x "$work/reticle/bin/"*
+          ( cd "$work" && zip -q -r "$OLDPWD/dist/reticle-macos-arm64.zip" reticle )
           rm -rf "$work"
 
           # Agent AAR for linking into a host app build, and the bare dex for
           # advanced users who set RETICLE_PAYLOAD_DEX explicitly.
           cp reticle-agent/android/build/outputs/aar/reticle-agent-android-release.aar dist/reticle-agent-android.aar
           cp "$PAYLOAD" dist/reticle-agent-payload.jar
-          # Checksums so the launcher / users can verify a download.
-          ( cd dist && sha256sum * > SHA256SUMS )
+          ( cd dist && shasum -a 256 * > SHA256SUMS )
           ls -l dist
 
       - name: Upload workflow artifacts
@@ -77,13 +78,11 @@ jobs:
           path: dist/
 
       - name: Publish GitHub Release
-        # Only attach to a Release when triggered by a tag push.
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/reticle-cli.zip
-            dist/reticle-cli.tar
+            dist/reticle-macos-arm64.zip
             dist/reticle-agent-android.aar
             dist/reticle-agent-payload.jar
             dist/SHA256SUMS
