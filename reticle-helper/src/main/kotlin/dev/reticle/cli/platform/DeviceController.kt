@@ -41,7 +41,11 @@ interface DeviceController {
     /** Raw bytes of a device screenshot. */
     fun screencap(timeoutSeconds: Long = 20): ByteArray
 
-    /** State of this controller's device ("device"/"offline"/...), or null if absent. */
+    /**
+     * State of this controller's device ("device"/"offline"/...), or null if
+     * absent. With no serial set and MULTIPLE devices attached, the target is
+     * ambiguous and this throws [DeviceError] rather than guessing.
+     */
     fun deviceState(): String?
 
     /** Ensure the device is in the drivable state, with bounded recovery; else throw [DeviceError]. */

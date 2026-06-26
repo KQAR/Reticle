@@ -17,10 +17,15 @@ final class HelperClient {
     private let stdoutPipe = Pipe()
     private var reader: LineReader!
     private var nextId = 1
+    /// Device serial to scope every call to (from a global `--serial`). Injected
+    /// into each request's params so individual commands don't each thread it.
+    private let serial: String?
 
     /// - launcher: path to the `reticle` launcher (it runs `reticle helper`).
     /// - javaHome: optional JAVA_HOME to hand the JVM helper.
-    init(launcher: String, javaHome: String?) {
+    /// - serial: optional device serial, applied to every RPC call.
+    init(launcher: String, javaHome: String?, serial: String? = nil) {
+        self.serial = serial
         process.executableURL = URL(fileURLWithPath: launcher)
         process.arguments = ["helper"]
         process.standardInput = stdinPipe
@@ -43,6 +48,9 @@ final class HelperClient {
     @discardableResult
     func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
         let id = nextId; nextId += 1
+        // Apply the client-wide serial unless the caller already set one.
+        var params = params
+        if let serial, params["serial"] == nil { params["serial"] = serial }
         let request: [String: Any] = ["id": id, "method": method, "params": params]
         let data = try JSONSerialization.data(withJSONObject: request)
         stdinPipe.fileHandleForWriting.write(data)

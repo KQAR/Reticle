@@ -46,6 +46,10 @@ build**. If it can't be obtained the launcher stops with actionable guidance.
 - A booted device/emulator in the **`device`** state: `reticle doctor`. It now
   flags `offline`/`unauthorized` devices explicitly — those can't be driven until
   fixed (re-plug USB / accept the on-device debugging prompt).
+- **One** target device. With several attached (e.g. a phone + a stray emulator),
+  every driving command fails fast listing the candidates — scope it with a global
+  `--serial <id>` (or export `ANDROID_SERIAL`, which Reticle also honors). `doctor`
+  always lists them all regardless.
 - `ANDROID_HOME` set, or adb on PATH.
 - The target app must expose the Reticle in-process server. Three cases:
   - **Linked app** (you control the build): add the `reticle-agent` AAR — a
