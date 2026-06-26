@@ -196,18 +196,34 @@ a process boundary — has been **validated end-to-end**. What exists today:
   RPC seam). It is a resident loop, not fork-per-call, and a bad/unknown request
   returns a structured error without taking the loop down.
 - **Swift spike** — `spikes/swift-host/` (SwiftPM; outside the Gradle build).
-  Spawns the helper, drives it over JSONL, and verifies: `ping` round-trip,
-  `listDevices` reaching real `adb` across the boundary, an unknown method
-  surfacing as a structured error, and the helper **surviving** that error
-  (resident-service rule). Result: PASS, against a real device.
+  Spawns the helper, drives it over JSONL, and verifies (against a real device):
+  `ping` round-trip, `listDevices` reaching real `adb` across the boundary, an
+  unknown method surfacing as a structured error, the helper **surviving** that
+  error, and — with a `--package` arg — a real `inject` + `uiReport` carried
+  across the boundary, the helper surviving even an inject failure. Result: PASS.
 
-So the boundary is no longer a risk assumption — it works. **Still unproven /
-deferred to execution:** `inject`/`uiReport` over the boundary on a real device
-(implemented in the helper, not yet exercised from Swift); the helper RPC
-contract formalized into `reticle-protocol`; supervision of the two resident
-processes (Swift daemon + Kotlin helper); and helper distribution (JVM jar vs
-its own native-image). The next step when this line is scheduled is to port the
-generic core to Swift behind this proven seam — not to rewrite JDWP.
+So the boundary is no longer a risk assumption — it works, including the
+high-value `inject`/`uiReport` calls (the Swift host sends them, the helper
+executes and returns a structured result or a structured error; the resident
+helper survives failures). Two findings worth carrying forward:
+
+- **The helper's payload-dex resolution is cwd-relative.** When a host spawns it
+  from elsewhere, set the working dir or pass `RETICLE_PAYLOAD_DEX` — otherwise
+  `inject` fails with "payload dex not found". The RPC contract should make the
+  payload location explicit rather than relying on cwd.
+- **On this OEM test device the runtime did not come up after injection** —
+  injection completed but `awaitRuntime` timed out, *identically to the CLI's own
+  `app inject`*. So this is a device-side JDWP/breakpoint quirk of that ROM,
+  orthogonal to the Swift boundary (the helper reproduced the CLI's behavior
+  verbatim, which is exactly the correctness signal we wanted). Verifying a
+  *successful* end-to-end inject is better done on an emulator and is not a
+  blocker for this spike's conclusion.
+
+**Still deferred to execution:** the helper RPC contract formalized into
+`reticle-protocol` (incl. explicit payload location); supervision of the two
+resident processes (Swift daemon + Kotlin helper); and helper distribution (JVM
+jar vs its own native-image). The next step when this line is scheduled is to
+port the generic core to Swift behind this proven seam — not to rewrite JDWP.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 

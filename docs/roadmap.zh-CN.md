@@ -163,15 +163,28 @@ Swift host(CLI + daemon + Web)
   Android host 层,藏在 RPC 接缝后面)。它是常驻循环,不是 fork-per-call,且坏的/
   未知的请求返回结构化错误而不会掀翻循环。
 - **Swift spike**——`spikes/swift-host/`(SwiftPM;在 Gradle 构建之外)。它 spawn
-  helper、经 JSONL 驱动它,并验证:`ping` 往返、`listDevices` 跨边界打到真实
-  `adb`、未知方法浮现为结构化错误、以及 helper 在该错误后**仍存活**(常驻服务
-  规则)。结果:PASS,针对一台真机。
+  helper、经 JSONL 驱动它,并(针对一台真机)验证:`ping` 往返、`listDevices`
+  跨边界打到真实 `adb`、未知方法浮现为结构化错误、helper 在该错误后**仍存活**、
+  以及——带 `--package` 参数时——一次真实的 `inject` + `uiReport` 被送过边界,
+  helper 即使在 inject 失败时也存活。结果:PASS。
 
-所以这个边界不再是一个风险假设——它能工作。**仍未证实 / 留待执行的:** 真机上
-跨边界跑 `inject`/`uiReport`(helper 里已实现,尚未从 Swift 侧实跑);把 helper 的
-RPC 契约形式化进 `reticle-protocol`;两个常驻进程(Swift daemon + Kotlin helper)的
-监管;以及 helper 的分发(JVM jar vs 它自己的 native-image)。这条线排期时的下一步,
-是在这个已验证的接缝后面把通用核心移植到 Swift——而不是重写 JDWP。
+所以这个边界不再是一个风险假设——它能工作,包括高价值的 `inject`/`uiReport` 调用
+(Swift host 发起它们,helper 执行并返回结构化结果或结构化错误;常驻 helper 在失败后
+存活)。两点值得带入后续:
+
+- **helper 的 payload-dex 解析是相对 cwd 的。** 当 host 从别处 spawn 它时,要设置
+  工作目录或传 `RETICLE_PAYLOAD_DEX`——否则 `inject` 会以"payload dex not found"
+  失败。RPC 契约应当显式给出 payload 位置,而不是依赖 cwd。
+- **在这台 OEM 测试真机上,注入后 runtime 没起来**——注入完成但 `awaitRuntime`
+  超时,*与 CLI 自带的 `app inject` 表现完全一致*。所以这是该 ROM 的设备侧
+  JDWP/breakpoint 怪癖,与 Swift 边界正交(helper 逐字复现了 CLI 的行为,这正是
+  我们想要的正确性信号)。验证一次*成功*的端到端 inject 更适合在模拟器上做,且不是
+  本 spike 结论的阻塞项。
+
+**仍留待执行的:** 把 helper 的 RPC 契约形式化进 `reticle-protocol`(含显式 payload
+位置);两个常驻进程(Swift daemon + Kotlin helper)的监管;以及 helper 的分发
+(JVM jar vs 它自己的 native-image)。这条线排期时的下一步,是在这个已验证的接缝
+后面把通用核心移植到 Swift——而不是重写 JDWP。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 

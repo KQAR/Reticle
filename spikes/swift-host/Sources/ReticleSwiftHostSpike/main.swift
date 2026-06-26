@@ -126,6 +126,26 @@ do {
     let pong2 = try client.call("ping")
     print("✓ ping again  -> \(pong2)  (helper survived the bad call)")
 
+    // Optional high-value path: if a package is given (arg 3), drive a real
+    // inject across the boundary. NOTE: whether the device-side injection
+    // actually brings the runtime up is ORTHOGONAL to this spike — we only prove
+    // the call crosses the boundary and returns a structured result or error.
+    if args.count >= 3 {
+        let pkg = args[2]
+        do {
+            let injected = try client.call("inject", ["package": pkg])
+            print("✓ inject      -> \(injected)  (runtime came up)")
+            let report = try client.call("uiReport", ["package": pkg])
+            print("✓ uiReport    -> \(report)")
+        } catch let e as SpikeError {
+            // A device-side failure still proves the boundary: the Swift host
+            // sent inject and got a clean structured error back.
+            print("• inject      -> structured error across boundary (device-side, expected on some ROMs): \(e.message)")
+            let pong3 = try client.call("ping")
+            print("✓ ping again  -> \(pong3)  (helper survived an inject failure)")
+        }
+    }
+
     client.shutdown()
     print("\nspike: PASS — Swift host drove the Kotlin helper across the RPC boundary.")
 } catch {
