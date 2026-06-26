@@ -48,13 +48,23 @@ Response (failure):
 
 ## Methods
 
+Common optional params on device methods: `serial`, `port`, `hostPort`. Selector
+params (where noted): `testId`, `resourceId`, `ref`, `point` ("x,y"), `region`.
+
 | Method | Params | Result |
 | --- | --- | --- |
 | `ping` | — | `{ "pong": true, "version": "<cli version>" }` |
 | `listDevices` | — | `{ "devices": [ { "serial", "state" }, ... ] }` |
-| `status` | `package?`, `serial?`, `port?`, `hostPort?` | `{ "devices": [...], ["package", "running", "pid", "runtime"] }` — `runtime` ∈ `healthy`/`conflict`/`unreachable`/`unresponsive`/`foreign` |
-| `inject` | `package` (req), `serial?`, `payloadDex?`, `port?`, `hostPort?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
-| `uiReport` | `package` (req), `serial?`, `port?`, `hostPort?` | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
+| `status` | `package?` | `{ "devices": [...], ["package", "running", "pid", "runtime"] }` — `runtime` ∈ `healthy`/`conflict`/`unreachable`/`unresponsive`/`foreign` |
+| `inject` | `package` (req), `payloadDex?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
+| `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
+| `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
+| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector; swipe/drag: `from`,`to`,`duration?`; type: `text` | `{ "gesture", ... }` |
+| `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
+| `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
+| `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
+| `screenshot` | `package?` | `{ "via", "pngBase64" }` — agent `/screenshot` if reachable, else `adb screencap` |
+| `render` | `view` (tree/semantics/compact/node/regions), `snapshot` (path), `depth?`, selector | `{ "text": "<rendered>" }` — local snapshot rendering; derivation stays in Kotlin, host just prints |
 
 ### Notes that bit us in the spike
 
@@ -73,8 +83,13 @@ Response (failure):
   the returned JSON to `snapshot.json` / `semantics.json` / `compact.json`. The
   host never re-derives. This is the "thin client" boundary in practice.
 
-## Not yet covered (add as the host grows)
+## Coverage
 
-`act` (tap/swipe/drag/type), `mutate`, `debug logs`, `screenshot` (binary — needs
-a base64 field or a side channel), and `app launch`. Add each as a method here +
-the matching `Helper.dispatch` branch when the Swift host needs it.
+The Swift host (`reticle-host/`) now reaches functional parity with the Kotlin
+CLI's one-shot command surface through these methods: device control
+(status/inject/launch), evidence (uiReport/render/screenshot/logs/logcat), and
+action (act/mutate). Binary screenshots cross as base64 (`pngBase64`).
+
+Not yet exposed (add a method + a `Helper.dispatch` branch when needed): a
+streaming/long-poll `logs --follow`, and any future `act` gestures beyond
+tap/swipe/drag/type (e.g. multi-touch pinch, still unimplemented in the backend).
