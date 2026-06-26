@@ -25,19 +25,20 @@ The CLI is on PATH as `reticle` while this plugin is enabled.
 
 ## Install (how the `reticle` binary is obtained)
 
-The launcher (`bin/reticle`) resolves the actual CLI in this order, first hit wins:
-1. `$RETICLE_CLI` — explicit path to a `reticle` launch script.
-2. `$RETICLE_HOME/bin/reticle` — an unpacked release distribution.
-3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build via the bundled Gradle
-   (needs JDK 17); for development / offline work only.
+`reticle` is the **Swift host** — a no-JDK native macOS arm64 binary that drives
+Android through a sibling native helper (`reticle-helper`). **macOS arm64 only.**
+The launcher (`bin/reticle`) resolves it in this order, first hit wins:
+1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
+2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
+3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host + native helper;
+   needs the Swift toolchain + a GraalVM with native-image). Development only.
 4. A **prebuilt release** — cached under `~/.reticle/cli`, else downloaded
    (SHA256-verified) from GitHub Releases. **This is the default** (needs
-   `curl`+`unzip` and network; no JDK).
+   `curl`+`unzip` and network; **no JDK**).
 
 By default the prebuilt release is always used — there is **no silent source
-build**. If it can't be obtained the launcher stops with actionable guidance
-(restore network / set `RETICLE_HOME` to a manual download / re-run with
-`RETICLE_FROM_SOURCE=1`). `reticle version` confirms which CLI is active.
+build**. If it can't be obtained the launcher stops with actionable guidance.
+`reticle version` confirms it's ready.
 
 ## Prerequisites (check, don't assume)
 

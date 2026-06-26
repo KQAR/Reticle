@@ -58,12 +58,14 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   the manifests differ. `claude plugin validate .` covers the Claude pair;
   `scripts/validate_plugin.py` covers BOTH pairs.
 - `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled.
-  Default path ALWAYS uses the prebuilt release (SHA256-verified, cached under
-  `~/.reticle/cli` or downloaded from Releases) and never silently builds from
-  source; if the download fails it hard-stops with guidance. Order:
-  `$RETICLE_CLI` → `$RETICLE_HOME` → `RETICLE_FROM_SOURCE=1` (opt-in source build,
-  needs JDK 17) → prebuilt release. `release.yml` publishes the prebuilt CLI +
-  agent AAR on a `v*` tag.
+  `reticle` IS the Swift host; the launcher resolves/execs `reticle-host` with the
+  native `reticle-helper` beside it. Default path ALWAYS uses the prebuilt release
+  (SHA256-verified, cached under `~/.reticle/cli` or downloaded from Releases) and
+  never silently builds from source; if the download fails it hard-stops with
+  guidance. Order: `$RETICLE_HOST` → `$RETICLE_HOME/bin` → `RETICLE_FROM_SOURCE=1`
+  (opt-in source build: Swift host + native helper) → prebuilt release.
+  `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
+  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS arm64 only.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
 - `commands/report.md`, `commands/tap.md` — slash commands (`/reticle:report`,
   `/reticle:tap`).
@@ -173,6 +175,7 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
 - Injection into apps without the AAR: `reticle app inject` over JDWP for any
   **debuggable** app (no repackage, no root — works on locked `user` builds where
   `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:android:dexPayload`
-  and resolved via `$RETICLE_PAYLOAD_DEX` → gradle build output → `<cli>/lib/`.
+  and resolved via the `reticle.payloadDex` sysprop / `$RETICLE_PAYLOAD_DEX` →
+  gradle build output → `<cli>/lib/` (the helper RPC sets the sysprop explicitly).
   Non-debuggable release builds still need Frida/root. See `docs/architecture.md`
   for the JDWP sequence and its on-device constraints.

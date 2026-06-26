@@ -165,12 +165,13 @@ helper 驱动 Android。当前已存在的:
   `uiReport` 在设备侧派生树并返回成品 `snapshot`/`semantics`/`compact` JSON。
 - **RPC 契约**——形式化在 `reticle-protocol/helper-rpc.md`(信封、方法清单、显式
   payload 规则、inject 等待 runtime 起来的规则)。
-- **Swift host CLI**——`reticle-host/`(SwiftPM;在 Gradle 构建之外)。是真正的
-  CLI,不是 spike:`HelperClient`(常驻 JSONL RPC,带 id 关联)+ 命令 `doctor` /
-  `devices` / `status` / `inject` / `ui report`。它不持有任何设备代码——每条命令
-  都是一次 RPC 调用。`ui report` 把 helper 返回的树直接写到 `snapshot.json` /
-  `semantics.json` / `compact.json`(薄客户端边界的实践——host 从不重新派生)。
-  (`spikes/swift-host/` 作为最小边界证明保留。)
+- **Swift host CLI**——`reticle-host/`(SwiftPM;在 Gradle 构建之外)。是与 Kotlin
+  CLI 命令对齐的真正 CLI:`HelperClient`(常驻 JSONL RPC,带 id 关联)+ `doctor` /
+  `devices` / `status` / `app launch|inject` / `act` / `mutate` / `debug` /
+  `ui report|screenshot|tree|compact|node|regions` / `version`。它不持有任何设备
+  代码——每条命令都是一次 RPC 调用。`ui report` 把 helper 返回的树直接写到
+  `snapshot.json` / `semantics.json` / `compact.json`(薄客户端边界的实践——host
+  从不重新派生)。(最初的一次性 spike 已随真正的 host 落地而移除。)
 
 真机上已验证:`doctor`/`devices`/`status` 返回真实设备数据;**对链接版示例 app 跑
 `ui report` 得到 healthy runtime 并写出真实的 24KB `snapshot.json` + semantics +
