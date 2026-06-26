@@ -8,12 +8,14 @@ import dev.reticle.core.Rect
 
 /**
  * Compose semantics bridge. The boundary rule: a composable is a valid
- * movement/input target only when it is exposed through the accessibility tree.
+ * movement/input target only when it is exposed through the platform
+ * accessibility/semantics surface (not from private Compose internals).
  *
  * There is no classic View per composable. The honest, stable surface is the
- * SemanticsNode tree (the same tree that backs accessibility and
+ * SemanticsNode tree (the same tree that backs platform accessibility and
  * Modifier.testTag). We read it reflectively so the agent has no hard Compose
- * dependency and links cleanly into pure-View apps.
+ * dependency and links cleanly into pure-View apps. These merged nodes are
+ * captured into the snapshot, from which Reticle's own SemanticTree is derived.
  *
  * If the view is not an AndroidComposeView, or the Compose runtime shape
  * changes, we emit nothing rather than inventing selectors from private

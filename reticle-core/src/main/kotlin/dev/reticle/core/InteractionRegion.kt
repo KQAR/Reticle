@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /**
  * Sub-node interaction evidence. This is the answer to "a single View carries
  * more than one tappable region" — the case the plain view tree and the
- * accessibility tree both collapse into one node.
+ * semantic tree both collapse into one node.
  *
  * This is driven by a concrete finding on a real app (a custom MarkdownCheckBox
  * whose "toggle" vs "open agreement" regions live only inside its private
@@ -23,9 +23,10 @@ import kotlinx.serialization.Serializable
  *   3. TOUCH_DELEGATE — an extended/forwarded hit-rect via getTouchDelegate().
  *
  * When none of the above resolve but the node still looks multi-region (an
- * interactive TextView whose text contains 《》/markdown link markers, no
- * children, no spans), the node is flagged `suspectedMultiRegion = true` and a
- * CHAR_GRID is attached so an agent can target a substring by coordinate.
+ * interactive TextView whose text contains paired-bracket / markdown link
+ * markers, no children, no spans), the node is flagged
+ * `suspectedMultiRegion = true` and a CHAR_GRID is attached so an agent can
+ * target a substring by coordinate.
  */
 @Serializable
 enum class RegionSource {
@@ -82,8 +83,8 @@ data class InteractionRegion(
 /**
  * Character-position grid for a text node. Lets an agent map a screen X (on a
  * given line) to a character offset and back, so it can target a substring
- * (e.g. the 《agreement》 link) even when the widget exposes no spans and no
- * virtual nodes — the only thing recoverable for a fully self-drawn control.
+ * (e.g. a bracketed agreement link) even when the widget exposes no spans and
+ * no virtual nodes — the only thing recoverable for a fully self-drawn control.
  *
  * Derived from android.text.Layout, which is the same geometry the framework
  * uses to draw text, so it is accurate for the common single-line/LTR case and

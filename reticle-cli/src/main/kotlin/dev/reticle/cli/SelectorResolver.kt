@@ -1,25 +1,25 @@
 package dev.reticle.cli
 
-import dev.reticle.core.AccessibilityTree
 import dev.reticle.core.Node
 import dev.reticle.core.Point
 import dev.reticle.core.Rect
 import dev.reticle.core.Selector
+import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
 
 /**
  * Resolves a selector to a screen point for input dispatch. Encodes the
  * architecture rule:
  *
- *   "Use the accessibility tree first for movement and input; selector actions
- *    should only fall back to view frames when no accessibility match exists."
+ *   "Use the semantic tree first for movement and input; selector actions
+ *    should only fall back to view frames when no semantic match exists."
  *
- * So we try the accessibility tree first (testId / resourceId), then the full
+ * So we try the semantic tree first (testId / resourceId), then the full
  * snapshot's view frames, then a raw point.
  */
 class SelectorResolver(
     private val snapshot: Snapshot,
-    private val accessibility: AccessibilityTree,
+    private val semantic: SemanticTree,
 ) {
 
     data class Resolved(val point: Point, val source: String, val ref: String?)
@@ -35,15 +35,15 @@ class SelectorResolver(
         // 1. Raw point wins if explicitly provided.
         selector.point?.let { return Resolved(it, "point", null) }
 
-        // 2. Accessibility tree first.
+        // 2. Semantic tree first.
         selector.testId?.let { id ->
-            accessibility.findByTestId(id)?.frame?.let { return Resolved(center(it), "accessibility:testId", refByTestId(id)) }
+            semantic.findByTestId(id)?.frame?.let { return Resolved(center(it), "semantic:testId", refByTestId(id)) }
         }
         selector.resourceId?.let { id ->
-            accessibility.findByResourceId(id)?.frame?.let { return Resolved(center(it), "accessibility:resourceId", refByResourceId(id)) }
+            semantic.findByResourceId(id)?.frame?.let { return Resolved(center(it), "semantic:resourceId", refByResourceId(id)) }
         }
         selector.ref?.let { ref ->
-            accessibility.node(ref)?.frame?.let { return Resolved(center(it), "accessibility:ref", ref) }
+            semantic.node(ref)?.frame?.let { return Resolved(center(it), "semantic:ref", ref) }
         }
 
         // 3. Fall back to view-tree frames.

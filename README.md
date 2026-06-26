@@ -40,35 +40,39 @@ input.
 | Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. The port is derived per-app from the `applicationId` (agent and CLI compute the same value), so multiple linked apps never collide on one fixed port. |
 | Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
 | Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
-| Selector resolution | Accessibility tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
+| Selector resolution | Semantic tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
 
-See `Docs/Architecture.md` for the full design, including the Compose-semantics
+See `docs/architecture.md` for the full design, including the Compose-semantics
 boundary and the injection trade-offs.
 
 ## Multi-region controls
 
 A single View can carry several tap targets — the classic case is an agreement
-row: *"I have read and agree to 《Terms》《Privacy》"*, where the text toggles a
-checkbox and each 《…》 opens a different page. Both the view tree and the
-accessibility tree collapse this into one node. Reticle decomposes it through
+row: *"I have read and agree to [Terms][Privacy]"*, where the text toggles a
+checkbox and each link opens a different page. Both the view tree and the
+semantic tree collapse this into one node. Reticle decomposes it through
 several channels:
 
 - **`span`** — real `ClickableSpan` / `URLSpan` ranges, with per-line pixel
   hit-rects and the link's color.
 - **`a11yVirtual`** — virtual accessibility sub-nodes (`ExploreByTouchHelper`).
 - **`touchDelegate`** — extended/forwarded hit-rects.
-- **`textMarker`** — one region per in-text 《…》 / markdown link on self-drawn
-  rows, each with its own rect.
+- **`textMarker`** — one region per in-text bracketed / markdown link on
+  self-drawn rows, each with its own rect. Bracket detection is script-agnostic
+  (markdown `[text](url)`, plus paired delimiters like `«…»` and `《…》`).
 - **`colorSpan`** — a re-colored run (the "highlight = link" pattern), surfaced
   with its actual color.
 - **char grid** — exact per-character X positions from the laid-out text, so an
   agent can hit any phrase by substring even when nothing structural marks it
   (robust across font, size, letter/line spacing — all read from `Layout`).
 
+Region matching is plain substring matching — pass the on-screen text in any
+language.
+
 ```bash
 reticle ui regions snapshot.json
-reticle act tap --package <pkg> --test-id agreement --region "《Privacy》"
-reticle act tap --package <pkg> --test-id agreement --region "用户协议"
+reticle act tap --package <pkg> --test-id agreement --region "Privacy"
+reticle act tap --package <pkg> --test-id agreement --region "Terms"
 ```
 
 ## Install as a Claude Code plugin
@@ -136,7 +140,7 @@ attaches to a GitHub Release:
 
 ## Modules
 
-- `reticle-core` — pure JVM snapshot / accessibility / compact-observation
+- `reticle-core` — pure JVM snapshot / semantic / compact-observation
   models and the wire protocol. No Android dependency.
 - `reticle-agent` — Android library (AAR). In-process HTTP server + view and
   Compose-semantics capture, region detection, runtime mutation, screenshots,
@@ -171,13 +175,13 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 
-# Act on the app (accessibility/selector first, frame fallback)
+# Act on the app (semantic/selector first, frame fallback)
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
 # Multi-region controls: one View, several click targets (agreement rows etc.)
 $CLI ui regions reticle-report/snapshot.json
-$CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "《用户协议》"
-$CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "《隐私政策》"
+$CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
+$CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
 
 # Read app-authored runtime logs
 $CLI debug logs --package dev.reticle.sample

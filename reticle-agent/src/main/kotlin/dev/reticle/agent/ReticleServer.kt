@@ -3,7 +3,7 @@ package dev.reticle.agent
 import android.os.Build
 import android.os.Process
 import android.util.Log
-import dev.reticle.core.AccessibilityTree
+import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.Endpoints
 import dev.reticle.core.LogBatch
@@ -153,10 +153,10 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.Snapshot.serializer(), snapshot))
             }
 
-            method == "GET" && path == Endpoints.ACCESSIBILITY -> {
+            method == "GET" && path == Endpoints.SEMANTICS -> {
                 val snapshot = SnapshotCapture(context).capture()
-                val tree = AccessibilityTree.build(snapshot)
-                writeJson(out, ReticleJson.instance.encodeToString(AccessibilityTree.serializer(), tree))
+                val tree = SemanticTree.build(snapshot)
+                writeJson(out, ReticleJson.instance.encodeToString(SemanticTree.serializer(), tree))
             }
 
             method == "GET" && path == Endpoints.COMPACT -> {
@@ -183,6 +183,16 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 val request = ReticleJson.instance.decodeFromString(MutationRequest.serializer(), body)
                 val result = MutationEngine(context).apply(request)
                 writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.MutationResult.serializer(), result))
+            }
+
+            method == "POST" && path == Endpoints.CLIPBOARD -> {
+                // Body is the raw UTF-8 text to place on the clipboard (no JSON
+                // wrapper — avoids a second layer of escaping for arbitrary text).
+                if (ClipboardWriter(context).set(body)) {
+                    writeText(out, 200, "ok")
+                } else {
+                    writeText(out, 500, "clipboard unavailable")
+                }
             }
 
             else -> writeText(out, 404, "no route for $method $path")

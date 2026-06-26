@@ -5,11 +5,11 @@ inspection, diagnostic, and action harness — it inspects the app that is
 actually running, resolves precise selectors and tap regions, and drives real
 input through adb.
 
-Use this file as a map. Deeper architecture lives in `Docs/Architecture.md`.
+Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
 
 ## Current Shape
 
-- `reticle-core`: pure JVM snapshot models, accessibility tree models, compact
+- `reticle-core`: pure JVM snapshot models, semantic tree models, compact
   observations, wire protocol, selectors. No Android dependency. Shared by the
   CLI and the in-app agent.
 - `reticle-agent`: Android library (AAR). In-process loopback HTTP server,
@@ -67,9 +67,9 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 
 - The agent observes app state. It is not the place where input events are
   synthesized — real input comes from the host via `adb shell input`.
-- Use the view tree for UI/layout/style validation. Use the accessibility tree
+- Use the view tree for UI/layout/style validation. Use the semantic tree
   first for movement and input; selector actions fall back to view frames only
-  when no accessibility match exists.
+  when no semantic match exists.
 - Reticle does not synthesize a Compose view tree. Compose elements are valid
   movement/input targets only when exposed through the SemanticsNode tree
   (`Modifier.testTag`, contentDescription). Never invent selectors from private
@@ -85,22 +85,26 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 ## Toolchain
 
 - Android SDK at `~/Library/Android/sdk` (compileSdk 35, build-tools present).
-- JDK 17 for Gradle/AGP (`/usr/libexec/java_home -v 17`). The default JDK 26 is
-  too new for AGP 8.7 — always set `JAVA_HOME` to a 17 JDK before building.
+- JDK 17 for Gradle/AGP. The build **pins the Gradle daemon to JDK 17** via
+  `gradle/gradle-daemon-jvm.properties` (`toolchainVersion=17`), so the wrapper
+  auto-selects a locally-installed 17 even when the default `java` is newer —
+  no `JAVA_HOME` needed. (A too-new default like JDK 26 otherwise crashes the
+  daemon and AGP 8.7.) If no JDK 17 is auto-detected, install one or set
+  `JAVA_HOME=$(/usr/libexec/java_home -v 17)` as a fallback.
 - Gradle 8.13 via the wrapper.
 
 ## Verification
 
-Build everything:
+Build everything (the daemon auto-pins to JDK 17 — see Toolchain):
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew assemble
+./gradlew assemble
 ```
 
 Prove the runtime round trip on a booted device/emulator:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :reticle-cli:installDist :sample-app:assembleDebug
+./gradlew :reticle-cli:installDist :sample-app:assembleDebug
 adb install -r -t sample-app/build/outputs/apk/debug/sample-app-debug.apk
 
 CLI=reticle-cli/build/install/reticle/bin/reticle
@@ -116,7 +120,7 @@ $CLI mutate      --package dev.reticle.sample --test-id checkout.status \
                  --property text --value "Cart: 3 items"
 ```
 
-Expected: tap resolves via `accessibility:testId`, the status text flips to
+Expected: tap resolves via `semantic:testId`, the status text flips to
 "Paid!" after the tap, and the logs include `checkout_visible` /
 `checkout_paid`.
 
@@ -155,5 +159,5 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
   **debuggable** app (no repackage, no root — works on locked `user` builds where
   `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:dexPayload`
   and resolved via `$RETICLE_PAYLOAD_DEX` → gradle build output → `<cli>/lib/`.
-  Non-debuggable release builds still need Frida/root. See `Docs/Architecture.md`
+  Non-debuggable release builds still need Frida/root. See `docs/architecture.md`
   for the JDWP sequence and its on-device constraints.

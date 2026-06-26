@@ -55,7 +55,7 @@ object RegionProbe {
         }
 
         // Suspected-multi-region heuristic: an interactive text node that looks
-        // like it embeds a link (《》 / markdown / "协议"/"agreement") yet
+        // like it embeds links (paired bracket markers or a markdown link) yet
         // exposed no real spans, no virtual nodes, and has no child views.
         val standardChannelsEmpty = regions.isEmpty()
         val suspected = standardChannelsEmpty &&
@@ -219,34 +219,50 @@ object RegionProbe {
 
     /**
      * Text-marker channel: when a node carries no real ClickableSpan / virtual
-     * node but its text embeds link markers (《…》 or markdown `[text](url)`),
-     * emit ONE region per marker, each with its own Layout-derived rect. This
-     * is the fix for the self-drawn multi-link agreement row, where the whole
-     * "《A》《B》《C》" run would otherwise collapse into a single block.
+     * node but its text embeds link markers (a paired bracket run or a markdown
+     * `[text](url)`), emit ONE region per marker, each with its own
+     * Layout-derived rect. This is the fix for the self-drawn multi-link
+     * agreement row, where the whole "<A><B><C>" run would otherwise collapse
+     * into a single block.
+     *
+     * Bracket detection is script-agnostic: it scans for any of the paired
+     * "title/quote" delimiters in [BRACKET_PAIRS] rather than a single locale's.
+     * The set spans CJK guillemets (《…》「…」『…』【…】) and European angle
+     * quotes («…»), so the same self-drawn-row support works regardless of the
+     * app's language. Add a pair here to cover a new convention.
      */
     private fun markerRegions(tv: TextView): List<InteractionRegion> {
         val text = tv.text?.toString() ?: return emptyList()
         if (text.isEmpty()) return emptyList()
         val out = ArrayList<InteractionRegion>()
 
-        // CJK guillemet links: 《…》
-        var i = 0
-        while (true) {
-            val open = text.indexOf('《', i)
-            if (open < 0) break
-            val close = text.indexOf('》', open + 1)
-            if (close < 0) break
-            val end = close + 1
+        // Paired bracket links, any script: <open>…<close>. Scan all pairs and
+        // emit regions in text order so a mixed "《A》 «B»" row still resolves to
+        // distinct targets.
+        data class Marker(val start: Int, val end: Int)
+        val markers = ArrayList<Marker>()
+        for ((open, close) in BRACKET_PAIRS) {
+            var i = 0
+            while (true) {
+                val o = text.indexOf(open, i)
+                if (o < 0) break
+                val c = text.indexOf(close, o + 1)
+                if (c < 0) break
+                markers.add(Marker(o, c + 1))
+                i = c + 1
+            }
+        }
+        markers.sortBy { it.start }
+        for (m in markers) {
             out.add(
                 InteractionRegion(
                     source = RegionSource.textMarker,
-                    label = text.substring(open, end),
-                    charStart = open,
-                    charEnd = end,
-                    rects = rectsForRange(tv, open, end),
+                    label = text.substring(m.start, m.end),
+                    charStart = m.start,
+                    charEnd = m.end,
+                    rects = rectsForRange(tv, m.start, m.end),
                 )
             )
-            i = end
         }
 
         // Markdown links: [text](url)
@@ -265,6 +281,20 @@ object RegionProbe {
         }
         return out
     }
+
+    /**
+     * Paired "title/quote" delimiters used to mark an embedded link inside a
+     * self-drawn text run, across scripts. Order doesn't matter; matches are
+     * re-sorted by position. Keep open/close distinct (no symmetric quotes like
+     * `"…"`, which can't be paired unambiguously by scanning).
+     */
+    private val BRACKET_PAIRS = listOf(
+        '《' to '》', // CJK double angle (book title)
+        '「' to '」', // CJK corner
+        '『' to '』', // CJK white corner
+        '【' to '】', // CJK lenticular
+        '«' to '»',  // European guillemets (e.g. fr / ru / many EU locales)
+    )
 
     private val MARKDOWN_LINK = Regex("""\[([^]]+)]\(([^)]+)\)""")
 
@@ -399,10 +429,24 @@ object RegionProbe {
         return CharGrid(text = text, lines = lines, approximate = approximate)
     }
 
+    /**
+     * Does this run carry a *structural* link marker — a paired bracket from
+     * [BRACKET_PAIRS] or a markdown `](` — that [markerRegions] can split on?
+     *
+     * Detection is deliberately structural, not lexical: it does NOT match on
+     * natural-language keywords (e.g. "agreement"/"terms"/"privacy" in any
+     * language). Reticle is a general-purpose tool, so it must not assume an
+     * app's language or domain.
+     * Plain clickable phrases with no markup are still fully targetable by
+     * substring through the always-emitted char grid; they simply aren't
+     * *flagged* as suspected multi-region from their wording.
+     */
     private fun looksLikeEmbeddedLink(text: String?): Boolean {
         if (text.isNullOrBlank()) return false
-        return text.contains('《') || text.contains('》') ||
-            text.contains("](") || // markdown link
-            Regex("协议|同意|隐私|授权|条款|agreement|terms|privacy", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        if (text.contains("](")) return true // markdown link
+        return BRACKET_PAIRS.any { (open, close) ->
+            val o = text.indexOf(open)
+            o >= 0 && text.indexOf(close, o + 1) >= 0
+        }
     }
 }
