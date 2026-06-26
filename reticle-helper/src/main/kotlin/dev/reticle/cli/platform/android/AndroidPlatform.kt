@@ -12,7 +12,11 @@ import dev.reticle.cli.platform.Platform
 object AndroidPlatform : Platform {
     override val id: String = "android"
 
-    override fun device(serial: String?): DeviceController = Adb(serial = serial)
+    // An explicit serial (from `--serial`) wins; otherwise fall back to
+    // $ANDROID_SERIAL, the same variable plain `adb` honors — so a user who
+    // already exports it to pick among several devices needs no extra flag.
+    override fun device(serial: String?): DeviceController =
+        Adb(serial = serial ?: System.getenv("ANDROID_SERIAL")?.ifBlank { null })
 
     override fun input(device: DeviceController): InputDispatcher = InputBackend(device)
 

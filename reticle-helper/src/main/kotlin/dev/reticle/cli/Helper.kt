@@ -127,6 +127,10 @@ object Helper {
                 states.forEach { s -> add(buildJsonObject { put("serial", s.serial); put("state", s.state) }) }
             })
             if (pkg != null) {
+                // Listing devices above is fine with several attached, but probing
+                // ONE package's pid/runtime needs an unambiguous target — surface
+                // the multi-device error here rather than a misleading "not running".
+                device.ensureDeviceReady()
                 val pid = device.pidOf(pkg)
                 put("package", pkg)
                 put("running", pid != null)

@@ -273,7 +273,7 @@ func selectorKey(_ cliName: String) -> String {
 // --- entry -------------------------------------------------------------------
 
 let RETICLE_VERSION = "0.5.0"
-let USAGE = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|version> [options]"
+let USAGE = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|version> [--serial <id>] [options]"
 
 let argv = Array(CommandLine.arguments.dropFirst())
 let args = Args(argv)
@@ -303,7 +303,15 @@ guard let helper = resolveHelper(args) else {
 
 // JAVA_HOME only matters when the helper is the dev JVM launcher; a native
 // reticle-helper binary ignores it. Pass it through harmlessly either way.
-let client = HelperClient(launcher: helper, javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"])
+// A global --serial scopes every command to one device (for multi-device setups);
+// the helper also honors $ANDROID_SERIAL when neither is given. Guard the
+// no-value case (`--serial` with nothing after it parses as "true").
+let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
+let client = HelperClient(
+    launcher: helper,
+    javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
+    serial: serialArg
+)
 do {
     try client.start()
     switch command {

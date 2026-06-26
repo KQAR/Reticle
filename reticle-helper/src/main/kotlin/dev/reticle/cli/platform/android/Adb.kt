@@ -124,11 +124,26 @@ class Adb(
     override fun screencap(timeoutSeconds: Long): ByteArray =
         runBytes("exec-out", "screencap", "-p", timeoutSeconds = timeoutSeconds)
 
-    /** State of [serial] (or this Adb's serial) — `device`, `offline`, etc., or null if absent. */
+    /**
+     * State of this controller's device — `device`, `offline`, etc., or null if
+     * absent. With a serial, look that device up. WITHOUT a serial, there must be
+     * exactly one device: zero -> null (absent), one -> its state, but MANY is
+     * ambiguous and throws [DeviceError] naming the candidates — far clearer than
+     * the old `singleOrNull()` that silently returned null and surfaced as a
+     * misleading "no device detected" whenever a stray emulator was attached.
+     */
     override fun deviceState(): String? {
         val states = listDeviceStates()
-        return if (serial != null) states.firstOrNull { it.serial == serial }?.state
-        else states.singleOrNull()?.state
+        if (serial != null) return states.firstOrNull { it.serial == serial }?.state
+        return when (states.size) {
+            0 -> null
+            1 -> states.first().state
+            else -> throw DeviceError(
+                "${states.size} devices/emulators attached; pick one with `--serial <id>`" +
+                    " (or export ANDROID_SERIAL):\n" +
+                    states.joinToString("\n") { "  ${it.serial}  [${it.state}]" }
+            )
+        }
     }
 
     /**
