@@ -350,7 +350,8 @@ exposes), while `ui node` always returns the richer view-tree node.
 | --- | --- | --- |
 | `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
-| `reticle-cli` | Host JVM CLI | adb wrapper, runtime client, input backend, selector resolver, command dispatch |
+| `reticle-cli` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its `helper` subcommand is the RPC server the Swift host drives (direct commands gated off by default). |
+| `reticle-host` | Swift host CLI | The user-facing `reticle` (macOS arm64); owns no device code — every command is an RPC call to the native helper. |
 | `sample-app` | Android app | Demo linking the agent, proving the round trip |
 
 (`reticle-agent/` is a grouping directory — no build script of its own; future

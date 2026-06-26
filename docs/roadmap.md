@@ -200,12 +200,14 @@ through the Kotlin helper end-to-end on a real device. What exists today:
 - **RPC contract** — formalized in `reticle-protocol/helper-rpc.md` (envelope,
   methods, the explicit-payload rule, the inject-waits-for-liveness rule).
 - **Swift host CLI** — `reticle-host/` (SwiftPM; outside the Gradle build). A
-  real CLI, not a spike: `HelperClient` (resident JSONL RPC with id correlation)
-  + commands `doctor` / `devices` / `status` / `inject` / `ui report`. It owns no
-  device code — every command is an RPC call. `ui report` writes the
-  helper-returned trees straight to `snapshot.json` / `semantics.json` /
-  `compact.json` (the thin-client boundary in practice — the host never
-  re-derives). (`spikes/swift-host/` remains as the minimal boundary proof.)
+  real CLI at command parity with the Kotlin CLI: `HelperClient` (resident JSONL
+  RPC with id correlation) + `doctor` / `devices` / `status` / `app launch|inject`
+  / `act` / `mutate` / `debug` / `ui report|screenshot|tree|compact|node|regions`
+  / `version`. It owns no device code — every command is an RPC call. `ui report`
+  writes the helper-returned trees straight to `snapshot.json` / `semantics.json`
+  / `compact.json` (the thin-client boundary in practice — the host never
+  re-derives). (The original throwaway spike has been removed now that the real
+  host exists.)
 
 Verified on a real device: `doctor`/`devices`/`status` return real device data;
 **`ui report` against the linked sample app produced a healthy runtime and wrote

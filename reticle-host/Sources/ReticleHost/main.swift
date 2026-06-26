@@ -62,13 +62,6 @@ func resolveHelper(_ args: Args) -> String? {
     return nil
 }
 
-func printJSON(_ obj: Any) {
-    if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-       let s = String(data: data, encoding: .utf8) {
-        print(s)
-    }
-}
-
 // --- command handlers --------------------------------------------------------
 
 func cmdDevices(_ c: HelperClient) throws {
