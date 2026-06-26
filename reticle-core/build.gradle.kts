@@ -9,10 +9,25 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     testImplementation(kotlin("test"))
+    // Test-only: validate emitted JSON against the authoritative protocol schema.
+    // Stays out of the main classpath so the Android agent (which consumes core
+    // as Java 8 bytecode) never links it.
+    testImplementation("com.networknt:json-schema-validator:1.5.2")
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// The authoritative protocol spec + golden fixtures live in reticle-protocol/
+// (a sibling, language-neutral directory — not a Gradle module). Expose them to
+// the contract test as test resources rather than duplicating them into core.
+sourceSets {
+    test {
+        resources {
+            srcDir(rootProject.layout.projectDirectory.dir("reticle-protocol"))
+        }
+    }
 }
 
 java {

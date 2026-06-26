@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "capturedAtMillis": 1719400000000,
+  "platform": "android",
+  "screen": {
+    "size": { "width": 1080.0, "height": 2400.0 },
+    "density": 3.0,
+    "interfaceStyle": "dark"
+  },
+  "rootRef": "r0",
+  "nodes": {
+    "r0": {
+      "ref": "r0",
+      "parentRef": null,
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "resourceId": null,
+      "contentDescription": null,
+      "text": null,
+      "testId": null,
+      "frame": null,
+      "isVisible": true,
+      "isEnabled": true,
+      "isInteractive": false,
+      "custom": {},
+      "children": ["r1"],
+      "regions": [],
+      "suspectedMultiRegion": false,
+      "charGrid": null
+    },
+    "r1": {
+      "ref": "r1",
+      "parentRef": "r0",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "text",
+      "resourceId": "agreement_row",
+      "contentDescription": null,
+      "text": "I agree to the Terms and Privacy",
+      "testId": "agreement",
+      "frame": { "x": 24.0, "y": 1800.0, "width": 1032.0, "height": 120.0 },
+      "isVisible": true,
+      "isEnabled": true,
+      "isInteractive": true,
+      "custom": {
+        "alpha": { "_type": "dev.reticle.core.MetadataValue.Real", "value": 1.0 },
+        "textColor": { "_type": "dev.reticle.core.MetadataValue.Text", "value": "#FF202124" },
+        "textSize": { "_type": "dev.reticle.core.MetadataValue.Real", "value": 42.0 },
+        "lineCount": { "_type": "dev.reticle.core.MetadataValue.Integer", "value": 1 },
+        "selected": { "_type": "dev.reticle.core.MetadataValue.Bool", "value": false }
+      },
+      "children": [],
+      "regions": [
+        {
+          "source": "span",
+          "label": "Terms",
+          "target": "https://example.com/terms",
+          "charStart": 15,
+          "charEnd": 20,
+          "rects": [
+            { "x": 430.0, "y": 1800.0, "width": 120.0, "height": 60.0 }
+          ],
+          "color": "#FF1A73E8"
+        },
+        {
+          "source": "colorSpan",
+          "label": "Privacy",
+          "target": null,
+          "charStart": 25,
+          "charEnd": 32,
+          "rects": [
+            { "x": 700.0, "y": 1800.0, "width": 150.0, "height": 60.0 }
+          ],
+          "color": "#FF1A73E8"
+        }
+      ],
+      "suspectedMultiRegion": false,
+      "charGrid": {
+        "text": "I agree to the Terms and Privacy",
+        "lines": [
+          {
+            "line": 0,
+            "start": 0,
+            "end": 32,
+            "top": 1800.0,
+            "bottom": 1860.0,
+            "xOffsets": [
+              24.0, 48.0, 60.0, 84.0, 108.0, 132.0, 156.0, 168.0, 192.0, 216.0,
+              240.0, 252.0, 276.0, 300.0, 324.0, 348.0, 372.0, 396.0, 420.0, 444.0,
+              468.0, 492.0, 516.0, 528.0, 552.0, 576.0, 600.0, 624.0, 648.0, 672.0,
+              696.0, 720.0, 744.0
+            ]
+          }
+        ],
+        "approximate": false
+      }
+    }
+  }
+}
