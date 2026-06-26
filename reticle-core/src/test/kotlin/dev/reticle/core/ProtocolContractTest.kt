@@ -1,0 +1,133 @@
+package dev.reticle.core
+
+import com.networknt.schema.JsonSchema
+import com.networknt.schema.JsonSchemaFactory
+import com.networknt.schema.SpecVersion
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.fail
+
+/**
+ * The protocol contract: the JSON Schema under reticle-protocol/schema is the
+ * authoritative, language-neutral wire spec. The Kotlin types in reticle-core
+ * are ONE implementation of it. This test pins both directions so they can never
+ * silently drift:
+ *
+ *   1. the checked-in golden fixture validates against the schema (the fixture
+ *      is the cross-platform example every implementation must reproduce);
+ *   2. JSON that the Kotlin model emits validates against the schema (Kotlin
+ *      conforms to the spec);
+ *   3. the golden fixture deserializes back through the Kotlin model and
+ *      re-serializes to the same JSON (Kotlin can consume the spec's example
+ *      losslessly).
+ *
+ * Schema + fixtures are mounted as test resources via reticle-core/build.gradle.kts
+ * (srcDir reticle-protocol/), so this test reads them off the classpath.
+ */
+class ProtocolContractTest {
+
+    private fun resource(path: String): String =
+        javaClass.classLoader.getResourceAsStream(path)?.bufferedReader()?.readText()
+            ?: fail("missing test resource on classpath: $path (is reticle-protocol/ mounted as a test resource?)")
+
+    private fun snapshotSchema(): JsonSchema {
+        val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
+        return factory.getSchema(resource("schema/snapshot.schema.json"))
+    }
+
+    private fun assertValid(schema: JsonSchema, json: String, label: String) {
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val node = mapper.readTree(json)
+        val errors = schema.validate(node)
+        if (errors.isNotEmpty()) {
+            fail("$label did not satisfy snapshot.schema.json:\n" +
+                errors.joinToString("\n") { "  - $it" })
+        }
+    }
+
+    @Test
+    fun goldenFixtureSatisfiesSchema() {
+        assertValid(snapshotSchema(), resource("fixtures/snapshot.golden.json"), "golden fixture")
+    }
+
+    @Test
+    fun kotlinEmittedJsonSatisfiesSchema() {
+        val snapshot = sampleSnapshot()
+        val json = ReticleJson.instance.encodeToString(Snapshot.serializer(), snapshot)
+        assertValid(snapshotSchema(), json, "Kotlin-emitted snapshot")
+    }
+
+    @Test
+    fun goldenFixtureRoundTripsThroughKotlin() {
+        val golden = resource("fixtures/snapshot.golden.json")
+        val decoded = ReticleJson.instance.decodeFromString(Snapshot.serializer(), golden)
+        // Spot-check the parts that exercise the tricky shapes (discriminated
+        // MetadataValue, nested regions, char grid) rather than trusting a blind
+        // string compare against hand-authored whitespace.
+        assertEquals("r0", decoded.rootRef)
+        val row = decoded.nodes.getValue("r1")
+        assertEquals(MetadataValue.Real(1.0), row.custom["alpha"])
+        assertEquals(MetadataValue.Text("#FF202124"), row.custom["textColor"])
+        assertEquals(MetadataValue.Integer(1L), row.custom["lineCount"])
+        assertEquals(2, row.regions.size)
+        assertEquals(RegionSource.span, row.regions[0].source)
+        assertEquals("Terms", row.regions[0].label)
+        assertTrue(row.charGrid != null && row.charGrid!!.lines.size == 1)
+
+        // And re-serializing the decoded model must itself satisfy the schema.
+        val reencoded = ReticleJson.instance.encodeToString(Snapshot.serializer(), decoded)
+        assertValid(snapshotSchema(), reencoded, "re-encoded golden fixture")
+    }
+
+    private fun sampleSnapshot(): Snapshot = Snapshot(
+        capturedAtMillis = 1719400000000L,
+        screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0, interfaceStyle = "dark"),
+        rootRef = "r0",
+        nodes = mapOf(
+            "r0" to Node(
+                ref = "r0",
+                kind = NodeKind.application,
+                typeName = "android.app.Application",
+                role = "application",
+                children = listOf("r1"),
+            ),
+            "r1" to Node(
+                ref = "r1",
+                parentRef = "r0",
+                kind = NodeKind.view,
+                typeName = "android.widget.TextView",
+                role = "text",
+                resourceId = "agreement_row",
+                text = "I agree to the Terms and Privacy",
+                testId = "agreement",
+                frame = Rect(24.0, 1800.0, 1032.0, 120.0),
+                isInteractive = true,
+                custom = mapOf(
+                    "alpha" to MetadataValue.Real(1.0),
+                    "textColor" to MetadataValue.Text("#FF202124"),
+                    "lineCount" to MetadataValue.Integer(1L),
+                    "selected" to MetadataValue.Bool(false),
+                ),
+                regions = listOf(
+                    InteractionRegion(
+                        source = RegionSource.span,
+                        label = "Terms",
+                        target = "https://example.com/terms",
+                        charStart = 15,
+                        charEnd = 20,
+                        rects = listOf(Rect(430.0, 1800.0, 120.0, 60.0)),
+                        color = "#FF1A73E8",
+                    ),
+                ),
+                charGrid = CharGrid(
+                    text = "Terms",
+                    lines = listOf(
+                        CharLine(line = 0, start = 0, end = 5, top = 1800.0, bottom = 1860.0,
+                            xOffsets = listOf(430.0, 454.0, 478.0, 502.0, 526.0, 550.0)),
+                    ),
+                ),
+            ),
+        ),
+    )
+}

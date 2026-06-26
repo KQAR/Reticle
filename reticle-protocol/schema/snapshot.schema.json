@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reticle.dev/schema/snapshot.schema.json",
+  "title": "Snapshot",
+  "description": "The authoritative wire contract for a Reticle view-tree snapshot: a flat ref->Node map plus a root ref and screen info. This schema is the single source of truth across platforms; the Kotlin types in reticle-core are one implementation, verified against this file in CI. Serialization notes that this schema encodes: encodeDefaults=true (every field is emitted, nullable fields as JSON null), the sealed MetadataValue uses a `_type` discriminator holding the fully-qualified Kotlin class name, Long maps to a JSON integer and Double to a JSON number.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "capturedAtMillis",
+    "platform",
+    "screen",
+    "rootRef",
+    "nodes"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer" },
+    "capturedAtMillis": {
+      "type": "integer",
+      "description": "Wall-clock millis when captured, stamped by the agent."
+    },
+    "platform": {
+      "type": "string",
+      "description": "Source platform, e.g. \"android\". Reserved for ios/harmony."
+    },
+    "screen": { "$ref": "#/$defs/ScreenInfo" },
+    "rootRef": { "type": "string" },
+    "nodes": {
+      "type": "object",
+      "description": "Flat map of ref -> Node. Walk children refs to rehydrate a subtree.",
+      "additionalProperties": { "$ref": "#/$defs/Node" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Rect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "ScreenInfo": {
+      "type": "object",
+      "required": ["size", "density"],
+      "properties": {
+        "size": { "$ref": "#/$defs/Size" },
+        "density": {
+          "type": "number",
+          "description": "Display density (dpi / 160)."
+        },
+        "interfaceStyle": {
+          "type": ["string", "null"],
+          "description": "\"light\" | \"dark\" — UI night-mode flag, or null."
+        }
+      },
+      "additionalProperties": false
+    },
+    "NodeKind": {
+      "type": "string",
+      "enum": ["application", "window", "view", "composeSemantics", "probe"],
+      "description": "Node origin. Reserved for a future `domNode` (WebView/DOM)."
+    },
+    "MetadataValue": {
+      "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying the fully-qualified Kotlin class name.",
+      "type": "object",
+      "required": ["_type", "value"],
+      "properties": {
+        "_type": {
+          "type": "string",
+          "enum": [
+            "dev.reticle.core.MetadataValue.Text",
+            "dev.reticle.core.MetadataValue.Bool",
+            "dev.reticle.core.MetadataValue.Integer",
+            "dev.reticle.core.MetadataValue.Real"
+          ]
+        },
+        "value": {
+          "type": ["string", "boolean", "integer", "number"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Text" } }
+          },
+          "then": { "properties": { "value": { "type": "string" } } }
+        },
+        {
+          "if": {
+            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Bool" } }
+          },
+          "then": { "properties": { "value": { "type": "boolean" } } }
+        },
+        {
+          "if": {
+            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Integer" } }
+          },
+          "then": { "properties": { "value": { "type": "integer" } } }
+        },
+        {
+          "if": {
+            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Real" } }
+          },
+          "then": { "properties": { "value": { "type": "number" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "RegionSource": {
+      "type": "string",
+      "enum": ["span", "a11yVirtual", "touchDelegate", "textMarker", "colorSpan"]
+    },
+    "InteractionRegion": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "$ref": "#/$defs/RegionSource" },
+        "label": { "type": ["string", "null"] },
+        "target": { "type": ["string", "null"] },
+        "charStart": { "type": ["integer", "null"] },
+        "charEnd": { "type": ["integer", "null"] },
+        "rects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Rect" }
+        },
+        "color": {
+          "type": ["string", "null"],
+          "description": "Run color as #AARRGGBB when it differs from the base text color."
+        }
+      },
+      "additionalProperties": false
+    },
+    "CharLine": {
+      "type": "object",
+      "required": ["line", "start", "end", "top", "bottom", "xOffsets"],
+      "properties": {
+        "line": { "type": "integer" },
+        "start": { "type": "integer" },
+        "end": { "type": "integer" },
+        "top": { "type": "number" },
+        "bottom": { "type": "number" },
+        "xOffsets": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "Screen X at each char boundary; length (end-start)+1."
+        }
+      },
+      "additionalProperties": false
+    },
+    "CharGrid": {
+      "type": "object",
+      "required": ["text", "lines"],
+      "properties": {
+        "text": { "type": "string" },
+        "lines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CharLine" }
+        },
+        "approximate": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "Node": {
+      "type": "object",
+      "required": ["ref", "kind", "typeName"],
+      "properties": {
+        "ref": { "type": "string" },
+        "parentRef": { "type": ["string", "null"] },
+        "kind": { "$ref": "#/$defs/NodeKind" },
+        "typeName": {
+          "type": "string",
+          "description": "Class name, e.g. \"android.widget.Button\", or a Compose role."
+        },
+        "role": { "type": ["string", "null"] },
+        "resourceId": { "type": ["string", "null"] },
+        "contentDescription": { "type": ["string", "null"] },
+        "text": { "type": ["string", "null"] },
+        "testId": { "type": ["string", "null"] },
+        "frame": {
+          "oneOf": [{ "$ref": "#/$defs/Rect" }, { "type": "null" }]
+        },
+        "isVisible": { "type": "boolean" },
+        "isEnabled": { "type": "boolean" },
+        "isInteractive": { "type": "boolean" },
+        "custom": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/MetadataValue" }
+        },
+        "children": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "regions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/InteractionRegion" }
+        },
+        "suspectedMultiRegion": { "type": "boolean" },
+        "charGrid": {
+          "oneOf": [{ "$ref": "#/$defs/CharGrid" }, { "type": "null" }]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
