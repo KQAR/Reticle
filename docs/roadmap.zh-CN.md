@@ -156,7 +156,7 @@ Swift host(CLI + daemon + Web)
 这个方向已越过 spike——存在一个**真正的 Swift host CLI**,在真机上端到端地经 Kotlin
 helper 驱动 Android。当前已存在的:
 
-- **Kotlin helper**——一个 `reticle helper` 子命令(`reticle-cli/.../Helper.kt`):
+- **Kotlin helper**——一个 `reticle helper` 子命令(`reticle-helper/.../Helper.kt`):
   长生命周期的 JSONL stdio RPC 循环(stdin 一行一个请求,stdout 一行一个响应;
   stdout 只走协议,诊断走 stderr)。方法:`ping`、`listDevices`、`status`、
   `inject`、`uiReport`——原样复用现有 `Platform` SPI 与 `RuntimeClient`(helper
@@ -223,9 +223,10 @@ reticle/  (polyglot monorepo — 一个 host 二进制 + 一份协议 spec)
 │   ├─ android/           # Gradle 模块 :reticle-agent:android → reticle-agent-android.aar
 │   ├─ (future) ios/      # SwiftPM 包 —— 对 Gradle 不可见
 │   └─ (future) harmony/  # hvigor 模块 —— 对 Gradle 不可见
-├─ reticle-cli/           # 一次性命令 + Platform SPI(源码包)
+├─ reticle-helper/        # Kotlin Android host 层 → 无 JDK 原生 reticle-helper(RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-daemon/        # 新增:`reticle serve` —— 持有代理、聚合 trace、推送事件
+├─ reticle-host/          # Swift host CLI(SwiftPM)—— 面向用户的 `reticle`,经 RPC 驱动 helper
+├─ reticle-daemon/        # 未来:`reticle serve` —— 持有代理、聚合 trace、推送事件
 │   ├─ proxy/             #   纯 host MITM 引擎 + CA 签发 + 设备自动配代理
 │   └─ web/               #   前端面板:流量视图 + 操作路径/截图时间线
 └─ sample-app/            # 链接 :reticle-agent:android 的演示应用

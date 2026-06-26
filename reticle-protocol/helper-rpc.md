@@ -13,7 +13,7 @@ The helper ships as the no-JDK native `reticle-helper` (GraalVM native-image).
 **Build note:** the helper talks to the in-app loopback server over HTTP
 (`java.net.URL`), and native-image disables URL protocols by default — the build
 must pass `--enable-url-protocols=http` or every device call fails with "URL
-protocol http … not enabled" (the `:reticle-cli:nativeHelper` task does this).
+protocol http … not enabled" (the `:reticle-helper:nativeHelper` task does this).
 
 ## Transport
 

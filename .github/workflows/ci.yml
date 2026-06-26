@@ -31,13 +31,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Unit tests
-        run: ./gradlew :reticle-core:test :reticle-cli:test --stacktrace
+        run: ./gradlew :reticle-core:test :reticle-helper:test --stacktrace
 
       - name: Assemble all modules
         run: ./gradlew assemble --stacktrace
 
       - name: Build CLI distribution
-        run: ./gradlew :reticle-cli:installDist --stacktrace
+        run: ./gradlew :reticle-helper:installDist --stacktrace
 
       - name: Upload test results
         if: always()
@@ -46,7 +46,7 @@ jobs:
           name: test-results
           path: |
             reticle-core/build/reports/tests/
-            reticle-cli/build/reports/tests/
+            reticle-helper/build/reports/tests/
           if-no-files-found: ignore
 
   plugin-validate:
@@ -79,7 +79,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build the native helper
-        run: ./gradlew :reticle-cli:nativeHelper --stacktrace
+        run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
@@ -88,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           HOST=reticle-host/.build/release/ReticleHost
-          HELPER=reticle-cli/build/native/reticle-helper
+          HELPER=reticle-helper/build/native/reticle-helper
           test -x "$HOST" && test -x "$HELPER"
           # version needs no helper/device; proves the host binary runs.
           "$HOST" version

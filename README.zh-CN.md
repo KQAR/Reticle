@@ -133,10 +133,10 @@ host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备
   HTTP server + view 与 Compose-semantics 捕获、区域检测、运行时变更、截图,由一个
   空操作 `ContentProvider` 自动启动。(`reticle-agent/` 是为未来逐平台 agent
   预留的分组目录;目前只有 Android 子项是 Gradle 模块。)
-- `reticle-cli`——Kotlin 的 Android host 层:`adb forward` + loopback 证据 + 一个
-  `adb input` 动作后端 + JDWP 注入。以无 JDK 的原生 `reticle-helper`(GraalVM
-  native-image)分发;其 `helper` 子命令是 Swift host 驱动的 RPC server。(面向用户
-  的直接命令默认被 gate——开发后备用 `RETICLE_DIRECT_CLI=1`。)
+- `reticle-helper`——Kotlin 的 Android host 层:`adb forward` + loopback 证据 + 一个
+  `adb input` 动作后端 + JDWP 注入。**不是面向用户的 CLI**——它以无 JDK 的原生
+  `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host
+  驱动的 RPC server。
 - `reticle-host`——**Swift host CLI**(SwiftPM,macOS arm64)。面向用户的 `reticle`;
   不持有任何设备代码——每条命令都是一次到 helper 的 RPC 调用。
 - `sample-app`——端到端链接 agent 的演示应用。
@@ -150,9 +150,10 @@ host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备
 # 在已启动的模拟器/设备上安装示例应用
 adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
 
-# 运行 CLI(通过生成的启动脚本)
-./gradlew :reticle-cli:installDist
-CLI=reticle-cli/build/install/reticle/bin/reticle
+# `reticle` 启动器即 Swift host;RETICLE_FROM_SOURCE=1 时它从源码构建并运行 host
+# 与原生 helper(需 Swift 工具链 + 一个 GraalVM)。这是面向用户的 CLI。
+export RETICLE_FROM_SOURCE=1
+CLI="bin/reticle"
 
 # 启动 + forward + 等待进程内运行时(对于**链接了** agent 的应用)
 $CLI app launch --package dev.reticle.sample

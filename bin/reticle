@@ -56,7 +56,7 @@ CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
 
 GRADLEW="${ROOT}/gradlew"
 SRC_HOST_BIN="${ROOT}/reticle-host/.build/release/ReticleHost"
-SRC_HELPER_BIN="${ROOT}/reticle-cli/build/native/reticle-helper"
+SRC_HELPER_BIN="${ROOT}/reticle-helper/build/native/reticle-helper"
 CACHED_DIR="${CACHE_DIR}/${RETICLE_VERSION}/reticle"
 CACHED_HOST="${CACHED_DIR}/bin/reticle-host"
 
@@ -97,7 +97,7 @@ if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
       exit 1
     fi
     log "building the native helper from source (needs a GraalVM with native-image)…"
-    ( cd "${ROOT}" && ./gradlew --quiet :reticle-cli:nativeHelper :reticle-agent:android:dexPayload ) >&2
+    ( cd "${ROOT}" && ./gradlew --quiet :reticle-helper:nativeHelper :reticle-agent:android:dexPayload ) >&2
   fi
   if [[ ! -x "${SRC_HOST_BIN}" ]]; then
     if ! command -v swift >/dev/null 2>&1; then

@@ -13,10 +13,9 @@ import Foundation
 //   inject   --package <pkg>        inject the runtime over JDWP (via helper)
 //   ui report --package <pkg> [--output <dir>]   capture + write report files
 //
-// Resolution of the Kotlin helper launcher (first hit wins):
-//   1. $RETICLE_LAUNCHER
-//   2. ./reticle-cli/build/install/reticle/bin/reticle   (dev layout)
-// Pass --launcher to override.
+// Resolution of the native Kotlin helper — see resolveHelper(). Pass --helper or
+// $RETICLE_HELPER to override; otherwise a `reticle-helper` beside this binary,
+// then the dev build under reticle-helper/build/.
 
 struct Args {
     private var positionals: [String] = []
@@ -44,8 +43,8 @@ struct Args {
 /// Locate the Kotlin helper executable to spawn. Preference order:
 ///   1. --helper / $RETICLE_HELPER  (explicit; native binary or JVM launcher)
 ///   2. a `reticle-helper` native binary next to this host executable (release)
-///   3. the dev native build  (reticle-cli/build/native/reticle-helper)
-///   4. the dev JVM launcher   (reticle-cli/build/install/reticle/bin/reticle)
+///   3. the dev native build  (reticle-helper/build/native/reticle-helper)
+///   4. the dev JVM launcher   (reticle-helper/build/install/reticle-helper/bin/reticle-helper)
 /// Cases 1–3 are no-JDK native binaries; case 4 needs a JVM (dev fallback).
 func resolveHelper(_ args: Args) -> String? {
     let fm = FileManager.default
@@ -55,9 +54,9 @@ func resolveHelper(_ args: Args) -> String? {
     let selfDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
     let beside = "\(selfDir)/reticle-helper"
     if fm.isExecutableFile(atPath: beside) { return beside }
-    let devNative = "reticle-cli/build/native/reticle-helper"
+    let devNative = "reticle-helper/build/native/reticle-helper"
     if fm.isExecutableFile(atPath: devNative) { return devNative }
-    let devJvm = "reticle-cli/build/install/reticle/bin/reticle"
+    let devJvm = "reticle-helper/build/install/reticle-helper/bin/reticle-helper"
     if fm.fileExists(atPath: devJvm) { return devJvm }
     return nil
 }

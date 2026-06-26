@@ -129,7 +129,7 @@ def collect_code_versions():
     at runtime — the surface the skew bug lived on."""
     sources = [
         ("bin/reticle", re.compile(r'RETICLE_VERSION="\$\{RETICLE_VERSION:-([^}"]+)\}"')),
-        ("reticle-cli/src/main/kotlin/dev/reticle/cli/Main.kt",
+        ("reticle-helper/src/main/kotlin/dev/reticle/cli/Main.kt",
          re.compile(r'RETICLE_VERSION\s*=\s*"([^"]+)"')),
         ("reticle-agent/android/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
          re.compile(r'VERSION\s*=\s*"([^"]+)"')),
