@@ -239,7 +239,17 @@ object Helper {
         val device = Platforms.current().device(serial)
         device.ensureDeviceReady()
         val input = Platforms.current().input(device)
-        return when (sub) {
+
+        // Optional --verify: watch one node across the gesture so the caller gets
+        // "before -> after" in the SAME command, instead of a follow-up full
+        // `ui report` + grep. Capture its state now, act, then poll for a change.
+        val verifySel = verifySelectorFrom(params)
+        val verifyClient = verifySel?.let {
+            runtimeClientFor(device, pkg, params).also { c -> assertHealthy(c, pkg) }
+        }
+        val before = verifyClient?.let { captureVerifyState(it, verifySel!!) }
+
+        val result = when (sub) {
             "tap" -> {
                 val point = resolvePoint(device, pkg, params)
                 input.tap(point.first, point.second)
@@ -258,10 +268,7 @@ object Helper {
                     input.text(text)
                     buildJsonObject { put("gesture", "type"); put("chars", text.length); put("via", "input text") }
                 } else {
-                    val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
-                    val hostPort = params.int("hostPort") ?: devicePort
-                    val client = RuntimeClient(device, hostPort, devicePort)
-                    client.setUpForward()
+                    val client = runtimeClientFor(device, pkg, params)
                     assertHealthy(client, pkg)
                     client.setClipboard(text)
                     val pasted = input.paste()
@@ -271,6 +278,113 @@ object Helper {
             }
             else -> throw CliError("unknown act gesture '$sub'")
         }
+
+        if (verifyClient == null) return result
+        val verify = pollForChange(verifyClient, verifySel!!, before, params)
+        return buildJsonObject {
+            result.forEach { (k, v) -> put(k, v) }
+            put("verify", verify)
+        }
+    }
+
+    // --- act --verify support -------------------------------------------------
+
+    /**
+     * The selector to watch for `--verify`, or null if not requested. `--verify`
+     * defaults to the SAME selector being acted on (the common "did the thing I
+     * tapped change?"), but accepts an explicit testId/resourceId/ref so you can
+     * tap one node and watch another (e.g. tap a term tab, watch `#rata`).
+     */
+    private fun verifySelectorFrom(params: JsonObject): dev.reticle.core.Selector? {
+        val token = params["verify"]?.jsonPrimitive?.content ?: return null
+        // "true" means "watch whatever I'm acting on" — reuse the action's own
+        // selector. A raw --point has no node to watch, so that's an error.
+        if (token == "true") {
+            val sel = selectorFrom(params)
+            return parseVerifyToken("true", sel.testId, sel.resourceId, sel.ref)
+        }
+        return parseVerifyToken(token, null, null, null)
+    }
+
+    /** Salient, comparable fields of a node for verify diffing. */
+    private data class VerifyState(
+        val found: Boolean,
+        val text: String?,
+        val label: String?,
+        val enabled: Boolean,
+        val visible: Boolean,
+        val frame: String?,
+        val custom: Map<String, String>,
+    )
+
+    private fun selectorParams(sel: dev.reticle.core.Selector): JsonObject = buildJsonObject {
+        sel.testId?.let { put("testId", it) }
+        sel.resourceId?.let { put("resourceId", it) }
+        sel.ref?.let { put("ref", it) }
+    }
+
+    private fun captureVerifyState(client: RuntimeClient, sel: dev.reticle.core.Selector): VerifyState {
+        val node = findNode(client.snapshot(), selectorParams(sel))
+            ?: return VerifyState(false, null, null, false, false, null, emptyMap())
+        return VerifyState(
+            found = true,
+            text = node.text,
+            label = node.contentDescription,
+            enabled = node.isEnabled,
+            visible = node.isVisible,
+            frame = node.frame?.let { "${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}" },
+            custom = node.custom.mapValues { it.value.displayString() },
+        )
+    }
+
+    /**
+     * Poll the watched node after the gesture and report what changed. UI updates
+     * aren't instant, so retry briefly until a diff appears (or the budget runs
+     * out — "no change" is itself a real, honest result, not a failure).
+     */
+    private fun pollForChange(
+        client: RuntimeClient,
+        sel: dev.reticle.core.Selector,
+        before: VerifyState?,
+        params: JsonObject,
+    ): JsonElement {
+        val budgetMs = (params.int("verifyTimeoutMs") ?: 2000).toLong()
+        val deadline = System.currentTimeMillis() + budgetMs
+        var after = captureVerifyState(client, sel)
+        var changes = diffVerify(before, after)
+        while (changes.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(150)
+            after = captureVerifyState(client, sel)
+            changes = diffVerify(before, after)
+        }
+        val selStr = sel.testId?.let { "#$it" } ?: sel.resourceId?.let { "@$it" } ?: sel.ref ?: "?"
+        return buildJsonObject {
+            put("selector", selStr)
+            put("changed", changes.isNotEmpty())
+            if (!after.found) put("note", "node not present after action")
+            put("changes", buildJsonArray {
+                changes.forEach { (field, ba) ->
+                    add(buildJsonObject { put("field", field); put("before", ba.first); put("after", ba.second) })
+                }
+            })
+        }
+    }
+
+    /** Field-by-field diff of two verify states; key -> (before, after). */
+    private fun diffVerify(before: VerifyState?, after: VerifyState): Map<String, Pair<String?, String?>> {
+        if (before == null) return emptyMap()
+        val out = LinkedHashMap<String, Pair<String?, String?>>()
+        if (before.found != after.found) out["present"] = before.found.toString() to after.found.toString()
+        if (before.text != after.text) out["text"] = before.text to after.text
+        if (before.label != after.label) out["label"] = before.label to after.label
+        if (before.enabled != after.enabled) out["enabled"] = before.enabled.toString() to after.enabled.toString()
+        if (before.visible != after.visible) out["visible"] = before.visible.toString() to after.visible.toString()
+        if (before.frame != after.frame) out["frame"] = before.frame to after.frame
+        (before.custom.keys + after.custom.keys).forEach { k ->
+            val b = before.custom[k]; val a = after.custom[k]
+            if (b != a) out[k] = b to a
+        }
+        return out
     }
 
     private fun mutate(params: JsonObject): JsonElement {
@@ -356,36 +470,70 @@ object Helper {
         }
     }
 
-    // --- local snapshot rendering (no device) ---------------------------------
+    // --- snapshot rendering ----------------------------------------------------
 
+    /**
+     * Render a view of a snapshot to text. The snapshot comes from one of two
+     * sources, chosen by params:
+     *  - a `snapshot` file path (local, no device) — the default for inspecting a
+     *    saved report;
+     *  - `live: true` + a `package` — fetch the CURRENT tree from the runtime and
+     *    render it WITHOUT writing any files. This is the cheap "did that node
+     *    change?" path: one round-trip, no 369-node report on disk to grep.
+     */
     private fun render(params: JsonObject): JsonElement {
         val view = params.str("view") ?: throw CliError("render needs 'view'")
-        val path = params.str("snapshot") ?: throw CliError("render needs 'snapshot' path")
-        val file = java.io.File(path)
-        if (!file.exists()) throw CliError("snapshot file not found: $path")
-        val snapshot = ReticleJson.instance.decodeFromString(Snapshot.serializer(), file.readText())
-        val text = when (view) {
-            "tree" -> renderViewTree(snapshot, params.int("depth") ?: Int.MAX_VALUE)
-            "semantics" -> renderSemanticTree(SemanticTree.build(snapshot), params.int("depth") ?: Int.MAX_VALUE)
-            "compact" -> CompactObservation.from(snapshot).items.joinToString("\n") { it.line() }
-            "node" -> renderNode(snapshot, params)
-            "regions" -> renderRegions(snapshot)
-            else -> throw CliError("unknown render view '$view'")
-        }
+        val snapshot = snapshotFor(params)
+        val text = renderView(view, snapshot, params)
         return buildJsonObject { put("text", text) }
     }
 
+    /** Resolve the snapshot a render should operate on: live runtime or a file. */
+    private fun snapshotFor(params: JsonObject): Snapshot {
+        if (params["live"]?.jsonPrimitive?.content == "true") {
+            val pkg = params.str("package")
+                ?: throw CliError("live render needs 'package'")
+            val serial = params.str("serial")
+            val device = Platforms.current().device(serial)
+            device.ensureDeviceReady()
+            val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
+            val hostPort = params.int("hostPort") ?: devicePort
+            val client = RuntimeClient(device, hostPort, devicePort)
+            client.setUpForward()
+            assertHealthy(client, pkg)
+            return client.snapshot()
+        }
+        val path = params.str("snapshot") ?: throw CliError("render needs 'snapshot' path (or live + package)")
+        val file = java.io.File(path)
+        if (!file.exists()) throw CliError("snapshot file not found: $path")
+        return ReticleJson.instance.decodeFromString(Snapshot.serializer(), file.readText())
+    }
+
+    private fun renderView(view: String, snapshot: Snapshot, params: JsonObject): String = when (view) {
+        "tree" -> renderViewTree(snapshot, params.int("depth") ?: Int.MAX_VALUE)
+        "semantics" -> renderSemanticTree(SemanticTree.build(snapshot), params.int("depth") ?: Int.MAX_VALUE)
+        "compact" -> CompactObservation.from(snapshot).items.joinToString("\n") { it.line() }
+        "node" -> renderNode(snapshot, params)
+        "regions" -> renderRegions(snapshot)
+        else -> throw CliError("unknown render view '$view'")
+    }
+
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {
+        val node = findNode(snapshot, params) ?: throw CliError("no matching node")
+        return ReticleJson.instance.encodeToString(dev.reticle.core.Node.serializer(), node)
+    }
+
+    /** Locate a node in [snapshot] by testId / resourceId / ref, or null. */
+    private fun findNode(snapshot: Snapshot, params: JsonObject): dev.reticle.core.Node? {
         val testId = params.str("testId")
         val resourceId = params.str("resourceId")
         val ref = params.str("ref")
-        val node = when {
+        return when {
             testId != null -> snapshot.nodes.values.firstOrNull { it.testId == testId }
             resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == resourceId }
             ref != null -> snapshot.nodes[ref]
             else -> throw CliError("node needs testId, resourceId, or ref")
-        } ?: throw CliError("no matching node")
-        return ReticleJson.instance.encodeToString(dev.reticle.core.Node.serializer(), node)
+        }
     }
 
     private fun renderViewTree(snapshot: Snapshot, maxDepth: Int): String = buildString {
@@ -434,6 +582,17 @@ object Helper {
 
     // --- shared helpers for the methods above ---------------------------------
 
+    /** A forward-ready RuntimeClient for [pkg], honoring optional port overrides. */
+    private fun runtimeClientFor(
+        device: dev.reticle.cli.platform.DeviceController,
+        pkg: String,
+        params: JsonObject,
+    ): RuntimeClient {
+        val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
+        val hostPort = params.int("hostPort") ?: devicePort
+        return RuntimeClient(device, hostPort, devicePort).also { it.setUpForward() }
+    }
+
     private fun assertHealthy(client: RuntimeClient, pkg: String) {
         when (val h = client.probe()) {
             is RuntimeHealth.Healthy -> if (h.info.packageName != pkg)
@@ -446,10 +605,7 @@ object Helper {
 
     private fun resolvePoint(device: dev.reticle.cli.platform.DeviceController, pkg: String, params: JsonObject): Pair<Int, Int> {
         params.str("point")?.let { return parseXY(it) }
-        val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
-        val hostPort = params.int("hostPort") ?: devicePort
-        val client = RuntimeClient(device, hostPort, devicePort)
-        client.setUpForward()
+        val client = runtimeClientFor(device, pkg, params)
         assertHealthy(client, pkg)
         val snapshot = client.snapshot()
         val semantic = SemanticTree.build(snapshot)
@@ -505,4 +661,30 @@ object Helper {
     private fun serialOf(explicit: String?): String? = explicit
     private fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.content
     private fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.content?.toIntOrNull()
+}
+
+/**
+ * Resolve a `--verify` token into the node selector to watch. Pure so it can be
+ * unit-tested without a device.
+ *  - "false" -> null (not requested)
+ *  - "true"  -> the action's own selector, supplied via [actTestId]/[actResourceId]/[actRef];
+ *               null if the action had no node selector (e.g. a raw --point).
+ *  - "#id"   -> testId, "@res" -> resourceId, anything else -> a raw ref.
+ */
+internal fun parseVerifyToken(
+    token: String,
+    actTestId: String?,
+    actResourceId: String?,
+    actRef: String?,
+): dev.reticle.core.Selector? = when {
+    token == "false" -> null
+    token == "true" -> {
+        if (actTestId == null && actResourceId == null && actRef == null) {
+            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|@resourceId|ref>, or act by selector rather than --point")
+        }
+        dev.reticle.core.Selector(testId = actTestId, resourceId = actResourceId, ref = actRef)
+    }
+    token.startsWith("#") -> dev.reticle.core.Selector(testId = token.drop(1))
+    token.startsWith("@") -> dev.reticle.core.Selector(resourceId = token.drop(1))
+    else -> dev.reticle.core.Selector(ref = token)
 }
