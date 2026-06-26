@@ -1,5 +1,7 @@
 # Reticle
 
+**English** | [简体中文](README.zh-CN.md)
+
 Reticle helps AI coding agents build and verify native app interfaces on
 **Android** by inspecting the app that is actually running — not just the source
 code or a screenshot.

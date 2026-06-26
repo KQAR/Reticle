@@ -1,5 +1,7 @@
 # Reticle Roadmap & Multi-Platform Architecture
 
+**English** | [简体中文](roadmap.zh-CN.md)
+
 Status: design doc (2026-06-26). Captures the agreed direction for evolving
 Reticle from a single-platform Android CLI into a multi-platform runtime harness
 with an integrated capture proxy and a live web panel. This is a plan, not yet
