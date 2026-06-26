@@ -137,10 +137,10 @@ object Injector : AppInjector {
             )
     }
 
-    /** The root of the installed CLI distribution, inferred from the app jar location. */
+    /** The root of the installed helper distribution, inferred from the jar location. */
     private fun installRoot(): File? = runCatching {
         val jar = File(Injector::class.java.protectionDomain.codeSource.location.toURI())
-        // .../reticle/lib/reticle-cli.jar -> .../reticle
+        // .../reticle-helper/lib/reticle-helper.jar -> .../reticle-helper
         jar.parentFile?.parentFile
     }.getOrNull()
 

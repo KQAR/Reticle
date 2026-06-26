@@ -17,27 +17,23 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata
   bridge, and an auto-start `ContentProvider`. `reticle-agent/` is a grouping
   directory (no build.gradle); per-platform agents are its children.
-- `reticle-cli`: host JVM CLI for report, screenshot, compact, node, tree,
-  regions, tap/swipe/drag/type, logs, logcat, mutate, launch, **inject**, status,
-  doctor, version. Talks to the agent over `adb forward`; gates every runtime
-  call behind a fast classified `/runtime` probe (health + package identity).
-  `app inject` (`Injector.kt` + `Jdwp.kt`, a dependency-free JDWP client) loads
-  the payload dex into a debuggable app over the debugger channel and starts the
-  runtime — no AAR, no repackage, no root. The three platform-specific seams
-  (device control, injection, input) sit behind a `dev.reticle.cli.platform` SPI;
-  the Android implementation (`Adb`/`Injector`/`InputBackend`/`Jdwp`) lives under
-  `platform/android`, selected via `--target` (default `android`). Adding a
-  platform = a new `platform/<os>` implementation, no dispatcher changes.
-  This binary is primarily the **Android helper** for the Swift host: its
-  `helper` subcommand (`Helper.kt`) is a long-lived JSONL RPC server, and it
-  ships as the no-JDK native `reticle-helper` (GraalVM native-image, built by
-  `:reticle-cli:nativeHelper`). Direct user-facing commands are **gated off by
-  default** (`RETICLE_DIRECT_CLI=1` for the dev fallback). RPC contract:
+- `reticle-helper`: the Android host layer (Kotlin) — adb + JDWP injector + input
+  + loopback client. **Not a user-facing CLI**: its only entry points are
+  `helper` (a long-lived JSONL RPC server, `Helper.kt`), `version`, and `help`.
+  It ships as the no-JDK native `reticle-helper` (GraalVM native-image, built by
+  `:reticle-helper:nativeHelper`) that the Swift host drives. The runtime probe,
+  injection (`Injector.kt` + `Jdwp.kt`, a dependency-free JDWP client — payload
+  dex into a debuggable app, no AAR/repackage/root), selector resolution, and all
+  device I/O live here. The three platform seams (device control, injection,
+  input) sit behind a `dev.reticle.cli.platform` SPI; the Android implementation
+  (`Adb`/`Injector`/`InputBackend`/`Jdwp`) is under `platform/android`, selected
+  via `--target` (default `android`). Adding a platform = a new `platform/<os>`
+  implementation, no dispatcher changes. RPC contract:
   `reticle-protocol/helper-rpc.md`.
 - `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS arm64,
   outside the Gradle build). The user-facing `reticle`; owns no device code —
-  every command is an RPC call to the native helper it spawns. At command parity
-  with the direct CLI (`app`/`ui`/`act`/`mutate`/`debug`/`status`/`doctor`).
+  every command is an RPC call to the native helper it spawns. Command surface:
+  `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/`debug`/`ui`/`version`.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.
@@ -121,11 +117,14 @@ Build everything (the daemon auto-pins to JDK 17 — see Toolchain):
 Prove the runtime round trip on a booted device/emulator:
 
 ```bash
-./gradlew :reticle-cli:installDist :sample-app:assembleDebug
+./gradlew :sample-app:assembleDebug
 adb install -r -t sample-app/build/outputs/apk/debug/sample-app-debug.apk
 
-CLI=reticle-cli/build/install/reticle/bin/reticle
+# `bin/reticle` is the Swift host launcher; RETICLE_FROM_SOURCE=1 builds the host
+# (swift) + native helper (gradle native-image) from source. Needs Swift + a GraalVM.
+export RETICLE_FROM_SOURCE=1 RETICLE_NO_REDIRECT=1
 export RETICLE_ADB="$ANDROID_HOME/platform-tools/adb"
+CLI="bin/reticle"
 
 $CLI app launch  --package dev.reticle.sample
 $CLI ui report   --package dev.reticle.sample --output /tmp/reticle-report
@@ -145,11 +144,12 @@ Prove the **unlinked** (JDWP injection) path on the `noagent` flavor:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew \
-  :reticle-cli:installDist :reticle-agent:android:dexPayload :sample-app:assembleNoagentDebug
+  :reticle-agent:android:dexPayload :sample-app:assembleNoagentDebug
 adb install -r -t sample-app/build/outputs/apk/noagent/debug/sample-app-noagent-debug.apk
 adb shell monkey -p dev.reticle.sample.noagent -c android.intent.category.LAUNCHER 1
 
-CLI=reticle-cli/build/install/reticle/bin/reticle
+export RETICLE_FROM_SOURCE=1 RETICLE_NO_REDIRECT=1
+CLI="bin/reticle"
 $CLI app inject --package dev.reticle.sample.noagent   # loads the dex over JDWP, starts the runtime
 $CLI ui report  --package dev.reticle.sample.noagent --output /tmp/reticle-noagent
 ```

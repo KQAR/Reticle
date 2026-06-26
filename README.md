@@ -150,11 +150,10 @@ runner), which builds and attaches to a GitHub Release:
   mutation, screenshots, auto-started by a no-op `ContentProvider`.
   (`reticle-agent/` is a grouping directory reserved for future per-platform
   agents; only the Android child is a Gradle module today.)
-- `reticle-cli` — the Kotlin Android host layer: `adb forward` + loopback
-  evidence + an `adb input` action backend + JDWP injection. Ships as the no-JDK
-  native `reticle-helper` (GraalVM native-image); its `helper` subcommand is the
-  RPC server the Swift host drives. (Direct user-facing commands are gated off by
-  default — `RETICLE_DIRECT_CLI=1` for the dev fallback.)
+- `reticle-helper` — the Kotlin Android host layer: `adb forward` + loopback
+  evidence + an `adb input` action backend + JDWP injection. **Not a user-facing
+  CLI** — it ships as the no-JDK native `reticle-helper` (GraalVM native-image)
+  whose `helper` subcommand is the RPC server the Swift host drives.
 - `reticle-host` — the **Swift host CLI** (SwiftPM, macOS arm64). The user-facing
   `reticle`; owns no device code — every command is an RPC call to the helper.
 - `sample-app` — demo app that links the agent end to end.

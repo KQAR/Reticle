@@ -1,6 +1,7 @@
-// reticle-cli — JVM host CLI plus the host-side action backend. It talks to
-// the in-app server over `adb forward` and drives real input through
-// `adb shell input` / `sendevent`.
+// reticle-helper — the Android host layer (Kotlin): adb + JDWP injector + input
+// + loopback client. It is NOT a user-facing CLI; it ships as the no-JDK native
+// `reticle-helper` whose `helper` subcommand is the RPC server the Swift host
+// (reticle-host) drives. See reticle-protocol/helper-rpc.md.
 plugins {
     id("org.jetbrains.kotlin.jvm")
     application
@@ -14,7 +15,7 @@ dependencies {
 }
 
 application {
-    applicationName = "reticle"
+    applicationName = "reticle-helper"
     mainClass.set("dev.reticle.cli.MainKt")
 }
 
@@ -32,10 +33,10 @@ kotlin {
 }
 
 /**
- * Compile the CLI into a no-JDK native single-file executable for the host's
- * platform, via GraalVM `native-image`. This is the **helper** the Swift host
- * spawns (its `helper` subcommand is the long-lived RPC server); shipping it
- * native means users need no JDK. macOS arm64 only — the project's only target.
+ * Compile into a no-JDK native single-file executable via GraalVM `native-image`.
+ * This is the **helper** the Swift host spawns (its `helper` subcommand is the
+ * long-lived RPC server); shipping it native means users need no JDK. macOS arm64
+ * only — the project's only target.
  *
  * Requires a GraalVM with native-image. Point to it with $GRAALVM_HOME (or have
  * `native-image` on PATH). Output: build/native/reticle-helper.
@@ -45,10 +46,10 @@ kotlin {
  */
 val nativeHelper by tasks.registering(Exec::class) {
     group = "reticle"
-    description = "Compile the CLI into a no-JDK native executable (the Swift host's helper)."
+    description = "Compile into the no-JDK native reticle-helper (the Swift host's backend)."
     dependsOn("installDist")
 
-    val installLib = layout.buildDirectory.dir("install/reticle/lib")
+    val installLib = layout.buildDirectory.dir("install/reticle-helper/lib")
     val outBin = layout.buildDirectory.file("native/reticle-helper")
     inputs.dir(installLib)
     outputs.file(outBin)

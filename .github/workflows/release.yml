@@ -33,7 +33,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Build the native helper (no-JDK reticle-helper)
-        run: ./gradlew :reticle-cli:nativeHelper --stacktrace
+        run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
@@ -46,7 +46,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
-          HELPER=reticle-cli/build/native/reticle-helper
+          HELPER=reticle-helper/build/native/reticle-helper
           HOST=reticle-host/.build/release/ReticleHost
           PAYLOAD=reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar
           test -x "$HELPER" || { echo "native helper missing: $HELPER"; exit 1; }

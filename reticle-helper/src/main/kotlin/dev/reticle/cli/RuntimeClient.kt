@@ -19,9 +19,7 @@ import java.net.URL
 /**
  * Host-side client for the in-app loopback server: we first `adb forward` a host
  * port to the device's loopback port, then make plain HTTP calls to 127.0.0.1.
- *
- * The serial+package -> port mapping is stored under ~/.reticle/runtimes via
- * RuntimeRegistry.
+ * The device port is derived from the package via [dev.reticle.core.PortMap].
  */
 class RuntimeClient(
     private val adb: DeviceController,

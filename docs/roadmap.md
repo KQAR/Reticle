@@ -188,7 +188,7 @@ host↔helper RPC before porting the generic core to Swift.
 The direction is past spike — there is a **real Swift host CLI** driving Android
 through the Kotlin helper end-to-end on a real device. What exists today:
 
-- **Kotlin helper** — a `reticle helper` subcommand (`reticle-cli/.../Helper.kt`):
+- **Kotlin helper** — a `reticle helper` subcommand (`reticle-helper/.../Helper.kt`):
   a long-lived JSONL stdio RPC loop (one request per stdin line, one response per
   stdout line; stdout protocol-only, diagnostics to stderr). Methods: `ping`,
   `listDevices`, `status`, `inject`, `uiReport` — reusing the existing `Platform`
@@ -266,9 +266,10 @@ reticle/  (polyglot monorepo — one host binary + one protocol spec)
 │   ├─ android/           # Gradle module :reticle-agent:android → reticle-agent-android.aar
 │   ├─ (future) ios/      # SwiftPM package — invisible to Gradle
 │   └─ (future) harmony/  # hvigor module — invisible to Gradle
-├─ reticle-cli/           # one-shot commands + Platform SPI (source packages)
+├─ reticle-helper/        # Kotlin Android host layer → no-JDK native reticle-helper (RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-daemon/        # NEW: `reticle serve` — holds proxy, aggregates traces, pushes events
+├─ reticle-host/          # Swift host CLI (SwiftPM) — user-facing `reticle`, drives the helper over RPC
+├─ reticle-daemon/        # FUTURE: `reticle serve` — holds proxy, aggregates traces, pushes events
 │   ├─ proxy/             #   pure host MITM engine + CA issuance + device auto-proxy
 │   └─ web/               #   front-end panel: traffic view + action-path/screenshot timeline
 └─ sample-app/            # demo linking :reticle-agent:android
