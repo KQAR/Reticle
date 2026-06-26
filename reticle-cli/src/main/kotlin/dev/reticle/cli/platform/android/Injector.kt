@@ -1,5 +1,8 @@
-package dev.reticle.cli
+package dev.reticle.cli.platform.android
 
+import dev.reticle.cli.CliError
+import dev.reticle.cli.platform.AppInjector
+import dev.reticle.cli.platform.DeviceController
 import java.io.File
 
 /**
@@ -19,21 +22,20 @@ import java.io.File
  * After this the app exposes the same loopback server as a linked app, so every
  * other command (`ui`, `act`, `mutate`, `debug logs`) works against it unchanged.
  */
-object Injector {
+object Injector : AppInjector {
 
     /** Where the payload lands inside the app sandbox; mirrors a normal dex cache. */
     private const val DEVICE_DEX_NAME = "reticle-agent-payload.jar"
     private const val STAGING_DIR = "/data/local/tmp"
     private const val HANDSHAKE_ATTEMPTS = 4
 
-    data class Result(val pid: Int, val reportedPort: Int)
-
     /**
      * Inject and start the runtime in [packageName]. Returns the pid and the port
      * `Bootstrap.start()` reported (negative => a `Bootstrap.ERR_*` code; the
      * caller still verifies liveness over HTTP, which is the real proof).
      */
-    fun inject(adb: Adb, packageName: String): Result {
+    override fun inject(device: DeviceController, packageName: String): AppInjector.InjectResult {
+        val adb = device
         val pid = adb.pidOf(packageName)
             ?: throw CliError(
                 "app '$packageName' is not running. Start it first (open it, or " +
@@ -72,7 +74,7 @@ object Injector {
                     adb.shell("input keyevent 0")
                     adb.shell("input tap 540 1500")
                 }
-                return Result(pid, reported)
+                return AppInjector.InjectResult(pid, reported)
             }
         } finally {
             adb.removeForward(jdwpHostPort)
@@ -145,7 +147,7 @@ object Injector {
      * /data/local/tmp is readable by the app uid, so the two-step push+cp is the
      * supported non-root staging route.
      */
-    private fun stageDex(adb: Adb, packageName: String, dex: File): String {
+    private fun stageDex(adb: DeviceController, packageName: String, dex: File): String {
         val stagedHostName = "reticle-payload-${dex.length()}.jar"
         val stagingPath = "$STAGING_DIR/$stagedHostName"
         val push = adb.run("push", dex.absolutePath, stagingPath)

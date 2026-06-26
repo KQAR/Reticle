@@ -1,4 +1,4 @@
-package dev.reticle.cli
+package dev.reticle.cli.platform.android
 
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream

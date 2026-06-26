@@ -23,7 +23,11 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   call behind a fast classified `/runtime` probe (health + package identity).
   `app inject` (`Injector.kt` + `Jdwp.kt`, a dependency-free JDWP client) loads
   the payload dex into a debuggable app over the debugger channel and starts the
-  runtime — no AAR, no repackage, no root.
+  runtime — no AAR, no repackage, no root. The three platform-specific seams
+  (device control, injection, input) sit behind a `dev.reticle.cli.platform` SPI;
+  the Android implementation (`Adb`/`Injector`/`InputBackend`/`Jdwp`) lives under
+  `platform/android`, selected via `--target` (default `android`). Adding a
+  platform = a new `platform/<os>` implementation, no dispatcher changes.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.

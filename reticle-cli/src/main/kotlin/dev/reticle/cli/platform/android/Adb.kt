@@ -1,22 +1,22 @@
-package dev.reticle.cli
+package dev.reticle.cli.platform.android
 
+import dev.reticle.cli.platform.CommandResult
+import dev.reticle.cli.platform.DeviceController
+import dev.reticle.cli.platform.DeviceError
+import dev.reticle.cli.platform.DeviceState
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 /**
- * Thin wrapper around the `adb` executable: device selection, port forwarding,
- * input dispatch, and screencap all go through adb.
+ * Android [DeviceController]: a thin wrapper around the `adb` executable. Device
+ * selection, port forwarding, input dispatch, and screencap all go through adb.
  */
 class Adb(
     private val adbPath: String = resolveAdbPath(),
     private val serial: String? = null,
-) {
+) : DeviceController {
 
-    data class Result(val exitCode: Int, val stdout: String, val stderr: String) {
-        val ok: Boolean get() = exitCode == 0
-    }
-
-    fun run(vararg args: String, timeoutSeconds: Long = 30): Result {
+    override fun run(vararg args: String, timeoutSeconds: Long): CommandResult {
         val command = buildList {
             add(adbPath)
             if (serial != null) {
@@ -31,15 +31,15 @@ class Adb(
         val errThread = Thread { process.errorStream.copyTo(err) }.apply { start() }
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
-            return Result(124, out.toString(Charsets.UTF_8), "adb timed out after ${timeoutSeconds}s")
+            return CommandResult(124, out.toString(Charsets.UTF_8), "adb timed out after ${timeoutSeconds}s")
         }
         outThread.join(1000)
         errThread.join(1000)
-        return Result(process.exitValue(), out.toString(Charsets.UTF_8), err.toString(Charsets.UTF_8))
+        return CommandResult(process.exitValue(), out.toString(Charsets.UTF_8), err.toString(Charsets.UTF_8))
     }
 
     /** Raw bytes variant for binary output like screencap PNG. */
-    fun runBytes(vararg args: String, timeoutSeconds: Long = 30): ByteArray {
+    override fun runBytes(vararg args: String, timeoutSeconds: Long): ByteArray {
         val command = buildList {
             add(adbPath)
             if (serial != null) {
@@ -59,11 +59,11 @@ class Adb(
         return out.toByteArray()
     }
 
-    fun shell(command: String, timeoutSeconds: Long = 30): Result =
+    override fun shell(command: String, timeoutSeconds: Long): CommandResult =
         run("shell", command, timeoutSeconds = timeoutSeconds)
 
     /** Forward a host TCP port to a device TCP port. Returns the host port. */
-    fun forward(hostPort: Int, devicePort: Int): Result =
+    override fun forward(hostPort: Int, devicePort: Int): CommandResult =
         run("forward", "tcp:$hostPort", "tcp:$devicePort")
 
     /**
@@ -72,10 +72,10 @@ class Adb(
      * a `user` build where `wrap.<pkg>` is blocked). Reached over the same host
      * loopback as a TCP forward, but the device side is `jdwp:<pid>`.
      */
-    fun forwardJdwp(hostPort: Int, pid: Int): Result =
+    override fun forwardJdwp(hostPort: Int, pid: Int): CommandResult =
         run("forward", "tcp:$hostPort", "jdwp:$pid")
 
-    fun removeForward(hostPort: Int): Result =
+    override fun removeForward(hostPort: Int): CommandResult =
         run("forward", "--remove", "tcp:$hostPort")
 
     /**
@@ -84,14 +84,12 @@ class Adb(
      * Passes each arg separately (no nested `sh -c`) to avoid double-shell quoting
      * surprises with paths.
      */
-    fun runAs(packageName: String, vararg args: String, timeoutSeconds: Long = 30): Result =
+    override fun runAs(packageName: String, vararg args: String, timeoutSeconds: Long): CommandResult =
         run("shell", "run-as", packageName, *args, timeoutSeconds = timeoutSeconds)
 
-    fun listDevices(): List<String> = listDeviceStates()
+    override fun listDevices(): List<String> = listDeviceStates()
         .filter { it.state == "device" }
         .map { it.serial }
-
-    data class DeviceState(val serial: String, val state: String)
 
     /**
      * Every attached device with its raw adb state (`device`, `offline`,
@@ -99,7 +97,7 @@ class Adb(
      * callers can explain *why* a device can't be driven (e.g. the `offline`
      * state that needs a USB re-plug) instead of just reporting "no devices".
      */
-    fun listDeviceStates(): List<DeviceState> {
+    override fun listDeviceStates(): List<DeviceState> {
         val result = run("devices")
         return result.stdout.lineSequence()
             .drop(1)
@@ -116,18 +114,18 @@ class Adb(
      * The PID of [packageName] on the device, or null if it isn't running.
      * Used by `status` to tell "agent not linked" apart from "app not running".
      */
-    fun pidOf(packageName: String): Int? {
+    override fun pidOf(packageName: String): Int? {
         val result = shell("pidof $packageName", timeoutSeconds = 10)
         if (!result.ok) return null
         return result.stdout.trim().split(Regex("\\s+")).firstOrNull()?.toIntOrNull()
     }
 
     /** Raw bytes of a device screenshot via `adb exec-out screencap -p`. */
-    fun screencap(timeoutSeconds: Long = 20): ByteArray =
+    override fun screencap(timeoutSeconds: Long): ByteArray =
         runBytes("exec-out", "screencap", "-p", timeoutSeconds = timeoutSeconds)
 
     /** State of [serial] (or this Adb's serial) — `device`, `offline`, etc., or null if absent. */
-    fun deviceState(serial: String? = this.serial): String? {
+    override fun deviceState(): String? {
         val states = listDeviceStates()
         return if (serial != null) states.firstOrNull { it.serial == serial }?.state
         else states.singleOrNull()?.state
@@ -140,16 +138,16 @@ class Adb(
      * this commands would just hang to their timeout. We try a bounded
      * `adb reconnect` recovery before giving up with an actionable message.
      */
-    fun ensureDeviceReady(retries: Int = 3) {
+    override fun ensureDeviceReady(retries: Int) {
         repeat(retries + 1) { attempt ->
             val last = attempt == retries
             when (val state = deviceState()) {
                 "device" -> return
-                null -> throw AdbDeviceError(
+                null -> throw DeviceError(
                     "no device/emulator detected. Connect one (`adb devices` to check)."
                 )
                 "offline" -> {
-                    if (last) throw AdbDeviceError(
+                    if (last) throw DeviceError(
                         "device is OFFLINE and did not recover. Re-plug USB, or run `adb reconnect`," +
                             " then retry. (A flaky cable/port is the usual cause.)"
                     )
@@ -158,11 +156,11 @@ class Adb(
                     else run("reconnect", "offline", timeoutSeconds = 10)
                     Thread.sleep(1500)
                 }
-                "unauthorized" -> throw AdbDeviceError(
+                "unauthorized" -> throw DeviceError(
                     "device is UNAUTHORIZED. Accept the 'Allow USB debugging' prompt on the device" +
                         " (and check 'always allow'), then retry."
                 )
-                else -> if (last) throw AdbDeviceError("device in state '$state'; cannot drive it.")
+                else -> if (last) throw DeviceError("device in state '$state'; cannot drive it.")
             }
         }
     }
@@ -174,7 +172,7 @@ class Adb(
      * "linked but couldn't bind its port" (a FAILED line) — a split the network
      * probe alone can't make. `-d` dumps and exits; non-blocking.
      */
-    fun reticleLogcat(maxLines: Int = 40): List<String> {
+    override fun agentLog(maxLines: Int): List<String> {
         val result = run("logcat", "-d", "-v", "brief", "-t", "2000", "-s", LOG_TAG, timeoutSeconds = 15)
         if (!result.ok) return emptyList()
         return result.stdout.lineSequence()
@@ -204,6 +202,3 @@ class Adb(
         }
     }
 }
-
-/** A device-readiness problem (offline / unauthorized / absent) with an actionable message. */
-class AdbDeviceError(message: String) : RuntimeException(message)
