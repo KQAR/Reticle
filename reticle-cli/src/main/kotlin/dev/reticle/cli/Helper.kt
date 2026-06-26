@@ -79,6 +79,7 @@ object Helper {
     private fun dispatch(method: String, params: JsonObject): JsonElement = when (method) {
         "ping" -> buildJsonObject { put("pong", true); put("version", RETICLE_VERSION) }
         "listDevices" -> listDevices()
+        "status" -> status(params)
         "inject" -> inject(params)
         "uiReport" -> uiReport(params)
         else -> throw CliError("unknown method '$method'")
@@ -99,9 +100,41 @@ object Helper {
         }
     }
 
+    private fun status(params: JsonObject): JsonElement {
+        val pkg = params.str("package")
+        val serial = params.str("serial")
+        val device = Platforms.current().device(serial)
+        val states = device.listDeviceStates()
+        return buildJsonObject {
+            put("devices", buildJsonArray {
+                states.forEach { s -> add(buildJsonObject { put("serial", s.serial); put("state", s.state) }) }
+            })
+            if (pkg != null) {
+                val pid = device.pidOf(pkg)
+                put("package", pkg)
+                put("running", pid != null)
+                if (pid != null) put("pid", pid)
+                val devicePort = params.int("port") ?: dev.reticle.core.PortMap.derivePort(pkg)
+                val hostPort = params.int("hostPort") ?: devicePort
+                val client = RuntimeClient(device, hostPort, devicePort)
+                client.setUpForward()
+                put("runtime", when (val h = client.probe()) {
+                    is RuntimeHealth.Healthy -> if (h.info.packageName == pkg) "healthy" else "conflict"
+                    is RuntimeHealth.Unreachable -> "unreachable"
+                    is RuntimeHealth.Unresponsive -> "unresponsive"
+                    is RuntimeHealth.Foreign -> "foreign"
+                })
+            }
+        }
+    }
+
     private fun inject(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("inject needs 'package'")
         val serial = params.str("serial")
+        // Explicit payload location (the spike showed cwd-relative resolution is
+        // a trap when a host spawns the helper from elsewhere). Honored by
+        // Injector.locatePayloadDex via the `reticle.payloadDex` system property.
+        params.str("payloadDex")?.let { System.setProperty("reticle.payloadDex", it) }
         val device = Platforms.current().device(serial)
         device.ensureDeviceReady()
         val injected = Platforms.current().injector().inject(device, pkg)
@@ -148,10 +181,16 @@ object Helper {
         val snapshot: Snapshot = client.snapshot()
         val semantic = SemanticTree.build(snapshot)
         val compact = CompactObservation.from(snapshot)
+        // Return the full derived trees as JSON so the host can write real report
+        // files (snapshot.json / semantics.json / compact.json) without re-deriving
+        // anything — the derivation lives here, on the device-facing side.
         return buildJsonObject {
             put("nodeCount", snapshot.nodes.size)
             put("compactItemCount", compact.items.size)
             put("semanticNodeCount", semantic.nodes.size)
+            put("snapshot", ReticleJson.compact.encodeToJsonElement(Snapshot.serializer(), snapshot))
+            put("semantics", ReticleJson.compact.encodeToJsonElement(SemanticTree.serializer(), semantic))
+            put("compact", ReticleJson.compact.encodeToJsonElement(CompactObservation.serializer(), compact))
         }
     }
 
