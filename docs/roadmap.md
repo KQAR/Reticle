@@ -97,6 +97,32 @@ platform-specific and gets its own per-platform build (AAR / framework / HAP).
 The **CLI** is host-side and stays one module; its three platform seams live as
 *source packages* (`dev.reticle.cli.platform.android`), not separate modules.
 
+## CLI is a thin client: derivation lives in the agent
+
+A clarified boundary (it was muddy before). The host CLI must NOT own UI-shaped
+algorithms. Capture-derived views are computed **in the agent, on-device**, and
+returned as finished JSON; the CLI receives products and does only protocol I/O
+(HTTP, JSON, arg parsing, forking `adb`/`simctl`/`hdc`).
+
+| Algorithm | Home | Why |
+| --- | --- | --- |
+| `SemanticTree.build`, `CompactObservation.from`, selector resolution | **agent** (on-device) | Pure functions over a snapshot; the agent captures once and derives all views in one pass. The CLI today re-derives them locally only for single-capture consistency — folding that into the agent makes consistency *more* natural, not less. |
+| `PortMap.derivePort` | **both ends, by spec** | Chicken-and-egg: the CLI needs the device port *before* it can reach the agent, so it can't ask the agent for it. It is a protocol rule (a stable hash of `applicationId`) that each end implements identically. Belongs in `reticle-protocol`, not in shared code. |
+
+Consequence for language choice: once derivation lives in the agent, the CLI's
+dependency on `reticle-core` shrinks to **data models only** — and models are not
+shared across platforms anyway (each language has its own, aligned by the schema;
+see below). So a thin-client CLI is **language-free**: Kotlin/JVM, Swift, Go, or
+Rust are all viable, because the CLI just speaks the protocol and shells out to
+device tools. The cross-platform contract is the protocol, never shared code.
+
+This means: **the thing that makes the CLI clean is the derivation sink-down and
+thin-client shape — not the implementation language.** Rewriting the CLI in
+another language is therefore an optional preference, not an architectural
+necessity, and is deferred (see Deferred / open questions). JVM is a fine default
+for a host tool: mature cross-OS distribution, no macOS required to build (CI is
+Linux), and it shares `reticle-core` with the Android agent for free today.
+
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
 `reticle-protocol/` holds **JSON Schema (2020-12)** files plus golden fixtures as
@@ -370,6 +396,13 @@ Android first and complete; everything else reserved behind the spec + SPI.
   L0→L1→L2 tiers, DOM nodes merged into the unified tree (`NodeKind.domNode`).
   See the WebView section above. L0 is free today; L1 (read-only DOM walk +
   coordinate fold) is the real work.
+- **Thin-client sink-down** — move `SemanticTree.build` / `CompactObservation.from`
+  / selector resolution to the agent so the CLI consumes finished JSON (the agent
+  already exposes `/semantics` and `/compact`; have `ui report` fetch rather than
+  re-derive). Keep `PortMap` on both ends as a protocol rule. This is the real
+  "make the CLI clean" work surfaced by the language question — it makes the CLI
+  language-free and tightens single-capture consistency. See "CLI is a thin
+  client" above.
 
 ### Phase 2 — Proxy + daemon
 - Implement `reticle serve`, the event bus, session model, SSE/REST surface.
@@ -417,3 +450,11 @@ mistaken for settled. Revisit when the trigger arrives.
   reverse-drive is wanted, it forces a bidirectional transport (WebSocket over
   the current SSE) plus a meaningful chunk of front-end interaction work — decide
   before committing the Phase 3 transport so SSE-vs-WebSocket isn't reworked.
+- **CLI implementation language.** Stays Kotlin/JVM. A native single-binary
+  distribution (no JDK on the user's machine) is the only real pain a rewrite
+  was reaching for — and that is a *packaging* problem, solvable without changing
+  language (GraalVM `native-image` keeps all Kotlin code and the `reticle-core`
+  share; per-OS compilation is its main cost). Once the CLI is a thin client
+  (above), its language is a free choice, so any future switch is preference, not
+  necessity. *Trigger:* if "no-JDK native binary" becomes a must (agent/CI users
+  without a JDK), spike GraalVM native-image first — don't reach for a rewrite.
