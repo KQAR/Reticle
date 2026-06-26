@@ -22,8 +22,12 @@ Steps:
      non-debuggable release needs Frida/root, not this path.
    - "payload dex not found" — build it with
      `./gradlew :reticle-agent:android:dexPayload`, or set `RETICLE_PAYLOAD_DEX`.
-   - a handshake/JDWP stall — set `RETICLE_JDWP_DEBUG=1` and retry for a trace;
-     another debugger (Android Studio) attached to the same pid blocks it.
+   - a slow first inject (up to ~15s) on a **just-launched** app is expected, not
+     a hang: a fresh debug process briefly refuses new JDWP attaches while it
+     starts up, and inject now waits that window out in one go instead of failing.
+   - a handshake/JDWP failure that *does* surface — set `RETICLE_JDWP_DEBUG=1` and
+     retry for a trace; another debugger (Android Studio) attached to the same pid
+     blocks it.
 4. Confirm it took: `reticle ui report --package <pkg> --output reticle-report`
    should return a non-empty tree. After injection every other command
    (`ui`/`act`/`mutate`/`debug logs`) works against the app unchanged.

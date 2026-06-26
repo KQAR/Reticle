@@ -102,7 +102,18 @@ func cmdUiReport(_ c: HelperClient, _ args: Args) throws {
     let pkg = try args.require("package")
     let outDir = args.option("output") ?? "reticle-report"
     let r = try c.call("uiReport", ["package": pkg])
-    try FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+    let fm = FileManager.default
+    try fm.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+
+    // Re-running a report into an existing dir is the common case (re-`ui report`
+    // after an action). Older Reticle versions wrote extra artifacts here
+    // (per-screen PNGs, a single screenshot.png, accessibility.json) that THIS
+    // format no longer produces. Left in place they're a silent trap: a reader
+    // opening screenshot.png sees a stale frame and trusts it. We own this dir's
+    // report artifacts, so prune the orphans this run won't rewrite. We only ever
+    // touch names a Reticle report itself produces — never arbitrary user files.
+    let pruned = pruneStaleReportArtifacts(in: outDir, fm: fm)
+
     // The helper already derived the trees device-side; we just persist them.
     for key in ["snapshot", "semantics", "compact"] {
         guard let tree = r[key] else { continue }
@@ -111,6 +122,27 @@ func cmdUiReport(_ c: HelperClient, _ args: Args) throws {
     }
     print("wrote report to \(outDir)")
     print("nodes: \(r["nodeCount"] ?? "?"), compact items: \(r["compactItemCount"] ?? "?"), semantic nodes: \(r["semanticNodeCount"] ?? "?")")
+    if pruned > 0 {
+        print("pruned \(pruned) stale artifact(s) from a prior report (use `ui screenshot` for a fresh frame)")
+    }
+}
+
+/// Remove report artifacts an older format left behind that the current report
+/// no longer writes, so a re-run never leaves a stale image/tree masquerading as
+/// current. Matches only Reticle's own artifact names, returns how many it removed.
+func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
+    guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { return 0 }
+    var removed = 0
+    for name in entries {
+        let isLegacy = name == "screenshot.png"
+            || name == "accessibility.json"
+            // screen1.png, screen2.png, … from the old multi-screen capture.
+            || (name.hasPrefix("screen") && name.hasSuffix(".png")
+                && Int(name.dropFirst("screen".count).dropLast(".png".count)) != nil)
+        guard isLegacy else { continue }
+        if (try? fm.removeItem(atPath: "\(dir)/\(name)")) != nil { removed += 1 }
+    }
+    return removed
 }
 
 func cmdLaunch(_ c: HelperClient, _ args: Args) throws {
