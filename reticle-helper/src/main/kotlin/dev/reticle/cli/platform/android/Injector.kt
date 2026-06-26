@@ -27,7 +27,27 @@ object Injector : AppInjector {
     /** Where the payload lands inside the app sandbox; mirrors a normal dex cache. */
     private const val DEVICE_DEX_NAME = "reticle-agent-payload.jar"
     private const val STAGING_DIR = "/data/local/tmp"
-    private const val HANDSHAKE_ATTEMPTS = 4
+
+    /**
+     * How long to keep retrying the JDWP handshake before giving up.
+     *
+     * Measured on a real device, a freshly-started DEBUG process exposes a SHORT
+     * JDWP accept window — handshake OK from ~pid+0.04s — that closes around
+     * pid+0.5s, after which new attaches are refused (adb forwards, but the device
+     * returns an empty read) until ~pid+15-16s, then accept permanently. The window
+     * tracks PROCESS AGE, not foreground state (a hot start reusing an old process
+     * has none). This is NOT app anti-debug: it reproduces on a sibling app sharing
+     * the same React Native + lib stack, and the target's source has shielding
+     * disabled (no RASP/DexGuard, no debugger-detection). The likeliest cause is
+     * the RN debug startup itself holding the single per-pid JDWP consumer slot
+     * while it loads/executes the dev bundle (the startup logcat is all SoLoader +
+     * "ReactNative: Packager connection ..."). Either way we can't make it accept
+     * sooner, so the budget must exceed the dead-zone: if [inject] misses the early
+     * window it rides the ~15s out in ONE invocation instead of hard-failing. A
+     * process older than the window — the common "open the app, then inject" case —
+     * connects on the first attempt with no wait.
+     */
+    private const val HANDSHAKE_BUDGET_MS = 20_000L
 
     /**
      * Inject and start the runtime in [packageName]. Returns the pid and the port
@@ -43,18 +63,26 @@ object Injector : AppInjector {
                     "then inject."
             )
 
+        // Resolve the payload locally first — no device I/O, so it can't perturb
+        // the JDWP channel we're about to open.
         val dex = locatePayloadDex()
-        val deviceDexPath = stageDex(adb, packageName, dex)
 
         // Reach the process's JDWP channel over a fresh host port. Derive it off
         // the runtime port range so it won't clash with an active forward.
         val jdwpHostPort = 16000 + (pid % 1000)
 
-        // ADB allows only ONE JDWP consumer per pid, and a fresh `jdwp:` forward
-        // has a brief readiness window — connecting too early (or onto a stale
-        // forward from a prior run) yields an immediate EOF on the handshake. The
-        // connect+handshake is retried; the injection proper is NOT (a failure
-        // there is real and must surface, not be retried as if it were a race).
+        // ORDER MATTERS: open the JDWP connection BEFORE staging the dex.
+        //
+        // A freshly-started debug process exposes only a SHORT JDWP accept window
+        // (OK ~pid+0.04s, closed by ~pid+0.5s) before it refuses new attaches for
+        // ~15s (see [HANDSHAKE_BUDGET_MS] — an RN-debug-startup artifact, not app
+        // anti-debug). Staging first burns that early window on `adb push` +
+        // `run-as`, guaranteeing we land in the dead-zone; staging also adds device
+        // I/O latency right when the window is closing. Handshaking FIRST gives the
+        // best shot at the open window, and a connection held open survives the
+        // dead-zone, so we stage afterwards over the live channel. When we do miss
+        // the window, [connectWithHandshake] still rides the ~15s out rather than
+        // failing.
         adb.removeForward(jdwpHostPort)
         val forward = adb.forwardJdwp(jdwpHostPort, pid)
         if (!forward.ok) {
@@ -64,8 +92,12 @@ object Injector : AppInjector {
             )
         }
         try {
-            val client = connectWithHandshake(jdwpHostPort, pid)
+            val client = connectWithHandshake(adb, jdwpHostPort, pid)
             client.use { jdwp ->
+                // Stage the payload while the JDWP connection is held open; the
+                // open channel rides through the dead-zone that would refuse a
+                // fresh attach started now.
+                val deviceDexPath = stageDex(adb, packageName, dex)
                 jdwp.negotiateIdSizes()
                 val reported = jdwp.inject(deviceDexPath) {
                     // The event fires when the target next runs the instrumented
@@ -81,26 +113,50 @@ object Injector : AppInjector {
         }
     }
 
-    /** Open the JDWP socket and complete the handshake, retrying the EOF race. */
-    private fun connectWithHandshake(hostPort: Int, pid: Int): JdwpClient {
+    /**
+     * Open the JDWP socket and complete the handshake, retrying until [HANDSHAKE_BUDGET_MS].
+     *
+     * Two timing regimes (see [HANDSHAKE_BUDGET_MS] for the measurements):
+     *  - A process older than the refuse-window connects on the first attempt.
+     *  - A just-started process may be in its early accept window (catch it fast)
+     *    or already past it into the ~15s dead-zone (ride it out, don't fail).
+     * So we probe rapidly at first — to land the narrow early window if it's still
+     * open — then keep retrying across the dead-zone until the budget elapses. Each
+     * attempt re-issues the forward (remove + re-add): a forward bound onto the
+     * closed transport stays a dud and won't self-heal.
+     */
+    private fun connectWithHandshake(adb: DeviceController, hostPort: Int, pid: Int): JdwpClient {
         val debug = System.getenv("RETICLE_JDWP_DEBUG") == "1"
+        val deadline = System.currentTimeMillis() + HANDSHAKE_BUDGET_MS
         var lastError: Throwable? = null
-        repeat(HANDSHAKE_ATTEMPTS) { attempt ->
+        var attempt = 0
+        while (true) {
             try {
-                Thread.sleep(250)
+                // Re-issue the forward from the 2nd attempt on — the initial one was
+                // set up by the caller, and a stale/dud forward won't self-heal.
+                if (attempt > 0) {
+                    adb.removeForward(hostPort)
+                    adb.forwardJdwp(hostPort, pid)
+                }
                 val client = JdwpClient(java.net.Socket("127.0.0.1", hostPort))
                 client.handshake()
                 return client
             } catch (e: Throwable) {
                 if (debug) System.err.println("jdwp: handshake attempt $attempt failed: ${e.javaClass.simpleName} ${e.message}")
                 lastError = e
-                Thread.sleep(400)
+                if (System.currentTimeMillis() >= deadline) break
+                // Probe fast for the first ~1s to catch the early accept window
+                // before it closes, then back off to ~1s spacing to ride the
+                // dead-zone out cheaply.
+                Thread.sleep(if (attempt < 10) 100 else 1000)
+                attempt++
             }
         }
         throw CliError(
-            "JDWP channel for pid $pid never completed a handshake after $HANDSHAKE_ATTEMPTS tries " +
+            "JDWP channel for pid $pid never completed a handshake within ${HANDSHAKE_BUDGET_MS / 1000}s " +
                 "(${lastError?.message ?: "EOF"}).\n" +
-                "  Another debugger may be attached (Android Studio?), or the app just started — retry."
+                "  Another debugger may be attached (Android Studio?). If the app was just launched," +
+                " give it a moment and retry."
         )
     }
 
