@@ -98,9 +98,59 @@ HTTP 传输层(`RuntimeClient`)**已经是平台中立的**——任何讲该协
 因为 CLI 只是讲协议、调设备工具。跨平台契约是协议,永远不是共享代码。
 
 这意味着:**让 CLI 干净的,是派生下沉和薄客户端形态——不是实现语言。** 因此用
-另一种语言重写 CLI 是可选偏好,而非架构必需,目前搁置(见"已搁置 / 待定问题")。
-JVM 对 host 工具是个不错的默认:成熟的跨 OS 分发、构建不需要 macOS(CI 是 Linux)、
-而且今天它还能和 Android agent 免费共享 `reticle-core`。
+另一种语言重写 CLI 是可选偏好,而非架构必需。JVM 对 host 工具是个不错的默认:
+成熟的跨 OS 分发、构建不需要 macOS(CI 是 Linux)、而且今天它还能和 Android agent
+免费共享 `reticle-core`。下文的方向(Swift host + Kotlin Android helper)是既定的
+长期形态;在它被执行之前,host 保持 Kotlin/JVM。
+
+## 方向:Swift host + 逐平台 helper(已选定,尚未构建)
+
+既定方向:把 **host 程序**(CLI + daemon + Web 面板——它们是同一个进程
+`reticle serve`,不是独立组件)统一到 **Swift**,而每个平台的设备脏活保留在最适合
+该平台的语言里,经一个进程边界被调用。
+
+为什么是这种形态,而不是把一切都用 Swift 重写:
+
+- **JDWP 注入无法下沉到 agent。** JDWP 注入的全部意义,就是把 agent 弄进一个
+  *还没有它*的进程——agent 是注入的*结果*,不是前提。所以那 ~669 行 JDWP codec
+  在本质上是 host 侧的,也在本质上是 Android 特有的。
+- **Android 的脏活在 JVM 里最自然**(JDWP、dex、`d8`)。用 Swift 重写它是任何
+  重写里风险最高的一块(它 git 历史里每个修复都是一个来之不易的 ART/dexopt/GC
+  边界条件)。
+- 所以:把**整个当前 `AndroidPlatform`**(adb + injector + JDWP + input)保留为
+  Kotlin 的 **`reticle-android-helper`**,让 Swift host 去调用它。现有的
+  `Platform` SPI 原样平移到一个*进程边界*,而非被重写。
+
+```
+Swift host(CLI + daemon + Web)
+├─ 通用核心:args / HTTP / JSON / 事件总线 / 代理 / Web 面板
+└─ PlatformClient(Swift 接口)
+   ├─ AndroidHelperClient → 与 `reticle-android-helper`(Kotlin:今天的 AndroidPlatform)通信
+   ├─ (future) iOS      → 在 Swift host 内原生做(simctl / DYLD —— 同生态,无需 helper)
+   └─ (future) harmony  → hdc / helper 待定
+```
+
+注意这种不对称:**仅当某平台的脏活处于非-host 生态时,才有 helper。** Android
+(JVM)需要一个;iOS 不需要(simctl/DYLD 本就是 Swift/macOS host 的原生生态)。
+不要把"helper"过度推广到每个平台。
+
+诚实的代价(这不是免费的,它用 IPC 复杂度换取重写风险):
+
+- **仍残留一个完整的 Kotlin/JVM helper。** "全 Android 经 helper"意味着该 helper
+  就是整个当前 Android host 层(~1137 行),需要 JVM 或它自己的 native-image。
+  JVM 依赖没有被消除——而是被收拢进一个隔离的、语言归属正当的可执行体。
+- **每次 Android 调用都变成跨进程。** `forward`/`screencap`/`input`/`logcat` 都是
+  高频调用;因此该 helper 必须是一个**长生命周期 RPC 服务**,而非每次 fork。它的
+  请求/响应契约归 `reticle-protocol`,与 wire 协议并列。
+- **两个长生命周期进程。** Swift daemon 与 Kotlin Android helper 都常驻;host
+  编排两者。roadmap 必须把它们区分清楚(Swift daemon 不是 Kotlin helper),以免
+  陷入"两个 daemon"的混乱。
+
+风险姿态:这**彻底消除了 JDWP 重写风险**(Android 代码原样保留),并把"重写最难的
+代码"转化为"设计一个好的 host↔helper IPC 契约 + 管理两个常驻进程"——是真实工作,
+但属于低风险、标准模式的工作。执行采取**spike 优先**:先证实 host↔helper RPC
+(一个 Swift host 通过一次 `inject` 和一次 `ui report` 驱动 Kotlin helper),再把
+通用核心移植到 Swift。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 
@@ -365,8 +415,10 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   两者都经 SSE 由事件总线供数据。两个视图,一个 UI。
 
 ### Phase 4 —— 多平台
-- iOS / 鸿蒙 agent 在各自的构建系统里,遵循协议 spec。host CLI 与面板复用;只有
-  那三个平台缝得到新实现。
+- iOS / 鸿蒙 agent 在各自的构建系统里,遵循协议 spec。host 与面板复用;每个新平台
+  提供它的三个缝——生态匹配时在 host 内原生做(iOS:Swift host 里的 simctl/DYLD),
+  不匹配时做成 helper(Android:Kotlin `reticle-android-helper`)。见"方向:
+  Swift host + 逐平台 helper"。
 
 ## 诚实边界(贯穿每份文档与 skill)
 
@@ -393,9 +445,12 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   *触发条件:* 若需要反向驱动,它会逼出一个双向传输(在当前 SSE 之上加 WebSocket)
   外加一大块前端交互工作——在敲定 Phase 3 传输之前决定,免得 SSE-vs-WebSocket
   返工。
-- **CLI 实现语言。** 保持 Kotlin/JVM。重写曾想触及的唯一真实痛点是原生单文件分发
-  (用户机器上无需 JDK)——而那是一个*打包*问题,不换语言也能解决(GraalVM
-  `native-image` 保留全部 Kotlin 代码和 `reticle-core` 共享;逐 OS 编译是它的主要
-  代价)。一旦 CLI 成为薄客户端(见上文),它的语言就是自由选择,所以任何未来的
-  切换都是偏好,而非必需。*触发条件:* 若"无 JDK 原生二进制"成为硬需求(没有 JDK
-  的 agent/CI 用户),先验证 GraalVM native-image——别一上来就重写。
+- **host 语言:Swift host + Kotlin Android helper(已选定,未排期)。** 长期形态
+  已定(见"方向:Swift host + 逐平台 helper"):host 程序(CLI + daemon + Web)转
+  Swift,整个当前 Android 层保留为 Kotlin,做成一个长生命周期 `reticle-android-
+  helper`,经一个 RPC 契约被调用。JDWP *不*重写。这是方向,尚未排期——在它被执行
+  之前 host 保持 Kotlin/JVM,且执行采取 **spike 优先**(先证实 host↔helper RPC
+  再移植核心)。*待定子问题:* helper 的 RPC 契约(归 `reticle-protocol`);Kotlin
+  helper 以 JVM jar 还是自己的 GraalVM native-image 分发;以及 Swift daemon 与
+  Kotlin helper(两个常驻进程)如何被监管。*排期触发条件:* 当 Swift Web 服务 /
+  daemon 工作启动时,因为那与 host 是同一进程,会逼出语言决定。
