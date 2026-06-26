@@ -198,7 +198,7 @@ func selectorKey(_ cliName: String) -> String {
 
 // --- entry -------------------------------------------------------------------
 
-let RETICLE_VERSION = "0.4.0"
+let RETICLE_VERSION = "0.5.0"
 let USAGE = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|version> [options]"
 
 let argv = Array(CommandLine.arguments.dropFirst())
