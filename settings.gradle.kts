@@ -25,7 +25,11 @@ rootProject.name = "Reticle"
 // Pure-JVM shared models, shared by the CLI and the in-app agent.
 include(":reticle-core")
 // Android library (AAR): in-process HTTP server + view/semantics capture.
-include(":reticle-agent")
+// `reticle-agent/` is a GROUPING DIRECTORY ONLY — no build.gradle of its own;
+// only the per-platform child is a Gradle module. Future siblings
+// (reticle-agent/ios via SwiftPM, reticle-agent/harmony via hvigor) are
+// intentionally NOT included here — invisible to Gradle by design.
+include(":reticle-agent:android")
 // JVM host CLI: adb forward + loopback evidence + input backend.
 include(":reticle-cli")
 // Demo app that links the agent.

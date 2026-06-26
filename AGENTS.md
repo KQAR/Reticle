@@ -12,10 +12,11 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
   observations, wire protocol, selectors. No Android dependency. Shared by the
   CLI and the in-app agent.
-- `reticle-agent`: Android library (AAR). In-process loopback HTTP server,
-  view-tree + Compose-semantics capture, allowlisted runtime mutation,
-  in-process screenshot, app-authored log/metadata bridge, and an auto-start
-  `ContentProvider`.
+- `reticle-agent/android` (`:reticle-agent:android`): Android library (AAR).
+  In-process loopback HTTP server, view-tree + Compose-semantics capture,
+  allowlisted runtime mutation, in-process screenshot, app-authored log/metadata
+  bridge, and an auto-start `ContentProvider`. `reticle-agent/` is a grouping
+  directory (no build.gradle); per-platform agents are its children.
 - `reticle-cli`: host JVM CLI for report, screenshot, compact, node, tree,
   regions, tap/swipe/drag/type, logs, logcat, mutate, launch, **inject**, status,
   doctor, version. Talks to the agent over `adb forward`; gates every runtime
@@ -128,7 +129,7 @@ Prove the **unlinked** (JDWP injection) path on the `noagent` flavor:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew \
-  :reticle-cli:installDist :reticle-agent:dexPayload :sample-app:assembleNoagentDebug
+  :reticle-cli:installDist :reticle-agent:android:dexPayload :sample-app:assembleNoagentDebug
 adb install -r -t sample-app/build/outputs/apk/noagent/debug/sample-app-noagent-debug.apk
 adb shell monkey -p dev.reticle.sample.noagent -c android.intent.category.LAUNCHER 1
 
@@ -157,7 +158,7 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
   CLI can fall back to `adb exec-out screencap` for those (`reticle ui screenshot`).
 - Injection into apps without the AAR: `reticle app inject` over JDWP for any
   **debuggable** app (no repackage, no root — works on locked `user` builds where
-  `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:dexPayload`
+  `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:android:dexPayload`
   and resolved via `$RETICLE_PAYLOAD_DEX` → gradle build output → `<cli>/lib/`.
   Non-debuggable release builds still need Frida/root. See `docs/architecture.md`
   for the JDWP sequence and its on-device constraints.

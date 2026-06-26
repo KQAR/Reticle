@@ -117,7 +117,7 @@ object Injector {
 
         val candidates = buildList {
             // Development: gradle build output, relative to common run locations.
-            val buildRel = "reticle-agent/build/reticle-payload/$DEVICE_DEX_NAME"
+            val buildRel = "reticle-agent/android/build/reticle-payload/$DEVICE_DEX_NAME"
             add(File(buildRel))
             add(File(System.getProperty("user.dir"), buildRel))
             // Shipped release: alongside the installed CLI distribution.
@@ -126,7 +126,7 @@ object Injector {
         return candidates.firstOrNull { it.isFile }
             ?: throw CliError(
                 "payload dex '$DEVICE_DEX_NAME' not found.\n" +
-                    "  Build it with: ./gradlew :reticle-agent:dexPayload\n" +
+                    "  Build it with: ./gradlew :reticle-agent:android:dexPayload\n" +
                     "  or point RETICLE_PAYLOAD_DEX at a prebuilt one."
             )
     }

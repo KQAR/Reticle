@@ -131,7 +131,7 @@ def collect_code_versions():
         ("bin/reticle", re.compile(r'RETICLE_VERSION="\$\{RETICLE_VERSION:-([^}"]+)\}"')),
         ("reticle-cli/src/main/kotlin/dev/reticle/cli/Main.kt",
          re.compile(r'RETICLE_VERSION\s*=\s*"([^"]+)"')),
-        ("reticle-agent/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
+        ("reticle-agent/android/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
          re.compile(r'VERSION\s*=\s*"([^"]+)"')),
     ]
     for rel, pat in sources:

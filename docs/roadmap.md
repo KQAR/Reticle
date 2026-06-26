@@ -7,6 +7,17 @@ implemented; `docs/architecture.md` describes what exists today.
 
 ## Vision
 
+The end goal: **post-development E2E and verification** — let an AI agent run a
+finished feature end-to-end on a real device and check each step. Crucial scope
+decision: **Reticle provides evidence, not verdicts.** The product verb is
+*observe / drive / capture*, never *assert*. Reticle faithfully emits state,
+trees, network events, screenshots, and action traces; the **agent** (or an
+external test framework) decides whether a step passed. So the protocol and
+command surface get **no** `assert`/`expect`/`verify` primitives — they get
+richer, more comparable *evidence* instead. This keeps the tool honest and
+composable, and makes evidence quality (structured, diffable traces and network
+events) the thing to optimize.
+
 Reticle today inspects and drives a running Android app from its live runtime
 (in-process agent + host CLI over a loopback HTTP/JSON protocol). The roadmap
 extends this along three axes without abandoning the project's defining

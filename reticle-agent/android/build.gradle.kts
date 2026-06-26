@@ -6,6 +6,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Nesting the module under reticle-agent/ makes the Gradle leaf project name
+// `android`, which would name the AAR `android-release.aar`. Pin the artifact
+// base name so it stays `reticle-agent-android` regardless of directory layout.
+base {
+    archivesName.set("reticle-agent-android")
+}
+
 android {
     namespace = "dev.reticle.agent"
     compileSdk = 35
