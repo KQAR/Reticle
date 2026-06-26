@@ -4,27 +4,38 @@ import kotlinx.serialization.Serializable
 
 /**
  * Wire protocol shared by the in-app server and the host CLI: a small set of
- * localhost endpoints (/runtime, /snapshot, /accessibility, /logs).
+ * localhost endpoints (/runtime, /snapshot, /semantics, /logs).
  *
  * Endpoint map (HTTP GET unless noted), all bound to 127.0.0.1 in-app and
  * reached through `adb forward`:
  *
  *   GET  /runtime         -> RuntimeInfo
  *   GET  /snapshot        -> Snapshot
- *   GET  /accessibility   -> AccessibilityTree
+ *   GET  /semantics       -> SemanticTree
  *   GET  /compact         -> CompactObservation
  *   GET  /logs            -> LogBatch
  *   GET  /screenshot      -> image/png bytes
  *   POST /mutate          -> MutationResult   (body: MutationRequest)
+ *   POST /clipboard       -> "ok"             (body: raw UTF-8 text)
  */
 object Endpoints {
     const val RUNTIME = "/runtime"
     const val SNAPSHOT = "/snapshot"
-    const val ACCESSIBILITY = "/accessibility"
+    const val SEMANTICS = "/semantics"
     const val COMPACT = "/compact"
     const val LOGS = "/logs"
     const val SCREENSHOT = "/screenshot"
     const val MUTATE = "/mutate"
+
+    /**
+     * Set the device clipboard from inside the app process (body is the raw
+     * UTF-8 text). This is the reliable way to stage non-ASCII input: `adb shell
+     * input text` cannot emit non-ASCII at all, host-side `adb shell cmd
+     * clipboard` is absent on many OEM builds, and Android 10+ blocks clipboard
+     * writes from any process that isn't the foreground app — which the agent,
+     * running inside that app, is. The CLI follows this with a KEYCODE_PASTE.
+     */
+    const val CLIPBOARD = "/clipboard"
 }
 
 /** Identifies the running app process behind the loopback server. */
@@ -71,7 +82,7 @@ data class MutationResult(
 
 /**
  * A stable target for actions and mutations. Resolution order: testId /
- * resource-id first (accessibility-backed), then ref, then raw point.
+ * resource-id first (semantic-tree-backed), then ref, then raw point.
  */
 @Serializable
 data class Selector(

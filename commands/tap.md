@@ -17,7 +17,7 @@ Steps:
    multi-region controls) to pick the right selector.
 2. Dispatch the tap:
    `reticle act tap --package <pkg> <selector> [--region "…"]`
-   The resolver prints which path it used (accessibility / view frame / region
+   The resolver prints which path it used (semantic / view frame / region
    / char grid).
 3. Verify: re-run `reticle ui report …` and confirm the expected state change
    in the affected node (`reticle ui node …`). Report success only with that

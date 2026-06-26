@@ -3,7 +3,7 @@ name: reticle
 description: >-
   Inspect and drive a RUNNING Android app from its live runtime, not its source
   or a screenshot. Use when the task involves an Android app on a connected
-  device/emulator and you need to: read the on-screen view / accessibility /
+  device/emulator and you need to: read the on-screen view / semantic /
   Jetpack Compose semantics tree, find a stable selector or exact tap
   coordinates, tap/swipe/type real input, target a specific phrase or link
   inside a multi-region control (e.g. an agreement row), read app runtime logs,
@@ -113,7 +113,7 @@ reticle status      --package <pkg>              # probe runtime health + identi
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
 reticle ui node     reticle-report/snapshot.json --test-id <id>   # full view-tree node
-reticle ui tree     reticle-report/snapshot.json --accessibility  # a11y tree
+reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
 ```
 
 Send the **compact** observation to reason about the screen; query specific refs
@@ -122,7 +122,7 @@ disk.
 
 ## Acting on the app
 
-Selector resolution is accessibility-first, then view-tree frames, then a raw
+Selector resolution is semantic-first, then view-tree frames, then a raw
 point — pass `--test-id`, `--resource-id`, `--ref`, or `--point x,y`.
 
 ```bash
@@ -130,7 +130,14 @@ reticle act tap   --package <pkg> --test-id checkout.payButton
 reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
 reticle act type  --package <pkg> --text "hello"
+reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
+
+`act type` types **any** text. ASCII goes through `adb input text` and works
+even on apps that don't link/inject the agent. Non-ASCII (CJK, accented Latin,
+emoji — which `adb input text` silently drops) is staged on the device clipboard
+by the in-process agent and pasted into the focused field, so it **requires a
+reachable runtime** and a focused input. Tap the field first.
 
 ## Multi-region controls (one View, several tap targets)
 
@@ -139,8 +146,8 @@ targets into one node. List them, then tap a specific phrase/link by substring:
 
 ```bash
 reticle ui regions reticle-report/snapshot.json
-reticle act tap --package <pkg> --test-id agreement --region "《Privacy》"
-reticle act tap --package <pkg> --test-id agreement --region "用户协议"
+reticle act tap --package <pkg> --test-id agreement --region "Privacy"
+reticle act tap --package <pkg> --test-id agreement --region "Terms"
 ```
 
 `ui regions` reports `span` / `colorSpan` / `textMarker` regions (with rects and
@@ -148,11 +155,17 @@ link color) and flags `suspectedMultiRegion` self-drawn controls that are still
 targetable by substring via the char grid. A `colorSpan` is a *candidate* link
 (colored text) — weigh it, don't assert it.
 
+Region matching is plain substring matching and is **script-agnostic** — pass
+whatever text appears on screen, in any language (e.g. `--region "Política"`).
+The `textMarker` channel splits self-drawn rows on paired bracket delimiters
+across scripts (the markdown `[text](url)` form, plus quote/title brackets like
+`«…»` and `《…》`).
+
 ## Logs and live UI patching
 
 ```bash
 reticle debug logs --package <pkg>               # app-authored runtime logs
-reticle mutate --package <pkg> --test-id <id> --property text       --value "新文案"
+reticle mutate --package <pkg> --test-id <id> --property text       --value "New label"
 reticle mutate --package <pkg> --test-id <id> --property textColor  --value "#FFE53935"
 reticle mutate --package <pkg> --test-id <id> --property textSize   --value "72"
 reticle mutate --package <pkg> --test-id <id> --property backgroundColor --value "#FF0000"
@@ -174,5 +187,5 @@ drive declarative UI through the app's own state.
   authorization. Default to the bundled `sample-app` for demos.
 
 For architecture, the Compose-semantics boundary, and the region/char-grid
-design, see `${CLAUDE_PLUGIN_ROOT}/Docs/Architecture.md` and
+design, see `${CLAUDE_PLUGIN_ROOT}/docs/architecture.md` and
 `${CLAUDE_PLUGIN_ROOT}/AGENTS.md`.

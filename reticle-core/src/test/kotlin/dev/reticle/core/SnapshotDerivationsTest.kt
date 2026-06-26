@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 
 /**
  * Tests the pure derivations from a captured snapshot: the compact observation
- * and the accessibility-tree projection. Builds a tiny tree by hand:
+ * and the semantic-tree projection. Builds a tiny tree by hand:
  *
  *   app (root)
  *    └─ container (not interactive, no label)
@@ -70,14 +70,14 @@ class SnapshotDerivationsTest {
     }
 
     @Test
-    fun accessibilityTree_keepsAccessibleNodes_findBySelectors() {
-        val tree = AccessibilityTree.build(sampleSnapshot())
+    fun semanticTree_keepsSignalNodes_findBySelectors() {
+        val tree = SemanticTree.build(sampleSnapshot())
         // button is interactive + has text + testId -> kept and findable
         val pay = assertNotNull(tree.findByTestId("pay"))
         assertEquals("Pay", pay.label)
         // label has text -> kept
         assertNotNull(tree.nodes.values.firstOrNull { it.label == "Total: 9" })
-        // bare container carries no a11y signal -> dropped
+        // bare container carries no targeting signal -> dropped
         assertNull(tree.nodes["box"])
     }
 }

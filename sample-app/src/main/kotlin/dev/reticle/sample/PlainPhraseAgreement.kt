@@ -6,23 +6,25 @@ import androidx.appcompat.widget.AppCompatTextView
 
 /**
  * The hardest real case: a self-drawn clickable text with MULTIPLE tappable
- * phrases that carry NO 《…》 / markdown / span markers at all —
- * "登录即代表同意用户协议和隐私政策", where only "用户协议" and "隐私政策" are
- * meant to be tappable. The phrase boundaries live purely in the app's private
- * onTouchEvent character-range check.
+ * phrases that carry NO bracket / markdown / span markers at all —
+ * "By signing in you accept the User Agreement and Privacy Policy", where only
+ * "User Agreement" and "Privacy Policy" are meant to be tappable. The phrase
+ * boundaries live purely in the app's private onTouchEvent character-range check.
  *
  * Nothing structural marks the phrases, so Reticle cannot DISCOVER them as
- * regions. But because the rendered text is visible and the char grid gives
+ * regions and — by design — does NOT flag `suspectedMultiRegion` either (it
+ * never guesses link-ness from wording, which would tie the probe to one
+ * language). But because the rendered text is visible and the char grid gives
  * exact per-character X, an agent can still target a phrase precisely with
- * `act tap --region "用户协议"` / `--region "隐私政策"`.
+ * `act tap --region "User Agreement"` / `--region "Privacy Policy"`.
  */
 class PlainPhraseAgreement(context: Context) : AppCompatTextView(context) {
 
     var onPhrase: ((String) -> Unit)? = null
     var onPlain: (() -> Unit)? = null
 
-    private val body = "登录即代表同意用户协议和隐私政策"
-    private val phrases = listOf("用户协议", "隐私政策")
+    private val body = "By signing in you accept the User Agreement and Privacy Policy"
+    private val phrases = listOf("User Agreement", "Privacy Policy")
 
     init {
         // Non-default metrics on purpose: the char grid is sourced from Layout,

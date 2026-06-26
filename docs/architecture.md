@@ -84,17 +84,29 @@ Endpoints (see `reticle-core/Protocol.kt`):
 ```
 GET  /runtime        RuntimeInfo
 GET  /snapshot       Snapshot (full view tree)
-GET  /accessibility  AccessibilityTree
+GET  /semantics      SemanticTree
 GET  /compact        CompactObservation
 GET  /logs           LogBatch (app-authored bridge)
 GET  /screenshot     image/png
 POST /mutate         MutationResult  (body: MutationRequest)
+POST /clipboard      "ok"            (body: raw UTF-8 text; stages non-ASCII input)
 ```
 
 ### 3. Synthesizing real input
 
 Input is dispatched from the host with `adb shell input tap|swipe|text|keyevent`
 — public, documented, and stable. `drag` is a long-duration `swipe`.
+
+**Non-ASCII text** is the one case `adb shell input text` can't handle: it
+silently drops anything outside printable ASCII (CJK, accented Latin, emoji).
+Host-side `adb shell cmd clipboard` is also unavailable on many OEM builds, and
+Android 10+ only lets the *foreground app* write the clipboard. So `act type`
+splits by content: ASCII goes straight through `input text` (works even on apps
+without the agent), while non-ASCII is staged on the clipboard **by the
+in-process agent** (`POST /clipboard` → `ClipboardManager.setPrimaryClip`, which
+is allowed because the agent runs inside the foreground app) and then pasted
+with `KEYCODE_PASTE`. The non-ASCII path therefore needs a reachable runtime and
+a focused input field; the ASCII path does not.
 
 The one gap is multi-touch `pinch`, which `input` can't express — it would need
 `sendevent` against the touchscreen device node. The API shape is reserved
@@ -122,44 +134,53 @@ is the most common mistake when reading the output, so this is explicit:
 | Tree | Node type | Built by | What it contains |
 | --- | --- | --- | --- |
 | **View tree** | `Node` (`Snapshot.nodes`) | `SnapshotCapture` walking `WindowManagerGlobal` roots | Every `View` + Compose-semantics node, with full layout/style/reflected properties |
-| **Accessibility tree** | `AccessibilityNode` | `AccessibilityTree.build(from: snapshot)` | Only nodes carrying an a11y signal (label, id, interactive), flattened to a label/role/frame summary |
+| **Semantic tree** | `SemanticNode` | `SemanticTree.build(from: snapshot)` | Only nodes carrying a targeting signal (label, id, interactive), flattened to a label/role/frame summary |
 
-The accessibility tree is **derived from** the view tree (a filtered, slimmed
-projection), not captured independently. The view tree is the source of truth.
+The semantic tree is **derived from** the view tree (a filtered, slimmed
+projection), not captured independently — it is NOT the platform/uiautomator
+accessibility tree. The view tree is the source of truth.
+
+Because both trees come from **one** capture, they always describe the same
+frame. `ui report` and `act tap` take a single `/snapshot` and build the
+semantic view locally (`SemanticTree.build`) rather than making a second
+`/semantics` round-trip — a separate capture could observe the UI mid-change
+and yield two trees that disagree, and it would walk the view tree on-device
+twice for no benefit. (The `/semantics` wire endpoint still exists for direct
+protocol use.)
 
 Command → tree mapping:
 
 | Command | Tree it reads | Returns |
 | --- | --- | --- |
-| `ui report` | both (writes `snapshot.json` + `accessibility.json`) | files |
+| `ui report` | both (writes `snapshot.json` + `semantics.json`) | files |
 | `ui tree` | **view tree** | indented `Node` hierarchy |
-| `ui tree --accessibility` | **accessibility tree** | indented `AccessibilityNode` hierarchy |
+| `ui tree --semantics` | **semantic tree** | indented `SemanticNode` hierarchy |
 | `ui compact` | view tree (filtered to interactive/labelled) | one line per item |
-| **`ui node`** | **view tree** | a single `Node` — full view properties, not an a11y summary |
+| **`ui node`** | **view tree** | a single `Node` — full view properties, not a semantic summary |
 | `mutate` | view tree (resolves the concrete `View` to patch) | `MutationResult` |
-| `act tap` (selector) | **accessibility tree first, view tree fallback** | a resolved point |
+| `act tap` (selector) | **semantic tree first, view tree fallback** | a resolved point |
 
 So `ui node --test-id checkout.payButton` returns the **view-tree `Node`** that
 carries that testId — the concrete `android.widget.Button` with its alpha,
 elevation, background color, and app-attached metadata — *not* the trimmed
-accessibility node. If you want the a11y projection instead, read
-`ui tree --accessibility` or `accessibility.json`.
+semantic node. If you want the semantic projection instead, read
+`ui tree --semantics` or `semantics.json`.
 
 The split, restated:
 
 - `ui node` / `ui subtree` → **view tree** (`Node`)
-- `ui tree --accessibility` → **accessibility tree** (`AccessibilityNode`)
+- `ui tree --semantics` → **semantic tree** (`SemanticNode`)
 
-Only the **action** path (`act tap`) is accessibility-first; the **inspection**
+Only the **action** path (`act tap`) is semantic-first; the **inspection**
 path (`ui node`) is always the view tree. These are different concerns and
 intentionally use different trees.
 
 ## Sub-node interaction regions (multi-region controls)
 
 A single View can carry more than one tappable region — the classic case is an
-agreement row: "I have read and agree to 《Terms》", where the plain text
-toggles a checkbox and the 《Terms》 segment opens a detail page. Both the view
-tree and the accessibility tree collapse this into **one node**, so neither can,
+agreement row: "I have read and agree to [Terms]", where the plain text
+toggles a checkbox and the "Terms" segment opens a detail page. Both the view
+tree and the semantic tree collapse this into **one node**, so neither can,
 on its own, tell an agent where the two click targets are.
 
 Reticle attacks this with `RegionProbe` (in `reticle-agent`), which runs three
@@ -173,18 +194,21 @@ in-process). Results land on `Node.regions`, `Node.suspectedMultiRegion`, and
 | `span` | `Spanned.getSpans(ClickableSpan)` + `Layout` geometry | High | Char range + per-line pixel hit-rects + URL target |
 | `a11yVirtual` | `View.getAccessibilityNodeProvider()` (ExploreByTouchHelper) | High | Virtual sub-node bounds + labels |
 | `touchDelegate` | `View.getTouchDelegate()` (reflect `mBounds`) | High | Extended/forwarded hit-rect |
-| `textMarker` | in-text 《…》 / markdown markers + `Layout` geometry | Medium | One region **per link** with its own rect, for self-drawn rows |
+| `textMarker` | in-text paired-bracket / markdown markers + `Layout` geometry | Medium | One region **per link** with its own rect, for self-drawn rows |
 | `colorSpan` | `ForegroundColorSpan` ranges + `Layout` geometry | Medium | A re-colored run (the "highlight = link" pattern) with its rect + actual color |
 | **fallback** | `Layout` → `CharGrid` + `suspectedMultiRegion` flag | Best-effort | Screen-X ↔ character mapping for substring targeting |
 
 The honesty rule: if none of the standard channels resolve but the node still
-looks multi-region (interactive TextView, embedded
-《》/markdown/agreement marker, no spans, no child views), Reticle does **not**
-invent regions. It sets `suspectedMultiRegion = true`, emits one `textMarker`
-region per detected link (each with its own Layout-derived rect), and attaches a
-`CharGrid` so an agent can also target an arbitrary substring by coordinate —
-`CharGrid.approximate` is set true for BiDi/wrapped text rather than silently
-returning a wrong rect.
+looks multi-region (interactive TextView with a *structural* link marker — a
+paired bracket or markdown link — but no spans and no child views), Reticle does
+**not** invent regions. It sets `suspectedMultiRegion = true`, emits one
+`textMarker` region per detected link (each with its own Layout-derived rect),
+and attaches a `CharGrid` so an agent can also target an arbitrary substring by
+coordinate — `CharGrid.approximate` is set true for BiDi/wrapped text rather
+than silently returning a wrong rect. Detection is structural, not lexical: it
+keys on the markup, never on natural-language keywords, so the probe stays
+language- and domain-neutral (a general-purpose tool must not assume an app's
+locale).
 
 **Wrap-boundary correctness.** `Layout.getPrimaryHorizontal(offset)` returns the
 *next* line's left edge when `offset` sits exactly on a soft line break, which
@@ -192,8 +216,8 @@ would collapse a link ending at a wrap into a bogus full-width rect (a real
 multi-link agreement row, wrapped across two lines, exposed this). `rectsForRange`
 picks the end line from the last character actually in the range and uses
 `getLineRight` when a segment reaches a line's visible end — verified on-device
-that all three links of a wrapped `《A》《B》《C》` row resolve to distinct,
-correct hit-rects.
+that all three links of a wrapped three-link row resolve to distinct, correct
+hit-rects.
 
 ### Text color as a link signal
 
@@ -210,9 +234,9 @@ Three sources of a region's color, by recoverability:
   recovered precisely. Surfaced as a `colorSpan` region when the run is *not*
   already a real `ClickableSpan` (the common "color the phrase, hit-test it in
   one `OnClickListener`" pattern), or attached to a `span` region's `color`
-  when it overlaps a clickable span. Verified on-device: a blue `服务条款` run
+  when it overlaps a clickable span. Verified on-device: a blue highlighted run
   with no ClickableSpan surfaced as `colorSpan color=#FF1A73E8` with a precise
-  rect, and tapping it by `--region "服务条款"` fired the row handler.
+  rect, and tapping it by its on-screen substring fired the row handler.
 - **`linkTextColor`** — a real `ClickableSpan` with no explicit color renders in
   the View's `textColorLink`; that tint isn't in the span, so Reticle reads
   `getLinkTextColors()` and attaches it to the span region's `color`. Verified:
@@ -229,21 +253,26 @@ asserted links.
 
 ### Markerless multi-phrase text — precise to a phrase
 
-Many agreement rows have NO 《》 / markdown / span at all, e.g.
-"登录即代表同意用户协议和隐私政策" where only "用户协议" and "隐私政策" are
-tappable, with the phrase boundaries living solely in the control's private
-`onTouchEvent`. Reticle cannot *discover* such phrases (nothing structural marks
-them), so it emits **no** regions — but `suspectedMultiRegion` is set and the
-`CharGrid` still lets an agent hit a phrase precisely by substring:
+Many agreement rows have NO bracket / markdown / span markup at all — a row like
+"By signing in you accept the User Agreement and Privacy Policy" where only the
+two policy phrases are tappable, with the phrase boundaries living solely in the
+control's private `onTouchEvent`. Reticle cannot *discover* such phrases (nothing
+structural marks them) **and** does not guess from wording — keying on
+natural-language keywords would make the probe locale-specific, which a
+general-purpose tool must avoid. So it emits **no** regions and does **not** set
+`suspectedMultiRegion`; instead the `CharGrid` — emitted for *every* text node —
+still lets an agent hit a phrase precisely by substring:
 
 ```bash
-reticle act tap --package <pkg> --test-id agreement.plain --region "用户协议"
-reticle act tap --package <pkg> --test-id agreement.plain --region "隐私政策"
+reticle act tap --package <pkg> --test-id agreement.plain --region "User Agreement"
+reticle act tap --package <pkg> --test-id agreement.plain --region "Privacy Policy"
 ```
 
 `SelectorResolver` finds the substring's character range in `CharGrid.text` and
-maps it to a screen rect. Verified on-device: "用户协议" → 480,1412, "隐私政策"
-→ 720,1412, a non-link prefix → its own spot, each firing the correct handler.
+maps it to a screen rect. Verified on-device: each policy phrase resolved to its
+own coordinate and a non-link prefix to its own spot, each firing the correct
+handler. The substring is matched verbatim against the on-screen text, in any
+language.
 
 ### Font / size / spacing / line-height compatibility
 
@@ -301,25 +330,25 @@ first (real hit-rect), then the char grid (substring → character range → rec
 ## Selector resolution order
 
 This applies to the **action** path only (`act tap`, and the resolve step
-shared by selector-driven commands). The rule is "use the accessibility tree
+shared by selector-driven commands). The rule is "use the semantic tree
 first for movement and input; fall back to view frames only when no
-accessibility match exists" — see `SelectorResolver`:
+semantic match exists" — see `SelectorResolver`:
 
 0. `--region "substr"` within the selected node (discovered region rect, then
    char-grid substring) — the multi-region case above
 1. Explicit `--point x,y`
-2. Accessibility tree by `testId` → `resourceId` → `ref`
+2. Semantic tree by `testId` → `resourceId` → `ref`
 3. View-tree frame by `testId` → `resourceId` → `ref`
 
 Note this is the *opposite default* from inspection: actions prefer the
-accessibility tree (it's the honest input surface, and the only one Compose
+semantic tree (it's the honest input surface, and the only one Compose
 exposes), while `ui node` always returns the richer view-tree node.
 
 ## Module layout
 
 | Module | Kind | Contents |
 | --- | --- | --- |
-| `reticle-core` | Pure JVM | Snapshot / accessibility / region models + wire protocol |
+| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol |
 | `reticle-agent` | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-cli` | Host JVM CLI | adb wrapper, runtime client, input backend, selector resolver, command dispatch |
 | `sample-app` | Android app | Demo linking the agent, proving the round trip |

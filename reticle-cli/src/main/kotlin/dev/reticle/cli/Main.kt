@@ -1,6 +1,6 @@
 package dev.reticle.cli
 
-import dev.reticle.core.AccessibilityTree
+import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.MutationRequest
@@ -14,14 +14,14 @@ import java.io.File
 import kotlin.system.exitProcess
 
 /** CLI version. Kept in lockstep with the agent and plugin manifest. */
-const val RETICLE_VERSION = "0.3.1"
+const val RETICLE_VERSION = "0.4.0"
 
 /**
  * Reticle host CLI. Command surface:
  *
  *   reticle app launch  --package <pkg> [--serial <s>] [--port <p>]
  *   reticle ui report   --package <pkg> --output <dir>
- *   reticle ui tree     <snapshot.json> [--accessibility] [--depth N]
+ *   reticle ui tree     <snapshot.json> [--semantics] [--depth N]
  *   reticle ui compact  <snapshot.json>
  *   reticle ui node     <snapshot.json> --test-id <id> | --resource-id <id> | --ref <ref>
  *   reticle act tap     --package <pkg> (--test-id|--resource-id|--ref|--point x,y)
@@ -136,13 +136,18 @@ private fun uiGroup(args: ArgList) {
             val outputDir = File(args.optional("--output") ?: "reticle-report")
             outputDir.mkdirs()
             withRuntime(pkg, args) { client ->
+                // One device capture is the single source of truth; the
+                // semantic and compact views are derived from it locally so all
+                // three files describe the SAME frame (a second /semantics
+                // round-trip would capture a different instant) and we don't walk
+                // the view tree on-device twice.
                 val snapshot = client.snapshot()
-                val accessibility = client.accessibility()
+                val semantic = SemanticTree.build(snapshot)
                 val compact = CompactObservation.from(snapshot)
                 File(outputDir, "snapshot.json")
                     .writeText(ReticleJson.instance.encodeToString(Snapshot.serializer(), snapshot))
-                File(outputDir, "accessibility.json")
-                    .writeText(ReticleJson.instance.encodeToString(AccessibilityTree.serializer(), accessibility))
+                File(outputDir, "semantics.json")
+                    .writeText(ReticleJson.instance.encodeToString(SemanticTree.serializer(), semantic))
                 File(outputDir, "compact.json")
                     .writeText(ReticleJson.instance.encodeToString(CompactObservation.serializer(), compact))
                 runCatching { client.screenshot(File(outputDir, "screenshot.png")) }
@@ -183,10 +188,10 @@ private fun uiGroup(args: ArgList) {
         "tree" -> {
             val snapshotFile = File(args.requirePositional("snapshot.json"))
             val depth = args.optional("--depth")?.toInt() ?: Int.MAX_VALUE
-            if (args.flag("--accessibility")) {
-                // Derive accessibility view from the snapshot for a single source of truth.
+            if (args.flag("--semantics")) {
+                // Derive the semantic view from the snapshot for a single source of truth.
                 val snapshot = readSnapshot(snapshotFile)
-                printAccessibilityTree(AccessibilityTree.build(snapshot), depth)
+                printSemanticTree(SemanticTree.build(snapshot), depth)
             } else {
                 printViewTree(readSnapshot(snapshotFile), depth)
             }
@@ -212,7 +217,7 @@ private fun uiGroup(args: ArgList) {
         "regions" -> {
             // List sub-regions (span / virtual a11y / touch-delegate) and the
             // suspected-multi-region flag across the snapshot — the multi-click
-            // surface neither the view tree nor the a11y tree exposes as nodes.
+            // surface neither the view tree nor the semantic tree exposes as nodes.
             val snapshot = readSnapshot(File(args.requirePositional("snapshot.json")))
             var any = false
             for (node in snapshot.nodes.values) {
@@ -274,8 +279,27 @@ private fun actGroup(args: ArgList) {
         }
         "type" -> {
             val text = args.require("--text")
-            input.text(text)
-            println("typed ${text.length} chars")
+            if (InputBackend.isAsciiTypeable(text)) {
+                // ASCII: the agent-free `adb input text` path — works even on
+                // apps that don't link/inject the runtime.
+                input.text(text)
+                println("typed ${text.length} chars")
+            } else {
+                // Non-ASCII (CJK, accented Latin, emoji, …): `input text` can't
+                // emit it. Stage the text on the clipboard via the in-app agent,
+                // then paste into the focused field. Requires a healthy runtime.
+                withRuntime(pkg, args, adb, serial) { client ->
+                    client.setClipboard(text)
+                    val pasted = input.paste()
+                    if (!pasted.ok) {
+                        throw CliError(
+                            "staged text on the clipboard but KEYCODE_PASTE failed: ${pasted.stderr.ifBlank { "no focused input?" }}.\n" +
+                                "  Make sure a text field is focused, then retry."
+                        )
+                    }
+                    println("typed ${text.length} chars (non-ASCII via clipboard paste)")
+                }
+            }
         }
         else -> throw CliError("unknown act subcommand: $sub")
     }
@@ -554,9 +578,13 @@ private fun resolvePoint(client: RuntimeClient, args: ArgList): Point {
         val (x, y) = parsePoint(it)
         return Point(x.toDouble(), y.toDouble())
     }
+    // Derive the semantic view from the same snapshot rather than making a
+    // second /semantics call: the two trees must describe one frame for
+    // resolution to be coherent (a separate capture could see the UI mid-change),
+    // and it avoids a redundant on-device view-tree walk per selector tap.
     val snapshot = client.snapshot()
-    val accessibility = client.accessibility()
-    val resolver = SelectorResolver(snapshot, accessibility)
+    val semantic = SemanticTree.build(snapshot)
+    val resolver = SelectorResolver(snapshot, semantic)
     val resolved = resolver.resolve(selectorFrom(args))
         ?: throw CliError("could not resolve selector to a point")
     System.err.println("resolved via ${resolved.source} -> ref=${resolved.ref}")
@@ -688,7 +716,7 @@ private fun printViewTree(snapshot: Snapshot, maxDepth: Int) {
     walk(snapshot.rootRef, 0)
 }
 
-private fun printAccessibilityTree(tree: AccessibilityTree, maxDepth: Int) {
+private fun printSemanticTree(tree: SemanticTree, maxDepth: Int) {
     fun walk(ref: String, depth: Int) {
         if (depth > maxDepth) return
         val node = tree.nodes[ref] ?: return
@@ -697,14 +725,14 @@ private fun printAccessibilityTree(tree: AccessibilityTree, maxDepth: Int) {
         println("$indent$sel ${node.role}${node.label?.let { " \"${it.take(30)}\"" } ?: ""}")
         node.children.forEach { walk(it, depth + 1) }
     }
-    // The structural root (application) is usually dropped from the
-    // accessibility view because it carries no a11y signal, so start from the
-    // surviving top-level nodes: those whose parent is not itself accessible.
+    // The structural root (application) is usually dropped from the semantic
+    // view because it carries no targeting signal, so start from the surviving
+    // top-level nodes: those whose parent is not itself in the tree.
     val roots = tree.nodes.values
         .filter { it.parentRef == null || !tree.nodes.containsKey(it.parentRef) }
         .map { it.ref }
     if (roots.isEmpty()) {
-        println("(no accessibility nodes)")
+        println("(no semantic nodes)")
     } else {
         roots.forEach { walk(it, 0) }
     }
@@ -719,7 +747,7 @@ private fun printUsage() {
         app inject   --package <pkg> [--serial <s>]   # start the runtime in a running debuggable app w/o the AAR (JDWP)
         ui report    --package <pkg> [--output <dir>]
         ui screenshot [--package <pkg>] [--output <file>]   # agent if linked, else adb screencap
-        ui tree      <snapshot.json> [--accessibility] [--depth N]
+        ui tree      <snapshot.json> [--semantics] [--depth N]
         ui compact   <snapshot.json>
         ui node      <snapshot.json> (--test-id|--resource-id|--ref)
         ui regions   <snapshot.json>                 # sub-regions in single nodes

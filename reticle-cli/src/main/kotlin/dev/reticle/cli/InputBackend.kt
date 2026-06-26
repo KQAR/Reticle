@@ -38,6 +38,18 @@ class InputBackend(private val adb: Adb) {
     fun keyevent(keyCode: String): Adb.Result =
         adb.shell("input keyevent $keyCode")
 
+    /** Paste the device clipboard into the focused field (KEYCODE_PASTE = 279). */
+    fun paste(): Adb.Result = keyevent("279")
+
+    companion object {
+        /**
+         * `adb shell input text` can only emit ASCII; anything outside it (CJK,
+         * accented Latin, emoji, …) is silently dropped. Callers route non-ASCII
+         * through the agent clipboard + paste path instead.
+         */
+        fun isAsciiTypeable(text: String): Boolean = text.all { it.code in 0x20..0x7E }
+    }
+
     fun pinch(): Nothing =
         throw UnsupportedOperationException(
             "pinch is reserved but not implemented (needs sendevent multi-touch)"

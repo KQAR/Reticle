@@ -1,6 +1,6 @@
 package dev.reticle.cli
 
-import dev.reticle.core.AccessibilityTree
+import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.Endpoints
 import dev.reticle.core.LogBatch
@@ -83,9 +83,19 @@ class RuntimeClient(
     fun snapshot(): Snapshot =
         ReticleJson.instance.decodeFromString(Snapshot.serializer(), getString(Endpoints.SNAPSHOT))
 
-    fun accessibility(): AccessibilityTree =
-        ReticleJson.instance.decodeFromString(AccessibilityTree.serializer(), getString(Endpoints.ACCESSIBILITY))
+    /**
+     * Fetch the semantic tree the agent derives on-device. The CLI itself
+     * derives this locally from a single [snapshot] (see uiGroup/resolvePoint) so
+     * both trees describe one frame; this method remains for direct protocol use
+     * (the `/semantics` endpoint is part of the wire contract).
+     */
+    @Suppress("unused")
+    fun semantics(): SemanticTree =
+        ReticleJson.instance.decodeFromString(SemanticTree.serializer(), getString(Endpoints.SEMANTICS))
 
+    /** Compact observation served by the agent. The CLI derives this locally from
+     *  [snapshot]; retained for direct use of the `/compact` wire endpoint. */
+    @Suppress("unused")
     fun compact(): CompactObservation =
         ReticleJson.instance.decodeFromString(CompactObservation.serializer(), getString(Endpoints.COMPACT))
 
@@ -101,6 +111,15 @@ class RuntimeClient(
         val body = ReticleJson.compact.encodeToString(MutationRequest.serializer(), request)
         val response = post(Endpoints.MUTATE, body)
         return ReticleJson.instance.decodeFromString(MutationResult.serializer(), response)
+    }
+
+    /**
+     * Stage [text] on the device clipboard via the in-app agent (the only
+     * reliable way to place non-ASCII text). The CLI then dispatches a paste.
+     * Body is raw UTF-8; the agent answers "ok" on success.
+     */
+    fun setClipboard(text: String) {
+        post(Endpoints.CLIPBOARD, text, contentType = "text/plain; charset=utf-8")
     }
 
     // --- HTTP ------------------------------------------------------------
@@ -127,13 +146,13 @@ class RuntimeClient(
         return conn.inputStream.use { it.readBytes() }
     }
 
-    private fun post(path: String, body: String): String {
+    private fun post(path: String, body: String, contentType: String = "application/json"): String {
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
         conn.readTimeout = DEFAULT_READ_TIMEOUT
-        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("Content-Type", contentType)
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
     }
