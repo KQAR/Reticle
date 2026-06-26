@@ -72,6 +72,11 @@ val nativeHelper by tasks.registering(Exec::class) {
             // HTTP must be explicitly enabled or every device call fails with
             // "URL protocol http ... not enabled".
             "--enable-url-protocols=http",
+            // Kotlin's stdlib is immutable and safe to initialize at build time.
+            // Without this, GraalVM 21 aborts: "kotlin.DeprecationLevel was
+            // unintentionally initialized at build time" (GraalVM 25 tolerates it
+            // silently — pin the behavior so the build is toolchain-independent).
+            "--initialize-at-build-time=kotlin",
             "-H:+ReportExceptionStackTraces",
         )
     }
