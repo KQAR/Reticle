@@ -164,8 +164,8 @@ runner), which builds and attaches to a GitHub Release:
 # Build everything
 ./gradlew assemble
 
-# Install the sample app on a booted emulator/device
-adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
+# Install the linked sample app on a booted emulator/device
+adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
 # The `reticle` launcher builds + runs the Swift host and native helper from
 # source when you opt in (needs the Swift toolchain + a GraalVM). It is the
@@ -181,15 +181,20 @@ $CLI app launch --package dev.reticle.sample
 # works against it unchanged. (See the `noagent` sample flavor.)
 $CLI app inject --package dev.reticle.sample.noagent
 
-# Capture a runtime report
+# Capture the sample home report and choose a scenario row
 $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
-$CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
+$CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
 # Act on the app (semantic/selector first, frame fallback)
+$CLI ui report --package dev.reticle.sample --output reticle-report
+$CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
 # Multi-region controls: one View, several click targets (agreement rows etc.)
+$CLI app launch --package dev.reticle.sample
+$CLI act tap --package dev.reticle.sample --test-id scenario.agreements
+$CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
