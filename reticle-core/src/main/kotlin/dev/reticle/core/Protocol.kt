@@ -112,6 +112,8 @@ data class MutationResult(
 data class Selector(
     val testId: String? = null,
     val resourceId: String? = null,
+    /** CSS selector for DOM nodes captured from an embedded WebView. */
+    val cssSelector: String? = null,
     val ref: String? = null,
     val point: Point? = null,
     /**
@@ -125,6 +127,7 @@ data class Selector(
         append(
             testId?.let { "testId=$it" }
                 ?: resourceId?.let { "resourceId=$it" }
+                ?: cssSelector?.let { "css=$it" }
                 ?: ref?.let { "ref=$it" }
                 ?: point?.let { "point=${it.x},${it.y}" }
                 ?: "<empty>"

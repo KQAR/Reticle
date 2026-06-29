@@ -9,6 +9,7 @@ import android.util.DisplayMetrics
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.WebView
 import android.widget.TextView
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
@@ -34,20 +35,42 @@ class SnapshotCapture(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
 
     fun capture(): Snapshot {
-        // The View tree must be read on the main thread.
-        return runOnMainSync { captureLocked() }
+        // The View tree must be read on the main thread. WebView DOM reads are
+        // async UI-thread callbacks, so they are appended after the view walk
+        // while this server thread waits off the main looper.
+        val draft = runOnMainSync { captureLocked() }
+        val nodes = LinkedHashMap(draft.snapshot.nodes)
+        WebViewBridge.captureInto(
+            pending = draft.webViews,
+            density = draft.snapshot.screen.density,
+            handler = handler,
+            nodes = nodes,
+        ) { makeRef() }
+        return draft.snapshot.copy(nodes = nodes)
     }
 
-    private fun captureLocked(): Snapshot {
+    private data class CaptureDraft(
+        val snapshot: Snapshot,
+        val webViews: List<WebViewBridge.Pending>,
+    )
+
+    private fun captureLocked(): CaptureDraft {
         nextRef = 0
         val nodes = LinkedHashMap<String, Node>()
+        val webViews = ArrayList<WebViewBridge.Pending>()
 
         val appRef = makeRef()
         val rootViews = ReticleWindows.rootViews()
         val windowRefs = ArrayList<String>()
 
         for (root in rootViews) {
-            val windowRef = captureView(root, parentRef = appRef, kindOverride = NodeKind.window, nodes = nodes)
+            val windowRef = captureView(
+                view = root,
+                parentRef = appRef,
+                kindOverride = NodeKind.window,
+                nodes = nodes,
+                webViews = webViews,
+            )
             windowRefs.add(windowRef)
         }
 
@@ -77,11 +100,14 @@ class SnapshotCapture(private val context: Context) {
             children = windowRefs + probeRefs,
         )
 
-        return Snapshot(
-            capturedAtMillis = System.currentTimeMillis(),
-            screen = screenInfo(),
-            rootRef = appRef,
-            nodes = nodes,
+        return CaptureDraft(
+            snapshot = Snapshot(
+                capturedAtMillis = System.currentTimeMillis(),
+                screen = screenInfo(),
+                rootRef = appRef,
+                nodes = nodes,
+            ),
+            webViews = webViews,
         )
     }
 
@@ -90,6 +116,7 @@ class SnapshotCapture(private val context: Context) {
         parentRef: String,
         kindOverride: NodeKind? = null,
         nodes: MutableMap<String, Node>,
+        webViews: MutableList<WebViewBridge.Pending>,
     ): String {
         val ref = makeRef()
         val location = IntArray(2)
@@ -105,7 +132,7 @@ class SnapshotCapture(private val context: Context) {
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
                 view.getChildAt(i)?.let { child ->
-                    childRefs.add(captureView(child, parentRef = ref, nodes = nodes))
+                    childRefs.add(captureView(child, parentRef = ref, nodes = nodes, webViews = webViews))
                 }
             }
         }
@@ -115,6 +142,10 @@ class SnapshotCapture(private val context: Context) {
             makeRef()
         }
         childRefs.addAll(composeChildren)
+
+        if (view is WebView) {
+            webViews.add(WebViewBridge.Pending(webView = view, parentRef = ref, webViewFrame = frame))
+        }
 
         val resourceId = ReticleReflect.resourceEntryName(view)
         val testId = ReticleReflect.testTag(view) ?: resourceId
