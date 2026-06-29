@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.Point
 import dev.reticle.core.Rect
@@ -42,6 +43,9 @@ class SelectorResolver(
         selector.resourceId?.let { id ->
             semantic.findByResourceId(id)?.frame?.let { return Resolved(center(it), "semantic:resourceId", refByResourceId(id)) }
         }
+        selector.cssSelector?.let { css ->
+            nodeByCssSelector(css)?.frame?.let { return Resolved(center(it), "dom:css", refByCssSelector(css)) }
+        }
         selector.ref?.let { ref ->
             semantic.node(ref)?.frame?.let { return Resolved(center(it), "semantic:ref", ref) }
         }
@@ -50,6 +54,7 @@ class SelectorResolver(
         val node = when {
             selector.testId != null -> snapshot.nodes.values.firstOrNull { it.testId == selector.testId }
             selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
+            selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
             selector.ref != null -> snapshot.nodes[selector.ref]
             else -> null
         }
@@ -92,6 +97,7 @@ class SelectorResolver(
         selector.ref != null -> snapshot.nodes[selector.ref]
         selector.testId != null -> snapshot.nodes.values.firstOrNull { it.testId == selector.testId }
         selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
+        selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
         else -> null
     }
 
@@ -102,4 +108,12 @@ class SelectorResolver(
 
     private fun refByResourceId(id: String): String? =
         snapshot.nodes.values.firstOrNull { it.resourceId == id }?.ref
+
+    private fun refByCssSelector(cssSelector: String): String? =
+        nodeByCssSelector(cssSelector)?.ref
+
+    private fun nodeByCssSelector(cssSelector: String): Node? =
+        snapshot.nodes.values.firstOrNull { node ->
+            (node.custom["domCssSelector"] as? MetadataValue.Text)?.value == cssSelector
+        }
 }

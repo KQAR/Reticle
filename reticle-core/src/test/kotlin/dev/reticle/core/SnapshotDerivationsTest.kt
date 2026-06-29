@@ -13,8 +13,10 @@ import kotlin.test.assertTrue
  *
  *   app (root)
  *    └─ container (not interactive, no label)
- *        ├─ button   "Pay"  testId=pay  interactive
- *        └─ label    "Total: 9"         (text only, not interactive)
+ *        ├─ button   "Pay"  testId=pay       interactive
+ *        ├─ label    "Total: 9"              (text only, not interactive)
+ *        └─ WebView
+ *            └─ DOM button "Pay in WebView"  testId=web.payButton interactive
  */
 class SnapshotDerivationsTest {
 
@@ -23,7 +25,7 @@ class SnapshotDerivationsTest {
             "app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("box")),
             "box" to Node(
                 ref = "box", parentRef = "app", kind = NodeKind.view, typeName = "FrameLayout",
-                role = "container", children = listOf("pay", "label"),
+                role = "container", children = listOf("pay", "label", "web"),
             ),
             "pay" to Node(
                 ref = "pay", parentRef = "box", kind = NodeKind.view, typeName = "android.widget.Button",
@@ -34,6 +36,16 @@ class SnapshotDerivationsTest {
                 ref = "label", parentRef = "box", kind = NodeKind.view, typeName = "android.widget.TextView",
                 role = "text", text = "Total: 9", isInteractive = false,
                 frame = Rect(0.0, 90.0, 200.0, 40.0),
+            ),
+            "web" to Node(
+                ref = "web", parentRef = "box", kind = NodeKind.view, typeName = "android.webkit.WebView",
+                role = "container", children = listOf("webPay"),
+            ),
+            "webPay" to Node(
+                ref = "webPay", parentRef = "web", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "button", text = "Pay in WebView", testId = "web.payButton", isInteractive = true,
+                frame = Rect(0.0, 140.0, 240.0, 72.0),
+                custom = mapOf("domCssSelector" to MetadataValue.Text("#web-pay")),
             ),
         )
         return Snapshot(
@@ -50,6 +62,7 @@ class SnapshotDerivationsTest {
         val refs = compact.items.map { it.ref }.toSet()
         assertTrue("pay" in refs, "interactive button must be kept")
         assertTrue("label" in refs, "labelled text must be kept")
+        assertTrue("webPay" in refs, "interactive DOM button must be kept")
         assertFalse("box" in refs, "bare container must be dropped")
         assertFalse("app" in refs, "application root must be dropped")
     }
@@ -77,6 +90,8 @@ class SnapshotDerivationsTest {
         assertEquals("Pay", pay.label)
         // label has text -> kept
         assertNotNull(tree.nodes.values.firstOrNull { it.label == "Total: 9" })
+        // DOM nodes are already part of the same snapshot, so no special tree is needed.
+        assertNotNull(tree.findByTestId("web.payButton"))
         // bare container carries no targeting signal -> dropped
         assertNull(tree.nodes["box"])
     }

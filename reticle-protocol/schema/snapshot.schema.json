@@ -79,8 +79,8 @@
     },
     "NodeKind": {
       "type": "string",
-      "enum": ["application", "window", "view", "composeSemantics", "probe"],
-      "description": "Node origin. Reserved for a future `domNode` (WebView/DOM)."
+      "enum": ["application", "window", "view", "composeSemantics", "domNode", "probe"],
+      "description": "Node origin, including merged Compose semantics and read-only WebView DOM nodes."
     },
     "MetadataValue": {
       "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying the fully-qualified Kotlin class name.",
