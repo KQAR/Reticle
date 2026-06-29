@@ -114,7 +114,7 @@ func cmdUiReport(_ c: HelperClient, _ args: Args) throws {
     // touch names a Reticle report itself produces — never arbitrary user files.
     let pruned = pruneStaleReportArtifacts(in: outDir, fm: fm)
 
-    // The helper already derived the trees device-side; we just persist them.
+    // The helper returns a complete report bundle; the host just persists it.
     for key in ["snapshot", "semantics", "compact"] {
         guard let tree = r[key] else { continue }
         let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted])

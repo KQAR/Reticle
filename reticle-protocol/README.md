@@ -50,6 +50,7 @@ These are not incidental — implementations must match them exactly:
   `CharGrid`, …). This is the primary capture payload.
 
 Not yet schematized (tracked for later, as the roadmap phases reach them):
-`SemanticTree`, `CompactObservation`, the `Protocol` request/response envelopes,
-and the future `domNode` (WebView) node kind. Add each with a golden fixture and
-extend the contract test when the corresponding feature lands.
+`UiReport`, `SemanticTree`, `CompactObservation`, the `Protocol`
+request/response envelopes, and the future `domNode` (WebView) node kind. Add
+each with a golden fixture and extend the contract test when the corresponding
+feature lands.
