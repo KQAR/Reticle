@@ -66,7 +66,7 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `inject` | `package` (req), `payloadDex?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
-| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector; swipe/drag: `from`,`to`,`duration?`; type: `text` | `{ "gesture", ... }` |
+| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
@@ -89,6 +89,13 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
   derive `SemanticTree` / `CompactObservation` from that exact snapshot; the
   helper forwards the finished JSON and the host writes it to `snapshot.json` /
   `semantics.json` / `compact.json`.
+- **`act.traceOutput` writes an evidence package.** When present, the helper
+  captures before/after snapshots and screenshots around the action, writes them
+  under `<traceOutput>/<actionId>/`, and returns a small `trace` summary with the
+  manifest path. The on-disk manifest is `trace.json` and uses the
+  `dev.reticle.core.trace.ActionTrace` shape from `reticle-core`; large artifacts
+  are referenced by relative filename instead of being inlined in the RPC
+  response.
 
 ## Coverage
 

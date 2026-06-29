@@ -74,6 +74,9 @@ class ProtocolContractTest {
         assertEquals(RegionSource.span, row.regions[0].source)
         assertEquals("Terms", row.regions[0].label)
         assertTrue(row.charGrid != null && row.charGrid!!.lines.size == 1)
+        val dom = decoded.nodes.getValue("r2")
+        assertEquals(NodeKind.domNode, dom.kind)
+        assertEquals(MetadataValue.Text("#web-pay"), dom.custom["domCssSelector"])
 
         // And re-serializing the decoded model must itself satisfy the schema.
         val reencoded = ReticleJson.instance.encodeToString(Snapshot.serializer(), decoded)

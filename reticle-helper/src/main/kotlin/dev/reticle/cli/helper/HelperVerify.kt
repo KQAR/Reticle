@@ -115,7 +115,7 @@ internal fun parseVerifyToken(
     token == "false" -> null
     token == "true" -> {
         if (actTestId == null && actResourceId == null && actCssSelector == null && actRef == null) {
-            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|@resourceId|--css selector|ref>, or act by selector rather than --point")
+            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|@resourceId|css=<selector>|ref>, or act by selector rather than --point")
         }
         Selector(
             testId = actTestId,
@@ -126,5 +126,6 @@ internal fun parseVerifyToken(
     }
     token.startsWith("#") -> Selector(testId = token.drop(1))
     token.startsWith("@") -> Selector(resourceId = token.drop(1))
+    token.startsWith("css=") -> Selector(cssSelector = token.removePrefix("css="))
     else -> Selector(ref = token)
 }

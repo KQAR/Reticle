@@ -24,7 +24,7 @@
       "isEnabled": true,
       "isInteractive": false,
       "custom": {},
-      "children": ["r1"],
+      "children": ["r1", "r2"],
       "regions": [],
       "suspectedMultiRegion": false,
       "charGrid": null
@@ -95,6 +95,29 @@
         ],
         "approximate": false
       }
+    },
+    "r2": {
+      "ref": "r2",
+      "parentRef": "r0",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "button",
+      "resourceId": null,
+      "contentDescription": null,
+      "text": "Pay in WebView",
+      "testId": "web.payButton",
+      "frame": { "x": 100.0, "y": 300.0, "width": 240.0, "height": 72.0 },
+      "isVisible": true,
+      "isEnabled": true,
+      "isInteractive": true,
+      "custom": {
+        "domCssSelector": { "_type": "dev.reticle.core.MetadataValue.Text", "value": "#web-pay" },
+        "domTag": { "_type": "dev.reticle.core.MetadataValue.Text", "value": "button" }
+      },
+      "children": [],
+      "regions": [],
+      "suspectedMultiRegion": false,
+      "charGrid": null
     }
   }
 }
