@@ -1,0 +1,44 @@
+{
+  "id": "evt_0000000000000001",
+  "ts": 1782751906383,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "action",
+  "type": "action.trace",
+  "payload": {
+    "traceVersion": 1,
+    "actionId": "1782751906334-tap",
+    "packageName": "dev.reticle.sample",
+    "recordedAtMillis": 1782751906351,
+    "gesture": "tap",
+    "selector": {
+      "testId": "scenario.webview"
+    },
+    "target": {
+      "point": {
+        "x": 540,
+        "y": 773.5
+      },
+      "source": "semantic:testId",
+      "ref": "r12"
+    },
+    "result": {
+      "gesture": "tap",
+      "x": "540",
+      "y": "773",
+      "source": "semantic:testId",
+      "ref": "r12"
+    },
+    "changeCount": 0,
+    "artifactRefs": {
+      "manifest": "/tmp/reticle-e2e2-traces/1782751906334-tap/trace.json",
+      "beforeSnapshot": "/tmp/reticle-e2e2-traces/1782751906334-tap/before.snapshot.json",
+      "afterSnapshot": "/tmp/reticle-e2e2-traces/1782751906334-tap/after.snapshot.json"
+    }
+  },
+  "refs": {
+    "manifest": "/tmp/reticle-e2e2-traces/1782751906334-tap/trace.json",
+    "beforeSnapshot": "/tmp/reticle-e2e2-traces/1782751906334-tap/before.snapshot.json",
+    "afterSnapshot": "/tmp/reticle-e2e2-traces/1782751906334-tap/after.snapshot.json"
+  }
+}
