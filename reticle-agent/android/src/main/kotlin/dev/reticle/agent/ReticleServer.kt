@@ -10,6 +10,7 @@ import dev.reticle.core.LogBatch
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.RuntimeInfo
+import dev.reticle.core.UiReport
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -151,6 +152,12 @@ class ReticleServer(private val runtime: ReticleRuntime) {
             method == "GET" && path == Endpoints.SNAPSHOT -> {
                 val snapshot = SnapshotCapture(context).capture()
                 writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.Snapshot.serializer(), snapshot))
+            }
+
+            method == "GET" && path == Endpoints.REPORT -> {
+                val snapshot = SnapshotCapture(context).capture()
+                val report = UiReport.from(snapshot)
+                writeJson(out, ReticleJson.instance.encodeToString(UiReport.serializer(), report))
             }
 
             method == "GET" && path == Endpoints.SEMANTICS -> {

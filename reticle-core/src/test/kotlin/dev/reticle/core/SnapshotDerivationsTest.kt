@@ -80,4 +80,15 @@ class SnapshotDerivationsTest {
         // bare container carries no targeting signal -> dropped
         assertNull(tree.nodes["box"])
     }
+
+    @Test
+    fun uiReport_derivesEveryViewFromOneSnapshot() {
+        val snapshot = sampleSnapshot()
+        val report = UiReport.from(snapshot)
+
+        assertEquals(snapshot, report.snapshot)
+        assertEquals(snapshot.capturedAtMillis, report.compact.capturedAtMillis)
+        assertNotNull(report.semantics.findByTestId("pay"))
+        assertTrue(report.compact.items.any { it.ref == "pay" })
+    }
 }

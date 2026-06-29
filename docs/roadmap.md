@@ -108,7 +108,7 @@ returned as finished JSON; the CLI receives products and does only protocol I/O
 
 | Algorithm | Home | Why |
 | --- | --- | --- |
-| `SemanticTree.build`, `CompactObservation.from`, selector resolution | **agent** (on-device) | Pure functions over a snapshot; the agent captures once and derives all views in one pass. The CLI today re-derives them locally only for single-capture consistency — folding that into the agent makes consistency *more* natural, not less. |
+| `SemanticTree.build`, `CompactObservation.from`, selector resolution | **agent** (on-device) | Pure functions over a snapshot; current agents capture once and derive report views in one pass. `ui report` consumes this bundle; selector resolution is the remaining sink-down work. |
 | `PortMap.derivePort` | **both ends, by spec** | Chicken-and-egg: the CLI needs the device port *before* it can reach the agent, so it can't ask the agent for it. It is a protocol rule (a stable hash of `applicationId`) that each end implements identically. Belongs in `reticle-protocol`, not in shared code. |
 
 Consequence for language choice: once derivation lives in the agent, the CLI's
@@ -195,8 +195,8 @@ through the Kotlin helper end-to-end on a real device. What exists today:
   SPI and `RuntimeClient` verbatim (the helper *is* today's Android host layer
   behind an RPC seam). Resident loop, not fork-per-call; a bad/unknown request
   returns a structured error without taking the loop down. `inject` accepts an
-  explicit `payloadDex`; `uiReport` derives the trees device-side and returns the
-  finished `snapshot`/`semantics`/`compact` JSON.
+  explicit `payloadDex`; `uiReport` fetches the agent-derived `/report` bundle
+  and returns the finished `snapshot`/`semantics`/`compact` JSON.
 - **RPC contract** — formalized in `reticle-protocol/helper-rpc.md` (envelope,
   methods, the explicit-payload rule, the inject-waits-for-liveness rule).
 - **Swift host CLI** — `reticle-host/` (SwiftPM; outside the Gradle build). A
@@ -511,13 +511,13 @@ Android first and complete; everything else reserved behind the spec + SPI.
   L0→L1→L2 tiers, DOM nodes merged into the unified tree (`NodeKind.domNode`).
   See the WebView section above. L0 is free today; L1 (read-only DOM walk +
   coordinate fold) is the real work.
-- **Thin-client sink-down** — move `SemanticTree.build` / `CompactObservation.from`
-  / selector resolution to the agent so the CLI consumes finished JSON (the agent
-  already exposes `/semantics` and `/compact`; have `ui report` fetch rather than
-  re-derive). Keep `PortMap` on both ends as a protocol rule. This is the real
-  "make the CLI clean" work surfaced by the language question — it makes the CLI
-  language-free and tightens single-capture consistency. See "CLI is a thin
-  client" above.
+- **Thin-client sink-down** — `ui report` now consumes the agent's single-capture
+  `/report` bundle, so `SemanticTree.build` / `CompactObservation.from` for
+  report artifacts happen inside the app process. Remaining work: move selector
+  resolution for actions to the agent so the CLI consumes finished targeting JSON.
+  Keep `PortMap` on both ends as a protocol rule. This is the real "make the CLI
+  clean" work surfaced by the language question — it makes the CLI language-free
+  and tightens single-capture consistency. See "CLI is a thin client" above.
 
 ### Phase 2 — Proxy + daemon
 - Implement `reticle serve`, the event bus, session model, SSE/REST surface.

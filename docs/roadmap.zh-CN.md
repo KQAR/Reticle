@@ -89,7 +89,7 @@ HTTP 传输层(`RuntimeClient`)**已经是平台中立的**——任何讲该协
 
 | 算法 | 归属 | 原因 |
 | --- | --- | --- |
-| `SemanticTree.build`、`CompactObservation.from`、选择器解析 | **agent**(设备上) | 都是对 snapshot 的纯函数;agent 捕获一次,一趟派生出所有视图。CLI 今天在本地重算只是为了单次捕获的一致性——把它收进 agent 反而让一致性*更*自然,而非更差。 |
+| `SemanticTree.build`、`CompactObservation.from`、选择器解析 | **agent**(设备上) | 都是对 snapshot 的纯函数;当前 agent 捕获一次并派生 report 视图。`ui report` 已经消费这个 bundle;选择器解析是剩余的下沉工作。 |
 | `PortMap.derivePort` | **两端各持一份,按 spec** | 鸡生蛋:CLI 需要在能连上 agent *之前*就知道设备端口,所以无法向 agent 索取。它是一条协议规则(对 `applicationId` 做稳定哈希),两端各自实现得一致。归 `reticle-protocol`,不归共享代码。 |
 
 对语言选择的影响:一旦派生逻辑归 agent,CLI 对 `reticle-core` 的依赖就收缩到
@@ -444,11 +444,11 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
 - **WebView / DOM 支持**——`WebViewBridge` 照搬 Compose 桥,L0→L1→L2 分级,DOM
   节点融进统一树(`NodeKind.domNode`)。见上文 WebView 一节。L0 今天就免费;
   L1(只读 DOM 遍历 + 坐标折算)是真正的工作量。
-- **薄客户端下沉**——把 `SemanticTree.build` / `CompactObservation.from` /
-  选择器解析移到 agent,让 CLI 消费成品 JSON(agent 已经暴露了 `/semantics` 与
-  `/compact`;让 `ui report` 去拉取而非重算)。`PortMap` 作为协议规则在两端各留
-  一份。这是语言话题牵出的、真正"让 CLI 干净"的工作——它让 CLI 语言无关,并收紧
-  单次捕获的一致性。见上文"CLI 是薄客户端"。
+- **薄客户端下沉**——`ui report` 现在消费 agent 的单次捕获 `/report` bundle,
+  因此当前 agent 的报告产物里 `SemanticTree.build` / `CompactObservation.from`
+  已经在 app 进程内完成。剩余工作:把 action 的选择器解析也移到 agent,让 CLI 消费成品 target JSON。`PortMap` 作为协议
+  规则在两端各留一份。这是语言话题牵出的、真正"让 CLI 干净"的工作——它让 CLI
+  语言无关,并收紧单次捕获的一致性。见上文"CLI 是薄客户端"。
 
 ### Phase 2 —— 代理 + daemon
 - 实现 `reticle serve`、事件总线、session 模型、SSE/REST 表面。
