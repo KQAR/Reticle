@@ -9,6 +9,10 @@ This lives in `reticle-protocol/` because it is a cross-language contract, exact
 like the wire protocol (`snapshot.schema.json`). The payloads that carry UI trees
 (`snapshot` / `semantics` / `compact`) are the same shapes that schema defines.
 
+The daemon event bus is a separate contract: `reticle serve` exposes localhost
+REST/SSE and persists `events.jsonl` session timelines. See `events.md` for that
+surface; do not add daemon endpoints to this helper stdio RPC contract.
+
 The helper ships as the no-JDK native `reticle-helper` (GraalVM native-image).
 **Build note:** the helper talks to the in-app loopback server over HTTP
 (`java.net.URL`), and native-image disables URL protocols by default — the build

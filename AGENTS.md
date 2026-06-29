@@ -32,8 +32,12 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   `reticle-protocol/helper-rpc.md`.
 - `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS arm64,
   outside the Gradle build). The user-facing `reticle`; owns no device code —
-  every command is an RPC call to the native helper it spawns. Command surface:
-  `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/`debug`/`ui`/`version`.
+  device commands are RPC calls to the native helper it spawns. It also contains
+  the first `reticle serve` daemon skeleton: a localhost REST/SSE session event
+  bus with append-only `~/.reticle/sessions/<session>/events.jsonl`, plus
+  best-effort action-trace ingestion from one-shot `act --trace-output`.
+  Command surface: `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/
+  `debug`/`ui`/`serve`/`version`.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.

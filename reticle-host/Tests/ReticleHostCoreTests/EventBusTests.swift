@@ -1,0 +1,161 @@
+import Foundation
+import Testing
+@testable import ReticleHostCore
+
+@Suite("Reticle event bus")
+struct EventBusTests {
+    @Test func eventStoreAppendsQueriesAndReplaysJsonl() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 2)
+
+        let first = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        let second = try store.append(EventPostRequest(source: "action", type: "action.trace"))
+        let third = try store.append(EventPostRequest(source: "log", type: "log"))
+
+        #expect(store.events().map(\.id) == [second.id, third.id])
+        #expect(store.events(since: first.id).map(\.type) == ["action.trace", "log"])
+
+        let replayed = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        #expect(replayed.events().map(\.type) == ["ui.snapshot", "action.trace", "log"])
+    }
+
+    @Test func sseEncoderProducesEventStreamFrame() throws {
+        let event = ReticleEventEnvelope(
+            id: "evt_0000000000000001",
+            ts: 1,
+            session: "test",
+            target: "android:pkg",
+            source: "action",
+            type: "action.trace",
+            payload: ["gesture": .string("tap")]
+        )
+
+        let frame = try String(data: SseEncoder().encode(event), encoding: .utf8)
+        #expect(frame?.contains("id: evt_0000000000000001\n") == true)
+        #expect(frame?.contains("event: action.trace\n") == true)
+        #expect(frame?.contains("data: ") == true)
+        #expect(frame?.hasSuffix("\n\n") == true)
+    }
+
+    @Test func actionTraceIngestReadsTraceFileAndRefsArtifacts() throws {
+        let dir = try temporaryDirectory().appendingPathComponent("trace", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let trace = """
+        {
+          "traceVersion": 1,
+          "actionId": "123-tap",
+          "packageName": "dev.reticle.sample",
+          "recordedAtMillis": 10,
+          "gesture": "tap",
+          "artifacts": {
+            "beforeSnapshot": "before.snapshot.json",
+            "afterSnapshot": "after.snapshot.json"
+          },
+          "diff": [{ "field": "text", "before": "Pay", "after": "Paid" }]
+        }
+        """
+        let traceURL = dir.appendingPathComponent("trace.json")
+        try trace.write(to: traceURL, atomically: true, encoding: .utf8)
+
+        let event = try ActionTraceIngest().event(fromTraceAt: traceURL)
+        #expect(event.source == "action")
+        #expect(event.type == "action.trace")
+        #expect(event.target == "android:dev.reticle.sample")
+        #expect(event.payload["actionId"]?.stringValue == "123-tap")
+        #expect(event.payload["traceVersion"] == .number(1))
+        #expect(event.refs["beforeSnapshot"] == dir.appendingPathComponent("before.snapshot.json").path)
+        #expect(event.refs["manifest"] == traceURL.path)
+    }
+
+    @Test func httpServerAcceptsTraceAndReturnsHistory() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let traceURL = try writeTraceFixture(root: root)
+        let postURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/action-traces")!
+        var request = URLRequest(url: postURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["path": traceURL.path])
+        let (_, postResponse) = try await URLSession.shared.data(for: request)
+        #expect((postResponse as? HTTPURLResponse)?.statusCode == 201)
+
+        let historyURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/events")!
+        let (data, response) = try await URLSession.shared.data(from: historyURL)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        let decoded = try JSONDecoder().decode(EventsResponse.self, from: data)
+        #expect(decoded.events.first?.type == "action.trace")
+    }
+
+    @Test func httpServerSseReplaysExistingEvents() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        _ = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let text = try readSocket(
+            port: server.port,
+            request: "GET /events/stream HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+        )
+        #expect(text.contains("Content-Type: text/event-stream"))
+        #expect(text.contains("event: ui.snapshot"))
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func writeTraceFixture(root: URL) throws -> URL {
+        let dir = root.appendingPathComponent("trace", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let traceURL = dir.appendingPathComponent("trace.json")
+        try """
+        {"actionId":"1-tap","packageName":"pkg","recordedAtMillis":1,"gesture":"tap","artifacts":{"beforeSnapshot":"before.json","afterSnapshot":"after.json"},"diff":[]}
+        """.write(to: traceURL, atomically: true, encoding: .utf8)
+        return traceURL
+    }
+
+    private func readSocket(port: Int, request: String) throws -> String {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw TestFailure.socket }
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        var timeout = timeval(tv_sec: 1, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard result == 0 else { throw TestFailure.connect }
+        _ = request.withCString { write(fd, $0, strlen($0)) }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var bytes = Data()
+        for _ in 0..<8 {
+            let count = read(fd, &buffer, buffer.count)
+            if count <= 0 { break }
+            bytes.append(contentsOf: buffer.prefix(count))
+            if String(decoding: bytes, as: UTF8.self).contains("event:") { break }
+        }
+        close(fd)
+        guard !bytes.isEmpty else { throw TestFailure.read }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+private enum TestFailure: Error {
+    case socket
+    case connect
+    case read
+}
