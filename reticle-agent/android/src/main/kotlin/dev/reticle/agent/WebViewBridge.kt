@@ -140,12 +140,62 @@ object WebViewBridge {
         fun putText(key: String, value: String?) {
             value?.nullIfBlank()?.let { map[key] = MetadataValue.Text(it) }
         }
-        putText("domTag", element.optString("tag"))
+        fun putInteger(key: String, elementKey: String) {
+            if (element.has(elementKey)) map[key] = MetadataValue.Integer(element.optLong(elementKey))
+        }
+        fun putBool(key: String, elementKey: String) {
+            if (element.has(elementKey)) map[key] = MetadataValue.Bool(element.optBoolean(elementKey))
+        }
+        val tag = element.optString("tag")
+        putText("domTag", tag)
         putText("domId", element.optString("id"))
         putText("domClass", element.optString("className"))
         putText("domCssSelector", selector)
         putText("domHref", element.optString("href"))
+        putText("domSrc", element.optString("src"))
+        putText("domSrcset", element.optString("srcset"))
+        putText("domSizes", element.optString("sizes"))
+        if (tag == "img") {
+            putText("domImageCurrentSrc", element.optString("imageCurrentSrc"))
+            putInteger("domImageNaturalWidth", "imageNaturalWidth")
+            putInteger("domImageNaturalHeight", "imageNaturalHeight")
+            putBool("domImageComplete", "imageComplete")
+        }
         putText("domInputType", element.optString("inputType"))
+        putText("domMarginTop", element.optString("marginTop"))
+        putText("domMarginRight", element.optString("marginRight"))
+        putText("domMarginBottom", element.optString("marginBottom"))
+        putText("domMarginLeft", element.optString("marginLeft"))
+        listOf(
+            "domStyleDisplay" to "styleDisplay",
+            "domStyleVisibility" to "styleVisibility",
+            "domStyleOpacity" to "styleOpacity",
+            "domStylePosition" to "stylePosition",
+            "domStyleZIndex" to "styleZIndex",
+            "domStyleOverflowX" to "styleOverflowX",
+            "domStyleOverflowY" to "styleOverflowY",
+            "domStyleColor" to "styleColor",
+            "domStyleBackgroundColor" to "styleBackgroundColor",
+            "domStyleBackgroundImage" to "styleBackgroundImage",
+            "domStyleFontSize" to "styleFontSize",
+            "domStyleFontWeight" to "styleFontWeight",
+            "domStyleFontFamily" to "styleFontFamily",
+            "domStyleLineHeight" to "styleLineHeight",
+            "domStyleTextAlign" to "styleTextAlign",
+            "domStylePaddingTop" to "stylePaddingTop",
+            "domStylePaddingRight" to "stylePaddingRight",
+            "domStylePaddingBottom" to "stylePaddingBottom",
+            "domStylePaddingLeft" to "stylePaddingLeft",
+            "domStyleBorderTopWidth" to "styleBorderTopWidth",
+            "domStyleBorderRightWidth" to "styleBorderRightWidth",
+            "domStyleBorderBottomWidth" to "styleBorderBottomWidth",
+            "domStyleBorderLeftWidth" to "styleBorderLeftWidth",
+            "domStyleBorderRadius" to "styleBorderRadius",
+            "domStyleTransform" to "styleTransform",
+            "domStylePointerEvents" to "stylePointerEvents",
+        ).forEach { (metadataKey, elementKey) ->
+            putText(metadataKey, element.optString(elementKey))
+        }
         map["domScaleX"] = MetadataValue.Real(fold.scaleX)
         map["domScaleY"] = MetadataValue.Real(fold.scaleY)
         return map
