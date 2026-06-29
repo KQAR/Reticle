@@ -505,12 +505,16 @@ Android first and complete; everything else reserved behind the spec + SPI.
   heap instance enumeration, **not** arbitrary address reads — this is a
   structural limit, not an Android one. For a full heap, the honest path is
   host-side `adb shell am dumpheap` (debuggable app, no root) analyzed offline.
-- **Action traces** (before/after snapshot + screenshot + diff per `act`) — feeds
-  the Phase 3 timeline.
+- **Action traces** — the first evidence package is in place via
+  `act --trace-output`: `trace.json` records gesture, selector, resolved
+  point/source/ref, and a compact snapshot diff, with before/after snapshots and
+  screenshots stored beside it. Remaining work: promote this shape into the
+  daemon event bus/session schema so it feeds the Phase 3 timeline.
 - **WebView / DOM support** — `WebViewBridge` mirroring the Compose bridge,
   L0→L1→L2 tiers, DOM nodes merged into the unified tree (`NodeKind.domNode`).
-  See the WebView section above. L0 is free today; L1 (read-only DOM walk +
-  coordinate fold) is the real work.
+  See the WebView section above. L1 read-only DOM walk + coordinate fold is
+  landed for app-embedded `android.webkit.WebView`; remaining work is L2
+  semantic enrichment and deeper fixture coverage for edge cases.
 - **Thin-client sink-down** — `ui report` now consumes the agent's single-capture
   `/report` bundle, so `SemanticTree.build` / `CompactObservation.from` for
   report artifacts happen inside the app process. Remaining work: move selector

@@ -111,9 +111,11 @@ class RuntimeClient(
         ReticleJson.instance.decodeFromString(LogBatch.serializer(), getString(Endpoints.LOGS))
 
     fun screenshot(into: File) {
-        val bytes = getBytes(Endpoints.SCREENSHOT)
-        into.writeBytes(bytes)
+        into.writeBytes(screenshotBytes())
     }
+
+    /** Fetch a PNG screenshot from the in-app agent as raw bytes. */
+    fun screenshotBytes(): ByteArray = getBytes(Endpoints.SCREENSHOT)
 
     fun mutate(request: MutationRequest): MutationResult {
         val body = ReticleJson.compact.encodeToString(MutationRequest.serializer(), request)

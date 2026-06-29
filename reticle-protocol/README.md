@@ -47,10 +47,9 @@ These are not incidental — implementations must match them exactly:
 
 - `schema/snapshot.schema.json` — the `Snapshot` view-tree payload and every
   nested type (`Node`, `ScreenInfo`, `Rect`, `MetadataValue`, `InteractionRegion`,
-  `CharGrid`, …). This is the primary capture payload.
+  `CharGrid`, `NodeKind.domNode`, …). This is the primary capture payload.
 
 Not yet schematized (tracked for later, as the roadmap phases reach them):
 `UiReport`, `SemanticTree`, `CompactObservation`, the `Protocol`
-request/response envelopes, and the future `domNode` (WebView) node kind. Add
-each with a golden fixture and extend the contract test when the corresponding
-feature lands.
+request/response envelopes, and action/session event envelopes. Add each with a
+golden fixture and extend the contract test when the corresponding feature lands.

@@ -439,11 +439,14 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   单例、静态根)。**不是**堆实例枚举,**也不是**任意地址读取——这是结构性限制,
   而非 Android 的限制。要拿完整堆,诚实的路径是 host 侧
   `adb shell am dumpheap`(可调试应用,无需 root)离线分析。
-- **操作 trace**(每个 `act` 存操作前/后的 snapshot + 截图 + diff)——为 Phase 3
-  的时间线供数据。
+- **操作 trace**——第一版证据包已通过 `act --trace-output` 落地:`trace.json`
+  记录 gesture、selector、解析后的 point/source/ref 与紧凑 snapshot diff,前后
+  snapshot 和截图放在同一 action 目录下。剩余工作:把这个形状提升进 daemon 的事件总线 /
+  session schema,为 Phase 3 时间线供数据。
 - **WebView / DOM 支持**——`WebViewBridge` 照搬 Compose 桥,L0→L1→L2 分级,DOM
-  节点融进统一树(`NodeKind.domNode`)。见上文 WebView 一节。L0 今天就免费;
-  L1(只读 DOM 遍历 + 坐标折算)是真正的工作量。
+  节点融进统一树(`NodeKind.domNode`)。见上文 WebView 一节。L1 的只读 DOM 遍历 +
+  坐标折算已在应用内嵌 `android.webkit.WebView` 上落地;剩余工作是 L2 语义增强,
+  以及为更多边界情况补 fixture 覆盖。
 - **薄客户端下沉**——`ui report` 现在消费 agent 的单次捕获 `/report` bundle,
   因此当前 agent 的报告产物里 `SemanticTree.build` / `CompactObservation.from`
   已经在 app 进程内完成。剩余工作:把 action 的选择器解析也移到 agent,让 CLI 消费成品 target JSON。`PortMap` 作为协议

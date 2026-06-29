@@ -191,6 +191,14 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
+# Embedded WebView DOM: inspect by CSS selector, tap, verify, and keep a trace
+$CLI act tap --package dev.reticle.sample --test-id scenario.webview
+$CLI ui report --package dev.reticle.sample --output reticle-webview
+$CLI ui node reticle-webview/snapshot.json --css '#style-target'
+$CLI act tap --package dev.reticle.sample --css '#style-target' \
+    --verify 'css=#style-target' \
+    --trace-output reticle-traces
+
 # Multi-region controls: one View, several click targets (agreement rows etc.)
 $CLI app launch --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --test-id scenario.agreements

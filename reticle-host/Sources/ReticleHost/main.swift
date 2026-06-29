@@ -161,13 +161,18 @@ func cmdAct(_ c: HelperClient, _ args: Args) throws {
     }
     // --verify [selector]: watch a node across the gesture and report the diff in
     // this same command (no follow-up `ui report` + grep). Bare --verify watches
-    // the node being acted on; --verify <#id|@res|ref> watches a different one.
+    // the node being acted on; --verify <#id|@res|css=<selector>|ref> watches a different one.
     if let v = args.option("verify") { params["verify"] = v }      // "true" when flag had no value
     if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
+    // --trace-output writes a per-action evidence package beside the host:
+    // trace.json + before/after snapshots + screenshots when available.
+    if let out = args.option("trace-output") { params["traceOutput"] = out }
+    if let t = args.option("trace-delay") { params["traceDelayMs"] = Int(t) ?? 250 }
     let r = try c.call("act", params)
-    // Print the gesture result, minus the structured verify blob (printed below).
-    print(r.filter { $0.key != "verify" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
+    // Print the gesture result, minus structured evidence blobs (printed below).
+    print(r.filter { $0.key != "verify" && $0.key != "trace" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
     if let verify = r["verify"] as? [String: Any] { printVerify(verify) }
+    if let trace = r["trace"] as? [String: Any] { printTrace(trace) }
 }
 
 /// Render the act --verify result: a one-line verdict plus before→after per field.
@@ -188,6 +193,13 @@ func printVerify(_ v: [String: Any]) {
     } else {
         print("verify \(sel): no change")
     }
+}
+
+/// Render the action trace write summary without dumping the full manifest.
+func printTrace(_ v: [String: Any]) {
+    let path = v["path"] as? String ?? "?"
+    let changes = v["changeCount"] ?? "?"
+    print("trace: wrote \(path) (\(changes) change(s))")
 }
 
 func cmdMutate(_ c: HelperClient, _ args: Args) throws {

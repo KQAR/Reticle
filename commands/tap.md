@@ -18,7 +18,7 @@ Steps:
    inspect a DOM target with `reticle ui node reticle-report/snapshot.json --css
    '<selector>'`.
 2. Dispatch the tap, verifying the result in the same command:
-   `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|ref>]`
+   `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|css=<selector>|ref>]`
    The resolver prints which path it used (semantic / view frame / region / char
    grid), then `--verify` prints the watched node's before→after diff. Bare
    `--verify` watches the tapped node; pass a selector to watch a different one
@@ -27,3 +27,7 @@ Steps:
    say so and suggest next steps — don't claim success from the tap alone. For a
    broader check use `reticle ui node --live --package <pkg> <selector>` (one
    node, no files) or a full `reticle ui report …`.
+
+For durable evidence, add `--trace-output reticle-traces`; Reticle writes a
+per-action directory with `trace.json`, before/after snapshots, and screenshots
+when available.
