@@ -1,7 +1,9 @@
 package dev.reticle.sample
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -10,9 +12,9 @@ import android.widget.LinearLayout
 /**
  * WebView fixtures used to exercise Reticle's read-only DOM bridge.
  *
- * The default fixture stays small for the normal sample screen. The complex
- * fixture is opt-in via intent so automated checks can cover richer DOM cases
- * without making the everyday demo hard to scan.
+ * The basic fixture stays small for old smoke paths. The complex fixture backs
+ * the dedicated WebView scenario so DOM style, image, selector, and layout
+ * metadata are visible without cluttering the sample home screen.
  */
 object SampleWebFixtures {
     const val EXTRA_WEB_URL = "reticle.webUrl"
@@ -33,19 +35,15 @@ object SampleWebFixtures {
             return Fixture(heightPx = 900, baseUrl = remoteWebUrl, remoteUrl = remoteWebUrl)
         }
         return when (intent.getStringExtra(EXTRA_WEB_SCENARIO)) {
-            SCENARIO_COMPLEX -> Fixture(
-                heightPx = 900,
-                baseUrl = "https://reticle.dev/sample/complex",
-                html = complexHtml,
-            )
-            else -> Fixture(
-                heightPx = 280,
-                baseUrl = "https://reticle.dev/sample/basic",
-                html = basicCheckoutHtml,
-            )
+            SCENARIO_COMPLEX -> complexFixture(heightPx = 900)
+            else -> basicFixture(heightPx = 280)
         }
     }
 
+    fun createWebView(context: Context): WebView =
+        createWebView(context, complexFixture(heightPx = ViewGroup.LayoutParams.MATCH_PARENT))
+
+    @SuppressLint("SetJavaScriptEnabled")
     fun createWebView(context: Context, fixture: Fixture): WebView =
         WebView(context).apply {
             tag = "checkout.webView"
@@ -61,15 +59,23 @@ object SampleWebFixtures {
             if (fixture.remoteUrl != null) {
                 loadUrl(fixture.remoteUrl)
             } else {
-                loadDataWithBaseURL(
-                    fixture.baseUrl,
-                    fixture.html.orEmpty(),
-                    "text/html",
-                    "UTF-8",
-                    null,
-                )
+                loadDataWithBaseURL(fixture.baseUrl, fixture.html.orEmpty(), "text/html", "UTF-8", null)
             }
         }
+
+    private fun basicFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/basic",
+            html = basicCheckoutHtml,
+        )
+
+    private fun complexFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/complex",
+            html = complexHtml,
+        )
 
     private fun isAllowedWebTestUrl(url: String): Boolean =
         url.startsWith("https://") ||

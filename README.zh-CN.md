@@ -147,8 +147,8 @@ host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备
 # 构建全部
 ./gradlew assemble
 
-# 在已启动的模拟器/设备上安装示例应用
-adb install sample-app/build/outputs/apk/debug/sample-app-debug.apk
+# 在已启动的模拟器/设备上安装 linked 示例应用
+adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
 # `reticle` 启动器即 Swift host;RETICLE_FROM_SOURCE=1 时它从源码构建并运行 host
 # 与原生 helper(需 Swift 工具链 + 一个 GraalVM)。这是面向用户的 CLI。
@@ -163,15 +163,20 @@ $CLI app launch --package dev.reticle.sample
 # (见 `noagent` 示例 flavor。)
 $CLI app inject --package dev.reticle.sample.noagent
 
-# 捕获一份运行时报告
+# 捕获示例首页报告,选择一个场景行
 $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
-$CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
+$CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
 # 对应用执行操作(语义/选择器优先,frame 兜底)
+$CLI ui report --package dev.reticle.sample --output reticle-report
+$CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
 # 多区域控件:一个 View、多个点击目标(协议勾选行等)
+$CLI app launch --package dev.reticle.sample
+$CLI act tap --package dev.reticle.sample --test-id scenario.agreements
+$CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"

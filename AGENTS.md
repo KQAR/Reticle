@@ -118,7 +118,7 @@ Prove the runtime round trip on a booted device/emulator:
 
 ```bash
 ./gradlew :sample-app:assembleDebug
-adb install -r -t sample-app/build/outputs/apk/debug/sample-app-debug.apk
+adb install -r -t sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
 # `bin/reticle` is the Swift host launcher; RETICLE_FROM_SOURCE=1 builds the host
 # (swift) + native helper (gradle native-image) from source. Needs Swift + a GraalVM.
@@ -129,6 +129,8 @@ CLI="bin/reticle"
 $CLI app launch  --package dev.reticle.sample
 $CLI ui report   --package dev.reticle.sample --output /tmp/reticle-report
 $CLI ui compact  /tmp/reticle-report/snapshot.json
+$CLI act tap     --package dev.reticle.sample --test-id scenario.checkout
+$CLI ui report   --package dev.reticle.sample --output /tmp/reticle-report
 $CLI ui node     /tmp/reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap     --package dev.reticle.sample --test-id checkout.payButton
 $CLI debug logs  --package dev.reticle.sample
@@ -136,8 +138,9 @@ $CLI mutate      --package dev.reticle.sample --test-id checkout.status \
                  --property text --value "Cart: 3 items"
 ```
 
-Expected: tap resolves via `semantic:testId`, the status text flips to
-"Paid!" after the tap, and the logs include `checkout_visible` /
+Expected: the home screen lists scenario rows, `scenario.checkout` opens the
+checkout screen, the pay-button tap resolves via `semantic:testId`, the status
+text flips to "Paid!" after the tap, and the logs include `checkout_visible` /
 `checkout_paid`.
 
 Prove the **unlinked** (JDWP injection) path on the `noagent` flavor:

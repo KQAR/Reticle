@@ -1,6 +1,6 @@
 ---
 description: Tap an element in the running Android app by selector, then verify the result.
-argument-hint: <package> <selector>  e.g. dev.reticle.sample --test-id checkout.payButton
+argument-hint: <package> <selector>  e.g. dev.reticle.sample --test-id scenario.checkout
 ---
 
 Tap an element in the running Android app using the bundled `reticle` CLI.
