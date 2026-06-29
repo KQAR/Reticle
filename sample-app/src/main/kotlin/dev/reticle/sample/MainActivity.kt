@@ -7,7 +7,6 @@ import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.view.Gravity
 import android.view.View
-import android.webkit.WebView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -33,6 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val webFixture = SampleWebFixtures.resolve(intent)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -63,37 +63,7 @@ class MainActivity : AppCompatActivity() {
             hint = "Name on card"
         }
 
-        // Embedded WebView fixture for the read-only DOM bridge. The HTML is
-        // local data; JavaScript is enabled only so a real tap can change DOM
-        // state and be observed by a follow-up Reticle snapshot.
-        val webCheckout = WebView(this).apply {
-            tag = "checkout.webView"
-            settings.javaScriptEnabled = true
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                280,
-            )
-            loadDataWithBaseURL(
-                "https://reticle.dev/sample",
-                """
-                <!doctype html>
-                <html>
-                  <body style="margin:0;font-family:sans-serif">
-                    <section id="web-checkout" aria-label="Web checkout">
-                      <p id="web-status" data-testid="web.status">Web cart ready</p>
-                      <button id="web-pay" data-testid="web.payButton"
-                        onclick="document.getElementById('web-status').innerText='Web paid'">
-                        Pay in WebView
-                      </button>
-                    </section>
-                  </body>
-                </html>
-                """.trimIndent(),
-                "text/html",
-                "UTF-8",
-                null,
-            )
-        }
+        val webCheckout = SampleWebFixtures.createWebView(this, webFixture)
 
         // Case A: standard ClickableSpan agreement row.
         val agreementText = "I have read and agree to the Terms"

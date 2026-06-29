@@ -59,6 +59,9 @@ object WebViewDomScript {
             if (el.hasAttribute("onclick") || el.tabIndex >= 0) return true;
             return el.getAttribute("contenteditable") === "true";
           }
+          function styleValue(style, key, max) {
+            return clean(style ? style[key] : "", max || 40);
+          }
           function walk(el) {
             if (!el || count >= MAX) return null;
             var style = window.getComputedStyle(el);
@@ -75,8 +78,10 @@ object WebViewDomScript {
             if (!inViewport && children.length === 0) return null;
             count++;
             var id = clean(el.id, 120);
+            var tag = el.tagName.toLowerCase();
+            var image = tag === "img" ? el : null;
             return {
-              tag: clean(el.tagName.toLowerCase(), 40),
+              tag: clean(tag, 40),
               id: id,
               className: clean(el.className, 160),
               selector: selectorFor(el),
@@ -85,6 +90,13 @@ object WebViewDomScript {
               name: clean(el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt"), 160),
               text: textFor(el),
               href: clean(el.getAttribute("href"), 200),
+              src: clean(el.getAttribute("src"), 500),
+              srcset: clean(el.getAttribute("srcset"), 500),
+              sizes: clean(el.getAttribute("sizes"), 160),
+              imageCurrentSrc: image ? clean(image.currentSrc || image.src, 500) : "",
+              imageNaturalWidth: image ? image.naturalWidth || 0 : 0,
+              imageNaturalHeight: image ? image.naturalHeight || 0 : 0,
+              imageComplete: image ? !!image.complete : false,
               inputType: clean(el.getAttribute("type"), 40),
               disabled: !!el.disabled || el.getAttribute("aria-disabled") === "true",
               interactive: interactive(el),
@@ -92,6 +104,36 @@ object WebViewDomScript {
               top: rect.top + window.scrollY,
               width: rect.width,
               height: rect.height,
+              marginTop: styleValue(style, "marginTop"),
+              marginRight: styleValue(style, "marginRight"),
+              marginBottom: styleValue(style, "marginBottom"),
+              marginLeft: styleValue(style, "marginLeft"),
+              styleDisplay: styleValue(style, "display"),
+              styleVisibility: styleValue(style, "visibility"),
+              styleOpacity: styleValue(style, "opacity"),
+              stylePosition: styleValue(style, "position"),
+              styleZIndex: styleValue(style, "zIndex"),
+              styleOverflowX: styleValue(style, "overflowX"),
+              styleOverflowY: styleValue(style, "overflowY"),
+              styleColor: styleValue(style, "color"),
+              styleBackgroundColor: styleValue(style, "backgroundColor"),
+              styleBackgroundImage: styleValue(style, "backgroundImage", 500),
+              styleFontSize: styleValue(style, "fontSize"),
+              styleFontWeight: styleValue(style, "fontWeight"),
+              styleFontFamily: styleValue(style, "fontFamily"),
+              styleLineHeight: styleValue(style, "lineHeight"),
+              styleTextAlign: styleValue(style, "textAlign"),
+              stylePaddingTop: styleValue(style, "paddingTop"),
+              stylePaddingRight: styleValue(style, "paddingRight"),
+              stylePaddingBottom: styleValue(style, "paddingBottom"),
+              stylePaddingLeft: styleValue(style, "paddingLeft"),
+              styleBorderTopWidth: styleValue(style, "borderTopWidth"),
+              styleBorderRightWidth: styleValue(style, "borderRightWidth"),
+              styleBorderBottomWidth: styleValue(style, "borderBottomWidth"),
+              styleBorderLeftWidth: styleValue(style, "borderLeftWidth"),
+              styleBorderRadius: styleValue(style, "borderRadius"),
+              styleTransform: styleValue(style, "transform"),
+              stylePointerEvents: styleValue(style, "pointerEvents"),
               children: children
             };
           }
