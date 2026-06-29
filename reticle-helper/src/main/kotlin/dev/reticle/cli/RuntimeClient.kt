@@ -9,6 +9,7 @@ import dev.reticle.core.MutationResult
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.Snapshot
+import dev.reticle.core.UiReport
 import dev.reticle.cli.platform.DeviceController
 import java.io.File
 import java.net.ConnectException
@@ -83,17 +84,25 @@ class RuntimeClient(
         ReticleJson.instance.decodeFromString(Snapshot.serializer(), getString(Endpoints.SNAPSHOT))
 
     /**
-     * Fetch the semantic tree the agent derives on-device. The CLI itself
-     * derives this locally from a single [snapshot] (see uiGroup/resolvePoint) so
-     * both trees describe one frame; this method remains for direct protocol use
-     * (the `/semantics` endpoint is part of the wire contract).
+     * Fetch a single-capture report from the in-app agent. The agent captures one
+     * snapshot and derives every report view from that same frame.
+     */
+    fun report(): UiReport =
+        ReticleJson.instance.decodeFromString(UiReport.serializer(), getString(Endpoints.REPORT))
+
+    /**
+     * Fetch the semantic tree the agent derives on-device. `ui report` uses
+     * [report] instead so snapshot / semantics / compact come from one capture;
+     * this method remains for direct protocol use.
      */
     @Suppress("unused")
     fun semantics(): SemanticTree =
         ReticleJson.instance.decodeFromString(SemanticTree.serializer(), getString(Endpoints.SEMANTICS))
 
-    /** Compact observation served by the agent. The CLI derives this locally from
-     *  [snapshot]; retained for direct use of the `/compact` wire endpoint. */
+    /**
+     * Compact observation served by the agent. `ui report` uses [report] instead
+     * so every report artifact describes the same frame.
+     */
     @Suppress("unused")
     fun compact(): CompactObservation =
         ReticleJson.instance.decodeFromString(CompactObservation.serializer(), getString(Endpoints.COMPACT))

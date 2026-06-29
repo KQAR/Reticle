@@ -199,12 +199,12 @@ object Helper {
         val hostPort = params.int("hostPort") ?: devicePort
         val client = RuntimeClient(device, hostPort, devicePort)
         client.setUpForward()
-        val snapshot: Snapshot = client.snapshot()
-        val semantic = SemanticTree.build(snapshot)
-        val compact = CompactObservation.from(snapshot)
-        // Return the full derived trees as JSON so the host can write real report
-        // files (snapshot.json / semantics.json / compact.json) without re-deriving
-        // anything — the derivation lives here, on the device-facing side.
+        assertHealthy(client, pkg)
+        val report = client.report()
+        val snapshot = report.snapshot
+        val semantic = report.semantics
+        val compact = report.compact
+        // The agent derives the bundle in-process; the helper just forwards it.
         return buildJsonObject {
             put("nodeCount", snapshot.nodes.size)
             put("compactItemCount", compact.items.size)

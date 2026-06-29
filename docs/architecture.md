@@ -141,12 +141,12 @@ projection), not captured independently — it is NOT the platform/uiautomator
 accessibility tree. The view tree is the source of truth.
 
 Because both trees come from **one** capture, they always describe the same
-frame. `ui report` and `act tap` take a single `/snapshot` and build the
-semantic view locally (`SemanticTree.build`) rather than making a second
-`/semantics` round-trip — a separate capture could observe the UI mid-change
-and yield two trees that disagree, and it would walk the view tree on-device
-twice for no benefit. (The `/semantics` wire endpoint still exists for direct
-protocol use.)
+frame. `ui report` fetches the agent's `/report` bundle: the in-app agent
+captures one `Snapshot`, derives `SemanticTree` and `CompactObservation` from
+that exact frame, and returns all three together. A separate `/semantics` or
+`/compact` round-trip could observe the UI mid-change and yield trees that
+disagree, so those endpoints remain for direct protocol use rather than report
+generation.
 
 Command → tree mapping:
 

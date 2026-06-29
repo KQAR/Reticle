@@ -4,12 +4,13 @@ import kotlinx.serialization.Serializable
 
 /**
  * Wire protocol shared by the in-app server and the host CLI: a small set of
- * localhost endpoints (/runtime, /snapshot, /semantics, /logs).
+ * localhost endpoints (/runtime, /report, /snapshot, /semantics, /logs).
  *
  * Endpoint map (HTTP GET unless noted), all bound to 127.0.0.1 in-app and
  * reached through `adb forward`:
  *
  *   GET  /runtime         -> RuntimeInfo
+ *   GET  /report          -> UiReport
  *   GET  /snapshot        -> Snapshot
  *   GET  /semantics       -> SemanticTree
  *   GET  /compact         -> CompactObservation
@@ -20,6 +21,7 @@ import kotlinx.serialization.Serializable
  */
 object Endpoints {
     const val RUNTIME = "/runtime"
+    const val REPORT = "/report"
     const val SNAPSHOT = "/snapshot"
     const val SEMANTICS = "/semantics"
     const val COMPACT = "/compact"
@@ -59,6 +61,28 @@ data class LogEntry(
 
 @Serializable
 data class LogBatch(val entries: List<LogEntry>)
+
+/**
+ * A single-capture UI report produced inside the app process.
+ *
+ * The full snapshot is captured once, then the semantic tree and compact
+ * observation are derived from that exact frame so report files cannot drift.
+ */
+@Serializable
+data class UiReport(
+    val snapshot: Snapshot,
+    val semantics: SemanticTree,
+    val compact: CompactObservation,
+) {
+    companion object {
+        /** Build all report views from one authoritative snapshot. */
+        fun from(snapshot: Snapshot): UiReport = UiReport(
+            snapshot = snapshot,
+            semantics = SemanticTree.build(snapshot),
+            compact = CompactObservation.from(snapshot),
+        )
+    }
+}
 
 /**
  * Runtime property mutation. Allowlisted: only a bounded set of View properties

@@ -84,10 +84,10 @@ params (where noted): `testId`, `resourceId`, `ref`, `point` ("x,y"), `region`.
   finishes — it forwards a port and polls `/runtime` until the agent answers
   healthy (or times out with a clear error). So a successful `inject` result means
   the runtime is actually up.
-- **`uiReport` returns finished trees.** The derivation (`SemanticTree.build`,
-  `CompactObservation.from`) runs in the helper, device-side; the host just writes
-  the returned JSON to `snapshot.json` / `semantics.json` / `compact.json`. The
-  host never re-derives. This is the "thin client" boundary in practice.
+- **`uiReport` returns finished trees.** Current agents capture one `/report` and
+  derive `SemanticTree` / `CompactObservation` from that exact snapshot; the
+  helper forwards the finished JSON and the host writes it to `snapshot.json` /
+  `semantics.json` / `compact.json`.
 
 ## Coverage
 
