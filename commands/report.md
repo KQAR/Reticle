@@ -19,8 +19,13 @@ Steps:
    Otherwise report that honestly instead of fabricating output.
 3. Run `reticle ui report --package <pkg> --output reticle-report`.
 4. Run `reticle ui compact reticle-report/snapshot.json` and summarize the
-   interactive/labelled elements on screen.
+   interactive/labelled elements on screen, including embedded WebView DOM nodes.
 5. Run `reticle ui regions reticle-report/snapshot.json` and call out any
    multi-region controls (agreement rows, link runs) and how to target them.
+6. For WebView nodes that matter, run
+   `reticle ui node reticle-report/snapshot.json --css '<selector>'` to inspect
+   DOM metadata such as computed styles, margins, image URLs, and natural image
+   size.
 
-Report the on-screen elements, any multi-region nodes, and the report path.
+Report the on-screen elements, any multi-region nodes, relevant WebView DOM
+selectors/metadata, and the report path.

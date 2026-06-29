@@ -2,7 +2,7 @@
   "name": "reticle",
   "displayName": "Reticle",
   "version": "0.6.0",
-  "description": "Runtime UI evidence + action harness for Android apps: capture the live view / accessibility / Compose-semantics tree, resolve precise selectors (including multi-region controls), drive real input via adb, patch UI properties without rebuilding, and inject the runtime into a debuggable app over JDWP (no AAR, no repackage, no root).",
+  "description": "Runtime UI evidence + action harness for Android apps: capture the live view / accessibility / Compose-semantics / WebView DOM tree, resolve precise selectors (including CSS and multi-region controls), inspect DOM style/image metadata, drive real input via adb, patch UI properties without rebuilding, and inject the runtime into a debuggable app over JDWP (no AAR, no repackage, no root).",
   "author": {
     "name": "KQAR"
   },

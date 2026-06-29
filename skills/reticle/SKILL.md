@@ -4,10 +4,11 @@ description: >-
   Inspect and drive a RUNNING Android app from its live runtime, not its source
   or a screenshot. Use when the task involves an Android app on a connected
   device/emulator and you need to: read the on-screen view / semantic /
-  Jetpack Compose semantics tree, find a stable selector or exact tap
-  coordinates, tap/swipe/type real input, target a specific phrase or link
-  inside a multi-region control (e.g. an agreement row), read app runtime logs,
-  or live-patch a UI property (text/color/size/visibility) without rebuilding.
+  Jetpack Compose semantics tree or embedded WebView DOM, find a stable selector
+  or exact tap coordinates, tap/swipe/type real input, target a specific phrase
+  or link inside a multi-region control (e.g. an agreement row), inspect DOM CSS
+  styles or image resources, read app runtime logs, or live-patch a UI property
+  (text/color/size/visibility) without rebuilding.
   Triggers: "inspect the running Android app", "tap the … button on device",
   "what's on screen", "drive the app", "find the element", "test the agreement
   checkbox", "change this label at runtime", adb/UiAutomator/Espresso-style UI
@@ -117,7 +118,8 @@ reticle app inject  --package <pkg>              # debuggable app w/o the AAR: l
 reticle status      --package <pkg>              # probe runtime health + identity if anything's off
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
-reticle ui node     reticle-report/snapshot.json --test-id <id>   # full view-tree node
+reticle ui node     reticle-report/snapshot.json --test-id <id>   # full node
+reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM node
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
 ```
 
@@ -136,13 +138,42 @@ reticle ui node    --live --package <pkg> --resource-id rata   # one node, live
 reticle ui compact --live --package <pkg>                      # whole screen, live
 ```
 
+## Embedded WebView DOM
+
+Reticle folds visible WebView DOM elements into the same snapshot as `domNode`s.
+Use CSS selectors when the target is inside a WebView:
+
+```bash
+reticle ui node --live --package <pkg> --css '#checkout button.pay'
+reticle act tap --package <pkg> --css '#checkout button.pay' --verify '#status'
+```
+
+DOM nodes include the screen-space `frame` plus useful `custom` metadata:
+
+- DOM identity: `domTag`, `domId`, `domClass`, `domCssSelector`, `domHref`,
+  `domSrc`, `domSrcset`, `domSizes`, `domInputType`.
+- Computed layout/style: `domMargin*`, `domStyleDisplay`, `domStyleVisibility`,
+  `domStyleOpacity`, `domStylePosition`, `domStyleZIndex`, `domStyleOverflow*`,
+  `domStyleColor`, `domStyleBackgroundColor`, `domStyleBackgroundImage`,
+  `domStyleFont*`, `domStyleLineHeight`, `domStyleTextAlign`,
+  `domStylePadding*`, `domStyleBorder*Width`, `domStyleBorderRadius`,
+  `domStyleTransform`, `domStylePointerEvents`.
+- Image resources for `<img>`: `domImageCurrentSrc`,
+  `domImageNaturalWidth`, `domImageNaturalHeight`, `domImageComplete`.
+
+The DOM bridge is read-only and snapshot-based. It captures the current document's
+visible DOM. iframe inner documents, shadow-root internals, pseudo-elements, and
+background-image intrinsic dimensions are boundaries unless explicitly added
+later. CSS `background-image` itself is still visible as `domStyleBackgroundImage`.
+
 ## Acting on the app
 
 Selector resolution is semantic-first, then view-tree frames, then a raw
-point — pass `--test-id`, `--resource-id`, `--ref`, or `--point x,y`.
+point — pass `--test-id`, `--resource-id`, `--css`, `--ref`, or `--point x,y`.
 
 ```bash
 reticle act tap   --package <pkg> --test-id checkout.payButton
+reticle act tap   --package <pkg> --css '#web-pay'
 reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
 reticle act type  --package <pkg> --text "hello"

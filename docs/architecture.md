@@ -126,6 +126,20 @@ reflectively in `ComposeSemanticsBridge`, with no hard Compose dependency
 `AndroidComposeView`, Reticle emits nothing rather than inventing selectors from
 private internals.
 
+## The embedded-Web boundary: WebView DOM
+
+An `android.webkit.WebView` remains a real View node, but Reticle now also reads
+its visible DOM through a default-on, read-only bridge when JavaScript is enabled.
+`WebViewBridge` runs a traversal script with `evaluateJavascript`, folds DOM
+rectangles into screen coordinates, and appends each element as a `NodeKind.domNode`
+child under the WebView. The script does not mutate page state.
+
+If JavaScript is disabled, the WebView is detached, the callback times out, or
+the result cannot be parsed, Reticle emits no DOM nodes and leaves the WebView as
+an opaque L0 leaf. CSS targeting is host-side: DOM nodes carry a `domCssSelector`
+metadata field, and `act tap --css '#web-pay'` resolves that snapshot node to a
+real adb tap point.
+
 ## Two trees, and which command uses which
 
 Reticle maintains **two separate trees** from a single capture. Confusing them
@@ -133,7 +147,7 @@ is the most common mistake when reading the output, so this is explicit:
 
 | Tree | Node type | Built by | What it contains |
 | --- | --- | --- | --- |
-| **View tree** | `Node` (`Snapshot.nodes`) | `SnapshotCapture` walking `WindowManagerGlobal` roots | Every `View` + Compose-semantics node, with full layout/style/reflected properties |
+| **View tree** | `Node` (`Snapshot.nodes`) | `SnapshotCapture` walking `WindowManagerGlobal` roots | Every `View` + Compose-semantics node + WebView DOM node, with full layout/style/reflected properties |
 | **Semantic tree** | `SemanticNode` | `SemanticTree.build(from: snapshot)` | Only nodes carrying a targeting signal (label, id, interactive), flattened to a label/role/frame summary |
 
 The semantic tree is **derived from** the view tree (a filtered, slimmed

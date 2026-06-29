@@ -156,7 +156,7 @@ func cmdAct(_ c: HelperClient, _ args: Args) throws {
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]
     // Pass through whatever selector/geometry options were given.
-    for k in ["test-id", "resource-id", "ref", "point", "region", "from", "to", "duration", "text"] {
+    for k in ["test-id", "resource-id", "css", "ref", "point", "region", "from", "to", "duration", "text"] {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
     // --verify [selector]: watch a node across the gesture and report the diff in
@@ -241,7 +241,8 @@ func cmdScreenshot(_ c: HelperClient, _ args: Args) throws {
 ///   reticle ui <view> <snapshot.json>            — render a saved report (default)
 ///   reticle ui <view> --live --package <pkg>     — render the CURRENT runtime
 ///       tree without writing any files. The cheap "did that node change?" path:
-///       e.g. `reticle ui node --live --package <pkg> --resource-id rata`.
+///       e.g. `reticle ui node --live --package <pkg> --resource-id rata`
+///       or `reticle ui node --live --package <pkg> --css '#web-pay'`.
 func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
     var params: [String: Any] = ["view": view]
     let live = args.option("live") != nil
@@ -256,7 +257,7 @@ func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
     }
     if view == "tree", args.option("semantics") != nil { params["view"] = "semantics" }
     if let d = args.option("depth") { params["depth"] = Int(d) ?? 0 }
-    for k in ["test-id", "resource-id", "ref"] { if let v = args.option(k) { params[selectorKey(k)] = v } }
+    for k in ["test-id", "resource-id", "css", "ref"] { if let v = args.option(k) { params[selectorKey(k)] = v } }
     let r = try c.call("render", params)
     print((r["text"] as? String) ?? "")
 }
