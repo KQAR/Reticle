@@ -17,11 +17,25 @@
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         <activity
             android:name="dev.reticle.sample.MainActivity"
+            android:label="Reticle Sample"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name="dev.reticle.sample.CheckoutScenarioActivity"
+            android:exported="false"
+            android:label="Checkout Controls" />
+        <activity
+            android:name="dev.reticle.sample.AgreementScenarioActivity"
+            android:exported="false"
+            android:label="Agreement Regions" />
+        <activity
+            android:name="dev.reticle.sample.WebViewScenarioActivity"
+            android:exported="false"
+            android:label="WebView DOM"
+            android:theme="@style/Theme.AppCompat.Light.DarkActionBar" />
     </application>
 </manifest>
