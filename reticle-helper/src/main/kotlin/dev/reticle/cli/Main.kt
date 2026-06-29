@@ -14,9 +14,10 @@ const val RETICLE_VERSION = "0.6.0"
  * process boundary. See `reticle-protocol/helper-rpc.md` and the roadmap's
  * "Direction: Swift host + per-platform helpers".
  *
- * The device-driving and rendering logic lives in [Helper] (which reuses the
- * `platform/` SPI, [RuntimeClient], and [SelectorResolver]); the user-facing
- * command surface is the Swift host's, not this binary's.
+ * The JSONL loop lives in [Helper]; device-driving and rendering logic lives in
+ * focused helper command handlers that reuse the `platform/` SPI,
+ * [RuntimeClient], and [SelectorResolver]. The user-facing command surface is
+ * the Swift host's, not this binary's.
  */
 fun main(rawArgs: Array<String>) {
     val command = rawArgs.firstOrNull()

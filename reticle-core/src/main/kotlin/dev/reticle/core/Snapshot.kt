@@ -33,13 +33,14 @@ enum class NodeKind {
     window,
     view,
     composeSemantics, // a Compose accessibility-backed node
+    domNode, // a read-only DOM element captured from an embedded WebView
     probe,
 }
 
 /**
- * A single node in the view tree: stable ref, parent/child links, frame in
+ * A single node in the unified UI tree: stable ref, parent/child links, frame in
  * screen coordinates, interaction flags, and a bag of scalar custom properties
- * reflected from the underlying View.
+ * reflected from the underlying View/semantics/DOM surface.
  */
 @Serializable
 data class Node(

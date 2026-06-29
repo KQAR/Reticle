@@ -13,12 +13,12 @@ class VerifyTokenTest {
 
     @Test
     fun falseToken_isNotRequested() {
-        assertNull(parseVerifyToken("false", null, null, null))
+        assertNull(parseVerifyToken("false", null, null, null, null))
     }
 
     @Test
     fun hashToken_isTestId() {
-        val sel = parseVerifyToken("#rata", null, null, null)!!
+        val sel = parseVerifyToken("#rata", null, null, null, null)!!
         assertEquals("rata", sel.testId)
         assertNull(sel.resourceId)
         assertNull(sel.ref)
@@ -26,14 +26,14 @@ class VerifyTokenTest {
 
     @Test
     fun atToken_isResourceId() {
-        val sel = parseVerifyToken("@rata", null, null, null)!!
+        val sel = parseVerifyToken("@rata", null, null, null, null)!!
         assertEquals("rata", sel.resourceId)
         assertNull(sel.testId)
     }
 
     @Test
     fun bareToken_isRef() {
-        val sel = parseVerifyToken("r129", null, null, null)!!
+        val sel = parseVerifyToken("r129", null, null, null, null)!!
         assertEquals("r129", sel.ref)
         assertNull(sel.testId)
         assertNull(sel.resourceId)
@@ -41,13 +41,19 @@ class VerifyTokenTest {
 
     @Test
     fun trueToken_reusesActionSelector() {
-        val sel = parseVerifyToken("true", null, "btnWithdraw", null)!!
+        val sel = parseVerifyToken("true", null, "btnWithdraw", null, null)!!
         assertEquals("btnWithdraw", sel.resourceId)
+    }
+
+    @Test
+    fun trueToken_reusesCssSelector() {
+        val sel = parseVerifyToken("true", null, null, "#web-pay", null)!!
+        assertEquals("#web-pay", sel.cssSelector)
     }
 
     @Test
     fun trueToken_withoutActionSelector_fails() {
         // A raw --point gesture has no node to watch.
-        assertFailsWith<CliError> { parseVerifyToken("true", null, null, null) }
+        assertFailsWith<CliError> { parseVerifyToken("true", null, null, null, null) }
     }
 }

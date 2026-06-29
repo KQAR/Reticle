@@ -55,7 +55,8 @@ Response (failure):
 ## Methods
 
 Common optional params on device methods: `serial`, `port`, `hostPort`. Selector
-params (where noted): `testId`, `resourceId`, `ref`, `point` ("x,y"), `region`.
+params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
+`ref`, `point` ("x,y"), `region`.
 
 | Method | Params | Result |
 | --- | --- | --- |

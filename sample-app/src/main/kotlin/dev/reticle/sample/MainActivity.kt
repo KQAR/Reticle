@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val webFixture = SampleWebFixtures.resolve(intent)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -61,6 +62,8 @@ class MainActivity : AppCompatActivity() {
             tag = "checkout.nameField"
             hint = "Name on card"
         }
+
+        val webCheckout = SampleWebFixtures.createWebView(this, webFixture)
 
         // Case A: standard ClickableSpan agreement row.
         val agreementText = "I have read and agree to the Terms"
@@ -131,6 +134,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(status)
         root.addView(payButton)
         root.addView(nameField)
+        root.addView(webCheckout)
         root.addView(agreementSpan)
         root.addView(markdownCheck)
         root.addView(plainPhrase)
