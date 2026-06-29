@@ -52,6 +52,12 @@ class VerifyTokenTest {
     }
 
     @Test
+    fun cssToken_isCssSelector() {
+        val sel = parseVerifyToken("css=#web-status", null, null, null, null)!!
+        assertEquals("#web-status", sel.cssSelector)
+    }
+
+    @Test
     fun trueToken_withoutActionSelector_fails() {
         // A raw --point gesture has no node to watch.
         assertFailsWith<CliError> { parseVerifyToken("true", null, null, null, null) }

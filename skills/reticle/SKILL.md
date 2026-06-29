@@ -7,8 +7,9 @@ description: >-
   Jetpack Compose semantics tree or embedded WebView DOM, find a stable selector
   or exact tap coordinates, tap/swipe/type real input, target a specific phrase
   or link inside a multi-region control (e.g. an agreement row), inspect DOM CSS
-  styles or image resources, read app runtime logs, or live-patch a UI property
-  (text/color/size/visibility) without rebuilding.
+  styles or image resources, capture an action trace with before/after evidence,
+  read app runtime logs, or live-patch a UI property (text/color/size/visibility)
+  without rebuilding.
   Triggers: "inspect the running Android app", "tap the … button on device",
   "what's on screen", "drive the app", "find the element", "test the agreement
   checkbox", "change this label at runtime", adb/UiAutomator/Espresso-style UI
@@ -145,7 +146,7 @@ Use CSS selectors when the target is inside a WebView:
 
 ```bash
 reticle ui node --live --package <pkg> --css '#checkout button.pay'
-reticle act tap --package <pkg> --css '#checkout button.pay' --verify '#status'
+reticle act tap --package <pkg> --css '#checkout button.pay' --verify 'css=#status'
 ```
 
 DOM nodes include the screen-space `frame` plus useful `custom` metadata:
@@ -202,7 +203,33 @@ reticle act tap --package <pkg> --point 292,1273 --verify "@rata"      # tap a t
 
 A selector token is `#testId`, `@resourceId`, or a bare `ref`. "No change" is an
 honest result, not a failure — it means the node didn't move within the budget
-(raise it with `--verify-timeout <ms>`).
+(raise it with `--verify-timeout <ms>`). For WebView DOM nodes, use
+`css=<selector>` as the verify token:
+
+```bash
+reticle act tap --package <pkg> --css '#style-target' --verify 'css=#style-target'
+```
+
+## Action traces
+
+Use `--trace-output <dir>` when an action needs a durable evidence package, not
+just terminal output. Reticle writes one subdirectory per action containing:
+
+- `trace.json` — manifest with gesture, selector, resolved point/source/ref, and
+  compact before→after diff.
+- `before.snapshot.json` / `after.snapshot.json` — full trees around the action.
+- `before.screenshot.png` / `after.screenshot.png` when the agent screenshot path
+  is available.
+
+```bash
+reticle act tap --package <pkg> --css '#style-target' \
+  --verify 'css=#style-target' \
+  --trace-output reticle-traces
+```
+
+Prefer traces for bug reports, demos, and multi-step validation where later tools
+or humans need to inspect the exact evidence. Keep default `act` calls trace-free
+when the inline `--verify` diff is enough.
 
 ## Multi-region controls (one View, several tap targets)
 
@@ -245,8 +272,9 @@ drive declarative UI through the app's own state.
 
 - Verify with evidence: check the changed node/state after an action — don't
   claim success from the tap alone. Prefer the cheap paths: `act … --verify` to
-  see the before→after diff in the acting command, or `ui node --live` to read
-  one node. Fall back to a full re-`ui report` only when you need the whole tree.
+  see the before→after diff in the acting command, `act … --trace-output` when
+  you need durable before/after artifacts, or `ui node --live` to read one node.
+  Fall back to a full re-`ui report` only when you need the whole tree.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.

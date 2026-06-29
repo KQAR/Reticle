@@ -133,6 +133,11 @@ $CLI act tap     --package dev.reticle.sample --test-id scenario.checkout
 $CLI ui report   --package dev.reticle.sample --output /tmp/reticle-report
 $CLI ui node     /tmp/reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap     --package dev.reticle.sample --test-id checkout.payButton
+$CLI act tap     --package dev.reticle.sample --test-id scenario.webview
+$CLI ui report   --package dev.reticle.sample --output /tmp/reticle-webview
+$CLI ui node     /tmp/reticle-webview/snapshot.json --css '#style-target'
+$CLI act tap     --package dev.reticle.sample --css '#style-target' \
+                 --verify 'css=#style-target' --trace-output /tmp/reticle-traces
 $CLI debug logs  --package dev.reticle.sample
 $CLI mutate      --package dev.reticle.sample --test-id checkout.status \
                  --property text --value "Cart: 3 items"
@@ -140,8 +145,11 @@ $CLI mutate      --package dev.reticle.sample --test-id checkout.status \
 
 Expected: the home screen lists scenario rows, `scenario.checkout` opens the
 checkout screen, the pay-button tap resolves via `semantic:testId`, the status
-text flips to "Paid!" after the tap, and the logs include `checkout_visible` /
-`checkout_paid`.
+text flips to "Paid!" after the tap, the WebView DOM node resolves via
+`dom:css`, `--verify 'css=#style-target'` reports DOM text/style changes, a trace
+directory appears with `trace.json` plus before/after snapshots (and screenshots
+when the agent screenshot path is available), and the logs include
+`checkout_visible` / `checkout_paid`.
 
 Prove the **unlinked** (JDWP injection) path on the `noagent` flavor:
 
@@ -155,11 +163,15 @@ export RETICLE_FROM_SOURCE=1 RETICLE_NO_REDIRECT=1
 CLI="bin/reticle"
 $CLI app inject --package dev.reticle.sample.noagent   # loads the dex over JDWP, starts the runtime
 $CLI ui report  --package dev.reticle.sample.noagent --output /tmp/reticle-noagent
+$CLI act tap    --package dev.reticle.sample.noagent --test-id scenario.webview
+$CLI ui report  --package dev.reticle.sample.noagent --output /tmp/reticle-noagent-webview
+$CLI ui node    /tmp/reticle-noagent-webview/snapshot.json --css '#style-target'
 ```
 
 Expected: `app inject` prints `runtime live: … port=…`, and `ui report` returns a
-non-empty tree (`#checkout.payButton`, the agreement rows) — proving the runtime
-is serving inside an app that carries none of `dev.reticle.agent.*`. Set
+non-empty tree (`#checkout.payButton`, the agreement rows), and the injected
+runtime can also expose WebView DOM nodes such as `#style-target` — proving the
+runtime is serving inside an app that carries none of `dev.reticle.agent.*`. Set
 `RETICLE_JDWP_DEBUG=1` for a step trace if it stalls. The dex must be read-only
 on-device (the CLI does this) or ART's W^X policy rejects it.
 

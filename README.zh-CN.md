@@ -173,6 +173,14 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
+# 内嵌 WebView DOM:按 CSS selector 检查、点击、验证,并保留 trace 证据包
+$CLI act tap --package dev.reticle.sample --test-id scenario.webview
+$CLI ui report --package dev.reticle.sample --output reticle-webview
+$CLI ui node reticle-webview/snapshot.json --css '#style-target'
+$CLI act tap --package dev.reticle.sample --css '#style-target' \
+    --verify 'css=#style-target' \
+    --trace-output reticle-traces
+
 # 多区域控件:一个 View、多个点击目标(协议勾选行等)
 $CLI app launch --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --test-id scenario.agreements

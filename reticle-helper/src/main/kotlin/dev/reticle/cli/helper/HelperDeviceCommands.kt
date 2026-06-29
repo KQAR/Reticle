@@ -111,16 +111,30 @@ internal object HelperDeviceCommands {
         val input = Platforms.current().input(device)
 
         val verifySel = HelperVerify.watchSelectorFrom(params)
-        val verifyClient = verifySel?.let {
+        val traceRequested = params.str("traceOutput") != null
+        val evidenceClient = if (verifySel != null || traceRequested) {
             runtimeClientFor(device, pkg, params).also { c -> assertHealthy(c, pkg) }
+        } else {
+            null
         }
-        val before = verifyClient?.let { HelperVerify.captureState(it, verifySel!!) }
+        val traceRecorder = HelperActionTrace.from(params, pkg, evidenceClient)
+        val traceBefore = traceRecorder?.capture()
+        val before = verifySel?.let { HelperVerify.captureState(evidenceClient!!, it) }
+        var target: ResolvedInputTarget? = null
 
         val result: JsonObject = when (sub) {
             "tap" -> {
-                val point = resolvePoint(device, pkg, params)
-                input.tap(point.first, point.second)
-                buildJsonObject { put("gesture", "tap"); put("x", point.first); put("y", point.second) }
+                target = resolveInputTarget(device, pkg, params)
+                val x = target!!.point.x.toInt()
+                val y = target!!.point.y.toInt()
+                input.tap(x, y)
+                buildJsonObject {
+                    put("gesture", "tap")
+                    put("x", x)
+                    put("y", y)
+                    put("source", target!!.source)
+                    target!!.ref?.let { put("ref", it) }
+                }
             }
             "swipe", "drag" -> {
                 val (fx, fy) = parseXY(params.str("from") ?: throw CliError("$sub needs 'from'"))
@@ -133,11 +147,16 @@ internal object HelperDeviceCommands {
             else -> throw CliError("unknown act gesture '$sub'")
         }
 
-        if (verifyClient == null) return result
-        val verify = HelperVerify.pollForChange(verifyClient, verifySel!!, before, params)
+        val verify = verifySel?.let { HelperVerify.pollForChange(evidenceClient!!, it, before, params) }
+        val trace = traceRecorder?.let {
+            val settleMs = if (verify == null) (params.intOrNull("traceDelayMs") ?: 250).toLong() else 0L
+            it.write(sub, selectorOrNull(params), target, result, traceBefore!!, settleMs)
+        }
+        if (verify == null && trace == null) return result
         return buildJsonObject {
             result.forEach { (k, v) -> put(k, v) }
-            put("verify", verify)
+            verify?.let { put("verify", it) }
+            trace?.let { put("trace", it) }
         }
     }
 

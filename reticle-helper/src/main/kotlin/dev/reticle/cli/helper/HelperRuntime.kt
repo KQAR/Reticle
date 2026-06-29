@@ -2,6 +2,7 @@ package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
 import dev.reticle.core.PortMap
+import dev.reticle.core.Point
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.SemanticTree
 import kotlinx.serialization.json.JsonObject
@@ -43,8 +44,23 @@ internal fun awaitRuntime(client: RuntimeClient, pkg: String, attempts: Int = 40
     throw CliError("timed out waiting for the runtime of '$pkg' to come up after inject")
 }
 
+/** A selector or raw point resolved to the exact screen coordinate adb will tap. */
+internal data class ResolvedInputTarget(
+    val point: Point,
+    val source: String,
+    val ref: String?,
+)
+
 internal fun resolvePoint(device: DeviceController, pkg: String, params: JsonObject): Pair<Int, Int> {
-    params.str("point")?.let { return parseXY(it) }
+    val resolved = resolveInputTarget(device, pkg, params)
+    return resolved.point.x.toInt() to resolved.point.y.toInt()
+}
+
+internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
+    params.str("point")?.let {
+        val (x, y) = parseXY(it)
+        return ResolvedInputTarget(Point(x.toDouble(), y.toDouble()), "point", null)
+    }
     val client = runtimeClientFor(device, pkg, params)
     assertHealthy(client, pkg)
     val snapshot = client.snapshot()
@@ -52,5 +68,5 @@ internal fun resolvePoint(device: DeviceController, pkg: String, params: JsonObj
     val resolved = SelectorResolver(snapshot, semantic).resolve(selectorFrom(params))
         ?: throw CliError("could not resolve selector to a point")
     System.err.println("reticle-helper: resolved via ${resolved.source} -> ref=${resolved.ref}")
-    return resolved.point.x.toInt() to resolved.point.y.toInt()
+    return ResolvedInputTarget(resolved.point, resolved.source, resolved.ref)
 }
