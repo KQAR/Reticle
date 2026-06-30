@@ -90,6 +90,54 @@ struct EventBusTests {
         #expect(decoded.events.first?.type == "action.trace")
     }
 
+    @Test func httpServerServesReadOnlyPanel() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let url = URL(string: "http://127.0.0.1:\(server.port)/panel")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let text = String(data: data, encoding: .utf8)
+
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.contains("text/html") == true)
+        #expect(text?.contains("Reticle Read-only Panel") == true)
+    }
+
+    @Test func httpServerServesArtifactsOnlyThroughEventRefs() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let artifactURL = root.appendingPathComponent("before.snapshot.json")
+        try #"{"ok":true}"#.write(to: artifactURL, atomically: true, encoding: .utf8)
+        let missingURL = root.appendingPathComponent("missing.snapshot.json")
+        let event = try store.append(EventPostRequest(
+            source: "action",
+            type: "action.trace",
+            refs: [
+                "beforeSnapshot": artifactURL.path,
+                "missingFile": missingURL.path
+            ]
+        ))
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let okURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/artifacts?event=\(event.id)&ref=beforeSnapshot")!
+        let (data, okResponse) = try await URLSession.shared.data(from: okURL)
+        #expect((okResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(String(data: data, encoding: .utf8) == #"{"ok":true}"#)
+
+        let missingRefURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/artifacts?event=\(event.id)&ref=afterSnapshot")!
+        let (_, missingRefResponse) = try await URLSession.shared.data(from: missingRefURL)
+        #expect((missingRefResponse as? HTTPURLResponse)?.statusCode == 404)
+
+        let missingFileURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/artifacts?event=\(event.id)&ref=missingFile")!
+        let (_, missingFileResponse) = try await URLSession.shared.data(from: missingFileURL)
+        #expect((missingFileResponse as? HTTPURLResponse)?.statusCode == 404)
+    }
+
     @Test func httpServerRejectsMalformedEventBody() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
