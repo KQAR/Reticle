@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reticle.dev/schema/event.schema.json",
+  "title": "Reticle daemon event envelope",
+  "type": "object",
+  "required": ["id", "ts", "session", "source", "type", "payload", "refs"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^evt_[0-9]{16}$"
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": ["string", "null"]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "refs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

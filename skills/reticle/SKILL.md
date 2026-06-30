@@ -231,6 +231,23 @@ Prefer traces for bug reports, demos, and multi-step validation where later tool
 or humans need to inspect the exact evidence. Keep default `act` calls trace-free
 when the inline `--verify` diff is enough.
 
+## Session event bus
+
+Use `reticle serve` when you need a durable local timeline across multiple
+commands. It creates `~/.reticle/sessions/<session>/events.jsonl` and exposes
+REST/SSE on localhost:
+
+```bash
+reticle serve --session demo --port 9876
+curl -N http://127.0.0.1:9876/events/stream
+```
+
+When the daemon is running, `act ... --trace-output <dir>` keeps writing the same
+trace package and also publishes an `action.trace` event. This is useful for
+longer demos, replayable validation, or tools that want to consume trace events.
+Do not start `serve` for a simple one-off screen read; `ui report`, `ui node
+--live`, and `act --verify` stay the cheaper default paths.
+
 ## Multi-region controls (one View, several tap targets)
 
 Agreement rows, "highlight = link" text, and self-drawn controls pack several

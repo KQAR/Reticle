@@ -1,36 +1,33 @@
 import Foundation
 
-/// Error surfaced by the Kotlin helper (an `ok:false` response) or by the
-/// boundary itself (process died, unparseable line).
-struct HelperError: Error, CustomStringConvertible {
-    let message: String
-    init(_ m: String) { message = m }
-    var description: String { message }
+/// Error surfaced by the Kotlin helper or by the JSONL process boundary.
+public struct HelperError: Error, CustomStringConvertible {
+    public let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+
+    public var description: String { message }
 }
 
-/// A long-lived client over the Kotlin helper's JSONL stdio RPC
-/// (reticle-protocol/helper-rpc.md). One spawn, many calls — matching the
-/// resident-service rule (the helper is not fork-per-call).
+/// A long-lived client over the Kotlin helper's JSONL stdio RPC.
 final class HelperClient {
     private let process = Process()
     private let stdinPipe = Pipe()
     private let stdoutPipe = Pipe()
     private var reader: LineReader!
     private var nextId = 1
-    /// Device serial to scope every call to (from a global `--serial`). Injected
-    /// into each request's params so individual commands don't each thread it.
     private let serial: String?
 
-    /// - launcher: path to the `reticle` launcher (it runs `reticle helper`).
-    /// - javaHome: optional JAVA_HOME to hand the JVM helper.
-    /// - serial: optional device serial, applied to every RPC call.
+    /// Creates a helper client that applies `serial` to every device RPC call.
     init(launcher: String, javaHome: String?, serial: String? = nil) {
         self.serial = serial
         process.executableURL = URL(fileURLWithPath: launcher)
         process.arguments = ["helper"]
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
-        process.standardError = FileHandle.standardError  // helper diagnostics flow through
+        process.standardError = FileHandle.standardError
         if let javaHome {
             var env = ProcessInfo.processInfo.environment
             env["JAVA_HOME"] = javaHome
@@ -38,19 +35,23 @@ final class HelperClient {
         }
     }
 
+    /// Starts the helper process and prepares the line reader.
     func start() throws {
         try process.run()
         reader = LineReader(handle: stdoutPipe.fileHandleForReading)
     }
 
-    /// Send one request, block for its single-line response, return `result`.
-    /// Throws `HelperError` on an `ok:false` response or a broken boundary.
+    /// Sends one request and returns the successful `result` object.
     @discardableResult
     func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
-        let id = nextId; nextId += 1
-        // Apply the client-wide serial unless the caller already set one.
+        let id = nextId
+        nextId += 1
+
         var params = params
-        if let serial, params["serial"] == nil { params["serial"] = serial }
+        if let serial, params["serial"] == nil {
+            params["serial"] = serial
+        }
+
         let request: [String: Any] = ["id": id, "method": method, "params": params]
         let data = try JSONSerialization.data(withJSONObject: request)
         stdinPipe.fileHandleForWriting.write(data)
@@ -62,7 +63,6 @@ final class HelperClient {
         guard let obj = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
             throw HelperError("non-object response: \(line)")
         }
-        // Correlate by id; the helper echoes the request id.
         if let respId = obj["id"] as? Int, respId != id {
             throw HelperError("response id \(respId) did not match request id \(id)")
         }
@@ -72,17 +72,21 @@ final class HelperClient {
         throw HelperError(obj["error"] as? String ?? "<no error message>")
     }
 
+    /// Closes stdin so the helper exits its serve loop.
     func shutdown() {
-        stdinPipe.fileHandleForWriting.closeFile()  // EOF -> helper exits its loop
+        stdinPipe.fileHandleForWriting.closeFile()
         process.waitUntilExit()
     }
 }
 
-/// Minimal blocking buffered line reader over a FileHandle.
+/// Minimal blocking buffered line reader over a file handle.
 final class LineReader {
     private let handle: FileHandle
     private var buffer = Data()
-    init(handle: FileHandle) { self.handle = handle }
+
+    init(handle: FileHandle) {
+        self.handle = handle
+    }
 
     func nextLine() -> String? {
         while true {
@@ -92,7 +96,7 @@ final class LineReader {
                 return String(data: lineData, encoding: .utf8)
             }
             let chunk = handle.availableData
-            if chunk.isEmpty { return nil }  // EOF
+            if chunk.isEmpty { return nil }
             buffer.append(chunk)
         }
     }

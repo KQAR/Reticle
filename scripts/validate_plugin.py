@@ -135,8 +135,8 @@ def collect_code_versions():
          re.compile(r'RETICLE_VERSION\s*=\s*"([^"]+)"')),
         ("reticle-agent/android/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
          re.compile(r'VERSION\s*=\s*"([^"]+)"')),
-        ("reticle-host/Sources/ReticleHost/main.swift",
-         re.compile(r'let\s+RETICLE_VERSION\s*=\s*"([^"]+)"')),
+        ("reticle-host/Sources/ReticleHostCore/ReticleCLI.swift",
+         re.compile(r'let\s+version\s*=\s*"([^"]+)"')),
     ]
     for rel, pat in sources:
         path = os.path.join(ROOT, rel)
