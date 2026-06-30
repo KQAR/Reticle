@@ -5,6 +5,7 @@ import dev.reticle.core.ReticleJson
 import dev.reticle.core.Selector
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,6 +33,8 @@ internal fun errorResponse(id: Int, message: String): String =
     )
 
 internal fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
+internal fun JsonObject.bool(key: String): Boolean = this[key]?.jsonPrimitive?.booleanOrNull ?: false
 
 internal fun JsonObject.intOrNull(key: String): Int? = str(key)?.toIntOrNull()
 

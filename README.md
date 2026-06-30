@@ -232,22 +232,22 @@ curl -N http://127.0.0.1:9876/events/stream
 ```
 
 Existing one-shot commands still work without the daemon. When `serve` is
-running, `reticle act ... --trace-output <dir>` also publishes the written
-`trace.json` as an `action.trace` event on a best-effort basis, with snapshots
-and screenshots referenced from `refs` instead of inlined. The panel consumes
-those events to show action timeline entries, before/after snapshot links,
-screenshots when captured, and the compact trace diff. It is display-only: it
-does not drive input, mutate app state, or show proxy traffic yet.
+running, `reticle act ...` automatically writes a trace package under the current
+session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
+`action.trace` event on a best-effort basis. Snapshots and screenshots are
+referenced from `refs` instead of inlined. The panel consumes those events to
+show action timeline entries, before/after snapshot links, screenshots when
+captured, and the compact trace diff. It is display-only: it does not drive
+input, mutate app state, or show proxy traffic yet. Pass `--trace-output <dir>`
+when you want to copy trace artifacts somewhere outside the session.
 
 Quick smoke with the linked sample app:
 
 ```bash
 reticle app launch --package dev.reticle.sample
-reticle act tap --package dev.reticle.sample --test-id scenario.checkout \
-  --trace-output /tmp/reticle-panel-traces
+reticle act tap --package dev.reticle.sample --test-id scenario.checkout
 reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
-  --verify '#checkout.status' \
-  --trace-output /tmp/reticle-panel-traces
+  --verify '#checkout.status'
 ```
 
 Expected: `/panel` shows two `action.trace` entries. The checkout pay action has
