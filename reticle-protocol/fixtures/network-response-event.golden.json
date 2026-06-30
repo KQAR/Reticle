@@ -1,0 +1,37 @@
+{
+  "id": "evt_0000000000000002",
+  "ts": 1782751906500,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "proxy",
+  "type": "network.response",
+  "payload": {
+    "requestId": "net-0001",
+    "scheme": "https",
+    "method": "GET",
+    "url": "https://api.example.test/v1/cart",
+    "host": "api.example.test",
+    "port": 443,
+    "path": "/v1/cart",
+    "startMillis": 1782751906400,
+    "endMillis": 1782751906496,
+    "durationMs": 96,
+    "status": 200,
+    "tunnel": false,
+    "mitm": true,
+    "requestHeaders": {
+      "Accept": "application/json",
+      "Authorization": "<redacted>"
+    },
+    "responseHeaders": {
+      "Content-Type": "application/json",
+      "Set-Cookie": "<redacted>"
+    },
+    "requestBodyBytes": 0,
+    "responseBodyBytes": 128,
+    "responseBodyTruncated": false
+  },
+  "refs": {
+    "responseBody.net-0001": "/tmp/reticle-e2e/network-bodies/net-0001-responseBody.bin"
+  }
+}

@@ -222,14 +222,28 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 `reticle serve` starts the local daemon: a Hummingbird-backed localhost REST/SSE
 event bus with an append-only session log at
 `~/.reticle/sessions/<session>/events.jsonl`, plus a built-in read-only Web
-panel for the current action timeline. It does not yet include the network proxy.
+panel for the current action and network timeline. Passing `--proxy-port` also
+starts a SwiftNIO host proxy that publishes `network.request`,
+`network.response`, and `network.error` events into the same session.
 
 ```bash
-reticle serve --session demo --port 9876
+reticle serve --session demo --port 9876 --proxy-port 9090
 curl -s http://127.0.0.1:9876/health
 curl -N http://127.0.0.1:9876/events/stream
 # open http://127.0.0.1:9876/panel
 ```
+
+For Android capture, add `--proxy-device --serial <id>` to configure the device
+global proxy via `adb reverse` + `settings put global http_proxy`; Reticle
+restores the prior proxy setting when `serve` exits. Plain HTTP is captured
+directly. HTTPS CONNECT tunnels are timed and shown; decrypted HTTPS requires
+`--proxy-mitm --proxy-ssl-hosts <host[,host]>`. Reticle generates a local CA under
+`~/.reticle/proxy-ca` by default (override with `--proxy-ca-dir <dir>`) and signs
+per-host leaf certificates on demand. Add `--proxy-install-ca` to push
+`reticle-ca.cer` to the device and open Android Security settings; on Android
+11+ CA trust must still be confirmed by the user inside Settings. Apps that do
+not trust user CAs, do not opt into user CAs via Network Security Config, or use
+certificate pinning remain opaque.
 
 Existing one-shot commands still work without the daemon. When `serve` is
 running, `reticle act ...` automatically writes a trace package under the current
@@ -241,10 +255,13 @@ and the compact diff are flattened into time-ordered cards. Large diffs show a
 short high-signal preview first, with text/label/state changes ranked ahead of
 structural churn and the full table available on demand. Missing screenshot
 artifacts render an inline failure state. The axis is centered so UI evidence can
-sit on one side while future network request spans can occupy the other. The
+sit on one side while network request spans occupy the other. Network requests
+are grouped by request id with method, URL, status, timing, request/response
+headers, body artifact links, and small text previews for captured bodies.
+Sensitive header values such as cookies and authorization are redacted. The
 session picker can switch between the live current session and static historical
 sessions under `~/.reticle/sessions`. It is display-only: it does not drive
-input, mutate app state, or show proxy traffic yet. Pass `--trace-output <dir>`
+input or mutate app state. Pass `--trace-output <dir>`
 when you want to copy trace artifacts somewhere outside the session.
 
 Quick smoke with the linked sample app:

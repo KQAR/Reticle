@@ -15,7 +15,7 @@ class WebViewScenarioActivity : AppCompatActivity() {
         title = "WebView DOM"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
-        val webView = SampleWebFixtures.createWebView(this).apply {
+        val webView = SampleWebFixtures.createWebView(this, SampleWebFixtures.resolve(intent)).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
