@@ -90,6 +90,23 @@ struct EventBusTests {
         #expect(decoded.events.first?.type == "action.trace")
     }
 
+    @Test func httpServerRejectsMalformedEventBody() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let postURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/events")!
+        var request = URLRequest(url: postURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{".utf8)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as? HTTPURLResponse)?.statusCode == 400)
+    }
+
     @Test func httpServerSseReplaysExistingEvents() throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
@@ -102,7 +119,7 @@ struct EventBusTests {
             port: server.port,
             request: "GET /events/stream HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
         )
-        #expect(text.contains("Content-Type: text/event-stream"))
+        #expect(text.lowercased().contains("content-type: text/event-stream"))
         #expect(text.contains("event: ui.snapshot"))
     }
 

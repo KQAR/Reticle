@@ -30,12 +30,14 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   via `--target` (default `android`). Adding a platform = a new `platform/<os>`
   implementation, no dispatcher changes. RPC contract:
   `reticle-protocol/helper-rpc.md`.
-- `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS arm64,
+- `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS 14+
+  arm64,
   outside the Gradle build). The user-facing `reticle`; owns no device code —
   device commands are RPC calls to the native helper it spawns. It also contains
-  the first `reticle serve` daemon skeleton: a localhost REST/SSE session event
-  bus with append-only `~/.reticle/sessions/<session>/events.jsonl`, plus
-  best-effort action-trace ingestion from one-shot `act --trace-output`.
+  the first `reticle serve` daemon skeleton: a Hummingbird 2.25.0 localhost
+  REST/SSE session event bus with append-only
+  `~/.reticle/sessions/<session>/events.jsonl`, plus best-effort action-trace
+  ingestion from one-shot `act --trace-output`.
   Command surface: `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/
   `debug`/`ui`/`serve`/`version`.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
@@ -65,7 +67,8 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   guidance. Order: `$RETICLE_HOST` → `$RETICLE_HOME/bin` → `RETICLE_FROM_SOURCE=1`
   (opt-in source build: Swift host + native helper) → prebuilt release.
   `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
-  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS arm64 only.
+  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
+  arm64 only.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
 - `commands/report.md`, `commands/tap.md` — slash commands (`/reticle:report`,
   `/reticle:tap`).
