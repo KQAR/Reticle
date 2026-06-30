@@ -240,7 +240,7 @@ commands or a browser-visible evidence panel. It creates
 display-only panel on localhost via Hummingbird:
 
 ```bash
-reticle serve --session demo --port 9876
+reticle serve --session demo --port 9876 --proxy-port 9090
 open http://127.0.0.1:9876/panel
 curl -N http://127.0.0.1:9876/events/stream
 ```
@@ -252,6 +252,18 @@ and manifest diffs are flattened into time-ordered nodes. Diff previews rank
 visible text/label/state changes ahead of structural churn, and missing
 screenshot artifacts show inline failures. Its session picker can switch from the
 live current session to static historical sessions under `~/.reticle/sessions`.
+When `--proxy-port` is supplied, the daemon also records `network.*` events and
+renders them in the panel's network lane. Network cards are grouped by request id
+and show method, URL, status, duration, headers, body refs, and text previews for
+captured bodies; sensitive header values are redacted. Add
+`--proxy-device --serial <id>` to configure Android global proxy through
+`adb reverse`; the daemon restores the previous proxy setting on exit. HTTPS
+decryption is opt-in via `--proxy-mitm`
+and `--proxy-ssl-hosts`; Reticle generates a local CA under
+`~/.reticle/proxy-ca` unless `--proxy-ca-dir` is supplied. Use
+`--proxy-install-ca` to push the CA file and open Android Security settings.
+Android 11+ still requires the user to confirm CA trust in Settings, and apps
+that ignore user CAs or pin certificates remain opaque.
 Use `--trace-output <dir>` only when you also want a copy outside the session.
 This is useful for longer demos, replayable validation, or tools that want to
 consume trace events. Do not start `serve` for a simple one-off screen read;

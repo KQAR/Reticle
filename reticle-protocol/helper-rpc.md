@@ -76,6 +76,10 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
 | `screenshot` | `package?` | `{ "via", "pngBase64" }` — agent `/screenshot` if reachable, else `adb screencap` |
 | `render` | `view` (tree/semantics/compact/node/regions), `snapshot` (path), `depth?`, selector | `{ "text": "<rendered>" }` — local snapshot rendering; derivation stays in Kotlin, host just prints |
+| `proxyStatus` | `serial?` | `{ "httpProxy": "<host:port>" }` or empty when unset |
+| `proxySet` | `serial?`, either `host` + `port` or raw `value` | `{ "previous", "current" }` — configures Android global `http_proxy`; `127.0.0.1:<port>` also creates `adb reverse tcp:<port> tcp:<port>` |
+| `proxyClear` | `serial?`, `port?` | `{ "previous", "current": "" }` — clears Android global `http_proxy` and removes the matching adb reverse when `port` is supplied |
+| `proxyInstallCa` | `serial?`, `path`, `name?` | `{ "path", "name", "started", "message" }` — pushes a DER CA certificate to device Downloads and opens Android Security settings for user-confirmed installation |
 
 ### Notes that bit us in the spike
 
@@ -100,6 +104,13 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
   `dev.reticle.core.trace.ActionTrace` shape from `reticle-core`; large artifacts
   are referenced by relative filename instead of being inlined in the RPC
   response.
+- **`proxySet` is host-owned device configuration.** The helper only applies the
+  Android setting and optional `adb reverse`; it does not inspect traffic. The
+  Swift daemon owns the actual proxy listener and restores the prior value on
+  shutdown.
+- **`proxyInstallCa` cannot silently trust a CA.** Android 11+ requires CA
+  certificates to be installed from Settings by the user. The helper only pushes
+  the file and opens the official security settings screen.
 
 ## Coverage
 
