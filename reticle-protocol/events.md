@@ -47,8 +47,10 @@ The skeleton serves these endpoints on `127.0.0.1`:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Current daemon health, session, port, and retained event count. |
+| `GET` | `/panel` | Built-in read-only web panel for the current session timeline. |
 | `GET` | `/sessions` | Current session listing. |
 | `GET` | `/sessions/current/events?since=<id>` | Buffered event history after `id`; omit `since` for all retained events. |
+| `GET` | `/sessions/current/artifacts?event=<id>&ref=<name>` | Reads one local artifact path from that event's `refs`; there is no raw path parameter. |
 | `POST` | `/sessions/current/events` | Append a daemon-stamped event body. |
 | `POST` | `/sessions/current/action-traces` | Ingest an existing action `trace.json` or `{ "path": "/.../trace.json" }`. |
 | `GET` | `/events/stream?since=<id>` | Server-Sent Events replay followed by live events. |
@@ -76,3 +78,19 @@ into an `action.trace` event:
 One-shot `reticle act ... --trace-output <dir>` keeps its existing behavior.
 When a live daemon is discoverable through `~/.reticle/daemon.json`, it also
 publishes the written trace as an `action.trace` event on a best-effort basis.
+
+## Read-only web panel
+
+`GET /panel` serves a zero-build HTML/CSS/JS panel from the daemon itself. It
+loads history from `GET /sessions/current/events`, listens for live
+`action.trace` events over SSE, and uses the artifact endpoint above to display
+before/after snapshot refs, screenshots when present, and the compact diff from
+the trace manifest.
+
+Artifact reads are scoped to an event id plus a ref name already present in that
+event's `refs`. The endpoint does not accept arbitrary filesystem paths, returns
+only regular files, and is intended for local evidence such as `trace.json`,
+snapshots, and screenshots.
+
+The panel is display-only. It does not drive input, mutate runtime state, or show
+network proxy traffic; future proxy events can reuse the same event stream.

@@ -8,8 +8,9 @@ description: >-
   or exact tap coordinates, tap/swipe/type real input, target a specific phrase
   or link inside a multi-region control (e.g. an agreement row), inspect DOM CSS
   styles or image resources, capture an action trace with before/after evidence,
-  read app runtime logs, or live-patch a UI property (text/color/size/visibility)
-  without rebuilding.
+  show a read-only local Web panel for a multi-action evidence timeline, read app
+  runtime logs, or live-patch a UI property (text/color/size/visibility) without
+  rebuilding.
   Triggers: "inspect the running Android app", "tap the … button on device",
   "what's on screen", "drive the app", "find the element", "test the agreement
   checkbox", "change this label at runtime", adb/UiAutomator/Espresso-style UI
@@ -234,19 +235,23 @@ when the inline `--verify` diff is enough.
 ## Session event bus
 
 Use `reticle serve` when you need a durable local timeline across multiple
-commands. It creates `~/.reticle/sessions/<session>/events.jsonl` and exposes
-REST/SSE on localhost via Hummingbird:
+commands or a browser-visible evidence panel. It creates
+`~/.reticle/sessions/<session>/events.jsonl` and exposes REST/SSE plus a
+display-only panel on localhost via Hummingbird:
 
 ```bash
 reticle serve --session demo --port 9876
+open http://127.0.0.1:9876/panel
 curl -N http://127.0.0.1:9876/events/stream
 ```
 
 When the daemon is running, `act ... --trace-output <dir>` keeps writing the same
-trace package and also publishes an `action.trace` event. This is useful for
-longer demos, replayable validation, or tools that want to consume trace events.
-Do not start `serve` for a simple one-off screen read; `ui report`, `ui node
---live`, and `act --verify` stay the cheaper default paths.
+trace package and also publishes an `action.trace` event. The panel shows the
+action timeline, before/after snapshot refs, screenshots when captured, and the
+manifest diff. This is useful for longer demos, replayable validation, or tools
+that want to consume trace events. Do not start `serve` for a simple one-off
+screen read; `ui report`, `ui node --live`, and `act --verify` stay the cheaper
+default paths.
 
 ## Multi-region controls (one View, several tap targets)
 

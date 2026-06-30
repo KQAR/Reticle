@@ -78,6 +78,9 @@ public final class ReticleHttpServer: @unchecked Sendable {
 
     private func buildRouter() -> Router<BasicRequestContext> {
         let router = Router()
+        router.get("panel") { _, _ -> Response in
+            webPanelResponse()
+        }
         router.get("health") { [self] _, _ -> Response in
             try jsonResponse(HealthResponse(ok: true, session: store.session, port: port, eventCount: store.eventCount))
         }
@@ -87,6 +90,9 @@ public final class ReticleHttpServer: @unchecked Sendable {
         }
         router.get("sessions/current/events") { [self] request, _ -> Response in
             try jsonResponse(EventsResponse(events: store.events(since: query(request, "since"))))
+        }
+        router.get("sessions/current/artifacts") { [self] request, _ -> Response in
+            try artifactResponse(eventId: query(request, "event"), refName: query(request, "ref"))
         }
         router.post("sessions/current/events") { [self] request, _ -> Response in
             let body = try await badRequestOnDecode {
@@ -130,6 +136,35 @@ public final class ReticleHttpServer: @unchecked Sendable {
                 }
                 try await writer.finish(nil)
             }
+        )
+    }
+
+    private func artifactResponse(eventId: String?, refName: String?) throws -> Response {
+        guard let eventId, let refName, !eventId.isEmpty, !refName.isEmpty else {
+            throw HTTPError(.badRequest, message: "artifact requests require event and ref")
+        }
+        guard let event = store.event(id: eventId) else {
+            throw HTTPError(.notFound, message: "event not found")
+        }
+        guard let path = event.refs[refName] else {
+            throw HTTPError(.notFound, message: "artifact ref not found")
+        }
+        let url = URL(fileURLWithPath: path)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            throw HTTPError(.notFound, message: "artifact file not found")
+        }
+        guard let fileType = attributes[.type] as? FileAttributeType, fileType == .typeRegular else {
+            throw HTTPError(.notFound, message: "artifact is not a regular file")
+        }
+        let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        guard byteCount <= 25 * 1024 * 1024 else {
+            throw HTTPError(.badRequest, message: "artifact is too large")
+        }
+        let data = try Data(contentsOf: url)
+        return Response(
+            status: .ok,
+            headers: [.contentType: contentType(for: url)],
+            body: .init(byteBuffer: buffer(from: data))
         )
     }
 }
@@ -182,4 +217,19 @@ private func buffer(from data: Data) -> ByteBuffer {
     var buffer = ByteBufferAllocator().buffer(capacity: data.count)
     buffer.writeBytes(data)
     return buffer
+}
+
+private func contentType(for url: URL) -> String {
+    switch url.pathExtension.lowercased() {
+    case "json":
+        "application/json; charset=utf-8"
+    case "png":
+        "image/png"
+    case "jpg", "jpeg":
+        "image/jpeg"
+    case "webp":
+        "image/webp"
+    default:
+        "application/octet-stream"
+    }
 }
