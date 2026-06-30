@@ -92,9 +92,9 @@ PATH 上)。
 
 ### CLI 如何获取
 
-`reticle` 是 **Swift host**——一个无 JDK 的原生 macOS arm64 二进制,它通过相邻的
+`reticle` 是 **Swift host**——一个无 JDK 的原生 macOS 14+ arm64 二进制,它通过相邻的
 **原生 helper**(`reticle-helper`,即由 GraalVM native-image 编译的 Kotlin Android
-层)驱动 Android。**仅支持 macOS arm64(Apple Silicon)。**
+层)驱动 Android。**仅支持 macOS 14+ arm64(Apple Silicon)。**
 
 启动器按以下顺序解析它(命中即止):
 
@@ -110,7 +110,7 @@ PATH 上)。
 若无法获取下载,启动器会停下并给出指引,而不是回退。用 `reticle version` 确认;
 用 `reticle doctor` 检查 adb 与设备。用 `RETICLE_REPO` 锁定到某个 fork。
 
-host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备/模拟器,以及
+host 侧要求:Apple Silicon macOS 14+、一台通过 `adb` 连接的 Android 设备/模拟器,以及
 预编译下载所需的网络(或 `RETICLE_FROM_SOURCE=1` + Swift 工具链 + 一个 GraalVM)。
 
 要在不安装的情况下本地开发或测试:在仓库根目录运行 `claude --plugin-dir ./`。
@@ -137,9 +137,9 @@ host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备
   `adb input` 动作后端 + JDWP 注入。**不是面向用户的 CLI**——它以无 JDK 的原生
   `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host
   驱动的 RPC server。
-- `reticle-host`——**Swift host CLI**(SwiftPM,macOS arm64)。面向用户的 `reticle`;
+- `reticle-host`——**Swift host CLI**(SwiftPM,macOS 14+ arm64)。面向用户的 `reticle`;
   不持有任何设备代码——设备命令通过 helper RPC 执行,而 `reticle serve` 持有本机
-  daemon 的 session / event surface。
+  daemon 的 session / event surface,该本地 REST/SSE 服务由 Hummingbird 2.25.0 承载。
 - `sample-app`——端到端链接 agent 的演示应用。
 
 ## 快速开始
@@ -200,7 +200,7 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## 本机 session 事件总线
 
-`reticle serve` 启动第一版 daemon skeleton:一个 localhost REST/SSE 事件总线,
+`reticle serve` 启动第一版 daemon skeleton:一个由 Hummingbird 承载的 localhost REST/SSE 事件总线,
 并把 session 事件追加写入
 `~/.reticle/sessions/<session>/events.jsonl`。它暂时还不包含 Web 面板或网络代理;
 这一层是后续时间线视图和抓包能力的持久化基础。
@@ -219,13 +219,14 @@ REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。
 
 ## 工具链
 
-*运行*预编译 release:Apple Silicon macOS + `adb`。无需 JDK。
+*运行*预编译 release:Apple Silicon macOS 14+ + `adb`。无需 JDK。
 
 *从源码构建*(开发者):
 
 - Android SDK(compileSdk 35)、build-tools、platform-tools(`adb`)
 - 用于 Gradle/AGP 的 JDK 17;用于原生 helper 的、带 `native-image` 的 **GraalVM**
-- 用于 host 的 **Swift** 工具链(Xcode)
+- 用于 host 的 **Swift** 工具链(Xcode);Hummingbird 2.25.0 使 host target 要求
+  macOS 14+
 - Gradle 8.13(通过 wrapper)
 
 面向 agent 的导览图与架构规则见 `AGENTS.md`。

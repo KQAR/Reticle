@@ -104,9 +104,9 @@ which editor installed it).
 
 ### How the CLI is obtained
 
-`reticle` is the **Swift host** — a no-JDK native macOS arm64 binary that drives
+`reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
 Android through a sibling **native helper** (`reticle-helper`, the Kotlin Android
-layer compiled by GraalVM native-image). **macOS arm64 (Apple Silicon) only.**
+layer compiled by GraalVM native-image). **macOS 14+ arm64 (Apple Silicon) only.**
 
 The launcher resolves it in this order (first hit wins):
 
@@ -124,7 +124,7 @@ By default Reticle always uses the prebuilt release — no toolchain required an
 stops with guidance rather than falling back. Verify with `reticle version`; run
 `reticle doctor` to check adb and devices. Pin a fork with `RETICLE_REPO`.
 
-Requirements on the host: Apple Silicon macOS, a connected Android
+Requirements on the host: Apple Silicon macOS 14+, a connected Android
 device/emulator with `adb`, and network for the prebuilt download (or
 `RETICLE_FROM_SOURCE=1` + Swift toolchain + a GraalVM).
 
@@ -154,9 +154,10 @@ runner), which builds and attaches to a GitHub Release:
   evidence + an `adb input` action backend + JDWP injection. **Not a user-facing
   CLI** — it ships as the no-JDK native `reticle-helper` (GraalVM native-image)
   whose `helper` subcommand is the RPC server the Swift host drives.
-- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS arm64). The user-facing
+- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS 14+ arm64). The user-facing
   `reticle`; owns no device code — device commands are RPC calls to the helper,
-  while `reticle serve` owns the local daemon session/event surface.
+  while `reticle serve` owns the local daemon session/event surface via
+  Hummingbird 2.25.0.
 - `sample-app` — demo app that links the agent end to end.
 
 ## Quick Start
@@ -218,7 +219,7 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## Local session event bus
 
-`reticle serve` starts the first daemon skeleton: a localhost REST/SSE event bus
+`reticle serve` starts the first daemon skeleton: a Hummingbird-backed localhost REST/SSE event bus
 with an append-only session log at `~/.reticle/sessions/<session>/events.jsonl`.
 It does not yet include the Web panel or network proxy; it is the durable
 timeline foundation for those later pieces.
@@ -238,13 +239,14 @@ See `reticle-protocol/events.md` for the REST/SSE surface and event envelope.
 
 ## Toolchain
 
-To *run* a prebuilt release: Apple Silicon macOS + `adb`. No JDK.
+To *run* a prebuilt release: Apple Silicon macOS 14+ + `adb`. No JDK.
 
 To *build from source* (developers):
 
 - Android SDK (compileSdk 35), build-tools, platform-tools (`adb`)
 - JDK 17 for Gradle/AGP; a **GraalVM** with `native-image` for the native helper
-- the **Swift** toolchain (Xcode) for the host
+- the **Swift** toolchain (Xcode) for the host; Hummingbird 2.25.0 makes the host
+  target macOS 14+
 - Gradle 8.13 (via the wrapper)
 
 See `AGENTS.md` for the agent-facing map and architecture rules.
