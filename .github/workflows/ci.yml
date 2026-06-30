@@ -67,17 +67,16 @@ jobs:
     # The shipped distribution is macOS arm64 only (Swift host + native-image
     # helper). This job is the CI guard for those release-critical pieces, which
     # the ubuntu build can't exercise.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
 
-      # Package.swift requires Swift tools 6.0; select an Xcode 16+ (Swift 6).
-      - name: Select Xcode 16 (Swift 6)
+      # Hummingbird 2.25.0 requires Swift tools 6.1; macOS 15 includes Xcode 16.4.
+      - name: Select Xcode 16.4 (Swift 6.1)
         run: |
           set -euo pipefail
-          xc="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1 || true)"
-          [ -z "$xc" ] && xc="$(ls -d /Applications/Xcode_2*.app 2>/dev/null | sort -V | tail -1 || true)"
-          [ -z "$xc" ] && { echo "no Xcode 16+ found on runner"; ls -d /Applications/Xcode*.app; exit 1; }
+          xc="/Applications/Xcode_16.4.app"
+          [ -d "$xc" ] || { echo "Xcode 16.4 not found on runner"; ls -d /Applications/Xcode*.app; exit 1; }
           echo "selecting $xc"; sudo xcode-select -s "$xc"; swift --version
 
       - name: Set up GraalVM (JDK 21, native-image)
