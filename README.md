@@ -219,21 +219,40 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## Local session event bus
 
-`reticle serve` starts the first daemon skeleton: a Hummingbird-backed localhost REST/SSE event bus
-with an append-only session log at `~/.reticle/sessions/<session>/events.jsonl`.
-It does not yet include the Web panel or network proxy; it is the durable
-timeline foundation for those later pieces.
+`reticle serve` starts the local daemon: a Hummingbird-backed localhost REST/SSE
+event bus with an append-only session log at
+`~/.reticle/sessions/<session>/events.jsonl`, plus a built-in read-only Web
+panel for the current action timeline. It does not yet include the network proxy.
 
 ```bash
 reticle serve --session demo --port 9876
 curl -s http://127.0.0.1:9876/health
 curl -N http://127.0.0.1:9876/events/stream
+# open http://127.0.0.1:9876/panel
 ```
 
 Existing one-shot commands still work without the daemon. When `serve` is
 running, `reticle act ... --trace-output <dir>` also publishes the written
 `trace.json` as an `action.trace` event on a best-effort basis, with snapshots
-and screenshots referenced from `refs` instead of inlined.
+and screenshots referenced from `refs` instead of inlined. The panel consumes
+those events to show action timeline entries, before/after snapshot links,
+screenshots when captured, and the compact trace diff. It is display-only: it
+does not drive input, mutate app state, or show proxy traffic yet.
+
+Quick smoke with the linked sample app:
+
+```bash
+reticle app launch --package dev.reticle.sample
+reticle act tap --package dev.reticle.sample --test-id scenario.checkout \
+  --trace-output /tmp/reticle-panel-traces
+reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
+  --verify '#checkout.status' \
+  --trace-output /tmp/reticle-panel-traces
+```
+
+Expected: `/panel` shows two `action.trace` entries. The checkout pay action has
+before/after snapshot refs, screenshots when available, and a diff containing
+`checkout.status` changing to `Paid!`.
 
 See `reticle-protocol/events.md` for the REST/SSE surface and event envelope.
 

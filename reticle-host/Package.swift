@@ -5,8 +5,8 @@ import PackageDescription
 // `reticle helper` over the JSONL RPC contract (reticle-protocol/helper-rpc.md);
 // it owns no device-specific code itself. This is the first real slice of the
 // "Swift host + per-platform helpers" direction (docs/roadmap.md). The
-// Hummingbird-backed serve event-bus skeleton lives here; the Web panel and
-// proxy remain later phases.
+// Hummingbird-backed serve event-bus skeleton and read-only Web panel live here;
+// the capture proxy remains a later phase.
 let package = Package(
     name: "reticle-host",
     platforms: [
