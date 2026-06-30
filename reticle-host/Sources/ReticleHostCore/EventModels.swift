@@ -84,13 +84,16 @@ public struct HealthResponse: Encodable {
 }
 
 /// Single-session listing returned by `GET /sessions`.
-public struct SessionInfo: Encodable {
+public struct SessionInfo: Codable, Equatable {
     public let id: String
     public let path: String
     public let eventCount: Int
+    public let actionTraceCount: Int
+    public let updatedAtMillis: Int64?
+    public let isCurrent: Bool
 }
 
 /// Session list response for the daemon's REST API.
-public struct SessionsResponse: Encodable {
+public struct SessionsResponse: Codable {
     public let sessions: [SessionInfo]
 }
