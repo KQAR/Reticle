@@ -85,14 +85,23 @@ public final class ReticleHttpServer: @unchecked Sendable {
             try jsonResponse(HealthResponse(ok: true, session: store.session, port: port, eventCount: store.eventCount))
         }
         router.get("sessions") { [self] _, _ -> Response in
-            let info = SessionInfo(id: store.session, path: store.sessionDirectory.path, eventCount: store.eventCount)
-            return try jsonResponse(SessionsResponse(sessions: [info]))
+            return try jsonResponse(SessionsResponse(sessions: store.sessionInfos()))
         }
         router.get("sessions/current/events") { [self] request, _ -> Response in
-            try jsonResponse(EventsResponse(events: store.events(since: query(request, "since"))))
+            try sessionEventsResponse(session: store.session, since: query(request, "since"))
+        }
+        router.get("sessions/:session/events") { [self] request, context -> Response in
+            try sessionEventsResponse(session: try sessionParameter(context), since: query(request, "since"))
         }
         router.get("sessions/current/artifacts") { [self] request, _ -> Response in
-            try artifactResponse(eventId: query(request, "event"), refName: query(request, "ref"))
+            try artifactResponse(session: store.session, eventId: query(request, "event"), refName: query(request, "ref"))
+        }
+        router.get("sessions/:session/artifacts") { [self] request, context -> Response in
+            try artifactResponse(
+                session: try sessionParameter(context),
+                eventId: query(request, "event"),
+                refName: query(request, "ref")
+            )
         }
         router.post("sessions/current/events") { [self] request, _ -> Response in
             let body = try await badRequestOnDecode {
@@ -139,11 +148,25 @@ public final class ReticleHttpServer: @unchecked Sendable {
         )
     }
 
-    private func artifactResponse(eventId: String?, refName: String?) throws -> Response {
+    private func sessionEventsResponse(session id: String, since: String?) throws -> Response {
+        do {
+            return try jsonResponse(EventsResponse(events: store.historicalEvents(session: id, since: since)))
+        } catch let error as EventStoreError {
+            throw HTTPError(.notFound, message: error.description)
+        }
+    }
+
+    private func artifactResponse(session id: String, eventId: String?, refName: String?) throws -> Response {
         guard let eventId, let refName, !eventId.isEmpty, !refName.isEmpty else {
             throw HTTPError(.badRequest, message: "artifact requests require event and ref")
         }
-        guard let event = store.event(id: eventId) else {
+        let event: ReticleEventEnvelope?
+        do {
+            event = try store.historicalEvent(session: id, eventId: eventId)
+        } catch let error as EventStoreError {
+            throw HTTPError(.notFound, message: error.description)
+        }
+        guard let event else {
             throw HTTPError(.notFound, message: "event not found")
         }
         guard let path = event.refs[refName] else {
@@ -180,10 +203,6 @@ public enum ReticleHttpServerError: Error, CustomStringConvertible {
     }
 }
 
-private func query(_ request: Request, _ key: String) -> String? {
-    request.uri.queryParameters[Substring(key)].map(String.init)
-}
-
 private func badRequestOnDecode<T>(_ operation: () async throws -> T) async throws -> T {
     do {
         return try await operation()
@@ -200,36 +219,4 @@ private func requestBodyData(_ request: Request) async throws -> Data {
     var request = request
     let body = try await request.collectBody(upTo: 2 * 1024 * 1024)
     return Data(body.readableBytesView)
-}
-
-private func jsonResponse<T: Encodable>(
-    _ value: T,
-    status: HTTPResponse.Status = .ok
-) throws -> Response {
-    Response(
-        status: status,
-        headers: [.contentType: "application/json; charset=utf-8"],
-        body: .init(byteBuffer: buffer(from: try JSONEncoder().encode(value)))
-    )
-}
-
-private func buffer(from data: Data) -> ByteBuffer {
-    var buffer = ByteBufferAllocator().buffer(capacity: data.count)
-    buffer.writeBytes(data)
-    return buffer
-}
-
-private func contentType(for url: URL) -> String {
-    switch url.pathExtension.lowercased() {
-    case "json":
-        "application/json; charset=utf-8"
-    case "png":
-        "image/png"
-    case "jpg", "jpeg":
-        "image/jpeg"
-    case "webp":
-        "image/webp"
-    default:
-        "application/octet-stream"
-    }
 }

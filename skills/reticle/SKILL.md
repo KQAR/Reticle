@@ -247,12 +247,15 @@ curl -N http://127.0.0.1:9876/events/stream
 
 When the daemon is running, ordinary `act ...` commands automatically write trace
 packages under the current session and publish `action.trace` events. The panel
-shows the action timeline, before/after snapshot refs, screenshots when captured,
-and the manifest diff. Use `--trace-output <dir>` only when you also want a copy
-outside the session. This is useful for longer demos, replayable validation, or
-tools that want to consume trace events. Do not start `serve` for a simple
-one-off screen read; `ui report`, `ui node --live`, and `act --verify` stay the
-cheaper default paths.
+shows a vertical evidence timeline: screenshot/snapshot evidence cards, actions,
+and manifest diffs are flattened into time-ordered nodes. Diff previews rank
+visible text/label/state changes ahead of structural churn, and missing
+screenshot artifacts show inline failures. Its session picker can switch from the
+live current session to static historical sessions under `~/.reticle/sessions`.
+Use `--trace-output <dir>` only when you also want a copy outside the session.
+This is useful for longer demos, replayable validation, or tools that want to
+consume trace events. Do not start `serve` for a simple one-off screen read;
+`ui report`, `ui node --live`, and `act --verify` stay the cheaper default paths.
 
 ## Multi-region controls (one View, several tap targets)
 
