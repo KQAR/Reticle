@@ -235,9 +235,15 @@ Existing one-shot commands still work without the daemon. When `serve` is
 running, `reticle act ...` automatically writes a trace package under the current
 session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
 `action.trace` event on a best-effort basis. Snapshots and screenshots are
-referenced from `refs` instead of inlined. The panel consumes those events to
-show action timeline entries, before/after snapshot links, screenshots when
-captured, and the compact trace diff. It is display-only: it does not drive
+referenced from `refs` instead of inlined. The panel consumes each action trace
+as a vertical evidence timeline: screenshot/snapshot evidence nodes, the action,
+and the compact diff are flattened into time-ordered cards. Large diffs show a
+short high-signal preview first, with text/label/state changes ranked ahead of
+structural churn and the full table available on demand. Missing screenshot
+artifacts render an inline failure state. The axis is centered so UI evidence can
+sit on one side while future network request spans can occupy the other. The
+session picker can switch between the live current session and static historical
+sessions under `~/.reticle/sessions`. It is display-only: it does not drive
 input, mutate app state, or show proxy traffic yet. Pass `--trace-output <dir>`
 when you want to copy trace artifacts somewhere outside the session.
 
@@ -250,8 +256,9 @@ reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
   --verify '#checkout.status'
 ```
 
-Expected: `/panel` shows two `action.trace` entries. The checkout pay action has
-before/after snapshot refs, screenshots when available, and a diff containing
+Expected: `/panel` shows the current session selected in the picker and a
+vertical evidence timeline. Each action expands into screenshot evidence, action,
+screenshot evidence, and diff cards; the checkout pay diff contains
 `checkout.status` changing to `Paid!`.
 
 See `reticle-protocol/events.md` for the REST/SSE surface and event envelope.

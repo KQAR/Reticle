@@ -121,7 +121,15 @@ struct EventBusTests {
 
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.contains("text/html") == true)
-        #expect(text?.contains("Reticle Read-only Panel") == true)
+        #expect(text?.contains("Reticle Evidence Timeline") == true)
+        #expect(text?.contains("session-picker") == true)
+        #expect(text?.contains("Network requests (planned)") == true)
+        #expect(text?.contains("Screenshot") == true)
+        #expect(text?.contains("shot-body") == true)
+        #expect(text?.contains("shot-error") == true)
+        #expect(text?.contains("selectorLabel") == true)
+        #expect(text?.contains("highest-signal changes") == true)
+        #expect(text?.contains("diff-target") == true)
     }
 
     @Test func httpServerServesArtifactsOnlyThroughEventRefs() async throws {
@@ -154,6 +162,41 @@ struct EventBusTests {
         let missingFileURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/artifacts?event=\(event.id)&ref=missingFile")!
         let (_, missingFileResponse) = try await URLSession.shared.data(from: missingFileURL)
         #expect((missingFileResponse as? HTTPURLResponse)?.statusCode == 404)
+    }
+
+    @Test func httpServerServesHistoricalSessionsAndArtifacts() async throws {
+        let root = try temporaryDirectory()
+        let historical = try EventStore(session: "old", rootDirectory: root, limit: 10)
+        let artifactURL = historical.sessionDirectory.appendingPathComponent("old.snapshot.json")
+        try #"{"old":true}"#.write(to: artifactURL, atomically: true, encoding: .utf8)
+        let oldEvent = try historical.append(EventPostRequest(
+            source: "action",
+            type: "action.trace",
+            refs: ["beforeSnapshot": artifactURL.path]
+        ))
+        let current = try EventStore(session: "current", rootDirectory: root, limit: 10)
+        _ = try current.append(EventPostRequest(source: "log", type: "log"))
+        let server = try ReticleHttpServer(store: current, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let sessionsURL = URL(string: "http://127.0.0.1:\(server.port)/sessions")!
+        let (sessionsData, sessionsResponse) = try await URLSession.shared.data(from: sessionsURL)
+        #expect((sessionsResponse as? HTTPURLResponse)?.statusCode == 200)
+        let sessions = try JSONDecoder().decode(SessionsResponse.self, from: sessionsData).sessions
+        #expect(sessions.contains { $0.id == "old" && $0.actionTraceCount == 1 && !$0.isCurrent })
+        #expect(sessions.contains { $0.id == "current" && $0.isCurrent })
+
+        let eventsURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/old/events")!
+        let (eventsData, eventsResponse) = try await URLSession.shared.data(from: eventsURL)
+        #expect((eventsResponse as? HTTPURLResponse)?.statusCode == 200)
+        let events = try JSONDecoder().decode(EventsResponse.self, from: eventsData).events
+        #expect(events.map(\.id) == [oldEvent.id])
+
+        let artifactURLString = "http://127.0.0.1:\(server.port)/sessions/old/artifacts?event=\(oldEvent.id)&ref=beforeSnapshot"
+        let (artifactData, artifactResponse) = try await URLSession.shared.data(from: URL(string: artifactURLString)!)
+        #expect((artifactResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(String(data: artifactData, encoding: .utf8) == #"{"old":true}"#)
     }
 
     @Test func httpServerRejectsMalformedEventBody() async throws {
