@@ -76,8 +76,11 @@ into an `action.trace` event:
   `afterSnapshot`, and screenshots when present.
 
 One-shot `reticle act ... --trace-output <dir>` keeps its existing behavior.
-When a live daemon is discoverable through `~/.reticle/daemon.json`, it also
-publishes the written trace as an `action.trace` event on a best-effort basis.
+When a live daemon is discoverable through `~/.reticle/daemon.json`, `act`
+automatically writes trace packages under
+`~/.reticle/sessions/<session>/traces` and publishes them as `action.trace`
+events on a best-effort basis. If runtime evidence is unavailable for an
+auto-trace, the action still runs; explicit `--trace-output` remains strict.
 
 ## Read-only web panel
 
