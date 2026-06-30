@@ -112,12 +112,20 @@ internal object HelperDeviceCommands {
 
         val verifySel = HelperVerify.watchSelectorFrom(params)
         val traceRequested = params.str("traceOutput") != null
+        val traceAuto = params.bool("traceAuto")
         val evidenceClient = if (verifySel != null || traceRequested) {
-            runtimeClientFor(device, pkg, params).also { c -> assertHealthy(c, pkg) }
+            runCatching { runtimeClientFor(device, pkg, params).also { c -> assertHealthy(c, pkg) } }
+                .getOrElse { error ->
+                    if (traceAuto && verifySel == null) null else throw error
+                }
         } else {
             null
         }
-        val traceRecorder = HelperActionTrace.from(params, pkg, evidenceClient)
+        val traceRecorder = if (traceAuto && evidenceClient == null) {
+            null
+        } else {
+            HelperActionTrace.from(params, pkg, evidenceClient)
+        }
         val traceBefore = traceRecorder?.capture()
         val before = verifySel?.let { HelperVerify.captureState(evidenceClient!!, it) }
         var target: ResolvedInputTarget? = null

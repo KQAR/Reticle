@@ -229,8 +229,8 @@ reticle act tap --package <pkg> --css '#style-target' \
 ```
 
 Prefer traces for bug reports, demos, and multi-step validation where later tools
-or humans need to inspect the exact evidence. Keep default `act` calls trace-free
-when the inline `--verify` diff is enough.
+or humans need to inspect the exact evidence. Without `reticle serve`, keep
+default `act` calls trace-free when the inline `--verify` diff is enough.
 
 ## Session event bus
 
@@ -245,13 +245,14 @@ open http://127.0.0.1:9876/panel
 curl -N http://127.0.0.1:9876/events/stream
 ```
 
-When the daemon is running, `act ... --trace-output <dir>` keeps writing the same
-trace package and also publishes an `action.trace` event. The panel shows the
-action timeline, before/after snapshot refs, screenshots when captured, and the
-manifest diff. This is useful for longer demos, replayable validation, or tools
-that want to consume trace events. Do not start `serve` for a simple one-off
-screen read; `ui report`, `ui node --live`, and `act --verify` stay the cheaper
-default paths.
+When the daemon is running, ordinary `act ...` commands automatically write trace
+packages under the current session and publish `action.trace` events. The panel
+shows the action timeline, before/after snapshot refs, screenshots when captured,
+and the manifest diff. Use `--trace-output <dir>` only when you also want a copy
+outside the session. This is useful for longer demos, replayable validation, or
+tools that want to consume trace events. Do not start `serve` for a simple
+one-off screen read; `ui report`, `ui node --live`, and `act --verify` stay the
+cheaper default paths.
 
 ## Multi-region controls (one View, several tap targets)
 

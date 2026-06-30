@@ -51,6 +51,14 @@ public struct DaemonDiscovery {
         return info
     }
 
+    /// Trace artifact directory for a daemon-owned session.
+    public func traceDirectory(for info: DaemonInfo) -> URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent("sessions", isDirectory: true)
+            .appendingPathComponent(info.session, isDirectory: true)
+            .appendingPathComponent("traces", isDirectory: true)
+    }
+
     /// Removes the discovery file if it still points at `pid`.
     public func clearIfOwned(by pid: Int32) {
         guard let info = readLive(), info.pid == pid else { return }
