@@ -54,6 +54,13 @@ public final class EventStore: @unchecked Sendable {
         return buffer.filter { $0.id > since }
     }
 
+    /// Returns one buffered event by daemon-assigned id.
+    public func event(id: String) -> ReticleEventEnvelope? {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer.first { $0.id == id }
+    }
+
     /// Number of events currently retained in memory.
     public var eventCount: Int {
         lock.lock()
