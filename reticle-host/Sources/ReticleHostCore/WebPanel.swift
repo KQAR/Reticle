@@ -48,6 +48,7 @@ main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
 .marker:before{content:"";position:absolute;left:50%;top:13px;width:13px;height:13px;border:2px solid var(--accent);border-radius:999px;background:#0b1020;box-shadow:0 0 0 6px rgba(96,165,250,.08);transform:translateX(-50%)}
 .node.before .marker:before,.node.after .marker:before{border-color:var(--ok);box-shadow:0 0 0 6px rgba(52,211,153,.08)}
 .node.diff .marker:before{border-color:var(--warn);box-shadow:0 0 0 6px rgba(251,191,36,.08)}
+.node.network .marker:before{border-color:#c084fc;box-shadow:0 0 0 6px rgba(192,132,252,.08)}
 .card{width:100%;min-width:0;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.92);box-shadow:0 18px 50px rgba(0,0,0,.22);overflow:hidden}
 .node.before .card,.node.after .card{width:auto;max-width:100%}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(17,24,39,0))}
@@ -72,6 +73,12 @@ summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercas
 .shot-link{display:inline-flex;align-items:center;justify-content:center;max-width:100%;border:1px solid var(--line);border-radius:10px;background:#020617;overflow:hidden;cursor:zoom-in}
 .shot{display:block;width:auto;max-width:100%;height:min(54vh,560px);object-fit:contain}
 .shot-error{padding:18px;border:1px solid var(--line);border-radius:10px;background:#170f13;color:#fca5a5;font-size:12px}
+.net-card{border:1px solid var(--line);border-radius:16px;background:rgba(17,24,39,.92);box-shadow:0 18px 50px rgba(0,0,0,.18);overflow:hidden}
+.net-head{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,rgba(192,132,252,.13),rgba(17,24,39,0))}
+.net-url{margin-top:3px;font-weight:720;word-break:break-all}.net-meta{color:var(--muted);font-size:12px}.net-body{padding:12px 14px}
+.net-section{margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#0b1220}
+.net-section:first-child{margin-top:0}.net-section h3{margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.net-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.body-preview{margin-top:8px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d1d5db}
 .link{color:var(--accent);word-break:break-all}
 pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d1d5db}
 table{width:100%;border-collapse:collapse}
@@ -108,30 +115,35 @@ const sessionPicker=document.getElementById('session-picker');
 const lightbox=document.getElementById('lightbox'),lightboxImage=document.getElementById('lightbox-image'),lightboxCaption=document.getElementById('lightbox-caption');
 function selectedIsCurrent(){return state.selectedSession===state.currentSession;}
 function sessionRoute(){return selectedIsCurrent()?'current':encodeURIComponent(state.selectedSession||'current');}
-function artifactUrl(event,ref){
-  return `/sessions/${sessionRoute()}/artifacts?event=${encodeURIComponent(event.id)}&ref=${encodeURIComponent(ref)}`;
-}
-function escapeHtml(value){
-  return String(value===undefined||value===null?'':value)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
+function artifactUrl(event,ref){return `/sessions/${sessionRoute()}/artifacts?event=${encodeURIComponent(event.id)}&ref=${encodeURIComponent(ref)}`;}
+function escapeHtml(value){return String(value===undefined||value===null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function pretty(value){return escapeHtml(JSON.stringify(value,null,2));}
 function actionEvents(){return state.events.filter((event)=>event.type==='action.trace');}
+function networkEvents(){return state.events.filter((event)=>/^network\./.test(event.type));}
+function networkTransactions(){
+  const groups=new Map();
+  for(const event of networkEvents()){
+    const p=event.payload||{}, id=p.requestId||event.id;
+    const tx=groups.get(id)||{id,events:[],refs:{},request:null,response:null,error:null};
+    tx.events.push(event);Object.assign(tx.refs,event.refs||{});
+    if(event.type==='network.request'){tx.request=event;}
+    if(event.type==='network.response'){tx.response=event;}
+    if(event.type==='network.error'){tx.error=event;}
+    groups.set(id,tx);
+  }
+  return [...groups.values()].map((tx)=>{tx.event=tx.error||tx.response||tx.request||tx.events[tx.events.length-1];tx.payload=Object.assign({},...(tx.events.map((e)=>e.payload||{})));return tx;});
+}
 function isPresent(value){return value!==undefined&&value!==null&&value!==''&&value!=='<null>';}
 function eventMillis(event){
   const payload=event.payload||{};
-  const value=Number(payload.recordedAtMillis||event.ts||0);
+  const value=Number(payload.recordedAtMillis||payload.startMillis||payload.endMillis||event.ts||0);
   return Number.isFinite(value)?value:0;
 }
 function labelFor(event){const payload=event.payload||{};return `${payload.gesture||'action'} ${selectorLabel(payload.selector)}`;}
 function selectorLabel(selector){
   if(!selector){return 'direct target';}
   const fields=[['testId','test-id'],['cssSelector','css'],['ref','ref'],['resourceId','res'],['region','region'],['point','point']];
-  for(const [key,label] of fields){
-    const value=selector[key];
-    if(isPresent(value)){return `${label}=${typeof value==='object'?JSON.stringify(value):value}`;}
-  }
+  for(const [key,label] of fields){const value=selector[key];if(isPresent(value)){return `${label}=${typeof value==='object'?JSON.stringify(value):value}`;}}
   return 'direct target';
 }
 function formatTime(ms){const date=new Date(ms);return Number.isNaN(date.getTime())?String(ms):date.toLocaleTimeString();}
@@ -141,18 +153,20 @@ function mergeEvent(event){
   state.events.sort((a,b)=>eventMillis(a)-eventMillis(b)||a.id.localeCompare(b.id));
 }
 function renderTimeline(){
-  const actions=actionEvents();
+  const actions=actionEvents(), networks=networkTransactions();
   const live=selectedIsCurrent()?'live':'history';
-  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${actions.length*4} timeline node(s)`;
-  if(actions.length===0){
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length} network request(s)`;
+  if(actions.length===0&&networks.length===0){
     timeline.className='';
-    timeline.innerHTML='<div class="empty">No action traces yet. Run reticle act while serve is running to build an evidence timeline.</div>';
+    timeline.innerHTML='<div class="empty">No evidence yet. Run reticle act or enable the proxy while serve is running.</div>';
     return;
   }
   timeline.className='timeline';
-  timeline.innerHTML=`<div class="lane-labels"><div>UI evidence</div><div></div><div>Network requests (planned)</div></div>${actions.map((event,index)=>traceGroup(event,index+1)).join('')}`;
+  const items=[...actions.map((event,index)=>({at:eventMillis(event),html:traceGroup(event,index+1)})),...networks.map((tx)=>({at:eventMillis(tx.request||tx.event),html:networkNode(tx)}))].sort((a,b)=>a.at-b.at);
+  timeline.innerHTML=`<div class="lane-labels"><div>UI evidence</div><div></div><div>Network requests</div></div>${items.map((item)=>item.html).join('')}`;
   attachScreenshotPreviews();
   hydrateDiffs();
+  hydrateBodyPreviews();
 }
 function refLink(event,ref,label){
   if(!event.refs||!event.refs[ref]){return '<span class="status">missing</span>';}
@@ -165,6 +179,18 @@ function screenshot(event,ref){
 }
 function node(event,kind,time,title,phase,badge,body){
   return `<div class="node ${kind}"><div class="event-side"><div class="time">${escapeHtml(time)}</div><div class="card"><div class="card-head"><div><div class="phase">${escapeHtml(phase)}</div><div class="title">${escapeHtml(title)}</div><div class="meta">${escapeHtml(event.id)} &middot; ${escapeHtml(event.payload&&event.payload.packageName||event.target||'unknown target')}</div></div><div class="badge">${escapeHtml(badge)}</div></div><div class="body">${body}</div></div></div><div class="marker"></div><div class="network-side"></div></div>`;
+}
+function networkNode(tx){
+  const p=tx.payload||{}, event=tx.event, status=p.error?'error':(p.status||'pending'), duration=isPresent(p.durationMs)?`${p.durationMs} ms`:'pending';
+  const mode=p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP');
+  const facts=`<div class="facts"><div class="fact"><span>Host</span><b title="${escapeHtml(p.host||'unknown')}">${escapeHtml(p.host||'unknown')}</b></div><div class="fact"><span>Status</span><b>${escapeHtml(status)}</b></div><div class="fact"><span>Duration</span><b>${escapeHtml(duration)}</b></div></div>`;
+  const refs=Object.keys(tx.refs||{}), requestRef=refs.find((ref)=>ref.startsWith('requestBody.')), responseRef=refs.find((ref)=>ref.startsWith('responseBody.'));
+  const body=(label,ref,bytes,truncated)=>!ref?'':`<div class="net-section"><h3>${label} body</h3><div class="artifact">${refLink(event,ref,`${bytes||0} bytes${truncated?' · truncated':''}`)}</div><pre class="body-preview" data-event-id="${escapeHtml(event.id)}" data-ref="${escapeHtml(ref)}">Loading preview...</pre></div>`;
+  const headers=(title,items)=>items?`<details class="net-section" open><summary>${escapeHtml(title)} headers</summary><pre>${pretty(items)}</pre></details>`:'';
+  const refsBlock=refs.length?`<details class="net-section"><summary>Artifact refs</summary><pre>${pretty(tx.refs)}</pre></details>`:'';
+  const request=`<div class="net-section"><h3>Request</h3><div class="meta">${escapeHtml(p.method||'HTTP')} ${escapeHtml(p.path||'/')}</div>${headers('request',p.requestHeaders)}${body('Request',requestRef,p.requestBodyBytes,p.requestBodyTruncated)}</div>`;
+  const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
+  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)</div></div><div class="badge">${escapeHtml(status)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
 }
 function traceGroup(event,index){
   const payload=event.payload||{}, target=payload.target||{}, result=payload.result||{};
@@ -182,8 +208,7 @@ function attachScreenshotPreviews(){timeline.querySelectorAll('.shot-link').forE
 async function loadManifest(event){
   if(!event.refs||!event.refs.manifest){return null;}
   if(state.manifests.has(event.id)){return state.manifests.get(event.id);}
-  try{const response=await fetch(artifactUrl(event,'manifest'));if(!response.ok){throw new Error(`HTTP ${response.status}`);}
-    const manifest=await response.json();state.manifests.set(event.id,manifest);return manifest;
+  try{const response=await fetch(artifactUrl(event,'manifest'));if(!response.ok){throw new Error(`HTTP ${response.status}`);}const manifest=await response.json();state.manifests.set(event.id,manifest);return manifest;
   }catch(error){state.manifests.set(event.id,{error:String(error)});return state.manifests.get(event.id);}
 }
 function renderDiff(manifest){
@@ -201,6 +226,20 @@ function hydrateDiffs(){
     if(!event){return;}
     const manifest=await loadManifest(event);
     el.innerHTML=manifest&&manifest.error?`<div class="status">${escapeHtml(manifest.error)}</div>`:renderDiff(manifest);
+  });
+}
+function hydrateBodyPreviews(){
+  timeline.querySelectorAll('.body-preview').forEach(async (el)=>{
+    const event=state.events.find((item)=>item.id===el.dataset.eventId);
+    if(!event){return;}
+    try{
+      const response=await fetch(artifactUrl(event,el.dataset.ref));
+      if(!response.ok){throw new Error(`HTTP ${response.status}`);}
+      const text=new TextDecoder().decode(await response.arrayBuffer());
+      el.textContent=text.length>4096?`${text.slice(0,4096)}\n... preview truncated ...`:text;
+    }catch(error){
+      el.textContent=`Preview unavailable: ${error}`;
+    }
   });
 }
 async function loadSessions(){
@@ -232,6 +271,9 @@ function connectStream(){
   };
   stream.onmessage=handleMessage;
   stream.addEventListener('action.trace',handleMessage);
+  stream.addEventListener('network.request',handleMessage);
+  stream.addEventListener('network.response',handleMessage);
+  stream.addEventListener('network.error',handleMessage);
   stream.onerror=()=>{statusEl.textContent='Live event stream disconnected; retrying...';};
 }
 sessionPicker.addEventListener('change',async()=>{state.selectedSession=sessionPicker.value;if(state.stream){state.stream.close();state.stream=null;}await loadHistory();connectStream();});

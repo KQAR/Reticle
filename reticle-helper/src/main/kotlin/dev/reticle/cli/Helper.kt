@@ -87,6 +87,10 @@ object Helper {
         "logcat" -> HelperDeviceCommands.logcat(params)
         "screenshot" -> HelperDeviceCommands.screenshot(params)
         "render" -> HelperRenderCommands.render(params)
+        "proxyStatus" -> HelperProxyCommands.status(params)
+        "proxySet" -> HelperProxyCommands.set(params)
+        "proxyClear" -> HelperProxyCommands.clear(params)
+        "proxyInstallCa" -> HelperProxyCommands.installCa(params)
         else -> throw CliError("unknown method '$method'")
     }
 }
