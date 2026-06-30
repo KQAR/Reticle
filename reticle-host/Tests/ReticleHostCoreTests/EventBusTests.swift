@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import ReticleHostCore
@@ -17,6 +18,23 @@ struct EventBusTests {
 
         let replayed = try EventStore(session: "test", rootDirectory: root, limit: 10)
         #expect(replayed.events().map(\.type) == ["ui.snapshot", "action.trace", "log"])
+    }
+
+    @Test func daemonDiscoveryResolvesAutomaticTraceDirectory() throws {
+        let root = try temporaryDirectory()
+        let discovery = DaemonDiscovery(fileURL: root.appendingPathComponent("daemon.json"))
+        let info = DaemonInfo(pid: getpid(), port: 9876, session: "demo", startedAt: 1)
+        try discovery.write(info)
+
+        let expected = root
+            .appendingPathComponent("sessions", isDirectory: true)
+            .appendingPathComponent("demo", isDirectory: true)
+            .appendingPathComponent("traces", isDirectory: true)
+            .path
+
+        #expect(discovery.readLive() == info)
+        #expect(discovery.traceDirectory(for: info).path == expected)
+        #expect(automaticSessionTraceOutput(discovery: discovery) == expected)
     }
 
     @Test func sseEncoderProducesEventStreamFrame() throws {

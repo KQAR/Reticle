@@ -82,7 +82,12 @@ func cmdAct(_ c: HelperClient, _ args: Args) throws {
     }
     if let v = args.option("verify") { params["verify"] = v }
     if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
-    if let out = args.option("trace-output") { params["traceOutput"] = out }
+    if let out = args.option("trace-output") {
+        params["traceOutput"] = out
+    } else if let out = automaticSessionTraceOutput() {
+        params["traceOutput"] = out
+        params["traceAuto"] = true
+    }
     if let t = args.option("trace-delay") { params["traceDelayMs"] = Int(t) ?? 250 }
 
     let r = try c.call("act", params)
@@ -128,4 +133,9 @@ private func publishTraceIfDaemonIsRunning(_ trace: [String: Any]) {
     if case .failure(let error) = DaemonEventPublisher().publishActionTrace(path: path) {
         FileHandle.standardError.write(Data("warning: could not publish trace to reticle serve: \(error)\n".utf8))
     }
+}
+
+func automaticSessionTraceOutput(discovery: DaemonDiscovery = DaemonDiscovery()) -> String? {
+    guard let info = discovery.readLive() else { return nil }
+    return discovery.traceDirectory(for: info).path
 }
