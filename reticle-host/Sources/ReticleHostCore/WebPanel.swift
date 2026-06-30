@@ -20,54 +20,58 @@ private let webPanelHtml = #"""
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reticle Panel</title>
+<title>Reticle Evidence Timeline</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1020;--panel:#111827;--soft:#162033;--line:#263244;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa;--ok:#34d399}
+:root{color-scheme:dark;--bg:#0b1020;--panel:#111827;--soft:#162033;--line:#263244;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa;--ok:#34d399;--warn:#fbbf24}
 *{box-sizing:border-box}
 body{margin:0;background:linear-gradient(180deg,#0f172a 0,var(--bg) 180px);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 body.modal-open{overflow:hidden}
-header{padding:16px 20px;border-bottom:1px solid var(--line);background:rgba(15,23,42,.96)}
+header{position:sticky;top:0;z-index:3;padding:16px 20px;border-bottom:1px solid var(--line);background:rgba(15,23,42,.96);backdrop-filter:blur(12px)}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 h1{margin:0;font-size:18px}
-main{display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 61px)}
-aside{border-right:1px solid var(--line);background:#0d1424;overflow:auto}
-section{padding:20px}
-#detail{max-width:1180px;margin:0 auto}
 .status{margin-top:4px;color:var(--muted);font-size:12px}
-.item{display:block;width:100%;padding:12px 14px;border:0;border-bottom:1px solid var(--line);background:transparent;color:inherit;text-align:left;cursor:pointer}
-.item:hover,.item.active{background:var(--soft)}
-.item-title{font-weight:700}
-.item-meta{margin-top:3px;color:var(--muted);font-size:12px}
-.empty{padding:18px;color:var(--muted)}
-.trace-view{border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.92);box-shadow:0 22px 70px rgba(0,0,0,.26);overflow:hidden}
-.trace-header{display:flex;align-items:flex-start;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(17,24,39,0))}
-.eyebrow,.section-title{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
-.trace-title{margin-top:3px;font-size:20px;font-weight:760}
-.trace-meta{margin-top:5px;color:var(--muted);font-size:12px;word-break:break-all}
-.trace-score{margin-left:16px;text-align:right}
-.trace-score b{display:block;font-size:24px;color:var(--ok)}
-.trace-score span{color:var(--muted);font-size:12px}
-.trace-flow{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr 28px 1fr;padding:14px 16px;border-bottom:1px solid var(--line);background:#0d1424}
-.flow-step{min-width:0;padding:10px 12px;border-radius:12px;background:#0b1220}
-.flow-step span{display:inline-block;margin-right:7px;color:var(--accent);font-weight:800}
-.flow-step b{display:block;margin-top:4px}
-.flow-step em{display:block;margin-top:3px;color:var(--muted);font-style:normal;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.flow-arrow{align-self:center;color:var(--muted);text-align:center}
-.evidence{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
-.evidence-col{min-width:0;padding:16px}
-.evidence-col:first-child{border-right:1px solid var(--line)}
-.snapshot-line{margin:7px 0 12px;font-size:12px}
-.facts{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line)}
-.fact{min-width:0;padding:12px 16px;border-right:1px solid var(--line)}
+.session-control{color:var(--muted);font-size:12px;text-align:right}
+.session-control select{display:block;min-width:240px;margin-top:5px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:#0b1220;color:var(--text)}
+main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
+.empty{padding:24px;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.9);color:var(--muted)}
+.timeline{position:relative}
+.timeline:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,var(--line) 22px,var(--line) calc(100% - 22px),transparent)}
+.lane-labels{display:grid;grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);margin:0 0 14px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.lane-labels div:first-child{padding-right:18px;text-align:right}
+.lane-labels div:last-child{padding-left:18px}
+.trace-group{margin:0 0 24px}
+.node{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);align-items:start;margin:0 0 14px}
+.event-side{display:flex;min-width:0;padding-right:18px;flex-direction:column;align-items:flex-end}
+.network-side{min-height:1px;padding-left:18px}
+.time{padding:0 0 6px;color:var(--muted);font-size:12px;text-align:right}
+.marker{position:relative;min-height:42px}
+.marker:before{content:"";position:absolute;left:50%;top:13px;width:13px;height:13px;border:2px solid var(--accent);border-radius:999px;background:#0b1020;box-shadow:0 0 0 6px rgba(96,165,250,.08);transform:translateX(-50%)}
+.node.before .marker:before,.node.after .marker:before{border-color:var(--ok);box-shadow:0 0 0 6px rgba(52,211,153,.08)}
+.node.diff .marker:before{border-color:var(--warn);box-shadow:0 0 0 6px rgba(251,191,36,.08)}
+.card{width:100%;min-width:0;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.92);box-shadow:0 18px 50px rgba(0,0,0,.22);overflow:hidden}
+.node.before .card,.node.after .card{width:auto;max-width:100%}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(17,24,39,0))}
+.phase{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.title{margin-top:3px;font-size:17px;font-weight:760}
+.meta{margin-top:4px;color:var(--muted);font-size:12px;word-break:break-all}
+.badge{margin-left:12px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);font-size:12px;white-space:nowrap}
+.body{padding:14px 16px}
+.shot-body{display:grid;grid-template-columns:minmax(180px,260px) max-content;gap:14px;align-items:start;max-width:100%}
+.shot-copy{min-width:0}
+.media{margin-top:10px}
+.shot-body .media{display:flex;justify-content:flex-start;margin-top:0;max-width:100%}
+.artifact{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#0b1220;color:var(--muted);font-size:12px}
+.shot-copy .artifact:first-child{margin-top:0}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.fact{min-width:0;padding:10px 12px;border-right:1px solid var(--line);background:#0b1220}
 .fact:last-child{border-right:0}
 .fact span{display:block;color:var(--muted);font-size:12px}
 .fact b{display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.raw{padding:0 16px 14px;border-bottom:1px solid var(--line)}
-.raw details{padding:12px 0;border-bottom:1px solid var(--line)}
-.raw details:last-child{border-bottom:0}
-.raw summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
-.diff-section{padding:16px}
-.shot-link{display:flex;align-items:center;justify-content:center;width:100%;height:min(38vh,360px);border:1px solid var(--line);border-radius:10px;background:#020617;overflow:hidden;cursor:zoom-in}
-.shot{display:block;width:100%;height:100%;object-fit:contain}
+details{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.shot-link{display:inline-flex;align-items:center;justify-content:center;max-width:100%;border:1px solid var(--line);border-radius:10px;background:#020617;overflow:hidden;cursor:zoom-in}
+.shot{display:block;width:auto;max-width:100%;height:min(54vh,560px);object-fit:contain}
+.shot-error{padding:18px;border:1px solid var(--line);border-radius:10px;background:#170f13;color:#fca5a5;font-size:12px}
 .link{color:var(--accent);word-break:break-all}
 pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#d1d5db}
 table{width:100%;border-collapse:collapse}
@@ -79,21 +83,15 @@ th{color:var(--muted);font-weight:600}
 .lightbox img{display:block;max-width:92vw;max-height:82vh;object-fit:contain}
 .lightbox-close{position:absolute;right:12px;top:10px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--text);padding:5px 10px;cursor:pointer}
 .lightbox-caption{margin-top:8px;color:var(--muted);font-size:12px;text-align:center}
-@media(max-width:900px){main{display:block}aside{border-right:0;border-bottom:1px solid var(--line);max-height:40vh}.trace-header,.trace-flow,.evidence,.facts{display:block}.trace-score{margin:12px 0 0;text-align:left}.flow-arrow{display:none}.evidence-col:first-child{border-right:0;border-bottom:1px solid var(--line)}.fact{border-right:0;border-bottom:1px solid var(--line)}}
+@media(max-width:900px){main{padding:16px 12px 36px}.timeline:before{left:24px}.lane-labels{display:none}.node{grid-template-columns:42px 1fr}.event-side{grid-column:2;padding-right:0;align-items:stretch}.network-side{display:none}.time{padding:0 0 4px;text-align:left}.marker{grid-column:1;grid-row:1 / span 2}.card{width:100%}.shot-body,.facts{display:block}.shot-body .media{margin-top:10px}.fact{border-right:0;border-bottom:1px solid var(--line)}.fact:last-child{border-bottom:0}.card-head{display:block}.badge{display:inline-block;margin:10px 0 0}}
 </style>
 </head>
 <body>
 <header>
-<h1>Reticle Read-only Panel</h1>
-<div id="status" class="status">Loading session events...</div>
+<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div></div><label class="session-control">Session<select id="session-picker"></select></label></div>
 </header>
 <main>
-<aside>
 <div id="timeline"></div>
-</aside>
-<section>
-<div id="detail" class="empty">Select an action trace from the timeline.</div>
-</section>
 </main>
 <div id="lightbox" class="lightbox" hidden>
   <div class="lightbox-panel">
@@ -103,66 +101,58 @@ th{color:var(--muted);font-weight:600}
   </div>
 </div>
 <script>
-const state={events:[],selectedId:null,manifests:new Map()};
+const state={events:[],sessions:[],selectedSession:null,currentSession:null,manifests:new Map(),stream:null};
 const timeline=document.getElementById('timeline');
-const detail=document.getElementById('detail');
 const statusEl=document.getElementById('status');
+const sessionPicker=document.getElementById('session-picker');
 const lightbox=document.getElementById('lightbox'),lightboxImage=document.getElementById('lightbox-image'),lightboxCaption=document.getElementById('lightbox-caption');
+function selectedIsCurrent(){return state.selectedSession===state.currentSession;}
+function sessionRoute(){return selectedIsCurrent()?'current':encodeURIComponent(state.selectedSession||'current');}
 function artifactUrl(event,ref){
-  return `/sessions/current/artifacts?event=${encodeURIComponent(event.id)}&ref=${encodeURIComponent(ref)}`;
+  return `/sessions/${sessionRoute()}/artifacts?event=${encodeURIComponent(event.id)}&ref=${encodeURIComponent(ref)}`;
 }
 function escapeHtml(value){
   return String(value===undefined||value===null?'':value)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function pretty(value){
-  return escapeHtml(JSON.stringify(value,null,2));
-}
-function actionEvents(){
-  return state.events.filter((event)=>event.type==='action.trace');
-}
-function labelFor(event){
+function pretty(value){return escapeHtml(JSON.stringify(value,null,2));}
+function actionEvents(){return state.events.filter((event)=>event.type==='action.trace');}
+function isPresent(value){return value!==undefined&&value!==null&&value!==''&&value!=='<null>';}
+function eventMillis(event){
   const payload=event.payload||{};
-  const gesture=payload.gesture||'action';
-  const selector=payload.selector?JSON.stringify(payload.selector):'no selector';
-  return `${gesture} ${selector}`;
+  const value=Number(payload.recordedAtMillis||event.ts||0);
+  return Number.isFinite(value)?value:0;
 }
-function formatTime(ms){
-  const date=new Date(ms);
-  return Number.isNaN(date.getTime())?String(ms):date.toLocaleTimeString();
+function labelFor(event){const payload=event.payload||{};return `${payload.gesture||'action'} ${selectorLabel(payload.selector)}`;}
+function selectorLabel(selector){
+  if(!selector){return 'direct target';}
+  const fields=[['testId','test-id'],['cssSelector','css'],['ref','ref'],['resourceId','res'],['region','region'],['point','point']];
+  for(const [key,label] of fields){
+    const value=selector[key];
+    if(isPresent(value)){return `${label}=${typeof value==='object'?JSON.stringify(value):value}`;}
+  }
+  return 'direct target';
 }
+function formatTime(ms){const date=new Date(ms);return Number.isNaN(date.getTime())?String(ms):date.toLocaleTimeString();}
 function mergeEvent(event){
   const index=state.events.findIndex((item)=>item.id===event.id);
   if(index>=0){state.events[index]=event;}else{state.events.push(event);}
-  state.events.sort((a,b)=>a.id.localeCompare(b.id));
+  state.events.sort((a,b)=>eventMillis(a)-eventMillis(b)||a.id.localeCompare(b.id));
 }
 function renderTimeline(){
   const actions=actionEvents();
-  statusEl.textContent=`${state.events.length} event(s), ${actions.length} action trace(s)`;
+  const live=selectedIsCurrent()?'live':'history';
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${actions.length*4} timeline node(s)`;
   if(actions.length===0){
-    timeline.innerHTML='<div class="empty">No action traces yet. Run reticle act with --trace-output while serve is running.</div>';
-    detail.className='empty';
-    detail.textContent='Waiting for action.trace events...';
+    timeline.className='';
+    timeline.innerHTML='<div class="empty">No action traces yet. Run reticle act while serve is running to build an evidence timeline.</div>';
     return;
   }
-  if(!state.selectedId){state.selectedId=actions[actions.length-1].id;}
-  timeline.innerHTML=actions.map((event)=>{
-    const payload=event.payload||{};
-    const active=event.id===state.selectedId?' active':'';
-    return `<button class="item${active}" data-id="${escapeHtml(event.id)}">
-      <div class="item-title">${escapeHtml(labelFor(event))}</div>
-      <div class="item-meta">${escapeHtml(formatTime(event.ts))} · ${escapeHtml(payload.packageName||event.target||'unknown target')}</div>
-      <div class="item-meta">${escapeHtml(event.id)} · ${escapeHtml(payload.changeCount||0)} change(s)</div>
-    </button>`;
-  }).join('');
-  timeline.querySelectorAll('.item').forEach((button)=>{
-    button.addEventListener('click',()=>{
-      state.selectedId=button.dataset.id;
-      renderTimeline();
-      renderDetail();
-    });
-  });
+  timeline.className='timeline';
+  timeline.innerHTML=`<div class="lane-labels"><div>UI evidence</div><div></div><div>Network requests (planned)</div></div>${actions.map((event,index)=>traceGroup(event,index+1)).join('')}`;
+  attachScreenshotPreviews();
+  hydrateDiffs();
 }
 function refLink(event,ref,label){
   if(!event.refs||!event.refs[ref]){return '<span class="status">missing</span>';}
@@ -171,11 +161,24 @@ function refLink(event,ref,label){
 function screenshot(event,ref){
   if(!event.refs||!event.refs[ref]){return '<div class="status">No screenshot captured.</div>';}
   const url=artifactUrl(event,ref);
-  return `<button class="shot-link" type="button" data-shot-src="${url}" data-shot-label="${escapeHtml(ref)}"><img class="shot" src="${url}" alt="${escapeHtml(ref)}"></button>`;
+  return `<button class="shot-link" type="button" data-shot-src="${url}" data-shot-label="Screenshot"><img class="shot" src="${url}" alt="Screenshot" data-ref="${escapeHtml(ref)}"></button>`;
+}
+function node(event,kind,time,title,phase,badge,body){
+  return `<div class="node ${kind}"><div class="event-side"><div class="time">${escapeHtml(time)}</div><div class="card"><div class="card-head"><div><div class="phase">${escapeHtml(phase)}</div><div class="title">${escapeHtml(title)}</div><div class="meta">${escapeHtml(event.id)} &middot; ${escapeHtml(event.payload&&event.payload.packageName||event.target||'unknown target')}</div></div><div class="badge">${escapeHtml(badge)}</div></div><div class="body">${body}</div></div></div><div class="marker"></div><div class="network-side"></div></div>`;
+}
+function traceGroup(event,index){
+  const payload=event.payload||{}, target=payload.target||{}, result=payload.result||{};
+  const time=formatTime(eventMillis(event)), targetSource=target.source||result.source||'unknown', targetRef=target.ref||result.ref||'none';
+  const targetPoint=target.point?`${target.point.x}, ${target.point.y}`:(result.x&&result.y?`${result.x}, ${result.y}`:'none');
+  const beforeBody=`<div class="shot-body"><div class="shot-copy"><div class="artifact">Snapshot: ${refLink(event,'beforeSnapshot','snapshot.json')}</div><details><summary>Evidence ref</summary><pre>${pretty({snapshot:event.refs&&event.refs.beforeSnapshot,screenshot:event.refs&&event.refs.beforeScreenshot})}</pre></details></div><div class="media">${screenshot(event,'beforeScreenshot')}</div></div>`;
+  const actionBody=`<div class="facts"><div class="fact"><span>Selector</span><b>${escapeHtml(selectorLabel(payload.selector))}</b></div><div class="fact"><span>Target source</span><b>${escapeHtml(targetSource)}</b></div><div class="fact"><span>Point</span><b>${escapeHtml(targetPoint)}</b></div></div><details><summary>Selector JSON</summary><pre>${pretty(payload.selector||{})}</pre></details><details><summary>Target / result JSON</summary><pre>${pretty(payload.target||payload.result||{})}</pre></details>`;
+  const afterBody=`<div class="shot-body"><div class="shot-copy"><div class="artifact">Snapshot: ${refLink(event,'afterSnapshot','snapshot.json')}</div><details><summary>Evidence ref</summary><pre>${pretty({snapshot:event.refs&&event.refs.afterSnapshot,screenshot:event.refs&&event.refs.afterScreenshot})}</pre></details></div><div class="media">${screenshot(event,'afterScreenshot')}</div></div>`;
+  const diffBody=`<div class="artifact">Manifest: ${refLink(event,'manifest','trace.json')} &middot; target ref: ${escapeHtml(targetRef)}</div><div class="diff-target" data-event-id="${escapeHtml(event.id)}">Loading diff...</div><details><summary>Artifact refs</summary><pre>${pretty(event.refs||{})}</pre></details><details><summary>Full payload</summary><pre>${pretty(payload)}</pre></details>`;
+  return `<article class="trace-group">${node(event,'before',time,`Screenshot`,`${index}.1 evidence`,event.refs&&event.refs.beforeScreenshot?'screenshot':'snapshot only',beforeBody)}${node(event,'action',time,labelFor(event),`${index}.2 action`,targetSource,actionBody)}${node(event,'after',time,`Screenshot`,`${index}.3 evidence`,event.refs&&event.refs.afterScreenshot?'screenshot':'snapshot only',afterBody)}${node(event,'diff',time,`Diff`,`${index}.4 changes`,`${payload.changeCount||0} change(s)`,diffBody)}</article>`;
 }
 function openLightbox(src,label){lightboxImage.src=src;lightboxImage.alt=label;lightboxCaption.textContent=label;lightbox.hidden=false;document.body.classList.add('modal-open');}
 function closeLightbox(){lightbox.hidden=true;lightboxImage.removeAttribute('src');document.body.classList.remove('modal-open');}
-function attachScreenshotPreviews(){detail.querySelectorAll('.shot-link').forEach((button)=>{button.addEventListener('click',()=>openLightbox(button.dataset.shotSrc,button.dataset.shotLabel));});}
+function attachScreenshotPreviews(){timeline.querySelectorAll('.shot-link').forEach((button)=>{button.addEventListener('click',()=>openLightbox(button.dataset.shotSrc,button.dataset.shotLabel));button.querySelector('img')?.addEventListener('error',()=>{button.outerHTML=`<div class="shot-error">Screenshot artifact could not be loaded: ${escapeHtml(button.querySelector('img')?.dataset.ref||'unknown')}</div>`;});});}
 async function loadManifest(event){
   if(!event.refs||!event.refs.manifest){return null;}
   if(state.manifests.has(event.id)){return state.manifests.get(event.id);}
@@ -186,48 +189,43 @@ async function loadManifest(event){
 function renderDiff(manifest){
   const diff=manifest&&Array.isArray(manifest.diff)?manifest.diff:[];
   if(diff.length===0){return '<div class="status">No snapshot diff entries.</div>';}
-  return `<table><thead><tr><th>Ref</th><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${diff.map((change)=>`<tr><td>${escapeHtml(change.ref||'snapshot')}</td><td>${escapeHtml(change.field)}</td><td>${escapeHtml(change.before)}</td><td>${escapeHtml(change.after)}</td></tr>`).join('')}</tbody></table>`;
+  const sorted=[...diff].sort((a,b)=>diffRank(a)-diffRank(b));
+  const rows=(items)=>`<table><thead><tr><th>Ref</th><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${items.map((change)=>`<tr><td>${escapeHtml(change.ref||'snapshot')}</td><td>${escapeHtml(change.field)}</td><td>${escapeHtml(change.before)}</td><td>${escapeHtml(change.after)}</td></tr>`).join('')}</tbody></table>`;
+  if(sorted.length<=8){return rows(sorted);}
+  return `<div class="status">${sorted.length} diff entries; showing 8 highest-signal changes first.</div>${rows(sorted.slice(0,8))}<details><summary>Show all diff entries</summary>${rows(sorted)}</details>`;
 }
-async function renderDetail(){
-  const event=state.events.find((item)=>item.id===state.selectedId);
-  if(!event){return;}
-  const payload=event.payload||{};
-  const target=payload.target||{};
-  const result=payload.result||{};
-  const targetSource=target.source||result.source||'unknown';
-  const targetRef=target.ref||result.ref||'none';
-  const targetPoint=target.point?`${target.point.x}, ${target.point.y}`:(result.x&&result.y?`${result.x}, ${result.y}`:'none');
-  detail.className='';
-  detail.innerHTML=`<div class="trace-view"><div class="trace-header"><div><div class="eyebrow">Action trace</div><div class="trace-title">${escapeHtml(labelFor(event))}</div><div class="trace-meta">${escapeHtml(event.id)} · ${escapeHtml(payload.packageName||event.target||'unknown target')}</div></div><div class="trace-score"><b>${escapeHtml(payload.changeCount||0)}</b><span>changed facts</span></div></div>
-  <div class="trace-flow"><div class="flow-step"><span>1</span><b>Gesture</b><em>${escapeHtml(payload.gesture||'action')}</em></div><div class="flow-arrow">→</div><div class="flow-step"><span>2</span><b>Selector</b><em>${escapeHtml(payload.selector?JSON.stringify(payload.selector):'direct target')}</em></div><div class="flow-arrow">→</div><div class="flow-step"><span>3</span><b>Resolved target</b><em>${escapeHtml(targetSource)} · ${escapeHtml(targetRef)}</em></div><div class="flow-arrow">→</div><div class="flow-step"><span>4</span><b>Evidence diff</b><em>${escapeHtml(payload.changeCount||0)} change(s)</em></div></div>
-  <div class="evidence"><div class="evidence-col"><div class="section-title">Before</div><div class="snapshot-line">${refLink(event,'beforeSnapshot')}</div>${screenshot(event,'beforeScreenshot')}</div><div class="evidence-col"><div class="section-title">After</div><div class="snapshot-line">${refLink(event,'afterSnapshot')}</div>${screenshot(event,'afterScreenshot')}</div></div>
-  <div class="facts"><div class="fact"><span>Target source</span><b>${escapeHtml(targetSource)}</b></div><div class="fact"><span>Target ref</span><b>${escapeHtml(targetRef)}</b></div><div class="fact"><span>Point</span><b>${escapeHtml(targetPoint)}</b></div></div>
-  <div class="raw"><details><summary>Selector JSON</summary><pre>${pretty(payload.selector||{})}</pre></details><details><summary>Target / Result JSON</summary><pre>${pretty(payload.target||payload.result||{})}</pre></details><details><summary>Artifact refs</summary><pre>${pretty(event.refs||{})}</pre></details><details><summary>Full payload</summary><pre>${pretty(payload)}</pre></details></div>
-  <div class="diff-section"><div class="section-title">Diff</div><div id="diff">Loading diff...</div></div></div>`;
-  attachScreenshotPreviews();
-  const manifest=await loadManifest(event);
-  const diffEl=document.getElementById('diff');
-  if(!diffEl){return;}
-  diffEl.innerHTML=manifest&&manifest.error?`<div class="status">${escapeHtml(manifest.error)}</div>`:renderDiff(manifest);
+function diffRank(change){const field=String(change.field||'');if(/text|label|contentDescription|testId|resourceId/.test(field)){return 0;}if(/visible|enabled|interactive|role|kind/.test(field)){return 1;}if(/frame|alpha|background|style/.test(field)){return 2;}if(/nodeCount|children|present/.test(field)){return 9;}return 4;}
+function hydrateDiffs(){
+  timeline.querySelectorAll('.diff-target').forEach(async (el)=>{
+    const event=state.events.find((item)=>item.id===el.dataset.eventId);
+    if(!event){return;}
+    const manifest=await loadManifest(event);
+    el.innerHTML=manifest&&manifest.error?`<div class="status">${escapeHtml(manifest.error)}</div>`:renderDiff(manifest);
+  });
 }
+async function loadSessions(){
+  const response=await fetch('/sessions');const data=await response.json();
+  state.sessions=data.sessions||[];state.currentSession=(state.sessions.find((s)=>s.isCurrent)||state.sessions[0]||{}).id||null;
+  if(!state.selectedSession){state.selectedSession=state.currentSession;}
+  sessionPicker.innerHTML=state.sessions.map((s)=>`<option value="${escapeHtml(s.id)}">${escapeHtml(sessionLabel(s))}</option>`).join('');
+  sessionPicker.value=state.selectedSession||'';
+}
+function sessionLabel(session){const stamp=session.updatedAtMillis?formatTime(session.updatedAtMillis):'no events';return `${session.isCurrent?'current · ':''}${session.id} · ${session.actionTraceCount} trace(s) · ${stamp}`;}
 async function loadHistory(){
-  const response=await fetch('/sessions/current/events');
-  const data=await response.json();
+  if(!state.selectedSession){return;}
+  const response=await fetch(`/sessions/${sessionRoute()}/events`),data=await response.json();state.events=[];state.manifests.clear();
   (data.events||[]).forEach(mergeEvent);
   renderTimeline();
-  renderDetail();
 }
 function connectStream(){
+  if(state.stream){state.stream.close();state.stream=null;}
+  if(!selectedIsCurrent()){return;}
   const stream=new EventSource('/events/stream');
+  state.stream=stream;
   const handleMessage=(message)=>{
     try{
       mergeEvent(JSON.parse(message.data));
       renderTimeline();
-      if(state.selectedId===null){
-        const actions=actionEvents();
-        state.selectedId=actions.length>0?actions[actions.length-1].id:null;
-      }
-      renderDetail();
     }catch(error){
       statusEl.textContent=`Could not parse event: ${error}`;
     }
@@ -236,10 +234,11 @@ function connectStream(){
   stream.addEventListener('action.trace',handleMessage);
   stream.onerror=()=>{statusEl.textContent='Live event stream disconnected; retrying...';};
 }
+sessionPicker.addEventListener('change',async()=>{state.selectedSession=sessionPicker.value;if(state.stream){state.stream.close();state.stream=null;}await loadHistory();connectStream();});
 document.getElementById('lightbox-close').addEventListener('click',closeLightbox);
 lightbox.addEventListener('click',(event)=>{if(event.target===lightbox){closeLightbox();}});
 document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&!lightbox.hidden){closeLightbox();}});
-loadHistory().then(connectStream).catch((error)=>{statusEl.textContent=`Load failed: ${error}`;});
+loadSessions().then(loadHistory).then(connectStream).catch((error)=>{statusEl.textContent=`Load failed: ${error}`;});
 </script>
 </body>
 </html>

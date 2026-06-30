@@ -13,12 +13,14 @@ public final class EventStore: @unchecked Sendable {
     private var nextSequence: UInt64 = 1
 
     public let session: String
+    public let rootDirectory: URL
     public let sessionDirectory: URL
     public let eventsFile: URL
 
     /// Creates or opens a session event store.
     public init(session: String, rootDirectory: URL, limit: Int = 500) throws {
         self.session = session
+        self.rootDirectory = rootDirectory
         self.limit = max(1, limit)
         sessionDirectory = rootDirectory.appendingPathComponent(session, isDirectory: true)
         eventsFile = sessionDirectory.appendingPathComponent("events.jsonl")
@@ -66,6 +68,29 @@ public final class EventStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return buffer.count
+    }
+
+    /// Lists all persisted sessions under the same sessions root.
+    public func sessionInfos() throws -> [SessionInfo] {
+        try Self.sessionInfos(rootDirectory: rootDirectory, currentSession: session)
+    }
+
+    /// Loads persisted events for a session id without subscribing to live changes.
+    public func historicalEvents(session id: String, since: String? = nil) throws -> [ReticleEventEnvelope] {
+        if id == session {
+            return events(since: since)
+        }
+        let events = try Self.loadEvents(session: id, rootDirectory: rootDirectory)
+        guard let since else { return events }
+        return events.filter { $0.id > since }
+    }
+
+    /// Finds a persisted event by id in either the current or a historical session.
+    public func historicalEvent(session id: String, eventId: String) throws -> ReticleEventEnvelope? {
+        if id == session {
+            return event(id: eventId)
+        }
+        return try Self.loadEvents(session: id, rootDirectory: rootDirectory).first { $0.id == eventId }
     }
 
     /// Adds a live event subscriber and returns a token for removing it.
@@ -139,5 +164,87 @@ public final class EventStore: @unchecked Sendable {
     private func sequence(from id: String) -> UInt64? {
         guard id.hasPrefix("evt_") else { return nil }
         return UInt64(id.dropFirst(4))
+    }
+
+    private static func sessionInfos(rootDirectory: URL, currentSession: String) throws -> [SessionInfo] {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: rootDirectory.path) else { return [] }
+        let urls = try fileManager.contentsOfDirectory(
+            at: rootDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        let infos = try urls.compactMap { url -> SessionInfo? in
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+            guard values.isDirectory == true else { return nil }
+            let id = url.lastPathComponent
+            guard isSafeSessionID(id) else { return nil }
+            let events = try loadEvents(session: id, rootDirectory: rootDirectory)
+            let eventsFile = eventsFile(session: id, rootDirectory: rootDirectory)
+            let updatedAt = modificationMillis(for: eventsFile) ?? values.contentModificationDate.map(millis)
+            return SessionInfo(
+                id: id,
+                path: url.path,
+                eventCount: events.count,
+                actionTraceCount: events.filter { $0.type == "action.trace" }.count,
+                updatedAtMillis: updatedAt,
+                isCurrent: id == currentSession
+            )
+        }
+        return infos.sorted {
+            if $0.isCurrent != $1.isCurrent { return $0.isCurrent }
+            return ($0.updatedAtMillis ?? 0) > ($1.updatedAtMillis ?? 0)
+        }
+    }
+
+    private static func loadEvents(session id: String, rootDirectory: URL) throws -> [ReticleEventEnvelope] {
+        guard isSafeSessionID(id) else {
+            throw EventStoreError.invalidSession(id)
+        }
+        let file = eventsFile(session: id, rootDirectory: rootDirectory)
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            throw EventStoreError.sessionNotFound(id)
+        }
+        let data = try Data(contentsOf: file)
+        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return [] }
+        let decoder = JSONDecoder()
+        return try text.split(separator: "\n").compactMap { line in
+            guard let data = String(line).data(using: .utf8) else { return nil }
+            return try decoder.decode(ReticleEventEnvelope.self, from: data)
+        }
+    }
+
+    private static func eventsFile(session id: String, rootDirectory: URL) -> URL {
+        rootDirectory
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("events.jsonl")
+    }
+
+    private static func isSafeSessionID(_ id: String) -> Bool {
+        !id.isEmpty && id != "." && id != ".." && !id.contains("/")
+    }
+
+    private static func modificationMillis(for url: URL) -> Int64? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
+            .flatMap(\.contentModificationDate)
+            .map(millis)
+    }
+
+    private static func millis(_ date: Date) -> Int64 {
+        Int64(date.timeIntervalSince1970 * 1000)
+    }
+}
+
+enum EventStoreError: Error, CustomStringConvertible {
+    case invalidSession(String)
+    case sessionNotFound(String)
+
+    var description: String {
+        switch self {
+        case .invalidSession(let id):
+            "invalid session id: \(id)"
+        case .sessionNotFound(let id):
+            "session not found: \(id)"
+        }
     }
 }

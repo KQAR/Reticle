@@ -200,20 +200,25 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 ## 本机 session 事件总线
 
-`reticle serve` 启动第一版 daemon skeleton:一个由 Hummingbird 承载的 localhost REST/SSE 事件总线,
-并把 session 事件追加写入
-`~/.reticle/sessions/<session>/events.jsonl`。它暂时还不包含 Web 面板或网络代理;
-这一层是后续时间线视图和抓包能力的持久化基础。
+`reticle serve` 启动本机 daemon:一个由 Hummingbird 承载的 localhost REST/SSE
+事件总线,并把 session 事件追加写入
+`~/.reticle/sessions/<session>/events.jsonl`。它内置只读 Web 面板,但暂时还
+不包含网络代理。
 
 ```bash
 reticle serve --session demo --port 9876
 curl -s http://127.0.0.1:9876/health
 curl -N http://127.0.0.1:9876/events/stream
+# 浏览器打开 http://127.0.0.1:9876/panel
 ```
 
 现有一次性命令在 daemon 不运行时仍按原样工作。daemon 运行时,
-`reticle act ... --trace-output <dir>` 会在写出 `trace.json` 后 best-effort 发布一条
+`reticle act ...` 会自动把 trace 包写入当前 session,并 best-effort 发布一条
 `action.trace` 事件;snapshot 和 screenshot 通过 `refs` 引用,不会内联进事件。
+面板带 session picker,可以在当前 live session 和
+`~/.reticle/sessions` 下的历史 session 之间切换。单个 action trace 会展开为
+纵向证据时间线:screenshot/snapshot 证据、action 和 diff 会按时间顺序平铺展示。
+需要把 trace 额外复制到 session 之外时,再显式传 `--trace-output <dir>`。
 
 REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。
 
