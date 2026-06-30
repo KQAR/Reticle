@@ -1,7 +1,8 @@
 # Reticle daemon event protocol
 
 `reticle serve` owns the local session timeline. It exposes a lightweight
-localhost REST/SSE surface and persists every accepted event to:
+localhost REST/SSE surface, currently served by the Swift host through
+Hummingbird 2.25.0, and persists every accepted event to:
 
 ```text
 ~/.reticle/sessions/<session>/events.jsonl

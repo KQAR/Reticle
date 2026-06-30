@@ -4,20 +4,27 @@ import PackageDescription
 // reticle-host — the Swift host CLI. It drives Android through the Kotlin
 // `reticle helper` over the JSONL RPC contract (reticle-protocol/helper-rpc.md);
 // it owns no device-specific code itself. This is the first real slice of the
-// "Swift host + per-platform helpers" direction (docs/roadmap.md). The serve
-// event-bus skeleton lives here; the Web panel and proxy remain later phases.
+// "Swift host + per-platform helpers" direction (docs/roadmap.md). The
+// Hummingbird-backed serve event-bus skeleton lives here; the Web panel and
+// proxy remain later phases.
 let package = Package(
     name: "reticle-host",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v14),
     ],
     products: [
         .executable(name: "ReticleHost", targets: ["ReticleHost"]),
         .library(name: "ReticleHostCore", targets: ["ReticleHostCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", exact: "2.25.0"),
+    ],
     targets: [
         .target(
             name: "ReticleHostCore",
+            dependencies: [
+                .product(name: "Hummingbird", package: "hummingbird"),
+            ],
             path: "Sources/ReticleHostCore"
         ),
         .executableTarget(

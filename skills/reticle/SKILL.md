@@ -27,8 +27,8 @@ The CLI is on PATH as `reticle` while this plugin is enabled.
 
 ## Install (how the `reticle` binary is obtained)
 
-`reticle` is the **Swift host** — a no-JDK native macOS arm64 binary that drives
-Android through a sibling native helper (`reticle-helper`). **macOS arm64 only.**
+`reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
+Android through a sibling native helper (`reticle-helper`). **macOS 14+ arm64 only.**
 The launcher (`bin/reticle`) resolves it in this order, first hit wins:
 1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
 2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
@@ -235,7 +235,7 @@ when the inline `--verify` diff is enough.
 
 Use `reticle serve` when you need a durable local timeline across multiple
 commands. It creates `~/.reticle/sessions/<session>/events.jsonl` and exposes
-REST/SSE on localhost:
+REST/SSE on localhost via Hummingbird:
 
 ```bash
 reticle serve --session demo --port 9876
