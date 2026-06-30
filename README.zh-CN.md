@@ -202,15 +202,25 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 
 `reticle serve` 启动本机 daemon:一个由 Hummingbird 承载的 localhost REST/SSE
 事件总线,并把 session 事件追加写入
-`~/.reticle/sessions/<session>/events.jsonl`。它内置只读 Web 面板,但暂时还
-不包含网络代理。
+`~/.reticle/sessions/<session>/events.jsonl`。它内置只读 Web 面板;传入
+`--proxy-port` 时还会启动 SwiftNIO host proxy,把 `network.request`、
+`network.response`、`network.error` 写入同一个 session。
 
 ```bash
-reticle serve --session demo --port 9876
+reticle serve --session demo --port 9876 --proxy-port 9090
 curl -s http://127.0.0.1:9876/health
 curl -N http://127.0.0.1:9876/events/stream
 # 浏览器打开 http://127.0.0.1:9876/panel
 ```
+
+Android 抓包可加 `--proxy-device --serial <id>`:Reticle 会通过 `adb reverse`
+和 `settings put global http_proxy` 配置设备代理,并在 `serve` 退出时尽量恢复原
+代理设置。明文 HTTP 会直接捕获;HTTPS CONNECT tunnel 会记录耗时并展示。若需要解密
+HTTPS,需显式开启 `--proxy-mitm --proxy-ssl-hosts <host[,host]>`。Reticle 默认在
+`~/.reticle/proxy-ca` 生成本机 CA(可用 `--proxy-ca-dir <dir>` 覆盖),并按 host
+动态签发 leaf 证书。加 `--proxy-install-ca` 会把 `reticle-ca.cer` 推到设备并打开
+Android 安全设置;Android 11+ 仍必须由用户在设置中确认 CA 信任。未信任用户 CA、未在
+Network Security Config 中信任用户 CA,或启用证书 pinning 的 app 仍无法解密。
 
 现有一次性命令在 daemon 不运行时仍按原样工作。daemon 运行时,
 `reticle act ...` 会自动把 trace 包写入当前 session,并 best-effort 发布一条
@@ -218,6 +228,9 @@ curl -N http://127.0.0.1:9876/events/stream
 面板带 session picker,可以在当前 live session 和
 `~/.reticle/sessions` 下的历史 session 之间切换。单个 action trace 会展开为
 纵向证据时间线:screenshot/snapshot 证据、action 和 diff 会按时间顺序平铺展示。
+网络请求会显示在时间轴另一侧的 network lane,并按 request id 聚合展示 method、URL、
+status、耗时、请求/响应 headers、body artifact 链接以及文本 body 预览。Cookie、
+Authorization 等敏感 header 值会在进入事件日志前脱敏。
 需要把 trace 额外复制到 session 之外时,再显式传 `--trace-output <dir>`。
 
 REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。

@@ -34,17 +34,27 @@ public final class EventStore: @unchecked Sendable {
     /// Appends and persists an incoming event, assigning daemon-owned id and time.
     @discardableResult
     public func append(_ request: EventPostRequest) throws -> ReticleEventEnvelope {
-        let event = ReticleEventEnvelope(
-            id: allocateId(),
-            ts: currentTimeMillis(),
-            session: session,
-            target: request.target,
-            source: request.source,
-            type: request.type,
-            payload: request.payload,
-            refs: request.refs
-        )
-        try appendStamped(event)
+        lock.lock()
+        let event: ReticleEventEnvelope
+        let callbacks: [Subscriber]
+        do {
+            event = ReticleEventEnvelope(
+                id: allocateIdLocked(),
+                ts: currentTimeMillis(),
+                session: session,
+                target: request.target,
+                source: request.source,
+                type: request.type,
+                payload: request.payload,
+                refs: request.refs
+            )
+            callbacks = try appendStampedLocked(event)
+            lock.unlock()
+        } catch {
+            lock.unlock()
+            throw error
+        }
+        callbacks.forEach { $0(event) }
         return event
     }
 
@@ -110,20 +120,16 @@ public final class EventStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func appendStamped(_ event: ReticleEventEnvelope) throws {
+    private func appendStampedLocked(_ event: ReticleEventEnvelope) throws -> [Subscriber] {
         let line = try encoder.encode(event) + Data("\n".utf8)
         let handle = try FileHandle(forWritingTo: eventsFile)
         try handle.seekToEnd()
         try handle.write(contentsOf: line)
         try handle.close()
 
-        let callbacks: [Subscriber]
-        lock.lock()
         buffer.append(event)
         trimBuffer()
-        callbacks = Array(subscribers.values)
-        lock.unlock()
-        callbacks.forEach { $0(event) }
+        return Array(subscribers.values)
     }
 
     private func loadExistingEvents() throws {
@@ -143,9 +149,7 @@ public final class EventStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func allocateId() -> String {
-        lock.lock()
-        defer { lock.unlock() }
+    private func allocateIdLocked() -> String {
         let id = String(format: "evt_%016llu", nextSequence)
         nextSequence += 1
         return id
@@ -232,19 +236,5 @@ public final class EventStore: @unchecked Sendable {
 
     private static func millis(_ date: Date) -> Int64 {
         Int64(date.timeIntervalSince1970 * 1000)
-    }
-}
-
-enum EventStoreError: Error, CustomStringConvertible {
-    case invalidSession(String)
-    case sessionNotFound(String)
-
-    var description: String {
-        switch self {
-        case .invalidSession(let id):
-            "invalid session id: \(id)"
-        case .sessionNotFound(let id):
-            "session not found: \(id)"
-        }
     }
 }

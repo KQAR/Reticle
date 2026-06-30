@@ -53,7 +53,7 @@ The skeleton serves these endpoints on `127.0.0.1`:
 | `GET` | `/sessions/{id}/events?since=<id>` | Static history for a persisted session id. |
 | `GET` | `/sessions/current/artifacts?event=<id>&ref=<name>` | Reads one local artifact path from that event's `refs`; there is no raw path parameter. |
 | `GET` | `/sessions/{id}/artifacts?event=<id>&ref=<name>` | Reads an artifact through a historical session event ref. |
-| `POST` | `/sessions/current/events` | Append a daemon-stamped event body. |
+| `POST` | `/sessions/current/events` | Append a daemon-stamped event body, including proxy-produced `network.*` events. |
 | `POST` | `/sessions/current/action-traces` | Ingest an existing action `trace.json` or `{ "path": "/.../trace.json" }`. |
 | `GET` | `/events/stream?since=<id>` | Server-Sent Events replay followed by live events. |
 
@@ -84,6 +84,41 @@ automatically writes trace packages under
 events on a best-effort basis. If runtime evidence is unavailable for an
 auto-trace, the action still runs; explicit `--trace-output` remains strict.
 
+## Network proxy events
+
+When `reticle serve --proxy-port <port>` is running, the host proxy emits
+normalized network events into the same event stream:
+
+- `source`: `proxy`
+- `type`: `network.request`, `network.response`, or `network.error`
+- `payload.requestId`: stable id shared by the request/response/error events.
+- `payload.method`, `url`, `scheme`, `host`, `port`, `path`: request target.
+- `payload.startMillis`, `endMillis`, `durationMs`: request interval timing.
+- `payload.status`: HTTP status when a response is available.
+- `payload.tunnel`: true for HTTPS CONNECT tunnel observations.
+- `payload.mitm`: true only for decrypted HTTPS requests admitted by the MITM
+  allowlist.
+- `payload.requestHeaders`, `payload.responseHeaders`: display-safe HTTP
+  headers. Sensitive values such as `Authorization`, `Cookie`, `Set-Cookie`, and
+  proxy credentials are redacted before they enter the event log.
+- `payload.error`: proxy or upstream failure text for `network.error`.
+
+Request and response bodies are never inlined. If captured, they are written
+under the session directory and referenced through `refs`, for example
+`requestBody.<requestId>` or `responseBody.<requestId>`. Body refs are subject to
+the same artifact endpoint restrictions as screenshots and trace manifests.
+
+Android device capture uses host-controlled proxy settings (`adb reverse` plus
+global `http_proxy`) and restores the previous proxy value when the daemon exits.
+Plain HTTP is captured directly. HTTPS CONNECT is timed as a tunnel unless
+`--proxy-mitm` and `--proxy-ssl-hosts` admit the host. In MITM mode Reticle
+generates a local CA (default `~/.reticle/proxy-ca`, override with
+`--proxy-ca-dir`) and signs per-host leaf certificates on demand. `--proxy-install-ca`
+pushes the DER CA file to Android and opens Security settings, but Android 11+
+still requires user confirmation in Settings before apps can trust that CA.
+Certificate pinning, apps that ignore user CAs, and untrusted CAs remain opaque
+by design.
+
 ## Read-only web panel
 
 `GET /panel` serves a zero-build HTML/CSS/JS panel from the daemon itself. It
@@ -92,9 +127,12 @@ live `action.trace` events over SSE when the current session is selected, and
 uses the artifact endpoint above to render a vertical evidence timeline. One
 `action.trace` event is flattened in the UI into screenshot/snapshot evidence
 cards around the action plus a compact diff card; the persisted event log
-remains unchanged. The panel uses a centered axis with a reserved lane for future
-interval-style network request events. Diff previews rank user-visible changes
-ahead of structural churn, and missing screenshot artifacts render inline errors.
+remains unchanged. The panel uses a centered axis with a network request lane.
+`network.*` events are grouped by `requestId` into request cards with method,
+URL, status, duration, MITM/tunnel mode, request/response headers, body artifact
+links, and small text previews for captured bodies. Diff previews rank
+user-visible changes ahead of structural churn, and missing screenshot artifacts
+render inline errors.
 
 The session picker loads `GET /sessions` and can switch from the live current
 session to a persisted historical session. Current keeps the SSE stream open;
@@ -105,5 +143,4 @@ event's `refs`. The endpoint does not accept arbitrary filesystem paths, returns
 only regular files, and is intended for local evidence such as `trace.json`,
 snapshots, and screenshots.
 
-The panel is display-only. It does not drive input, mutate runtime state, or show
-network proxy traffic; future proxy events can reuse the same event stream.
+The panel is display-only. It does not drive input or mutate runtime state.

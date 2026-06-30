@@ -18,12 +18,24 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", exact: "2.25.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.101.2"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.1"),
+        .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.19.2"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.0"),
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.1"),
     ],
     targets: [
         .target(
             name: "ReticleHostCore",
             dependencies: [
                 .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+                .product(name: "X509", package: "swift-certificates"),
             ],
             path: "Sources/ReticleHostCore"
         ),
