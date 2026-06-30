@@ -102,7 +102,7 @@ class ReticleRuntime private constructor() {
     companion object {
         /** Historical fixed default; real port is derived per-app via [PortMap]. */
         const val DEFAULT_PORT = PortMap.BASE_PORT
-        const val VERSION = "0.6.2"
+        const val VERSION = "0.6.3"
         private const val TAG = "Reticle"
 
         @JvmStatic
