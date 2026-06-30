@@ -138,7 +138,8 @@ host 侧要求:Apple Silicon macOS、一台通过 `adb` 连接的 Android 设备
   `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host
   驱动的 RPC server。
 - `reticle-host`——**Swift host CLI**(SwiftPM,macOS arm64)。面向用户的 `reticle`;
-  不持有任何设备代码——每条命令都是一次到 helper 的 RPC 调用。
+  不持有任何设备代码——设备命令通过 helper RPC 执行,而 `reticle serve` 持有本机
+  daemon 的 session / event surface。
 - `sample-app`——端到端链接 agent 的演示应用。
 
 ## 快速开始
@@ -196,6 +197,25 @@ $CLI debug logs --package dev.reticle.sample
 $CLI mutate --package dev.reticle.sample --test-id checkout.status \
     --property text --value "Paid!"
 ```
+
+## 本机 session 事件总线
+
+`reticle serve` 启动第一版 daemon skeleton:一个 localhost REST/SSE 事件总线,
+并把 session 事件追加写入
+`~/.reticle/sessions/<session>/events.jsonl`。它暂时还不包含 Web 面板或网络代理;
+这一层是后续时间线视图和抓包能力的持久化基础。
+
+```bash
+reticle serve --session demo --port 9876
+curl -s http://127.0.0.1:9876/health
+curl -N http://127.0.0.1:9876/events/stream
+```
+
+现有一次性命令在 daemon 不运行时仍按原样工作。daemon 运行时,
+`reticle act ... --trace-output <dir>` 会在写出 `trace.json` 后 best-effort 发布一条
+`action.trace` 事件;snapshot 和 screenshot 通过 `refs` 引用,不会内联进事件。
+
+REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。
 
 ## 工具链
 

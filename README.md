@@ -155,7 +155,8 @@ runner), which builds and attaches to a GitHub Release:
   CLI** — it ships as the no-JDK native `reticle-helper` (GraalVM native-image)
   whose `helper` subcommand is the RPC server the Swift host drives.
 - `reticle-host` — the **Swift host CLI** (SwiftPM, macOS arm64). The user-facing
-  `reticle`; owns no device code — every command is an RPC call to the helper.
+  `reticle`; owns no device code — device commands are RPC calls to the helper,
+  while `reticle serve` owns the local daemon session/event surface.
 - `sample-app` — demo app that links the agent end to end.
 
 ## Quick Start
@@ -214,6 +215,26 @@ $CLI debug logs --package dev.reticle.sample
 $CLI mutate --package dev.reticle.sample --test-id checkout.status \
     --property text --value "Paid!"
 ```
+
+## Local session event bus
+
+`reticle serve` starts the first daemon skeleton: a localhost REST/SSE event bus
+with an append-only session log at `~/.reticle/sessions/<session>/events.jsonl`.
+It does not yet include the Web panel or network proxy; it is the durable
+timeline foundation for those later pieces.
+
+```bash
+reticle serve --session demo --port 9876
+curl -s http://127.0.0.1:9876/health
+curl -N http://127.0.0.1:9876/events/stream
+```
+
+Existing one-shot commands still work without the daemon. When `serve` is
+running, `reticle act ... --trace-output <dir>` also publishes the written
+`trace.json` as an `action.trace` event on a best-effort basis, with snapshots
+and screenshots referenced from `refs` instead of inlined.
+
+See `reticle-protocol/events.md` for the REST/SSE surface and event envelope.
 
 ## Toolchain
 

@@ -191,10 +191,11 @@ JDWP/breakpoint 怪癖,不是 host 或边界问题。因此 `ui report` 是用**
 链接版示例 app 在真机上验证(选择器 tap 解析成坐标、mutate 生效、读到日志、写出
 1080×2412 PNG、`--region "《隐私政策》"` 解析到精确坐标)。
 
-daemon、Web 面板、代理仍属 **Phase 2/3**,明确不在本次范围——它们需要先有事件总线
-和选定的代理引擎。**完整 Swift host 仍待办的:** daemon 出现后监管两个常驻进程;
-决定 helper 分发(JVM jar vs 它自己的 native-image);以及一个流式 `logs --follow`。
-JDWP 永不重写。
+`reticle serve` 的第一版 daemon / 事件总线 skeleton 已落在 Swift host:本机
+REST/SSE、`~/.reticle/sessions/<session>/events.jsonl`、以及 action trace ingestion。
+Web 面板与代理仍属 **Phase 2/3**。**完整 Swift host 仍待办的:** daemon 监管两个
+常驻进程;决定 helper 分发(JVM jar vs 它自己的 native-image);以及一个流式
+`logs --follow`。JDWP 永不重写。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 
@@ -225,10 +226,9 @@ reticle/  (polyglot monorepo — 一个 host 二进制 + 一份协议 spec)
 │   └─ (future) harmony/  # hvigor 模块 —— 对 Gradle 不可见
 ├─ reticle-helper/        # Kotlin Android host 层 → 无 JDK 原生 reticle-helper(RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-host/          # Swift host CLI(SwiftPM)—— 面向用户的 `reticle`,经 RPC 驱动 helper
-├─ reticle-daemon/        # 未来:`reticle serve` —— 持有代理、聚合 trace、推送事件
-│   ├─ proxy/             #   纯 host MITM 引擎 + CA 签发 + 设备自动配代理
-│   └─ web/               #   前端面板:流量视图 + 操作路径/截图时间线
+├─ reticle-host/          # Swift host CLI + `reticle serve` 事件总线 skeleton
+│   ├─ (future) proxy/    #   纯 host MITM 引擎 + CA 签发 + 设备自动配代理
+│   └─ (future) web/      #   前端面板:流量视图 + 操作路径/截图时间线
 └─ sample-app/            # 链接 :reticle-agent:android 的演示应用
 ```
 
