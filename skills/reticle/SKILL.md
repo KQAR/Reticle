@@ -255,7 +255,8 @@ live current session to static historical sessions under `~/.reticle/sessions`.
 When `--proxy-port` is supplied, the daemon also records `network.*` events and
 renders them in the panel's network lane. Network cards are grouped by request id
 and show method, URL, status, duration, headers, body refs, and text previews for
-captured bodies; sensitive header values are redacted. Add
+captured bodies; sensitive header values are redacted. Mocked responses are
+marked with a `MOCK` badge and show the mock rule/value ids. Add
 `--proxy-device --serial <id>` to configure Android global proxy through
 `adb reverse`; the daemon restores the previous proxy setting on exit. HTTPS
 decryption is opt-in via `--proxy-mitm`
@@ -264,6 +265,59 @@ and `--proxy-ssl-hosts`; Reticle generates a local CA under
 `--proxy-install-ca` to push the CA file and open Android Security settings.
 Android 11+ still requires the user to confirm CA trust in Settings, and apps
 that ignore user CAs or pin certificates remain opaque.
+
+For Android HTTPS debugging, prefer the debug-flavor trust path. Tell the user
+explicitly that this requires an app source change and a rebuild/reinstall, but
+only affects the debug variant when placed under the debug source set. Add a
+debug-only `network_security_config` that trusts user CAs, then reference it
+from the debug manifest/application merge:
+
+```xml
+<!-- app/src/debug/res/xml/network_security_config.xml -->
+<network-security-config>
+  <debug-overrides>
+    <trust-anchors>
+      <certificates src="user" />
+      <certificates src="system" />
+    </trust-anchors>
+  </debug-overrides>
+</network-security-config>
+```
+
+```xml
+<!-- app/src/debug/AndroidManifest.xml, or an equivalent debug-only manifest merge -->
+<application android:networkSecurityConfig="@xml/network_security_config" />
+```
+
+Do not present root/system CA installation or runtime trust-manager patching as
+the default Reticle workflow. Those are environment-specific escape hatches.
+The normal path is: debug build trusts user CA, user installs/confirms the
+Reticle CA, then Reticle runs `--proxy-mitm --proxy-ssl-hosts <host>`.
+
+Use `reticle mock` only while `reticle serve` is running. Mock configuration is
+stored under the current session as separate rule/value files:
+`mock-rules.json`, `mock-values.json`, and `mock-values/<valueId>.body`. A rule
+chooses traffic (`method`, `url`, `match`, `priority`) and points at a value; a
+value owns the fixed UTF-8 response (`status`, `headers`, body file). The
+convenience command creates or updates both:
+
+```bash
+reticle mock set --id users --value-id users-ok \
+  --method GET --url /api/users --match prefix --priority 100 \
+  --status 200 --headers '{"Content-Type":"application/json"}' \
+  --body '{"users":[]}'
+reticle mock rule disable --id users
+reticle mock value set --id users-ok --status 500 --body '{"error":"down"}'
+reticle mock list
+```
+
+For HTTP traffic, mocks apply directly in the host proxy. For HTTPS, mocks only
+apply after MITM decryption (`--proxy-mitm --proxy-ssl-hosts <host>` plus app CA
+trust, normally via the debug-only `network_security_config` above); opaque
+CONNECT tunnels cannot be path/body-mocked. If a rule matches but
+its value is missing, Reticle records `network.error` and returns 502 rather
+than silently contacting upstream. `prefix` is a raw string prefix; use `exact`
+for short paths when a broader prefix could match unrelated endpoints.
 Use `--trace-output <dir>` only when you also want a copy outside the session.
 This is useful for longer demos, replayable validation, or tools that want to
 consume trace events. Do not start `serve` for a simple one-off screen read;

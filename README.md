@@ -258,11 +258,30 @@ artifacts render an inline failure state. The axis is centered so UI evidence ca
 sit on one side while network request spans occupy the other. Network requests
 are grouped by request id with method, URL, status, timing, request/response
 headers, body artifact links, and small text previews for captured bodies.
-Sensitive header values such as cookies and authorization are redacted. The
-session picker can switch between the live current session and static historical
-sessions under `~/.reticle/sessions`. It is display-only: it does not drive
-input or mutate app state. Pass `--trace-output <dir>`
-when you want to copy trace artifacts somewhere outside the session.
+Sensitive header values such as cookies and authorization are redacted. Mocked
+responses are labeled with the rule/value ids that produced them. The session
+picker can switch between the live current session and static historical sessions
+under `~/.reticle/sessions`. It is display-only: it does not drive input or
+mutate app state. Pass `--trace-output <dir>` when you want to copy trace
+artifacts somewhere outside the session.
+
+While `serve` is running, `reticle mock` can return fixed responses from the
+host proxy without touching the app. Rules and response values are stored
+separately in the current session:
+
+```bash
+reticle mock set --id users --value-id users-ok \
+  --method GET --url /api/users --match prefix --priority 100 \
+  --status 200 --headers '{"Content-Type":"application/json"}' \
+  --body '{"users":[]}'
+reticle mock rule disable --id users
+reticle mock list
+```
+
+HTTP mocks apply directly. HTTPS mocks require MITM decryption and app trust in
+the Reticle CA; opaque CONNECT tunnels and pinned/untrusted HTTPS traffic remain
+unmockable by design. `prefix` is a raw string prefix, so prefer `exact` for
+short paths such as `/sa` that could also match unrelated paths like `/sample`.
 
 Quick smoke with the linked sample app:
 

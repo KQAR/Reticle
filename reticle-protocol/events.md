@@ -55,6 +55,14 @@ The skeleton serves these endpoints on `127.0.0.1`:
 | `GET` | `/sessions/{id}/artifacts?event=<id>&ref=<name>` | Reads an artifact through a historical session event ref. |
 | `POST` | `/sessions/current/events` | Append a daemon-stamped event body, including proxy-produced `network.*` events. |
 | `POST` | `/sessions/current/action-traces` | Ingest an existing action `trace.json` or `{ "path": "/.../trace.json" }`. |
+| `GET` | `/sessions/current/mocks/rules` | List current-session network mock rules. |
+| `POST` | `/sessions/current/mocks/rules` | Create or update a mock rule. |
+| `POST` | `/sessions/current/mocks/rules/{id}/enable` | Enable a mock rule. |
+| `POST` | `/sessions/current/mocks/rules/{id}/disable` | Disable a mock rule. |
+| `DELETE` | `/sessions/current/mocks/rules/{id}` | Remove a mock rule. |
+| `GET` | `/sessions/current/mocks/values` | List current-session mock response values. |
+| `POST` | `/sessions/current/mocks/values` | Create or update a mock response value. |
+| `DELETE` | `/sessions/current/mocks/values/{id}` | Remove an unreferenced mock value. |
 | `GET` | `/events/stream?since=<id>` | Server-Sent Events replay followed by live events. |
 
 SSE responses use `text/event-stream; charset=utf-8`, one event per frame:
@@ -98,6 +106,10 @@ normalized network events into the same event stream:
 - `payload.tunnel`: true for HTTPS CONNECT tunnel observations.
 - `payload.mitm`: true only for decrypted HTTPS requests admitted by the MITM
   allowlist.
+- `payload.mocked`: true when the proxy returned a configured mock response
+  instead of contacting upstream.
+- `payload.mockRuleId`, `payload.mockValueId`: the rule/value pair that
+  produced a mock response.
 - `payload.requestHeaders`, `payload.responseHeaders`: display-safe HTTP
   headers. Sensitive values such as `Authorization`, `Cookie`, `Set-Cookie`, and
   proxy credentials are redacted before they enter the event log.
@@ -119,6 +131,38 @@ still requires user confirmation in Settings before apps can trust that CA.
 Certificate pinning, apps that ignore user CAs, and untrusted CAs remain opaque
 by design.
 
+## Network mocks
+
+Mocking is owned by `reticle serve`; the Android agent and helper do not rewrite
+app behavior. The daemon persists mock configuration next to the session:
+
+- `mock-rules.json`: rule metadata (`id`, `enabled`, `priority`, `method`,
+  `url`, `match`, `valueId`).
+- `mock-values.json`: response metadata (`id`, `status`, `headers`, `bodyRef`,
+  `contentType`).
+- `mock-values/<valueId>.body`: UTF-8 response bodies.
+
+Rules match only traffic visible to the host proxy. Plain HTTP can be mocked
+directly. HTTPS requests can be mocked only after MITM decryption; opaque CONNECT
+tunnels expose only the target host/port and are not mockable in v1. Matching is
+method-scoped. A rule `url` that starts with `/` matches the request path;
+otherwise it matches the full URL. `match` is `exact` or `prefix`. Enabled rules
+are evaluated by descending `priority`, then stable rule order. `prefix` is a
+raw string prefix; use `exact` for short paths when a broader prefix would
+accidentally cover unrelated endpoints.
+
+The CLI manages the same REST API:
+
+```bash
+reticle mock set --id users --value-id users-ok \
+  --method GET --url /api/users --match prefix --priority 100 \
+  --status 200 --headers '{"Content-Type":"application/json"}' \
+  --body '{"users":[]}'
+
+reticle mock rule disable --id users
+reticle mock value set --id users-ok --status 500 --body '{"error":"down"}'
+```
+
 ## Read-only web panel
 
 `GET /panel` serves a zero-build HTML/CSS/JS panel from the daemon itself. It
@@ -129,8 +173,9 @@ uses the artifact endpoint above to render a vertical evidence timeline. One
 cards around the action plus a compact diff card; the persisted event log
 remains unchanged. The panel uses a centered axis with a network request lane.
 `network.*` events are grouped by `requestId` into request cards with method,
-URL, status, duration, MITM/tunnel mode, request/response headers, body artifact
-links, and small text previews for captured bodies. Diff previews rank
+URL, status, duration, MITM/tunnel/mock mode, request/response headers, body
+artifact links, small text previews for captured bodies, and mock rule/value ids
+when present. Diff previews rank
 user-visible changes ahead of structural churn, and missing screenshot artifacts
 render inline errors.
 
