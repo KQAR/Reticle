@@ -8,6 +8,7 @@ import NIOPosix
 final class NetworkProxyServer: @unchecked Sendable {
     private let store: EventStore
     private let configuration: NetworkProxyConfiguration
+    private let mockStore: NetworkMockStore?
     private let ready = DispatchSemaphore(value: 0)
     private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     private let lock = NSLock()
@@ -17,12 +18,13 @@ final class NetworkProxyServer: @unchecked Sendable {
     private(set) var port: Int
 
     /// Creates a proxy server owned by the supplied session event store.
-    init(store: EventStore, configuration: NetworkProxyConfiguration) throws {
+    init(store: EventStore, configuration: NetworkProxyConfiguration, mockStore: NetworkMockStore? = nil) throws {
         if configuration.mitmEnabled, let caDirectory = configuration.caDirectory {
             try ProxyCertificateStore(directory: caDirectory).validate()
         }
         self.store = store
         self.configuration = configuration
+        self.mockStore = mockStore
         port = configuration.port
     }
 
@@ -49,7 +51,8 @@ final class NetworkProxyServer: @unchecked Sendable {
                         bodyStore: bodyStore,
                         factory: factory,
                         tlsPolicy: policy,
-                        certificates: certificates
+                        certificates: certificates,
+                        mockStore: self.mockStore
                     ))
                 }
             }
