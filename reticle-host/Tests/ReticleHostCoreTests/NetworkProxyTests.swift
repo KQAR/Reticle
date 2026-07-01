@@ -40,6 +40,148 @@ struct NetworkProxyTests {
         }
     }
 
+    @Test func httpProxyReturnsMockResponseAndPublishesMockMetadata() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        _ = try mockStore.upsertValue(NetworkMockValueRequest(
+            id: "ok",
+            status: 201,
+            headers: ["X-Mock": "yes"],
+            body: #"{"mocked":true}"#,
+            contentType: "application/json"
+        ))
+        _ = try mockStore.upsertRule(NetworkMockRuleRequest(
+            id: "users",
+            enabled: true,
+            priority: 10,
+            method: "GET",
+            url: "/api/users",
+            match: .exact,
+            valueId: "ok"
+        ))
+
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test"),
+            mockStore: mockStore
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let response = try readSocket(
+            port: proxy.port,
+            request: "GET http://mock.test/api/users HTTP/1.1\r\nHost: mock.test\r\n\r\n"
+        )
+
+        #expect(response.contains("201 Created"))
+        #expect(response.contains("X-Mock: yes"))
+        #expect(response.contains(#"{"mocked":true}"#))
+        let networkEvents = store.events().filter { $0.source == "proxy" }
+        #expect(networkEvents.map(\.type) == ["network.request", "network.response"])
+        #expect(networkEvents.last?.payload["mocked"] == .bool(true))
+        #expect(networkEvents.last?.payload["mockRuleId"] == .string("users"))
+        #expect(networkEvents.last?.payload["mockValueId"] == .string("ok"))
+        #expect(networkEvents.last?.refs.keys.contains { $0.hasPrefix("responseBody.") } == true)
+    }
+
+    @Test func disabledMockFallsBackToUpstream() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let upstream = try ReticleHttpServer(store: store, port: 0)
+        try upstream.start()
+        defer { upstream.stop() }
+
+        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        _ = try mockStore.upsertValue(NetworkMockValueRequest(id: "off", status: 418, headers: [:], body: "mock", contentType: nil))
+        _ = try mockStore.upsertRule(NetworkMockRuleRequest(
+            id: "disabled",
+            enabled: false,
+            priority: 100,
+            method: "GET",
+            url: "/health",
+            match: .exact,
+            valueId: "off"
+        ))
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test"),
+            mockStore: mockStore
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let response = try readSocket(
+            port: proxy.port,
+            request: "GET http://127.0.0.1:\(upstream.port)/health HTTP/1.1\r\nHost: 127.0.0.1:\(upstream.port)\r\n\r\n"
+        )
+
+        #expect(response.contains("200 OK"))
+        #expect(!response.contains("mock"))
+        #expect(store.events().filter { $0.type == "network.response" }.last?.payload["mocked"] == nil)
+    }
+
+    @Test func mockStorePersistsRulesValuesAndUsesPriority() throws {
+        let root = try temporaryDirectory()
+        let session = root.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let store = try NetworkMockStore(sessionDirectory: session)
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "low", status: 200, headers: [:], body: "low", contentType: nil))
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "high", status: 202, headers: [:], body: "high", contentType: nil))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "low", enabled: true, priority: 1, method: "GET", url: "/api", match: .prefix, valueId: "low"))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "high", enabled: true, priority: 50, method: "GET", url: "/api/users", match: .prefix, valueId: "high"))
+
+        let reloaded = try NetworkMockStore(sessionDirectory: session)
+        let result = try reloaded.resolve(NetworkMockRequest(method: "GET", url: "http://example.test/api/users/1", path: "/api/users/1"))
+
+        #expect(result?.rule.id == "high")
+        #expect(result?.value.id == "high")
+        #expect(String(data: result?.body ?? Data(), encoding: .utf8) == "high")
+        #expect(throws: NetworkMockError.self) {
+            try reloaded.removeValue(id: "high")
+        }
+    }
+
+    @Test func mockValueUpdatePreservesBodyAndAffectsFutureMatches() throws {
+        let root = try temporaryDirectory()
+        let session = root.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let store = try NetworkMockStore(sessionDirectory: session)
+        _ = try store.upsertValue(NetworkMockValueRequest(
+            id: "shared",
+            status: 200,
+            headers: ["Content-Type": "application/json"],
+            body: #"{"ok":true}"#,
+            contentType: nil
+        ))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "first", enabled: true, priority: 10, method: "GET", url: "/api/first", match: .exact, valueId: "shared"))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "second", enabled: true, priority: 10, method: "GET", url: "/api/second", match: .exact, valueId: "shared"))
+
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "shared", status: 503, headers: nil, body: nil, contentType: nil))
+        let first = try store.resolve(NetworkMockRequest(method: "GET", url: "http://example.test/api/first", path: "/api/first"))
+        let second = try store.resolve(NetworkMockRequest(method: "GET", url: "http://example.test/api/second", path: "/api/second"))
+
+        #expect(first?.value.status == 503)
+        #expect(second?.value.status == 503)
+        #expect(String(data: first?.body ?? Data(), encoding: .utf8) == #"{"ok":true}"#)
+        #expect(first?.value.headers["Content-Type"] == "application/json")
+    }
+
+    @Test func mockStoreMatchesFullUrlAndPathExact() throws {
+        let root = try temporaryDirectory()
+        let session = root.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let store = try NetworkMockStore(sessionDirectory: session)
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "full", status: 200, headers: [:], body: "full", contentType: nil))
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "path", status: 200, headers: [:], body: "path", contentType: nil))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "full", enabled: true, priority: 10, method: "POST", url: "http://example.test/api/full", match: .exact, valueId: "full"))
+        _ = try store.upsertRule(NetworkMockRuleRequest(id: "path", enabled: true, priority: 10, method: "GET", url: "/api/path", match: .exact, valueId: "path"))
+
+        #expect(try store.resolve(NetworkMockRequest(method: "POST", url: "http://example.test/api/full", path: "/api/full"))?.value.id == "full")
+        #expect(try store.resolve(NetworkMockRequest(method: "GET", url: "http://other.test/api/path", path: "/api/path"))?.value.id == "path")
+        #expect(try store.resolve(NetworkMockRequest(method: "DELETE", url: "http://example.test/api/full", path: "/api/full")) == nil)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -126,6 +126,8 @@ struct EventBusTests {
         #expect(text?.contains("Network requests") == true)
         #expect(text?.contains("networkNode") == true)
         #expect(text?.contains("networkTransactions") == true)
+        #expect(text?.contains("MOCK HTTP") == true)
+        #expect(text?.contains("mockRuleId") == true)
         #expect(text?.contains("body-preview") == true)
         #expect(text?.contains("Screenshot") == true)
         #expect(text?.contains("shot-body") == true)
@@ -133,6 +135,68 @@ struct EventBusTests {
         #expect(text?.contains("selectorLabel") == true)
         #expect(text?.contains("highest-signal changes") == true)
         #expect(text?.contains("diff-target") == true)
+    }
+
+    @Test func httpServerManagesMockRulesAndValues() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        let server = try ReticleHttpServer(store: store, port: 0, mockStore: mockStore)
+        try server.start()
+        defer { server.stop() }
+
+        let value = NetworkMockValueRequest(
+            id: "ok",
+            status: 203,
+            headers: ["Content-Type": "application/json"],
+            body: #"{"ok":true}"#,
+            contentType: nil
+        )
+        let valueResponse = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/values")!,
+            body: value
+        )
+        #expect(valueResponse.status == 201)
+
+        let rule = NetworkMockRuleRequest(
+            id: "rule",
+            enabled: true,
+            priority: 5,
+            method: "GET",
+            url: "/api",
+            match: .prefix,
+            valueId: "ok"
+        )
+        let ruleResponse = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules")!,
+            body: rule
+        )
+        #expect(ruleResponse.status == 201)
+
+        let listURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules")!
+        let (rulesData, rulesResponse) = try await URLSession.shared.data(from: listURL)
+        #expect((rulesResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(try JSONDecoder().decode(NetworkMockRulesResponse.self, from: rulesData).rules.map(\.id) == ["rule"])
+
+        let disableURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules/rule/disable")!
+        var disableRequest = URLRequest(url: disableURL)
+        disableRequest.httpMethod = "POST"
+        let (disabledData, disabledResponse) = try await URLSession.shared.data(for: disableRequest)
+        #expect((disabledResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(try JSONDecoder().decode(NetworkMockRule.self, from: disabledData).enabled == false)
+
+        var deleteValue = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/values/ok")!)
+        deleteValue.httpMethod = "DELETE"
+        let (_, rejectedDelete) = try await URLSession.shared.data(for: deleteValue)
+        #expect((rejectedDelete as? HTTPURLResponse)?.statusCode == 400)
+
+        var deleteRule = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules/rule")!)
+        deleteRule.httpMethod = "DELETE"
+        let (_, removedRule) = try await URLSession.shared.data(for: deleteRule)
+        #expect((removedRule as? HTTPURLResponse)?.statusCode == 200)
+
+        let (_, removedValue) = try await URLSession.shared.data(for: deleteValue)
+        #expect((removedValue as? HTTPURLResponse)?.statusCode == 200)
     }
 
     @Test func httpServerServesArtifactsOnlyThroughEventRefs() async throws {
@@ -250,6 +314,15 @@ struct EventBusTests {
         {"actionId":"1-tap","packageName":"pkg","recordedAtMillis":1,"gesture":"tap","artifacts":{"beforeSnapshot":"before.json","afterSnapshot":"after.json"},"diff":[]}
         """.write(to: traceURL, atomically: true, encoding: .utf8)
         return traceURL
+    }
+
+    private func post<T: Encodable>(_ url: URL, body: T) async throws -> (data: Data, status: Int) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 
     private func readSocket(port: Int, request: String) throws -> String {

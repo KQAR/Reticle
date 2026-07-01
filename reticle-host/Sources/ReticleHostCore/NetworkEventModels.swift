@@ -28,6 +28,9 @@ struct NetworkEventPayload {
     var responseBodyBytes: Int?
     var requestBodyTruncated: Bool?
     var responseBodyTruncated: Bool?
+    var mocked: Bool?
+    var mockRuleId: String?
+    var mockValueId: String?
 
     /// Converts the payload into daemon JSON fields.
     var json: [String: JSONValue] {
@@ -55,6 +58,9 @@ struct NetworkEventPayload {
         if let responseBodyBytes { values["responseBodyBytes"] = .number(Double(responseBodyBytes)) }
         if let requestBodyTruncated { values["requestBodyTruncated"] = .bool(requestBodyTruncated) }
         if let responseBodyTruncated { values["responseBodyTruncated"] = .bool(responseBodyTruncated) }
+        if let mocked { values["mocked"] = .bool(mocked) }
+        if let mockRuleId { values["mockRuleId"] = .string(mockRuleId) }
+        if let mockValueId { values["mockValueId"] = .string(mockValueId) }
         return values
     }
 }

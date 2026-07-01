@@ -5,6 +5,7 @@ import NIOCore
 /// Localhost REST/SSE server backing `reticle serve`.
 public final class ReticleHttpServer: @unchecked Sendable {
     private let store: EventStore
+    private let mockStore: NetworkMockStore?
     private let ready = DispatchSemaphore(value: 0)
     private let traceIngest = ActionTraceIngest()
     private let lock = NSLock()
@@ -15,8 +16,9 @@ public final class ReticleHttpServer: @unchecked Sendable {
     public private(set) var port: Int
 
     /// Creates a daemon HTTP server on `port`; pass 0 for an ephemeral port.
-    public init(store: EventStore, port: Int) throws {
+    public init(store: EventStore, port: Int, mockStore: NetworkMockStore? = nil) throws {
         self.store = store
+        self.mockStore = mockStore
         self.port = port
     }
 
@@ -115,10 +117,61 @@ public final class ReticleHttpServer: @unchecked Sendable {
             }
             return try jsonResponse(store.append(body), status: .created)
         }
+        router.get("sessions/current/mocks/rules") { [self] _, _ -> Response in
+            try jsonResponse(NetworkMockRulesResponse(rules: try requireMockStore().listRules()))
+        }
+        router.post("sessions/current/mocks/rules") { [self] request, _ -> Response in
+            let body = try await badRequestOnDecode {
+                try await decode(NetworkMockRuleRequest.self, from: request)
+            }
+            return try mockResponse {
+                try jsonResponse(try requireMockStore().upsertRule(body), status: .created)
+            }
+        }
+        router.post("sessions/current/mocks/rules/:id/enable") { [self] _, context -> Response in
+            try mockResponse {
+                try jsonResponse(try requireMockStore().setRuleEnabled(id: try idParameter(context), enabled: true))
+            }
+        }
+        router.post("sessions/current/mocks/rules/:id/disable") { [self] _, context -> Response in
+            try mockResponse {
+                try jsonResponse(try requireMockStore().setRuleEnabled(id: try idParameter(context), enabled: false))
+            }
+        }
+        router.delete("sessions/current/mocks/rules/:id") { [self] _, context -> Response in
+            try mockResponse {
+                try requireMockStore().removeRule(id: try idParameter(context))
+                return try jsonResponse(["removed": true])
+            }
+        }
+        router.get("sessions/current/mocks/values") { [self] _, _ -> Response in
+            try jsonResponse(NetworkMockValuesResponse(values: try requireMockStore().listValues()))
+        }
+        router.post("sessions/current/mocks/values") { [self] request, _ -> Response in
+            let body = try await badRequestOnDecode {
+                try await decode(NetworkMockValueRequest.self, from: request)
+            }
+            return try mockResponse {
+                try jsonResponse(try requireMockStore().upsertValue(body), status: .created)
+            }
+        }
+        router.delete("sessions/current/mocks/values/:id") { [self] _, context -> Response in
+            try mockResponse {
+                try requireMockStore().removeValue(id: try idParameter(context))
+                return try jsonResponse(["removed": true])
+            }
+        }
         router.get("events/stream") { [self] request, _ -> Response in
             sseResponse(since: query(request, "since"))
         }
         return router
+    }
+
+    private func requireMockStore() throws -> NetworkMockStore {
+        guard let mockStore else {
+            throw HTTPError(.notFound, message: "mock store is not available")
+        }
+        return mockStore
     }
 
     private func sseResponse(since: String?) -> Response {
@@ -189,6 +242,26 @@ public final class ReticleHttpServer: @unchecked Sendable {
             headers: [.contentType: contentType(for: url)],
             body: .init(byteBuffer: buffer(from: data))
         )
+    }
+}
+
+private func idParameter(_ context: BasicRequestContext) throws -> String {
+    guard let id = context.parameters.get("id"), !id.isEmpty else {
+        throw HTTPError(.badRequest, message: "id route parameter is required")
+    }
+    return id
+}
+
+private func mockResponse(_ operation: () throws -> Response) throws -> Response {
+    do {
+        return try operation()
+    } catch let error as NetworkMockError {
+        switch error {
+        case .notFound:
+            throw HTTPError(.notFound, message: error.description)
+        case .invalid, .missingValue:
+            throw HTTPError(.badRequest, message: error.description)
+        }
     }
 }
 

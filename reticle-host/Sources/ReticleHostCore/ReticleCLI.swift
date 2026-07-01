@@ -3,7 +3,7 @@ import Foundation
 /// Reticle host command-line entry point.
 public enum ReticleCLI {
     public static let version = "0.6.3"
-    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|serve|version> [--serial <id>] [options]"
+    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|mock|serve|version> [--serial <id>] [options]"
 
     /// Runs the Reticle CLI and returns a process exit code.
     public static func run(_ argv: [String]) -> Int32 {
@@ -22,6 +22,8 @@ public enum ReticleCLI {
             return 0
         case "serve":
             return runServe(args)
+        case "mock":
+            return runMock(args)
         default:
             return runHelperBacked(command: command, args: args)
         }
@@ -31,6 +33,16 @@ public enum ReticleCLI {
         do {
             let runtime = ServeRuntime(options: ServeOptions(args: args))
             try runtime.run()
+            return 0
+        } catch {
+            writeError("error: \(error)\n")
+            return 1
+        }
+    }
+
+    private static func runMock(_ args: Args) -> Int32 {
+        do {
+            try cmdMock(args)
             return 0
         } catch {
             writeError("error: \(error)\n")
@@ -102,10 +114,10 @@ public func resolveHelper(_ args: Args) -> String? {
     let selfDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
     let beside = "\(selfDir)/reticle-helper"
     if fm.isExecutableFile(atPath: beside) { return beside }
-    let devNative = "reticle-helper/build/native/reticle-helper"
-    if fm.isExecutableFile(atPath: devNative) { return devNative }
     let devJvm = "reticle-helper/build/install/reticle-helper/bin/reticle-helper"
     if fm.fileExists(atPath: devJvm) { return devJvm }
+    let devNative = "reticle-helper/build/native/reticle-helper"
+    if fm.isExecutableFile(atPath: devNative) { return devNative }
     return nil
 }
 

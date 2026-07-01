@@ -55,7 +55,7 @@ main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
 .phase{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 .title{margin-top:3px;font-size:17px;font-weight:760}
 .meta{margin-top:4px;color:var(--muted);font-size:12px;word-break:break-all}
-.badge{margin-left:12px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);font-size:12px;white-space:nowrap}
+.badge{margin-left:12px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);font-size:12px;white-space:nowrap}.badge.mock{border-color:rgba(52,211,153,.55);color:#bbf7d0;background:rgba(6,78,59,.28)}
 .body{padding:14px 16px}
 .shot-body{display:grid;grid-template-columns:minmax(180px,260px) max-content;gap:14px;align-items:start;max-width:100%}
 .shot-copy{min-width:0}
@@ -155,7 +155,8 @@ function mergeEvent(event){
 function renderTimeline(){
   const actions=actionEvents(), networks=networkTransactions();
   const live=selectedIsCurrent()?'live':'history';
-  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length} network request(s)`;
+  const mockCount=networks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length} network request(s), ${mockCount} mock(s)`;
   if(actions.length===0&&networks.length===0){
     timeline.className='';
     timeline.innerHTML='<div class="empty">No evidence yet. Run reticle act or enable the proxy while serve is running.</div>';
@@ -182,7 +183,9 @@ function node(event,kind,time,title,phase,badge,body){
 }
 function networkNode(tx){
   const p=tx.payload||{}, event=tx.event, status=p.error?'error':(p.status||'pending'), duration=isPresent(p.durationMs)?`${p.durationMs} ms`:'pending';
-  const mode=p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP');
+  const mode=p.mocked?(p.mitm?'MOCK HTTPS MITM':'MOCK HTTP'):(p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP'));
+  const badge=p.mocked?'MOCK':status;
+  const mockMeta=p.mocked?` · mock rule=${p.mockRuleId||'unknown'} value=${p.mockValueId||'unknown'}`:'';
   const facts=`<div class="facts"><div class="fact"><span>Host</span><b title="${escapeHtml(p.host||'unknown')}">${escapeHtml(p.host||'unknown')}</b></div><div class="fact"><span>Status</span><b>${escapeHtml(status)}</b></div><div class="fact"><span>Duration</span><b>${escapeHtml(duration)}</b></div></div>`;
   const refs=Object.keys(tx.refs||{}), requestRef=refs.find((ref)=>ref.startsWith('requestBody.')), responseRef=refs.find((ref)=>ref.startsWith('responseBody.'));
   const body=(label,ref,bytes,truncated)=>!ref?'':`<div class="net-section"><h3>${label} body</h3><div class="artifact">${refLink(event,ref,`${bytes||0} bytes${truncated?' · truncated':''}`)}</div><pre class="body-preview" data-event-id="${escapeHtml(event.id)}" data-ref="${escapeHtml(ref)}">Loading preview...</pre></div>`;
@@ -190,7 +193,7 @@ function networkNode(tx){
   const refsBlock=refs.length?`<details class="net-section"><summary>Artifact refs</summary><pre>${pretty(tx.refs)}</pre></details>`:'';
   const request=`<div class="net-section"><h3>Request</h3><div class="meta">${escapeHtml(p.method||'HTTP')} ${escapeHtml(p.path||'/')}</div>${headers('request',p.requestHeaders)}${body('Request',requestRef,p.requestBodyBytes,p.requestBodyTruncated)}</div>`;
   const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
-  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)</div></div><div class="badge">${escapeHtml(status)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
+  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${escapeHtml(mockMeta)}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
 }
 function traceGroup(event,index){
   const payload=event.payload||{}, target=payload.target||{}, result=payload.result||{};

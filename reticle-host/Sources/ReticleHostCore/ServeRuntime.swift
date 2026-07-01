@@ -70,7 +70,8 @@ public final class ServeRuntime {
             rootDirectory: options.rootDirectory,
             limit: options.eventLimit
         )
-        let server = try ReticleHttpServer(store: store, port: options.port)
+        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        let server = try ReticleHttpServer(store: store, port: options.port, mockStore: mockStore)
         self.server = server
         try server.start()
         if let proxyPort = effectiveProxyPort {
@@ -90,7 +91,8 @@ public final class ServeRuntime {
                     mitmEnabled: options.proxyMitm,
                     caDirectory: options.proxyCaDirectory,
                     tlsHostAllowlist: options.proxyTlsHosts
-                )
+                ),
+                mockStore: mockStore
             )
             try proxy.start()
             proxyServer = proxy
