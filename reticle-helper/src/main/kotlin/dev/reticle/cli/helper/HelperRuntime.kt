@@ -65,8 +65,9 @@ internal fun resolveInputTarget(device: DeviceController, pkg: String, params: J
     assertHealthy(client, pkg)
     val snapshot = client.snapshot()
     val semantic = SemanticTree.build(snapshot)
-    val resolved = SelectorResolver(snapshot, semantic).resolve(selectorFrom(params))
-        ?: throw CliError("could not resolve selector to a point")
+    val selector = selectorFrom(params)
+    val resolved = SelectorResolver(snapshot, semantic).resolve(selector)
+        ?: throw CliError(SelectorDiagnostics.pointMiss(snapshot, selector))
     System.err.println("reticle-helper: resolved via ${resolved.source} -> ref=${resolved.ref}")
     return ResolvedInputTarget(resolved.point, resolved.source, resolved.ref)
 }
