@@ -56,6 +56,12 @@ Response (failure):
   response — **the loop never dies on a bad call** (verified: a bad call between
   two good ones does not disturb them).
 
+The user-facing Swift host also exposes a CLI-level `--json` mode for
+helper-backed commands. That mode is a separate stdout envelope designed for
+scripts and agents: success is `{ "ok": true, "data": ... }`, failure is
+`{ "ok": false, "error": ... }`. It wraps the helper result after the RPC call;
+it does not change this helper stdio contract.
+
 ## Methods
 
 Common optional params on device methods: `serial`, `port`, `hostPort`. Selector

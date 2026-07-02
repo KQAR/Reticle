@@ -11,6 +11,10 @@ func cmdMutate(_ c: HelperClient, _ args: Args) throws {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
     let r = try c.call("mutate", params)
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(r)
+        return
+    }
     print("mutated \(r["ref"] ?? "?") (was \(r["previousValue"] ?? "?"))")
 }
 
@@ -20,6 +24,10 @@ func cmdDebug(_ c: HelperClient, _ args: Args) throws {
         let pkg = try args.require("package")
         let r = try c.call("logs", ["package": pkg])
         let entries = (r["entries"] as? [[String: Any]]) ?? []
+        if JsonEnvelope.enabled(args) {
+            try JsonEnvelope.success(["entries": entries])
+            return
+        }
         if entries.isEmpty {
             print("(runtime reachable, but 0 app-authored log entries)")
         } else {
@@ -28,6 +36,10 @@ func cmdDebug(_ c: HelperClient, _ args: Args) throws {
     case "logcat":
         let r = try c.call("logcat")
         let lines = (r["lines"] as? [String]) ?? []
+        if JsonEnvelope.enabled(args) {
+            try JsonEnvelope.success(["lines": lines])
+            return
+        }
         if lines.isEmpty {
             print("(no 'Reticle' logcat lines — agent likely not linked)")
         } else {
@@ -47,6 +59,14 @@ func cmdScreenshot(_ c: HelperClient, _ args: Args) throws {
         throw HelperError("screenshot returned no image data")
     }
     try data.write(to: URL(fileURLWithPath: out))
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success([
+            "output": out,
+            "bytes": data.count,
+            "via": r["via"] ?? NSNull(),
+        ])
+        return
+    }
     print("wrote \(out) (\(data.count) bytes) via \(r["via"] ?? "?")")
 }
 
@@ -68,6 +88,10 @@ func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
     let r = try c.call("render", params)
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(["text": (r["text"] as? String) ?? ""])
+        return
+    }
     print((r["text"] as? String) ?? "")
 }
 
