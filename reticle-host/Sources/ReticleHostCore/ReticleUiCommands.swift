@@ -81,6 +81,7 @@ func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
             throw HelperError("ui \(view) needs a snapshot.json path (or --live --package <pkg>)")
         }
         params["snapshot"] = snapshot
+        if let pkg = args.option("package") { params["package"] = pkg }
     }
     if view == "tree", args.option("semantics") != nil { params["view"] = "semantics" }
     if let d = args.option("depth") { params["depth"] = Int(d) ?? 0 }

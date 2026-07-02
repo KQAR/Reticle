@@ -57,6 +57,11 @@ internal fun resolvePoint(device: DeviceController, pkg: String, params: JsonObj
 }
 
 internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
+    params.str("alias")?.let { alias ->
+        val entry = OutlineRenderer.resolveAlias(params.str("serial"), pkg, alias)
+        val point = Point(entry.frame.centerX, entry.frame.centerY)
+        return ResolvedInputTarget(point, "outline:$alias", entry.ref)
+    }
     params.str("point")?.let {
         val (x, y) = parseXY(it)
         return ResolvedInputTarget(Point(x.toDouble(), y.toDouble()), "point", null)
