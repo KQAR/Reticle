@@ -1,7 +1,7 @@
 import Foundation
 
 /// Converts existing `trace.json` action evidence packages into daemon events.
-public struct ActionTraceIngest {
+public struct ActionTraceIngest: @unchecked Sendable {
     private let decoder = JSONDecoder()
 
     /// Builds an event post body from either a manifest object or `{ "path": ... }`.

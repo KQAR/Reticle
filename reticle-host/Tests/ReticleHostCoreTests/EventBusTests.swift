@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import ReticleHostCore
 
-@Suite("Reticle event bus")
+@Suite("Reticle event bus", .serialized)
 struct EventBusTests {
     @Test func eventStoreAppendsQueriesAndReplaysJsonl() throws {
         let root = try temporaryDirectory()
@@ -126,8 +126,11 @@ struct EventBusTests {
         #expect(text?.contains("Network requests") == true)
         #expect(text?.contains("networkNode") == true)
         #expect(text?.contains("networkTransactions") == true)
+        #expect(text?.contains("network-filters") == true)
+        #expect(text?.contains("networkFilterMatches") == true)
         #expect(text?.contains("MOCK HTTP") == true)
         #expect(text?.contains("mockRuleId") == true)
+        #expect(text?.contains("copy-chip") == true)
         #expect(text?.contains("body-preview") == true)
         #expect(text?.contains("Screenshot") == true)
         #expect(text?.contains("shot-body") == true)
@@ -177,6 +180,35 @@ struct EventBusTests {
         let (rulesData, rulesResponse) = try await URLSession.shared.data(from: listURL)
         #expect((rulesResponse as? HTTPURLResponse)?.statusCode == 200)
         #expect(try JSONDecoder().decode(NetworkMockRulesResponse.self, from: rulesData).rules.map(\.id) == ["rule"])
+
+        let resolveResponse = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/resolve")!,
+            body: NetworkMockResolveRequest(method: "GET", url: "http://api.test/api/users")
+        )
+        #expect(resolveResponse.status == 200)
+        #expect(try JSONDecoder().decode(NetworkMockResolveResponse.self, from: resolveResponse.data).rule?.id == "rule")
+
+        let (exportData, exportResponse) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/export")!)
+        #expect((exportResponse as? HTTPURLResponse)?.statusCode == 200)
+        let exported = try JSONDecoder().decode(NetworkMockExport.self, from: exportData)
+        #expect(exported.rules.map(\.id) == ["rule"])
+        #expect(exported.values.map(\.id) == ["ok"])
+
+        let clearResponse = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/clear")!,
+            body: EmptyPostBody()
+        )
+        #expect(clearResponse.status == 200)
+        #expect(mockStore.listRules().isEmpty)
+        #expect(mockStore.listValues().isEmpty)
+
+        let importResponse = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/import")!,
+            body: exported
+        )
+        #expect(importResponse.status == 201)
+        #expect(mockStore.listRules().map(\.id) == ["rule"])
+        #expect(mockStore.listValues().map(\.id) == ["ok"])
 
         let disableURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules/rule/disable")!
         var disableRequest = URLRequest(url: disableURL)
@@ -361,3 +393,5 @@ private enum TestFailure: Error {
     case connect
     case read
 }
+
+private struct EmptyPostBody: Encodable {}

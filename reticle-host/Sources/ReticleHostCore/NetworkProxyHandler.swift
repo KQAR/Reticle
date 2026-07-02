@@ -15,9 +15,11 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     private let tlsPolicy: TlsInterceptionPolicy
     private let certificates: ProxyCertificateStore?
     private let mockStore: NetworkMockStore?
+    private let upstreamTimeoutSeconds: TimeInterval
     private var head: HTTPRequestHead?
     private var body = Data()
     private var handlingTunnel = false
+    private var upstreamTask: NetworkForwardingTask?
 
     init(
         store: EventStore,
@@ -25,7 +27,8 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         factory: NetworkEventFactory,
         tlsPolicy: TlsInterceptionPolicy,
         certificates: ProxyCertificateStore?,
-        mockStore: NetworkMockStore?
+        mockStore: NetworkMockStore?,
+        upstreamTimeoutSeconds: TimeInterval
     ) {
         self.store = store
         self.bodyStore = bodyStore
@@ -33,6 +36,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         self.tlsPolicy = tlsPolicy
         self.certificates = certificates
         self.mockStore = mockStore
+        self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -59,7 +63,14 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
+        upstreamTask?.cancel()
+        upstreamTask = nil
         context.close(promise: nil)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        upstreamTask?.cancel()
+        upstreamTask = nil
     }
 
     private func forwardHTTP(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
@@ -80,7 +91,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         }
         _ = try? store.append(factory.event(.request, payload: payload, refs: refs))
         do {
-            if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: target.url.absoluteString, path: target.path)) {
+            if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: target.url.absoluteString, path: target.path, host: target.host)) {
                 writeMock(mock, payload: payload, refs: refs, version: head.version, context: context)
                 return
             }
@@ -93,23 +104,34 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
             writeError(.badGateway, context: context)
             return
         }
-        do {
-            let (responseData, response) = try NetworkURLForwarder.shared.data(for: head, url: target.url, body: body)
-            var responseRefs = refs
-            var responsePayload = payload
-            responsePayload.endMillis = millis()
-            responsePayload.status = response.statusCode
-            responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
-            if let stored = try? bodyStore.store(responseData, requestId: requestId, role: "response") {
-                responseRefs[stored.refName] = stored.path
-                responsePayload.responseBodyBytes = stored.bytes
-                responsePayload.responseBodyTruncated = stored.truncated
+        pauseReads(context: context)
+        let executor = ChannelContextExecutor(context)
+        let requestPayload = payload
+        let requestRefs = refs
+        upstreamTask = NetworkURLForwarder.shared.data(for: head, url: target.url, body: body, timeout: upstreamTimeoutSeconds) { result in
+            executor.execute { context in
+                self.upstreamTask = nil
+                guard context.channel.isActive else { return }
+                switch result {
+                case .success(let (responseData, response)):
+                    var responseRefs = requestRefs
+                    var responsePayload = requestPayload
+                    responsePayload.endMillis = self.millis()
+                    responsePayload.status = response.statusCode
+                    responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
+                    if let stored = try? self.bodyStore.store(responseData, requestId: requestId, role: "response") {
+                        responseRefs[stored.refName] = stored.path
+                        responsePayload.responseBodyBytes = stored.bytes
+                        responsePayload.responseBodyTruncated = stored.truncated
+                    }
+                    _ = try? self.store.append(self.factory.event(.response, payload: responsePayload, refs: responseRefs))
+                    self.write(responseData, response: response, version: head.version, context: context)
+                case .failure(let error):
+                    self.emitError(requestId: requestId, target: target, message: "\(error)", start: start)
+                    self.writeError(.badGateway, context: context)
+                }
+                self.resumeReads(context: context)
             }
-            _ = try? store.append(factory.event(.response, payload: responsePayload, refs: responseRefs))
-            write(responseData, response: response, version: head.version, context: context)
-        } catch {
-            emitError(requestId: requestId, target: target, message: "\(error)", start: start)
-            writeError(.badGateway, context: context)
         }
     }
 
@@ -200,7 +222,8 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                     store: self.store,
                     bodyStore: self.bodyStore,
                     factory: self.factory,
-                    mockStore: self.mockStore
+                    mockStore: self.mockStore,
+                    upstreamTimeoutSeconds: self.upstreamTimeoutSeconds
                 ))
             }.flatMap {
                 channel.setOption(ChannelOptions.autoRead, value: true)
@@ -249,6 +272,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         var headers = HTTPHeaders()
         for (name, value) in response.allHeaderFields {
             guard let name = name as? String else { continue }
+            guard ProxyHopByHopHeaders.shouldForwardResponseHeader(name, in: response.allHeaderFields) else { continue }
             headers.replaceOrAdd(name: name, value: "\(value)")
         }
         headers.replaceOrAdd(name: "Content-Length", value: "\(data.count)")
@@ -283,6 +307,17 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         let head = HTTPResponseHead(version: .http1_1, status: status, headers: HTTPHeaders([("Content-Length", "0")]))
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+    }
+
+    private func pauseReads(context: ChannelHandlerContext) {
+        _ = context.channel.setOption(ChannelOptions.autoRead, value: false)
+    }
+
+    private func resumeReads(context: ChannelHandlerContext) {
+        _ = context.channel.setOption(ChannelOptions.autoRead, value: true)
+        if context.channel.isActive {
+            context.channel.read()
+        }
     }
 
     private func emitError(requestId: String, target: HTTPProxyTarget? = nil, message: String, start: Int64) {

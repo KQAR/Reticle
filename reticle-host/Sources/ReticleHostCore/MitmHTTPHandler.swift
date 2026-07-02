@@ -12,15 +12,25 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
     private let mockStore: NetworkMockStore?
+    private let upstreamTimeoutSeconds: TimeInterval
     private var head: HTTPRequestHead?
     private var body = Data()
+    private var upstreamTask: NetworkForwardingTask?
 
-    init(target: HTTPProxyTarget, store: EventStore, bodyStore: NetworkBodyStore, factory: NetworkEventFactory, mockStore: NetworkMockStore?) {
+    init(
+        target: HTTPProxyTarget,
+        store: EventStore,
+        bodyStore: NetworkBodyStore,
+        factory: NetworkEventFactory,
+        mockStore: NetworkMockStore?,
+        upstreamTimeoutSeconds: TimeInterval
+    ) {
         self.target = target
         self.store = store
         self.bodyStore = bodyStore
         self.factory = factory
         self.mockStore = mockStore
+        self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -38,6 +48,17 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             self.head = nil
             body.removeAll(keepingCapacity: false)
         }
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        upstreamTask?.cancel()
+        upstreamTask = nil
+        context.close(promise: nil)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        upstreamTask?.cancel()
+        upstreamTask = nil
     }
 
     private func forward(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
@@ -65,7 +86,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         }
         _ = try? store.append(factory.event(.request, payload: payload, refs: refs))
         do {
-            if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: url.absoluteString, path: payload.path)) {
+            if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: url.absoluteString, path: payload.path, host: target.host)) {
                 writeMock(mock, payload: payload, refs: refs, version: head.version, context: context)
                 return
             }
@@ -80,25 +101,37 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             writeError(context: context)
             return
         }
-        do {
-            let (data, response) = try NetworkURLForwarder.shared.data(for: head, url: url, body: body)
-            var responsePayload = payload
-            responsePayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
-            responsePayload.status = response.statusCode
-            responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
-            var responseRefs = refs
-            if let stored = try? bodyStore.store(data, requestId: requestId, role: "response") {
-                responseRefs[stored.refName] = stored.path
-                responsePayload.responseBodyBytes = stored.bytes
-                responsePayload.responseBodyTruncated = stored.truncated
+        pauseReads(context: context)
+        let executor = ChannelContextExecutor(context)
+        let requestPayload = payload
+        let requestRefs = refs
+        upstreamTask = NetworkURLForwarder.shared.data(for: head, url: url, body: body, timeout: upstreamTimeoutSeconds) { result in
+            executor.execute { context in
+                self.upstreamTask = nil
+                guard context.channel.isActive else { return }
+                switch result {
+                case .success(let (data, response)):
+                    var responsePayload = requestPayload
+                    responsePayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+                    responsePayload.status = response.statusCode
+                    responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
+                    var responseRefs = requestRefs
+                    if let stored = try? self.bodyStore.store(data, requestId: requestId, role: "response") {
+                        responseRefs[stored.refName] = stored.path
+                        responsePayload.responseBodyBytes = stored.bytes
+                        responsePayload.responseBodyTruncated = stored.truncated
+                    }
+                    _ = try? self.store.append(self.factory.event(.response, payload: responsePayload, refs: responseRefs))
+                    self.write(data, response: response, version: head.version, context: context)
+                case .failure(let error):
+                    var errorPayload = requestPayload
+                    errorPayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+                    errorPayload.error = "\(error)"
+                    _ = try? self.store.append(self.factory.event(.error, payload: errorPayload, refs: requestRefs))
+                    self.writeError(context: context)
+                }
+                self.resumeReads(context: context)
             }
-            _ = try? store.append(factory.event(.response, payload: responsePayload, refs: responseRefs))
-            write(data, response: response, version: head.version, context: context)
-        } catch {
-            payload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
-            payload.error = "\(error)"
-            _ = try? store.append(factory.event(.error, payload: payload, refs: refs))
-            writeError(context: context)
         }
     }
 
@@ -137,6 +170,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         var headers = HTTPHeaders()
         for (name, value) in response.allHeaderFields {
             guard let name = name as? String else { continue }
+            guard ProxyHopByHopHeaders.shouldForwardResponseHeader(name, in: response.allHeaderFields) else { continue }
             headers.replaceOrAdd(name: name, value: "\(value)")
         }
         headers.replaceOrAdd(name: "Content-Length", value: "\(data.count)")
@@ -169,6 +203,17 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         let head = HTTPResponseHead(version: .http1_1, status: .badGateway, headers: HTTPHeaders([("Content-Length", "0")]))
         context.write(wrapOutboundOut(.head(head)), promise: nil)
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+    }
+
+    private func pauseReads(context: ChannelHandlerContext) {
+        _ = context.channel.setOption(ChannelOptions.autoRead, value: false)
+    }
+
+    private func resumeReads(context: ChannelHandlerContext) {
+        _ = context.channel.setOption(ChannelOptions.autoRead, value: true)
+        if context.channel.isActive {
+            context.channel.read()
+        }
     }
 
     private func emitMockError(_ error: NetworkMockError, payload: NetworkEventPayload, refs: [String: String]) {
