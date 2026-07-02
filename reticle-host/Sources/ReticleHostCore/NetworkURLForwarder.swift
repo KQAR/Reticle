@@ -1,4 +1,3 @@
-import Dispatch
 import Foundation
 import NIOHTTP1
 
@@ -16,65 +15,52 @@ final class NetworkURLForwarder: @unchecked Sendable {
         session = URLSession(configuration: configuration)
     }
 
-    /// Sends a proxied HTTP request upstream and returns the response body.
-    func data(for head: HTTPRequestHead, url: URL, body: Data) throws -> (Data, HTTPURLResponse) {
+    /// Sends a proxied HTTP request upstream without blocking the proxy event loop.
+    func data(
+        for head: HTTPRequestHead,
+        url: URL,
+        body: Data,
+        timeout: TimeInterval,
+        completion: @escaping @Sendable (Result<(Data, HTTPURLResponse), Error>) -> Void
+    ) -> NetworkForwardingTask {
         var request = URLRequest(url: url)
         request.httpMethod = head.method.rawValue
+        request.timeoutInterval = timeout
         for header in head.headers {
-            guard !Self.hopByHopHeaders.contains(header.name.lowercased()) else { continue }
+            guard ProxyHopByHopHeaders.shouldForwardRequestHeader(header.name, in: head.headers) else { continue }
             request.setValue(header.value, forHTTPHeaderField: header.name)
         }
         request.httpBody = body.isEmpty ? nil : body
-        let (data, response) = try blockingData(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw NetworkForwardingError.nonHTTPResponse
-        }
-        return (data, http)
-    }
-
-    private func blockingData(for request: URLRequest) throws -> (Data, URLResponse) {
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = BlockingURLResult()
-        session.dataTask(with: request) { data, response, error in
+        let task = session.dataTask(with: request) { data, response, error in
             if let error {
-                box.set(.failure(error))
+                completion(.failure(error))
             } else if let data, let response {
-                box.set(.success((data, response)))
+                guard let http = response as? HTTPURLResponse else {
+                    completion(.failure(NetworkForwardingError.nonHTTPResponse))
+                    return
+                }
+                completion(.success((data, http)))
             } else {
-                box.set(.failure(NetworkForwardingError.nonHTTPResponse))
+                completion(.failure(NetworkForwardingError.nonHTTPResponse))
             }
-            semaphore.signal()
-        }.resume()
-        semaphore.wait()
-        return try box.get()
+        }
+        task.resume()
+        return NetworkForwardingTask(task: task)
+    }
+}
+
+final class NetworkForwardingTask: @unchecked Sendable {
+    private let task: URLSessionDataTask
+
+    init(task: URLSessionDataTask) {
+        self.task = task
     }
 
-    private static let hopByHopHeaders = Set([
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "proxy-connection",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade"
-    ])
+    func cancel() {
+        task.cancel()
+    }
 }
 
 enum NetworkForwardingError: Error {
     case nonHTTPResponse
-}
-
-private final class BlockingURLResult: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<(Data, URLResponse), Error>?
-
-    func set(_ result: Result<(Data, URLResponse), Error>) {
-        lock.withLock { self.result = result }
-    }
-
-    func get() throws -> (Data, URLResponse) {
-        try lock.withLock { try result!.get() }
-    }
 }

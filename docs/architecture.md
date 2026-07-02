@@ -112,6 +112,45 @@ The one gap is multi-touch `pinch`, which `input` can't express — it would nee
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.
 
+## Host-side daemon, network lane, and mocks
+
+`reticle serve` is the host-owned long-lived surface. It creates an
+`EventStore` under `~/.reticle/sessions/<session>/`, starts a localhost
+Hummingbird server, and optionally starts the host proxy. The Android agent and
+helper do not own daemon state; they only supply device operations and app
+runtime observations.
+
+The daemon exposes three route groups:
+
+- session routes: health, current/historical events, action trace ingestion, and
+  artifact reads through event refs;
+- mock routes: current-session mock rule/value management;
+- stream routes: the read-only panel and SSE event stream.
+
+Network capture is a pure host proxy. Plain HTTP requests are normalized into
+`network.request` / `network.response` / `network.error` events directly. HTTPS
+traffic is visible as CONNECT tunnels unless `--proxy-mitm` and
+`--proxy-ssl-hosts` admit the host and the app trusts Reticle's local CA. MITM
+still does not bypass certificate pinning or custom trust managers.
+
+Mocks are also host-side. `NetworkMockStore` persists rule metadata, value
+metadata, and response body files separately inside the session directory.
+`NetworkProxyHandler` and `MitmHTTPHandler` construct a normalized
+`NetworkMockRequest` and ask the store to resolve it before contacting upstream.
+If a rule matches, the proxy writes the configured response and records the
+response event with `mocked`, `mockRuleId`, and `mockValueId`. If a rule points
+at a missing value, Reticle records `network.error` and returns 502 rather than
+silently falling through. Rules can optionally narrow by host wildcard and query
+key/value predicates; value bodies can be imported/exported as base64 while
+remaining stored as separate body files on disk.
+
+Upstream forwarding is intentionally scheduled outside the NIO event loop:
+`NetworkURLForwarder` uses `URLSession` completion callbacks and the handlers
+hop back onto the channel's event loop to write the response. A slow upstream can
+delay that client connection, but it no longer blocks the proxy's event loop.
+Hop-by-hop headers are stripped before forwarding, upstream requests have an
+explicit timeout, and a client disconnect cancels the active upstream task.
+
 ## The declarative-UI boundary: Compose
 
 Reticle's rule for Jetpack Compose:
@@ -365,7 +404,7 @@ exposes), while `ui node` always returns the richer view-tree node.
 | `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
-| `reticle-host` | Swift host CLI | The user-facing `reticle` (macOS arm64); owns no device code — every command is an RPC call to the native helper. |
+| `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64); owns no device code — every device command is an RPC call to the native helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. |
 | `sample-app` | Android app | Demo linking the agent, proving the round trip |
 
 (`reticle-agent/` is a grouping directory — no build script of its own; future
@@ -376,5 +415,7 @@ and invisible to Gradle.)
 
 Full snapshots are written to disk (`ui report` → `snapshot.json`), and agents
 are handed the **compact observation** by default (`ui compact`), then query
-specific refs/nodes on demand (`ui node`). This keeps token cost low while
-preserving full fidelity for when it's needed.
+specific refs/nodes on demand (`ui node`). `reticle serve` persists daemon
+events, body artifacts, mock config, and action traces under the session
+directory. This keeps token cost low while preserving full fidelity for when
+it's needed.

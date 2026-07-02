@@ -44,3 +44,21 @@ func contentType(for url: URL) -> String {
         "application/octet-stream"
     }
 }
+
+func badRequestOnDecode<T>(_ operation: () async throws -> T) async throws -> T {
+    do {
+        return try await operation()
+    } catch {
+        throw HTTPError(.badRequest, message: "\(error)")
+    }
+}
+
+func decode<T: Decodable>(_ type: T.Type, from request: Request) async throws -> T {
+    try JSONDecoder().decode(type, from: try await requestBodyData(request))
+}
+
+func requestBodyData(_ request: Request) async throws -> Data {
+    var request = request
+    let body = try await request.collectBody(upTo: 2 * 1024 * 1024)
+    return Data(body.readableBytesView)
+}

@@ -52,7 +52,8 @@ final class NetworkProxyServer: @unchecked Sendable {
                         factory: factory,
                         tlsPolicy: policy,
                         certificates: certificates,
-                        mockStore: self.mockStore
+                        mockStore: self.mockStore,
+                        upstreamTimeoutSeconds: self.configuration.upstreamTimeoutSeconds
                     ))
                 }
             }
@@ -71,7 +72,7 @@ final class NetworkProxyServer: @unchecked Sendable {
             }
             self.ready.signal()
         }
-        switch ready.wait(timeout: .now() + 2) {
+        switch ready.wait(timeout: .now() + 5) {
         case .success:
             if let error = lock.withLock({ startupError }) { throw error }
         case .timedOut:
