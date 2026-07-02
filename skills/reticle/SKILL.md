@@ -256,8 +256,9 @@ When `--proxy-port` is supplied, the daemon also records `network.*` events and
 renders them in the panel's network lane. Network cards are grouped by request id
 and show method, URL, status, duration, headers, body refs, and text previews for
 captured bodies; sensitive header values are redacted. Mocked responses are
-marked with a `MOCK` badge and show the mock rule/value ids. Add
-`--proxy-device --serial <id>` to configure Android global proxy through
+marked with a `MOCK` badge and show copyable mock rule/value ids. Use the
+filter buttons for MOCK, ERROR, MITM, and TUNNEL when a session has many network
+events. Add `--proxy-device --serial <id>` to configure Android global proxy through
 `adb reverse`; the daemon restores the previous proxy setting on exit. HTTPS
 decryption is opt-in via `--proxy-mitm`
 and `--proxy-ssl-hosts`; Reticle generates a local CA under
@@ -298,8 +299,10 @@ Use `reticle mock` only while `reticle serve` is running. Mock configuration is
 stored under the current session as separate rule/value files:
 `mock-rules.json`, `mock-values.json`, and `mock-values/<valueId>.body`. A rule
 chooses traffic (`method`, `url`, `match`, `priority`) and points at a value; a
-value owns the fixed UTF-8 response (`status`, `headers`, body file). The
-convenience command creates or updates both:
+value owns the fixed response (`status`, `headers`, body file). Rules can also
+be narrowed with `--host api.example.test` or `--host '*.example.test'`, and
+`--query '{"page":"1"}'` requires those query key/value pairs while allowing
+extra query parameters. The convenience command creates or updates both:
 
 ```bash
 reticle mock set --id users --value-id users-ok \
@@ -308,8 +311,16 @@ reticle mock set --id users --value-id users-ok \
   --body '{"users":[]}'
 reticle mock rule disable --id users
 reticle mock value set --id users-ok --status 500 --body '{"error":"down"}'
+reticle mock rule test --method GET --url 'http://api.test/api/users?page=1'
+reticle mock export --output /tmp/reticle-mocks.json
+reticle mock clear
+reticle mock import --input /tmp/reticle-mocks.json
 reticle mock list
 ```
+
+Use `--body` for inline UTF-8 text. Use `--body-file <path>` for files; the CLI
+sends file bytes as base64 so binary or non-UTF-8 mock bodies survive
+export/import.
 
 For HTTP traffic, mocks apply directly in the host proxy. For HTTPS, mocks only
 apply after MITM decryption (`--proxy-mitm --proxy-ssl-hosts <host>` plus app CA

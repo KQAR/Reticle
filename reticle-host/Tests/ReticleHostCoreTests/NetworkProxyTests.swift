@@ -1,9 +1,10 @@
 import Darwin
+import Dispatch
 import Foundation
 import Testing
 @testable import ReticleHostCore
 
-@Suite("Network proxy")
+@Suite("Network proxy", .serialized)
 struct NetworkProxyTests {
     @Test func httpProxyForwardsRequestAndPublishesEvents() throws {
         let root = try temporaryDirectory()
@@ -121,6 +122,90 @@ struct NetworkProxyTests {
         #expect(store.events().filter { $0.type == "network.response" }.last?.payload["mocked"] == nil)
     }
 
+    @Test func slowUpstreamDoesNotBlockMockedRequests() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let upstream = try HangingHTTPServer(delaySeconds: 5)
+        defer { upstream.stop() }
+
+        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        _ = try mockStore.upsertValue(NetworkMockValueRequest(id: "fast", status: 201, headers: ["X-Mock": "yes"], body: #"{"ok":true}"#, contentType: "application/json"))
+        _ = try mockStore.upsertRule(NetworkMockRuleRequest(id: "fast", enabled: true, priority: 100, method: "GET", url: "/fast", match: .exact, valueId: "fast"))
+
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test", upstreamTimeoutSeconds: 10),
+            mockStore: mockStore
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let slowDone = DispatchSemaphore(value: 0)
+        let slowThread = Thread {
+            _ = try? readSocket(
+                port: proxy.port,
+                request: "GET http://127.0.0.1:\(upstream.port)/slow HTTP/1.1\r\nHost: 127.0.0.1:\(upstream.port)\r\n\r\n",
+                timeoutSeconds: 10
+            )
+            slowDone.signal()
+        }
+        slowThread.start()
+        #expect(upstream.accepted.wait(timeout: .now() + 2) == .success)
+
+        let start = Date()
+        let response = try readSocket(
+            port: proxy.port,
+            request: "GET http://mock.test/fast HTTP/1.1\r\nHost: mock.test\r\n\r\n"
+        )
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(response.contains("201 Created"))
+        #expect(response.contains(#"{"ok":true}"#))
+        #expect(elapsed < 1)
+        #expect(slowDone.wait(timeout: .now() + 0.1) == .timedOut)
+        upstream.stop()
+        #expect(slowDone.wait(timeout: .now() + 2) == .success)
+    }
+
+    @Test func proxyDoesNotForwardHopByHopHeaders() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let upstream = try RecordingHTTPServer(responseHeaders: [
+            "Connection": "X-Response-Secret, close",
+            "X-Response-Secret": "drop",
+            "X-Response-Keep": "yes",
+            "Proxy-Authenticate": "drop"
+        ])
+        defer { upstream.stop() }
+
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test")
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let response = try readSocket(
+            port: proxy.port,
+            request: "GET http://127.0.0.1:\(upstream.port)/headers HTTP/1.1\r\n"
+                + "Host: 127.0.0.1:\(upstream.port)\r\n"
+                + "Connection: X-Request-Secret, keep-alive\r\n"
+                + "X-Request-Secret: drop\r\n"
+                + "Proxy-Connection: keep-alive\r\n"
+                + "X-Request-Keep: yes\r\n"
+                + "\r\n"
+        )
+        let rawUpstreamRequest = try upstream.waitForRequest()
+
+        #expect(rawUpstreamRequest.contains("X-Request-Keep: yes"))
+        #expect(!rawUpstreamRequest.contains("X-Request-Secret"))
+        #expect(!rawUpstreamRequest.contains("Proxy-Connection"))
+        #expect(response.contains("X-Response-Keep: yes"))
+        #expect(!response.contains("X-Response-Secret"))
+        #expect(!response.contains("Proxy-Authenticate"))
+        #expect(!response.contains("Connection:"))
+    }
+
     @Test func mockStorePersistsRulesValuesAndUsesPriority() throws {
         let root = try temporaryDirectory()
         let session = root.appendingPathComponent("session", isDirectory: true)
@@ -182,6 +267,74 @@ struct NetworkProxyTests {
         #expect(try store.resolve(NetworkMockRequest(method: "DELETE", url: "http://example.test/api/full", path: "/api/full")) == nil)
     }
 
+    @Test func mockStoreMatchesOptionalHostAndQueryPredicates() throws {
+        let root = try temporaryDirectory()
+        let session = root.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let store = try NetworkMockStore(sessionDirectory: session)
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "filtered", status: 200, headers: [:], body: "filtered", contentType: nil))
+        _ = try store.upsertRule(NetworkMockRuleRequest(
+            id: "filtered",
+            enabled: true,
+            priority: 10,
+            method: "GET",
+            url: "/api/search",
+            match: .exact,
+            host: "*.example.test",
+            query: ["page": "1", "kind": "user"],
+            valueId: "filtered"
+        ))
+
+        let matched = try store.resolve(NetworkMockRequest(
+            method: "GET",
+            url: "http://api.example.test/api/search?page=1&kind=user&extra=yes",
+            path: "/api/search?page=1&kind=user&extra=yes"
+        ))
+        let wrongHost = try store.resolve(NetworkMockRequest(
+            method: "GET",
+            url: "http://example.test/api/search?page=1&kind=user",
+            path: "/api/search?page=1&kind=user"
+        ))
+        let wrongQuery = try store.resolve(NetworkMockRequest(
+            method: "GET",
+            url: "http://api.example.test/api/search?page=2&kind=user",
+            path: "/api/search?page=2&kind=user"
+        ))
+
+        #expect(matched?.value.id == "filtered")
+        #expect(wrongHost == nil)
+        #expect(wrongQuery == nil)
+    }
+
+    @Test func mockStoreExportImportPreservesBinaryBodies() throws {
+        let root = try temporaryDirectory()
+        let firstSession = root.appendingPathComponent("first", isDirectory: true)
+        let secondSession = root.appendingPathComponent("second", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstSession, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondSession, withIntermediateDirectories: true)
+        let binary = Data([0, 1, 2, 0xff])
+        let first = try NetworkMockStore(sessionDirectory: firstSession)
+        _ = try first.upsertValue(NetworkMockValueRequest(
+            id: "bin",
+            status: 206,
+            headers: ["Content-Type": "application/octet-stream"],
+            body: nil,
+            bodyBase64: binary.base64EncodedString(),
+            contentType: nil
+        ))
+        _ = try first.upsertRule(NetworkMockRuleRequest(id: "bin", enabled: true, priority: 1, method: "GET", url: "/bin", match: .exact, valueId: "bin"))
+
+        let second = try NetworkMockStore(sessionDirectory: secondSession)
+        try second.importPackage(try first.exportPackage())
+        let result = try second.resolve(NetworkMockRequest(method: "GET", url: "http://example.test/bin", path: "/bin"))
+
+        #expect(result?.value.status == 206)
+        #expect(result?.body == binary)
+        try second.clear()
+        #expect(second.listRules().isEmpty)
+        #expect(second.listValues().isEmpty)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -189,7 +342,7 @@ struct NetworkProxyTests {
         return url
     }
 
-    private func readSocket(port: Int, request: String) throws -> String {
+    private func readSocket(port: Int, request: String, timeoutSeconds: Int = 1) throws -> String {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw NetworkProxyTestFailure.socket }
         var addr = sockaddr_in()
@@ -197,7 +350,7 @@ struct NetworkProxyTests {
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = in_port_t(port).bigEndian
         addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        var timeout = timeval(tv_sec: 1, tv_usec: 0)
+        var timeout = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         let connected = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -212,12 +365,170 @@ struct NetworkProxyTests {
             let n = recv(fd, &buf, buf.count, 0)
             if n <= 0 { break }
             data.append(contentsOf: buf.prefix(n))
+            if responseComplete(data) { break }
         }
         close(fd)
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private func responseComplete(_ data: Data) -> Bool {
+        guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8)) else { return false }
+        guard let headers = String(data: data[..<headerEnd.lowerBound], encoding: .utf8) else { return false }
+        let contentLength = headers
+            .split(separator: "\r\n")
+            .first { $0.lowercased().hasPrefix("content-length:") }
+            .flatMap { Int($0.split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") }
+        guard let contentLength else { return false }
+        let bodyStart = headerEnd.upperBound
+        return data.count - bodyStart >= contentLength
     }
 }
 
 private enum NetworkProxyTestFailure: Error {
     case socket
+    case timedOut
+    case utf8
+}
+
+private final class HangingHTTPServer: @unchecked Sendable {
+    let accepted = DispatchSemaphore(value: 0)
+    let port: Int
+
+    private let fd: Int32
+    private let delaySeconds: UInt32
+    private let lock = NSLock()
+    private var stopped = false
+    private var connections: [Int32] = []
+
+    init(delaySeconds: UInt32) throws {
+        self.delaySeconds = delaySeconds
+        fd = try bindLoopbackSocket()
+        port = try boundPort(fd)
+        listen(fd, 16)
+        DispatchQueue.global().async { [self] in acceptLoop() }
+    }
+
+    func stop() {
+        let (shouldClose, active) = lock.withLock { () -> (Bool, [Int32]) in
+            guard !stopped else { return (false, []) }
+            stopped = true
+            return (true, connections)
+        }
+        guard shouldClose else { return }
+        shutdown(fd, SHUT_RDWR)
+        close(fd)
+        for connection in active {
+            shutdown(connection, SHUT_RDWR)
+            close(connection)
+        }
+    }
+
+    private func acceptLoop() {
+        while true {
+            let connection = accept(fd, nil, nil)
+            if connection < 0 { return }
+            lock.withLock {
+                connections.append(connection)
+            }
+            accepted.signal()
+            sleep(delaySeconds)
+            shutdown(connection, SHUT_RDWR)
+            close(connection)
+            lock.withLock {
+                connections.removeAll { $0 == connection }
+            }
+            if lock.withLock({ stopped }) { return }
+        }
+    }
+}
+
+private final class RecordingHTTPServer: @unchecked Sendable {
+    let port: Int
+
+    private let fd: Int32
+    private let responseHeaders: [String: String]
+    private let requestReady = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var request: String?
+
+    init(responseHeaders: [String: String]) throws {
+        self.responseHeaders = responseHeaders
+        fd = try bindLoopbackSocket()
+        port = try boundPort(fd)
+        listen(fd, 1)
+        DispatchQueue.global().async { [self] in acceptOnce() }
+    }
+
+    func stop() {
+        shutdown(fd, SHUT_RDWR)
+        close(fd)
+    }
+
+    func waitForRequest() throws -> String {
+        guard requestReady.wait(timeout: .now() + 2) == .success else {
+            throw NetworkProxyTestFailure.timedOut
+        }
+        return lock.withLock { request ?? "" }
+    }
+
+    private func acceptOnce() {
+        let connection = accept(fd, nil, nil)
+        if connection < 0 { return }
+        defer {
+            shutdown(connection, SHUT_RDWR)
+            close(connection)
+        }
+        var data = Data()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = recv(connection, &buf, buf.count, 0)
+            if n <= 0 { break }
+            data.append(contentsOf: buf.prefix(n))
+            if data.range(of: Data("\r\n\r\n".utf8)) != nil { break }
+        }
+        lock.withLock {
+            request = String(data: data, encoding: .utf8)
+        }
+        requestReady.signal()
+        var response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+        for (name, value) in responseHeaders {
+            response += "\(name): \(value)\r\n"
+        }
+        response += "\r\nok"
+        _ = response.withCString { ptr in send(connection, ptr, strlen(ptr), 0) }
+    }
+}
+
+private func bindLoopbackSocket() throws -> Int32 {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { throw NetworkProxyTestFailure.socket }
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+    var addr = sockaddr_in()
+    addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = 0
+    addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let result = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    guard result == 0 else {
+        close(fd)
+        throw NetworkProxyTestFailure.socket
+    }
+    return fd
+}
+
+private func boundPort(_ fd: Int32) throws -> Int {
+    var addr = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let result = withUnsafeMutablePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(fd, $0, &length)
+        }
+    }
+    guard result == 0 else { throw NetworkProxyTestFailure.socket }
+    return Int(in_port_t(bigEndian: addr.sin_port))
 }

@@ -5,6 +5,7 @@ struct NetworkProxyConfiguration {
     let port: Int
     let target: String?
     let bodyLimitBytes: Int
+    let upstreamTimeoutSeconds: TimeInterval
     let mitmEnabled: Bool
     let caDirectory: URL?
     let tlsHostAllowlist: [String]
@@ -14,6 +15,7 @@ struct NetworkProxyConfiguration {
         port: Int,
         target: String? = nil,
         bodyLimitBytes: Int = 1024 * 1024,
+        upstreamTimeoutSeconds: TimeInterval = 30,
         mitmEnabled: Bool = false,
         caDirectory: URL? = nil,
         tlsHostAllowlist: [String] = []
@@ -21,6 +23,7 @@ struct NetworkProxyConfiguration {
         self.port = port
         self.target = target
         self.bodyLimitBytes = bodyLimitBytes
+        self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
         self.mitmEnabled = mitmEnabled
         self.caDirectory = caDirectory
         self.tlsHostAllowlist = tlsHostAllowlist
@@ -55,7 +58,7 @@ enum NetworkProxyError: Error, CustomStringConvertible {
         case .caMaterialMissing(let message):
             "proxy CA material is incomplete: \(message)"
         case .startTimedOut:
-            "network proxy did not report a listening socket within 2 seconds"
+            "network proxy did not report a listening socket within 5 seconds"
         }
     }
 }
