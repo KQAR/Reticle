@@ -2,10 +2,10 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: design doc (2026-06-26). Captures the agreed direction for evolving
+Status: roadmap and current-state doc (2026-07-01). Captures the agreed direction for evolving
 Reticle from a single-platform Android CLI into a multi-platform runtime harness
-with an integrated capture proxy and a live web panel. This is a plan, not yet
-implemented; `docs/architecture.md` describes what exists today.
+with an integrated capture proxy and a live web panel. `docs/architecture.md`
+describes the current implementation in more operational detail.
 
 ## Vision
 
@@ -231,11 +231,11 @@ in Kotlin). All verified on a real device against the linked sample app
 (selector tap resolved to coordinates, mutate applied, logs read, a 1080×2412
 PNG written, `--region "《隐私政策》"` resolved to a precise point).
 
-The daemon, Web panel, and proxy remain **Phase 2/3** and are explicitly NOT part
-of this — they need the event bus and a chosen proxy engine first. **Still ahead
-for the full Swift host:** supervise the two resident processes once the daemon
-exists; decide helper distribution (JVM jar vs its own native-image); and a
-streaming `logs --follow`. JDWP is never rewritten.
+The daemon, Web panel, proxy, HTTPS MITM lane, and session-scoped network mocks
+now exist in `reticle serve`. **Still ahead for the full Swift host:** richer
+proxy concurrency/streaming, a typed network-event schema, reverse-drive panel
+controls if explicitly chosen later, and streaming `logs --follow`. JDWP is never
+rewritten.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
@@ -268,10 +268,7 @@ reticle/  (polyglot monorepo — one host binary + one protocol spec)
 │   └─ (future) harmony/  # hvigor module — invisible to Gradle
 ├─ reticle-helper/        # Kotlin Android host layer → no-JDK native reticle-helper (RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-host/          # Swift host CLI (SwiftPM) — user-facing `reticle`, drives the helper over RPC
-├─ reticle-daemon/        # FUTURE: `reticle serve` — holds proxy, aggregates traces, pushes events
-│   ├─ proxy/             #   pure host MITM engine + CA issuance + device auto-proxy
-│   └─ web/               #   front-end panel: traffic view + action-path/screenshot timeline
+├─ reticle-host/          # Swift host CLI + `reticle serve` daemon, panel, proxy/MITM, mocks
 └─ sample-app/            # demo linking :reticle-agent:android
 ```
 
@@ -508,8 +505,8 @@ Android first and complete; everything else reserved behind the spec + SPI.
 - **Action traces** — the first evidence package is in place via
   `act --trace-output`: `trace.json` records gesture, selector, resolved
   point/source/ref, and a compact snapshot diff, with before/after snapshots and
-  screenshots stored beside it. Remaining work: promote this shape into the
-  daemon event bus/session schema so it feeds the Phase 3 timeline.
+  screenshots stored beside it. `reticle serve` ingests these traces into the
+  session event bus and renders them in the panel timeline.
 - **WebView / DOM support** — `WebViewBridge` mirroring the Compose bridge,
   L0→L1→L2 tiers, DOM nodes merged into the unified tree (`NodeKind.domNode`).
   See the WebView section above. L1 read-only DOM walk + coordinate fold is
@@ -524,13 +521,20 @@ Android first and complete; everything else reserved behind the spec + SPI.
   and tightens single-capture consistency. See "CLI is a thin client" above.
 
 ### Phase 2 — Proxy + daemon
-- Implement `reticle serve`, the event bus, session model, SSE/REST surface.
-- Implement the pure-host proxy as a `ProxyBackend` (engine chosen at this point),
-  with device auto-proxy config and CA issuance. Boundaries per above.
+- Done: `reticle serve`, the event store, session model, SSE/REST surface,
+  action-trace ingestion, pure-host HTTP proxy, device auto-proxy config, CA
+  issuance, opt-in HTTPS MITM, and session-scoped network mocks.
+- Next: move remaining synchronous/large-body edges toward streaming NIO
+  forwarding, add typed schema coverage for `network.*`, and make matcher
+  semantics richer without coupling mock state to the event store.
 
 ### Phase 3 — Web panel
-- Unified localhost panel: **traffic view** (whistle-style) + **action-path /
-  screenshot timeline**, both fed by the event bus over SSE. Two views, one UI.
+- Done: a localhost read-only evidence panel showing action traces,
+  screenshots/artifacts, network lane cards, body previews, MITM/tunnel/mock
+  mode, and mock rule/value ids.
+- Next: add network filters, mock-focused grouping, and optional "create mock
+  from captured request" workflows while keeping the panel display-only unless a
+  later product decision changes that boundary.
 
 ### Phase 4 — Multi-platform
 - iOS / HarmonyOS agents in their own build systems, conforming to the protocol

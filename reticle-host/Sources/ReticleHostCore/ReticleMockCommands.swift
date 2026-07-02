@@ -6,6 +6,14 @@ func cmdMock(_ args: Args) throws {
     case "list":
         try printMockRules(client.rules())
         try printMockValues(client.values())
+    case "export":
+        try exportMocks(client.exportPackage(), output: args.option("output"))
+    case "import":
+        try client.importPackage(try importPackage(input: try args.require("input")))
+        print("mock import: ok")
+    case "clear":
+        try client.clear()
+        print("mock clear: ok")
     case "set":
         let value = try client.setValue(valueRequest(args))
         let rule = try client.setRule(ruleRequest(args, defaultValueId: value.id))
@@ -32,6 +40,13 @@ private func cmdMockRule(_ args: Args, _ client: DaemonMockClient) throws {
     case "disable":
         let rule = try client.disableRule(id: try args.require("id"))
         print("mock rule disabled: \(rule.id)")
+    case "test":
+        let result = try client.resolve(NetworkMockResolveRequest(method: try args.require("method"), url: try args.require("url")))
+        if let rule = result.rule, let value = result.value {
+            print("mock rule test: matched rule=\(rule.id) value=\(value.id) status=\(value.status)")
+        } else {
+            print("mock rule test: no match")
+        }
     case "remove":
         try client.removeRule(id: try args.require("id"))
         print("mock rule removed: \(try args.require("id"))")
@@ -74,6 +89,8 @@ private func ruleRequest(_ args: Args, defaultValueId: String?) throws -> Networ
         method: try args.require("method"),
         url: try args.require("url"),
         match: match,
+        host: args.option("host"),
+        query: try stringObjectOption(args.option("query"), name: "--query"),
         valueId: valueId
     )
 }
@@ -85,35 +102,54 @@ private func valueRequest(_ args: Args) throws -> NetworkMockValueRequest {
     } else {
         id = try args.require("id")
     }
+    let body = try bodyOption(args)
     return NetworkMockValueRequest(
         id: id,
         status: args.option("status").flatMap(Int.init),
-        headers: try headersOption(args.option("headers")),
-        body: try bodyOption(args),
+        headers: try stringObjectOption(args.option("headers"), name: "--headers"),
+        body: body.text,
+        bodyBase64: body.base64,
         contentType: args.option("content-type")
     )
 }
 
-private func headersOption(_ raw: String?) throws -> [String: String]? {
+private func stringObjectOption(_ raw: String?, name: String) throws -> [String: String]? {
     guard let raw else { return nil }
     guard let data = raw.data(using: .utf8) else { return nil }
     let any = try JSONSerialization.jsonObject(with: data)
     guard let object = any as? [String: Any] else {
-        throw HelperError("--headers must be a JSON object")
+        throw HelperError("\(name) must be a JSON object")
     }
-    var headers: [String: String] = [:]
+    var values: [String: String] = [:]
     for (key, value) in object {
-        headers[key] = "\(value)"
+        values[key] = "\(value)"
     }
-    return headers
+    return values
 }
 
-private func bodyOption(_ args: Args) throws -> String? {
-    if let body = args.option("body") { return body }
+private func bodyOption(_ args: Args) throws -> (text: String?, base64: String?) {
+    if let body = args.option("body") { return (body, nil) }
     if let path = args.option("body-file") {
-        return try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+        return (nil, try Data(contentsOf: URL(fileURLWithPath: path)).base64EncodedString())
     }
-    return nil
+    return (nil, nil)
+}
+
+private func exportMocks(_ package: NetworkMockExport, output: String?) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(package)
+    if let output {
+        try data.write(to: URL(fileURLWithPath: output), options: [.atomic])
+        print("mock export: \(output)")
+    } else {
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    }
+}
+
+private func importPackage(input: String) throws -> NetworkMockExport {
+    try JSONDecoder().decode(NetworkMockExport.self, from: Data(contentsOf: URL(fileURLWithPath: input)))
 }
 
 private func printMockRules(_ rules: [NetworkMockRule]) {
@@ -123,7 +159,11 @@ private func printMockRules(_ rules: [NetworkMockRule]) {
     }
     print("mock rules:")
     for rule in rules {
-        print("  \(rule.id) \(rule.enabled ? "on" : "off") priority=\(rule.priority) \(rule.method) \(rule.match.rawValue) \(rule.url) -> \(rule.valueId)")
+        var qualifiers: [String] = []
+        if let host = rule.host { qualifiers.append("host=\(host)") }
+        if let query = rule.query, !query.isEmpty { qualifiers.append("query=\(query)") }
+        let suffix = qualifiers.isEmpty ? "" : " \(qualifiers.joined(separator: " "))"
+        print("  \(rule.id) \(rule.enabled ? "on" : "off") priority=\(rule.priority) \(rule.method) \(rule.match.rawValue) \(rule.url)\(suffix) -> \(rule.valueId)")
     }
 }
 
@@ -159,6 +199,22 @@ private final class DaemonMockClient {
 
     func values() throws -> [NetworkMockValue] {
         try request("values", method: "GET", response: NetworkMockValuesResponse.self).values
+    }
+
+    func exportPackage() throws -> NetworkMockExport {
+        try request("export", method: "GET", response: NetworkMockExport.self)
+    }
+
+    func importPackage(_ package: NetworkMockExport) throws {
+        let _: EmptyResponse = try request("import", method: "POST", body: package, response: EmptyResponse.self)
+    }
+
+    func clear() throws {
+        let _: EmptyResponse = try request("clear", method: "POST", response: EmptyResponse.self)
+    }
+
+    func resolve(_ request: NetworkMockResolveRequest) throws -> NetworkMockResolveResponse {
+        try self.request("resolve", method: "POST", body: request, response: NetworkMockResolveResponse.self)
     }
 
     func setRule(_ rule: NetworkMockRuleRequest) throws -> NetworkMockRule {

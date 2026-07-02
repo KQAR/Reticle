@@ -7,6 +7,8 @@ struct NetworkMockRule: Codable, Equatable {
     var method: String
     var url: String
     var match: NetworkMockMatch
+    var host: String?
+    var query: [String: String]?
     var valueId: String
 }
 
@@ -30,7 +32,31 @@ struct NetworkMockRuleRequest: Codable {
     let method: String
     let url: String
     let match: NetworkMockMatch?
+    let host: String?
+    let query: [String: String]?
     let valueId: String
+
+    init(
+        id: String,
+        enabled: Bool?,
+        priority: Int?,
+        method: String,
+        url: String,
+        match: NetworkMockMatch?,
+        host: String? = nil,
+        query: [String: String]? = nil,
+        valueId: String
+    ) {
+        self.id = id
+        self.enabled = enabled
+        self.priority = priority
+        self.method = method
+        self.url = url
+        self.match = match
+        self.host = host
+        self.query = query
+        self.valueId = valueId
+    }
 }
 
 struct NetworkMockValueRequest: Codable {
@@ -38,7 +64,24 @@ struct NetworkMockValueRequest: Codable {
     let status: Int?
     let headers: [String: String]?
     let body: String?
+    let bodyBase64: String?
     let contentType: String?
+
+    init(
+        id: String,
+        status: Int?,
+        headers: [String: String]?,
+        body: String?,
+        bodyBase64: String? = nil,
+        contentType: String?
+    ) {
+        self.id = id
+        self.status = status
+        self.headers = headers
+        self.body = body
+        self.bodyBase64 = bodyBase64
+        self.contentType = contentType
+    }
 }
 
 struct NetworkMockRulesResponse: Codable {
@@ -59,10 +102,58 @@ struct NetworkMockSetResponse: Codable {
     let value: NetworkMockValue
 }
 
+struct NetworkMockExport: Codable {
+    let rules: [NetworkMockRule]
+    let values: [NetworkMockExportValue]
+}
+
+struct NetworkMockExportValue: Codable {
+    let id: String
+    let status: Int
+    let headers: [String: String]
+    let contentType: String
+    let bodyBase64: String
+}
+
+struct NetworkMockResolveRequest: Codable {
+    let method: String
+    let url: String
+}
+
+struct NetworkMockResolveResponse: Codable {
+    let matched: Bool
+    let rule: NetworkMockRule?
+    let value: NetworkMockValue?
+}
+
 struct NetworkMockRequest {
     let method: String
     let url: String
     let path: String
+    let host: String
+    let query: [String: String]
+
+    init(method: String, url: String, path: String, host: String? = nil, query: [String: String]? = nil) {
+        self.method = method
+        self.url = url
+        self.path = Self.pathWithoutQuery(path)
+        let parsed = URLComponents(string: url)
+        self.host = (host ?? parsed?.host ?? "").lowercased()
+        self.query = query ?? Self.queryItems(from: parsed)
+    }
+
+    private static func pathWithoutQuery(_ path: String) -> String {
+        let value = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? path
+        return value.isEmpty ? "/" : value
+    }
+
+    private static func queryItems(from components: URLComponents?) -> [String: String] {
+        var result: [String: String] = [:]
+        for item in components?.queryItems ?? [] {
+            result[item.name] = item.value ?? ""
+        }
+        return result
+    }
 }
 
 struct NetworkMockResult {
@@ -111,6 +202,8 @@ public final class NetworkMockStore: @unchecked Sendable {
         guard !request.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw NetworkMockError.invalid("url is required")
         }
+        let host = normalizedHost(request.host)
+        let query = normalizedQuery(request.query)
         lock.lock()
         defer { lock.unlock() }
         let rule = NetworkMockRule(
@@ -120,6 +213,8 @@ public final class NetworkMockStore: @unchecked Sendable {
             method: request.method.uppercased(),
             url: request.url,
             match: request.match ?? .exact,
+            host: host,
+            query: query,
             valueId: request.valueId
         )
         if let index = rules.firstIndex(where: { $0.id == request.id }) {
@@ -149,8 +244,11 @@ public final class NetworkMockStore: @unchecked Sendable {
             ?? existing?.contentType
             ?? "text/plain; charset=utf-8"
         let bodyRef = existing?.bodyRef ?? "\(request.id).body"
-        if let body = request.body {
-            try Data(body.utf8).write(to: bodiesDirectory.appendingPathComponent(bodyRef), options: [.atomic])
+        if request.body != nil, request.bodyBase64 != nil {
+            throw NetworkMockError.invalid("body and bodyBase64 are mutually exclusive")
+        }
+        if let bodyData = try requestBodyData(request) {
+            try bodyData.write(to: bodiesDirectory.appendingPathComponent(bodyRef), options: [.atomic])
         } else if existing == nil {
             try Data().write(to: bodiesDirectory.appendingPathComponent(bodyRef), options: [.atomic])
         }
@@ -213,6 +311,57 @@ public final class NetworkMockStore: @unchecked Sendable {
         try saveValuesLocked()
     }
 
+    func clear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        rules.removeAll()
+        values.removeAll()
+        try saveRulesLocked()
+        try saveValuesLocked()
+        try? FileManager.default.removeItem(at: bodiesDirectory)
+        try FileManager.default.createDirectory(at: bodiesDirectory, withIntermediateDirectories: true)
+    }
+
+    func exportPackage() throws -> NetworkMockExport {
+        let snapshot = lock.withLock { (rules, values) }
+        let exportedValues = try snapshot.1.map { value in
+            NetworkMockExportValue(
+                id: value.id,
+                status: value.status,
+                headers: value.headers,
+                contentType: value.contentType,
+                bodyBase64: try Data(contentsOf: bodyURL(for: value)).base64EncodedString()
+            )
+        }
+        return NetworkMockExport(rules: snapshot.0, values: exportedValues)
+    }
+
+    func importPackage(_ package: NetworkMockExport) throws {
+        for value in package.values {
+            _ = try upsertValue(NetworkMockValueRequest(
+                id: value.id,
+                status: value.status,
+                headers: value.headers,
+                body: nil,
+                bodyBase64: value.bodyBase64,
+                contentType: value.contentType
+            ))
+        }
+        for rule in package.rules {
+            _ = try upsertRule(NetworkMockRuleRequest(
+                id: rule.id,
+                enabled: rule.enabled,
+                priority: rule.priority,
+                method: rule.method,
+                url: rule.url,
+                match: rule.match,
+                host: rule.host,
+                query: rule.query,
+                valueId: rule.valueId
+            ))
+        }
+    }
+
     func resolve(_ request: NetworkMockRequest) throws -> NetworkMockResult? {
         let snapshot = lock.withLock { rules.enumerated().map { ($0.offset, $0.element) } }
         let candidates = snapshot
@@ -251,7 +400,26 @@ public final class NetworkMockStore: @unchecked Sendable {
         bodiesDirectory.appendingPathComponent(value.bodyRef)
     }
 
+    private func requestBodyData(_ request: NetworkMockValueRequest) throws -> Data? {
+        if let body = request.body {
+            return Data(body.utf8)
+        }
+        if let bodyBase64 = request.bodyBase64 {
+            guard let data = Data(base64Encoded: bodyBase64) else {
+                throw NetworkMockError.invalid("bodyBase64 is not valid base64")
+            }
+            return data
+        }
+        return nil
+    }
+
     private func matches(_ rule: NetworkMockRule, request: NetworkMockRequest) -> Bool {
+        if let host = rule.host, !matchesHost(host, actual: request.host) {
+            return false
+        }
+        if let query = rule.query, !matchesQuery(query, actual: request.query) {
+            return false
+        }
         let actual = rule.url.hasPrefix("/") ? request.path : request.url
         switch rule.match {
         case .exact:
@@ -259,6 +427,34 @@ public final class NetworkMockStore: @unchecked Sendable {
         case .prefix:
             return actual.hasPrefix(rule.url)
         }
+    }
+
+    private func matchesHost(_ expected: String, actual: String) -> Bool {
+        guard !expected.isEmpty else { return true }
+        if expected.hasPrefix("*.") {
+            let suffix = String(expected.dropFirst())
+            return actual.hasSuffix(suffix) && actual.count > suffix.count
+        }
+        return actual == expected
+    }
+
+    private func matchesQuery(_ expected: [String: String], actual: [String: String]) -> Bool {
+        for (key, value) in expected {
+            guard actual[key] == value else { return false }
+        }
+        return true
+    }
+
+    private func normalizedHost(_ host: String?) -> String? {
+        guard let host = host?.trimmingCharacters(in: .whitespacesAndNewlines), !host.isEmpty else {
+            return nil
+        }
+        return host.lowercased()
+    }
+
+    private func normalizedQuery(_ query: [String: String]?) -> [String: String]? {
+        guard let query, !query.isEmpty else { return nil }
+        return query
     }
 
     private func validateID(_ id: String, field: String) throws {

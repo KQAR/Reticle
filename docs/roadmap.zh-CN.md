@@ -2,9 +2,9 @@
 
 [English](roadmap.md) | **简体中文**
 
-状态:设计文档(2026-06-26)。记录了将 Reticle 从单平台 Android CLI 演进为
-多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定方向。这是计划,尚未
-实现;`docs/architecture.md` 描述的是当前已有的内容。
+状态:路线图与当前状态文档(2026-07-01)。记录了将 Reticle 从单平台 Android CLI
+演进为多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定方向。
+`docs/architecture.md` 描述当前实现的操作细节。
 
 ## 愿景
 
@@ -191,11 +191,10 @@ JDWP/breakpoint 怪癖,不是 host 或边界问题。因此 `ui report` 是用**
 链接版示例 app 在真机上验证(选择器 tap 解析成坐标、mutate 生效、读到日志、写出
 1080×2412 PNG、`--region "《隐私政策》"` 解析到精确坐标)。
 
-`reticle serve` 的第一版 daemon / 事件总线 skeleton 已落在 Swift host:本机
-REST/SSE、`~/.reticle/sessions/<session>/events.jsonl`、以及 action trace ingestion。
-Web 面板与代理仍属 **Phase 2/3**。**完整 Swift host 仍待办的:** daemon 监管两个
-常驻进程;决定 helper 分发(JVM jar vs 它自己的 native-image);以及一个流式
-`logs --follow`。JDWP 永不重写。
+`reticle serve` 的 daemon、事件总线、Web 面板、HTTP/HTTPS 代理、MITM lane 与
+session 级网络 mock 已落在 Swift host。**完整 Swift host 仍待办的:** 更完善的
+代理并发/流式转发、类型化 network event schema、如果后续明确选择则加入面板反向驱动,
+以及一个流式 `logs --follow`。JDWP 永不重写。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 
@@ -226,9 +225,7 @@ reticle/  (polyglot monorepo — 一个 host 二进制 + 一份协议 spec)
 │   └─ (future) harmony/  # hvigor 模块 —— 对 Gradle 不可见
 ├─ reticle-helper/        # Kotlin Android host 层 → 无 JDK 原生 reticle-helper(RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-host/          # Swift host CLI + `reticle serve` 事件总线 skeleton
-│   ├─ (future) proxy/    #   纯 host MITM 引擎 + CA 签发 + 设备自动配代理
-│   └─ (future) web/      #   前端面板:流量视图 + 操作路径/截图时间线
+├─ reticle-host/          # Swift host CLI + `reticle serve` daemon、面板、proxy/MITM、mock
 └─ sample-app/            # 链接 :reticle-agent:android 的演示应用
 ```
 
@@ -441,8 +438,8 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   `adb shell am dumpheap`(可调试应用,无需 root)离线分析。
 - **操作 trace**——第一版证据包已通过 `act --trace-output` 落地:`trace.json`
   记录 gesture、selector、解析后的 point/source/ref 与紧凑 snapshot diff,前后
-  snapshot 和截图放在同一 action 目录下。剩余工作:把这个形状提升进 daemon 的事件总线 /
-  session schema,为 Phase 3 时间线供数据。
+  snapshot 和截图放在同一 action 目录下。`reticle serve` 已能把这些 trace ingest
+  进 session 事件总线并在面板时间线展示。
 - **WebView / DOM 支持**——`WebViewBridge` 照搬 Compose 桥,L0→L1→L2 分级,DOM
   节点融进统一树(`NodeKind.domNode`)。见上文 WebView 一节。L1 的只读 DOM 遍历 +
   坐标折算已在应用内嵌 `android.webkit.WebView` 上落地;剩余工作是 L2 语义增强,
@@ -454,13 +451,17 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   语言无关,并收紧单次捕获的一致性。见上文"CLI 是薄客户端"。
 
 ### Phase 2 —— 代理 + daemon
-- 实现 `reticle serve`、事件总线、session 模型、SSE/REST 表面。
-- 把纯 host 代理实现为一个 `ProxyBackend`(此时选定引擎),含设备自动配代理与 CA
-  签发。边界遵循上文。
+- 已完成:`reticle serve`、事件存储、session 模型、SSE/REST 表面、action trace
+  ingestion、纯 host HTTP 代理、设备自动配代理、CA 签发、可选 HTTPS MITM、以及
+  session 级网络 mock。
+- 下一步:把剩余同步/大 body 边界推进到更流式的 NIO 转发,补 `network.*` 类型化
+  schema,并在不让 mock 状态耦合进 EventStore 的前提下增强 matcher 语义。
 
 ### Phase 3 —— Web 面板
-- 统一的 localhost 面板:**流量视图**(whistle 式)+ **操作路径 / 截图时间线**,
-  两者都经 SSE 由事件总线供数据。两个视图,一个 UI。
+- 已完成:localhost 只读证据面板,展示 action trace、截图/产物、network lane 卡片、
+  body 预览、MITM/tunnel/mock 模式、以及 mock rule/value id。
+- 下一步:增加网络过滤器、按 mock 聚合、以及可选的"从已捕获请求生成 mock"工作流;
+  除非后续产品明确改变边界,面板仍保持 display-only。
 
 ### Phase 4 —— 多平台
 - iOS / 鸿蒙 agent 在各自的构建系统里,遵循协议 spec。host 与面板复用;每个新平台

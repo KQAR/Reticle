@@ -32,6 +32,10 @@ h1{margin:0;font-size:18px}
 .status{margin-top:4px;color:var(--muted);font-size:12px}
 .session-control{color:var(--muted);font-size:12px;text-align:right}
 .session-control select{display:block;min-width:240px;margin-top:5px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:#0b1220;color:var(--text)}
+.filterbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.filterbar button,.copy-chip{border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
+.filterbar button.active{border-color:rgba(96,165,250,.7);color:#bfdbfe;background:rgba(30,64,175,.28)}
+.copy-chip{margin-left:6px;color:#bbf7d0;border-color:rgba(52,211,153,.45);background:rgba(6,78,59,.2)}
 main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
 .empty{padding:24px;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.9);color:var(--muted)}
 .timeline{position:relative}
@@ -95,7 +99,7 @@ th{color:var(--muted);font-weight:600}
 </head>
 <body>
 <header>
-<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div></div><label class="session-control">Session<select id="session-picker"></select></label></div>
+<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div><div id="network-filters" class="filterbar"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="mock">MOCK</button><button type="button" data-filter="error">ERROR</button><button type="button" data-filter="mitm">MITM</button><button type="button" data-filter="tunnel">TUNNEL</button></div></div><label class="session-control">Session<select id="session-picker"></select></label></div>
 </header>
 <main>
 <div id="timeline"></div>
@@ -108,10 +112,11 @@ th{color:var(--muted);font-weight:600}
   </div>
 </div>
 <script>
-const state={events:[],sessions:[],selectedSession:null,currentSession:null,manifests:new Map(),stream:null};
+const state={events:[],sessions:[],selectedSession:null,currentSession:null,manifests:new Map(),stream:null,networkFilter:'all'};
 const timeline=document.getElementById('timeline');
 const statusEl=document.getElementById('status');
 const sessionPicker=document.getElementById('session-picker');
+const networkFilters=document.getElementById('network-filters');
 const lightbox=document.getElementById('lightbox'),lightboxImage=document.getElementById('lightbox-image'),lightboxCaption=document.getElementById('lightbox-caption');
 function selectedIsCurrent(){return state.selectedSession===state.currentSession;}
 function sessionRoute(){return selectedIsCurrent()?'current':encodeURIComponent(state.selectedSession||'current');}
@@ -133,6 +138,16 @@ function networkTransactions(){
   }
   return [...groups.values()].map((tx)=>{tx.event=tx.error||tx.response||tx.request||tx.events[tx.events.length-1];tx.payload=Object.assign({},...(tx.events.map((e)=>e.payload||{})));return tx;});
 }
+function networkFilterMatches(tx){
+  const p=tx.payload||{};
+  switch(state.networkFilter){
+    case 'mock': return !!p.mocked;
+    case 'error': return !!p.error;
+    case 'mitm': return !!p.mitm;
+    case 'tunnel': return !!p.tunnel;
+    default: return true;
+  }
+}
 function isPresent(value){return value!==undefined&&value!==null&&value!==''&&value!=='<null>';}
 function eventMillis(event){
   const payload=event.payload||{};
@@ -153,11 +168,11 @@ function mergeEvent(event){
   state.events.sort((a,b)=>eventMillis(a)-eventMillis(b)||a.id.localeCompare(b.id));
 }
 function renderTimeline(){
-  const actions=actionEvents(), networks=networkTransactions();
+  const actions=actionEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   const live=selectedIsCurrent()?'live':'history';
-  const mockCount=networks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
-  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length} network request(s), ${mockCount} mock(s)`;
-  if(actions.length===0&&networks.length===0){
+  const mockCount=allNetworks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length}/${allNetworks.length} network request(s), ${mockCount} mock(s)`;
+  if(actions.length===0&&allNetworks.length===0){
     timeline.className='';
     timeline.innerHTML='<div class="empty">No evidence yet. Run reticle act or enable the proxy while serve is running.</div>';
     return;
@@ -166,6 +181,7 @@ function renderTimeline(){
   const items=[...actions.map((event,index)=>({at:eventMillis(event),html:traceGroup(event,index+1)})),...networks.map((tx)=>({at:eventMillis(tx.request||tx.event),html:networkNode(tx)}))].sort((a,b)=>a.at-b.at);
   timeline.innerHTML=`<div class="lane-labels"><div>UI evidence</div><div></div><div>Network requests</div></div>${items.map((item)=>item.html).join('')}`;
   attachScreenshotPreviews();
+  attachCopyChips();
   hydrateDiffs();
   hydrateBodyPreviews();
 }
@@ -185,7 +201,7 @@ function networkNode(tx){
   const p=tx.payload||{}, event=tx.event, status=p.error?'error':(p.status||'pending'), duration=isPresent(p.durationMs)?`${p.durationMs} ms`:'pending';
   const mode=p.mocked?(p.mitm?'MOCK HTTPS MITM':'MOCK HTTP'):(p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP'));
   const badge=p.mocked?'MOCK':status;
-  const mockMeta=p.mocked?` · mock rule=${p.mockRuleId||'unknown'} value=${p.mockValueId||'unknown'}`:'';
+  const mockMeta=p.mocked?` <button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockRuleId||'')}">rule ${escapeHtml(p.mockRuleId||'unknown')}</button><button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockValueId||'')}">value ${escapeHtml(p.mockValueId||'unknown')}</button>`:'';
   const facts=`<div class="facts"><div class="fact"><span>Host</span><b title="${escapeHtml(p.host||'unknown')}">${escapeHtml(p.host||'unknown')}</b></div><div class="fact"><span>Status</span><b>${escapeHtml(status)}</b></div><div class="fact"><span>Duration</span><b>${escapeHtml(duration)}</b></div></div>`;
   const refs=Object.keys(tx.refs||{}), requestRef=refs.find((ref)=>ref.startsWith('requestBody.')), responseRef=refs.find((ref)=>ref.startsWith('responseBody.'));
   const body=(label,ref,bytes,truncated)=>!ref?'':`<div class="net-section"><h3>${label} body</h3><div class="artifact">${refLink(event,ref,`${bytes||0} bytes${truncated?' · truncated':''}`)}</div><pre class="body-preview" data-event-id="${escapeHtml(event.id)}" data-ref="${escapeHtml(ref)}">Loading preview...</pre></div>`;
@@ -193,7 +209,7 @@ function networkNode(tx){
   const refsBlock=refs.length?`<details class="net-section"><summary>Artifact refs</summary><pre>${pretty(tx.refs)}</pre></details>`:'';
   const request=`<div class="net-section"><h3>Request</h3><div class="meta">${escapeHtml(p.method||'HTTP')} ${escapeHtml(p.path||'/')}</div>${headers('request',p.requestHeaders)}${body('Request',requestRef,p.requestBodyBytes,p.requestBodyTruncated)}</div>`;
   const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
-  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${escapeHtml(mockMeta)}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
+  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${mockMeta}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
 }
 function traceGroup(event,index){
   const payload=event.payload||{}, target=payload.target||{}, result=payload.result||{};
@@ -208,6 +224,7 @@ function traceGroup(event,index){
 function openLightbox(src,label){lightboxImage.src=src;lightboxImage.alt=label;lightboxCaption.textContent=label;lightbox.hidden=false;document.body.classList.add('modal-open');}
 function closeLightbox(){lightbox.hidden=true;lightboxImage.removeAttribute('src');document.body.classList.remove('modal-open');}
 function attachScreenshotPreviews(){timeline.querySelectorAll('.shot-link').forEach((button)=>{button.addEventListener('click',()=>openLightbox(button.dataset.shotSrc,button.dataset.shotLabel));button.querySelector('img')?.addEventListener('error',()=>{button.outerHTML=`<div class="shot-error">Screenshot artifact could not be loaded: ${escapeHtml(button.querySelector('img')?.dataset.ref||'unknown')}</div>`;});});}
+function attachCopyChips(){timeline.querySelectorAll('.copy-chip').forEach((button)=>button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(button.dataset.copy||'');button.textContent='copied';}catch(error){button.textContent='copy failed';}}));}
 async function loadManifest(event){
   if(!event.refs||!event.refs.manifest){return null;}
   if(state.manifests.has(event.id)){return state.manifests.get(event.id);}
@@ -280,6 +297,7 @@ function connectStream(){
   stream.onerror=()=>{statusEl.textContent='Live event stream disconnected; retrying...';};
 }
 sessionPicker.addEventListener('change',async()=>{state.selectedSession=sessionPicker.value;if(state.stream){state.stream.close();state.stream=null;}await loadHistory();connectStream();});
+networkFilters.addEventListener('click',(event)=>{const button=event.target.closest('button[data-filter]');if(!button){return;}state.networkFilter=button.dataset.filter||'all';networkFilters.querySelectorAll('button').forEach((item)=>item.classList.toggle('active',item===button));renderTimeline();});
 document.getElementById('lightbox-close').addEventListener('click',closeLightbox);
 lightbox.addEventListener('click',(event)=>{if(event.target===lightbox){closeLightbox();}});
 document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&!lightbox.hidden){closeLightbox();}});
