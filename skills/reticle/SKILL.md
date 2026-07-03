@@ -131,6 +131,20 @@ commands return one envelope shape: `{ "ok": true, "data": ... }` on success and
 `{ "ok": false, "error": ... }` on failure. Keep text output for human-readable
 interactive sessions.
 
+For repeated command loops, start a local session daemon with a helper broker and
+reuse it explicitly:
+
+```bash
+reticle serve --session <name> --helper-broker
+RETICLE_USE_DAEMON=1 reticle status --package <pkg>
+reticle act tap --use-daemon --package <pkg> --test-id checkout.payButton
+```
+
+Use this when you will run several `status`/`ui`/`act`/`mutate` commands in a
+row and want to avoid starting a new helper process for each call. Do not assume
+the broker exists: plain one-shot commands still work without `serve`, and
+`--use-daemon` requires a live daemon started with `--helper-broker`.
+
 Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.

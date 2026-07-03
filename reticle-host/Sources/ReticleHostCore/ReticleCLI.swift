@@ -51,12 +51,27 @@ public enum ReticleCLI {
     }
 
     private static func runHelperBacked(command: String, args: Args) -> Int32 {
+        let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
+        if shouldUseDaemonHelper(args) {
+            let client = DaemonHelperClient(serial: serialArg)
+            do {
+                try dispatch(command: command, args: args, client: client)
+                return 0
+            } catch {
+                if JsonEnvelope.enabled(args) {
+                    JsonEnvelope.error(error)
+                } else {
+                    writeError("error: \(error)\n")
+                }
+                return 1
+            }
+        }
+
         guard let helper = resolveHelper(args) else {
             writeError("could not find the reticle helper; set RETICLE_HELPER or pass --helper\n")
             return 2
         }
 
-        let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
         let client = HelperClient(
             launcher: helper,
             javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
@@ -78,7 +93,7 @@ public enum ReticleCLI {
         }
     }
 
-    private static func dispatch(command: String, args: Args, client: HelperClient) throws {
+    private static func dispatch(command: String, args: Args, client: HelperCalling) throws {
         switch command {
         case "doctor": try cmdDoctor(client, args)
         case "devices": try cmdDevices(client, args)
@@ -108,6 +123,11 @@ public enum ReticleCLI {
         default:
             throw HelperError("unknown command: \(command)")
         }
+    }
+
+    private static func shouldUseDaemonHelper(_ args: Args) -> Bool {
+        args.option("use-daemon") == "true"
+            || ProcessInfo.processInfo.environment["RETICLE_USE_DAEMON"] == "1"
     }
 }
 

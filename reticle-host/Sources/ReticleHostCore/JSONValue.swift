@@ -1,7 +1,7 @@
 import Foundation
 
 /// A Codable representation of arbitrary JSON used by daemon event payloads.
-public enum JSONValue: Codable, Equatable {
+public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)

@@ -267,22 +267,39 @@ certificate pinning remain opaque.
 Existing one-shot commands still work without the daemon. When `serve` is
 running, `reticle act ...` automatically writes a trace package under the current
 session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
-`action.trace` event on a best-effort basis. Snapshots and screenshots are
-referenced from `refs` instead of inlined. The panel consumes each action trace
-as a vertical evidence timeline: screenshot/snapshot evidence nodes, the action,
-and the compact diff are flattened into time-ordered cards. Large diffs show a
-short high-signal preview first, with text/label/state changes ranked ahead of
-structural churn and the full table available on demand. Missing screenshot
-artifacts render an inline failure state. The axis is centered so UI evidence can
-sit on one side while network request spans occupy the other. Network requests
-are grouped by request id with method, URL, status, timing, request/response
-headers, body artifact links, and small text previews for captured bodies.
-Sensitive header values such as cookies and authorization are redacted. Mocked
-responses are labeled with the rule/value ids that produced them. The session
-picker can switch between the live current session and static historical sessions
-under `~/.reticle/sessions`. It is display-only: it does not drive input or
-mutate app state. Pass `--trace-output <dir>` when you want to copy trace
-artifacts somewhere outside the session.
+`action.trace` event on a best-effort basis. Pass `--trace-output <dir>` when you
+want to copy trace artifacts somewhere outside the session.
+
+For repeated command loops, start the daemon with a helper broker and point
+one-shot commands at it:
+
+```bash
+reticle serve --session demo --helper-broker
+RETICLE_USE_DAEMON=1 reticle status --package dev.reticle.sample
+reticle act tap --use-daemon --package dev.reticle.sample --test-id checkout.payButton
+```
+
+`--helper-broker` keeps one `reticle-helper` process alive behind the daemon's
+localhost HTTP surface. `--use-daemon` (or `RETICLE_USE_DAEMON=1`) forwards the
+same helper-backed command RPC through that process, so short command sequences
+avoid repeated helper startup. Device selection still follows the normal
+`--serial` rule; a per-command `--serial` overrides the broker default for that
+request.
+
+Snapshots and screenshots are referenced from `refs` instead of inlined. The
+panel consumes each action trace as a vertical evidence timeline:
+screenshot/snapshot evidence nodes, the action, and the compact diff are
+flattened into time-ordered cards. Large diffs show a short high-signal preview
+first, with text/label/state changes ranked ahead of structural churn and the
+full table available on demand. Missing screenshot artifacts render an inline
+failure state. The axis is centered so UI evidence can sit on one side while
+network request spans occupy the other. Network requests are grouped by request
+id with method, URL, status, timing, request/response headers, body artifact
+links, and small text previews for captured bodies. Sensitive header values such
+as cookies and authorization are redacted. Mocked responses are labeled with the
+rule/value ids that produced them. The session picker can switch between the live
+current session and static historical sessions under `~/.reticle/sessions`. It
+is display-only: it does not drive input or mutate app state.
 
 While `serve` is running, `reticle mock` can return fixed responses from the
 host proxy without touching the app. Rules and response values are stored
