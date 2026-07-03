@@ -18,6 +18,12 @@ internal object HelperRenderCommands {
         val view = params.str("view") ?: throw CliError("render needs 'view'")
         val snapshot = snapshotFor(params)
         val text = renderView(view, snapshot, params)
+        if (view == "outline") {
+            params.str("package")?.let { pkg ->
+                val (_, entries) = OutlineRenderer.render(snapshot)
+                OutlineRenderer.writeCache(snapshot, entries, params.str("serial"), pkg)
+            }
+        }
         return buildJsonObject { put("text", text) }
     }
 
@@ -40,6 +46,7 @@ internal object HelperRenderCommands {
         "tree" -> renderViewTree(snapshot, params.intOrNull("depth") ?: Int.MAX_VALUE)
         "semantics" -> renderSemanticTree(SemanticTree.build(snapshot), params.intOrNull("depth") ?: Int.MAX_VALUE)
         "compact" -> CompactObservation.from(snapshot).items.joinToString("\n") { it.line() }
+        "outline" -> OutlineRenderer.render(snapshot).first
         "node" -> renderNode(snapshot, params)
         "regions" -> renderRegions(snapshot)
         else -> throw CliError("unknown render view '$view'")
