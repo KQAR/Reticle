@@ -90,7 +90,7 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
 | `screenshot` | `package?` | `{ "via", "pngBase64" }` — agent `/screenshot` if reachable, else `adb screencap` |
-| `render` | `view` (tree/semantics/compact/outline/node/regions), `snapshot` (path), `depth?`, selector, optional `package` to write outline alias cache | `{ "text": "<rendered>" }` — local snapshot rendering; derivation stays in Kotlin, host just prints |
+| `render` | `view` (tree/semantics/compact/outline/node/regions), `snapshot` (path), `depth?`, selector, optional `package` to write outline alias cache | `{ "text": "<rendered>" }` — local snapshot rendering; `outline` adds `item i/n` hints for repeated vertical targets and writes those hints into the alias cache |
 | `proxyStatus` | `serial?` | `{ "httpProxy": "<host:port>" }` or empty when unset |
 | `proxySet` | `serial?`, either `host` + `port` or raw `value` | `{ "previous", "current" }` — configures Android global `http_proxy`; `127.0.0.1:<port>` also creates `adb reverse tcp:<port> tcp:<port>` |
 | `proxyClear` | `serial?`, `port?` | `{ "previous", "current": "" }` — clears Android global `http_proxy` and removes the matching adb reverse when `port` is supplied |

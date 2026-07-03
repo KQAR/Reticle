@@ -163,9 +163,11 @@ disk.
 
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
 visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
-alias cache for that package. Use `reticle act tap --package <pkg> --alias @N`
-only immediately after the matching outline; re-run outline after navigation,
-scrolling, or modal changes. Stable automation should still prefer
+alias cache for that package. Repeated vertical controls are annotated as
+`item i/n` so list rows can be compared without opening the full snapshot. Use
+`reticle act tap --package <pkg> --alias @N` only immediately after the matching
+outline; re-run outline after navigation, scrolling, or modal changes. The
+`item i/n` text is a hint, not a selector. Stable automation should still prefer
 `--test-id`, `--resource-id`, `--css`, or `--ref`.
 
 **`--live` — inspect the running app without writing a report.** Any `ui` view
