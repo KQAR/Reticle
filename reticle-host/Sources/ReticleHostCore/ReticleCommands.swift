@@ -27,15 +27,29 @@ func cmdDoctor(_ c: HelperCalling, _ args: Args) throws {
 func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("status", ["package": pkg])
+    let advisory = RuntimeProcessStateStore().observe(
+        package: pkg,
+        serial: serialOption(args),
+        result: r
+    )
+    if let advisory {
+        publishRuntimeAdvisoryIfDaemonIsRunning(package: pkg, advisory: advisory)
+    }
     if JsonEnvelope.enabled(args) {
         var data = r
         data["package"] = pkg
+        if let advisory {
+            data["advisory"] = advisory.jsonObject
+        }
         try JsonEnvelope.success(data)
         return
     }
     print("package: \(pkg)")
     print("running: \(r["running"] ?? false)\(r["pid"].map { " (pid=\($0))" } ?? "")")
     print("runtime: \(r["runtime"] ?? "unknown")")
+    if let advisory {
+        print("advisory: \(advisory.message)")
+    }
 }
 
 func cmdInject(_ c: HelperCalling, _ args: Args) throws {
@@ -47,6 +61,7 @@ func cmdInject(_ c: HelperCalling, _ args: Args) throws {
             ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
     if let payload { params["payloadDex"] = payload }
     let r = try c.call("inject", params)
+    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: r)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(r)
         return
@@ -106,6 +121,7 @@ func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
 func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("launch", ["package": pkg])
+    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: r)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(r)
         return
@@ -179,7 +195,23 @@ private func publishTraceIfDaemonIsRunning(_ trace: [String: Any]) {
     }
 }
 
+private func publishRuntimeAdvisoryIfDaemonIsRunning(package: String, advisory: RuntimeProcessAdvisory) {
+    let event = EventPostRequest(
+        target: "android:\(package)",
+        source: "runtime",
+        type: "runtime.advisory",
+        payload: advisory.jsonObject.mapValues(JSONValue.fromAny)
+    )
+    if case .failure(let error) = DaemonEventPublisher().publishEvent(event) {
+        FileHandle.standardError.write(Data("warning: could not publish runtime advisory to reticle serve: \(error)\n".utf8))
+    }
+}
+
 func automaticSessionTraceOutput(discovery: DaemonDiscovery = DaemonDiscovery()) -> String? {
     guard let info = discovery.readLive() else { return nil }
     return discovery.traceDirectory(for: info).path
+}
+
+private func serialOption(_ args: Args) -> String? {
+    args.option("serial").flatMap { $0 == "true" ? nil : $0 }
 }

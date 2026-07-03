@@ -97,6 +97,23 @@ automatically writes trace packages under
 events on a best-effort basis. If runtime evidence is unavailable for an
 auto-trace, the action still runs; explicit `--trace-output` remains strict.
 
+## Runtime advisories
+
+`reticle status --package <pkg>` stores the last observed app process/runtime
+state in `~/.reticle/process-state.json`. If a later status sees the process
+stop, the PID change, or the runtime move from `healthy` to an unhealthy state,
+the CLI emits a warning and, when a daemon is running, publishes a
+`runtime.advisory` event:
+
+- `source`: `runtime`
+- `type`: `runtime.advisory`
+- `target`: `android:<package>`
+- `payload.kind`: `process-stopped`, `process-restarted`, or
+  `runtime-degraded`
+- `payload.message`: human-readable advisory text
+- `payload.previousPid`, `currentPid`, `previousRuntime`, `currentRuntime`:
+  comparison details when available
+
 ## Helper broker
 
 `reticle serve --helper-broker` starts one long-lived `reticle-helper` process
