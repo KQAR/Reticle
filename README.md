@@ -189,7 +189,8 @@ $CLI ui compact reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
 # For agent-facing ad-hoc flows, outline numbers visible targets and caches
-# short-lived aliases for the current package. Re-run outline after navigation.
+# short-lived aliases for the current package. Repeated rows show item i/n.
+# Re-run outline after navigation; item i/n is a hint, not a selector.
 $CLI ui outline --live --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --alias @1
 
