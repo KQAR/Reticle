@@ -193,6 +193,10 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
+# If a selector misses, Reticle reports same-kind candidates from the current
+# snapshot (test ids, resource ids, DOM CSS selectors, or refs) so you can
+# re-target with a stable handle before falling back to coordinates.
+
 # Embedded WebView DOM: inspect by CSS selector, tap, verify, and keep a trace
 $CLI act tap --package dev.reticle.sample --test-id scenario.webview
 $CLI ui report --package dev.reticle.sample --output reticle-webview

@@ -46,7 +46,8 @@ internal object HelperRenderCommands {
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {
-        val node = findNode(snapshot, params) ?: throw CliError("no matching node")
+        val selector = selectorFrom(params)
+        val node = findNode(snapshot, params) ?: throw CliError(SelectorDiagnostics.nodeMiss(snapshot, selector))
         return ReticleJson.instance.encodeToString(dev.reticle.core.Node.serializer(), node)
     }
 

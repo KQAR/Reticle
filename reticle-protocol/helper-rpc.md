@@ -55,6 +55,9 @@ Response (failure):
 - An unknown method, missing params, or any thrown error becomes an `ok: false`
   response — **the loop never dies on a bad call** (verified: a bad call between
   two good ones does not disturb them).
+- Selector misses are returned as ordinary `ok: false` responses, but the
+  `error` string includes same-kind candidates from the current snapshot when
+  available (test ids, resource ids, DOM CSS selectors, or refs).
 
 The user-facing Swift host also exposes a CLI-level `--json` mode for
 helper-backed commands. That mode is a separate stdout envelope designed for
