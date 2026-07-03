@@ -177,6 +177,9 @@ later. CSS `background-image` itself is still visible as `domStyleBackgroundImag
 
 Selector resolution is semantic-first, then view-tree frames, then a raw
 point — pass `--test-id`, `--resource-id`, `--css`, `--ref`, or `--point x,y`.
+When a selector cannot be resolved, Reticle reports candidates from the current
+snapshot (matching selector kind: test ids, resource ids, CSS selectors, or refs)
+so retry with one of the listed stable handles instead of guessing coordinates.
 
 ```bash
 reticle act tap   --package <pkg> --test-id checkout.payButton
