@@ -193,6 +193,9 @@ struct EventBusTests {
         #expect(text?.contains("shot-body") == true)
         #expect(text?.contains("shot-error") == true)
         #expect(text?.contains("selectorLabel") == true)
+        #expect(text?.contains("selector-chips") == true)
+        #expect(text?.contains("runtimeNode") == true)
+        #expect(text?.contains("runtime.advisory") == true)
         #expect(text?.contains("highest-signal changes") == true)
         #expect(text?.contains("diff-target") == true)
     }

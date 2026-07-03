@@ -36,6 +36,8 @@ h1{margin:0;font-size:18px}
 .filterbar button,.copy-chip{border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
 .filterbar button.active{border-color:rgba(96,165,250,.7);color:#bfdbfe;background:rgba(30,64,175,.28)}
 .copy-chip{margin-left:6px;color:#bbf7d0;border-color:rgba(52,211,153,.45);background:rgba(6,78,59,.2)}
+.selector-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.selector-chips .copy-chip{margin-left:0}
 main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
 .empty{padding:24px;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.9);color:var(--muted)}
 .timeline{position:relative}
@@ -52,6 +54,7 @@ main{max-width:1320px;margin:0 auto;padding:22px 18px 42px}
 .marker:before{content:"";position:absolute;left:50%;top:13px;width:13px;height:13px;border:2px solid var(--accent);border-radius:999px;background:#0b1020;box-shadow:0 0 0 6px rgba(96,165,250,.08);transform:translateX(-50%)}
 .node.before .marker:before,.node.after .marker:before{border-color:var(--ok);box-shadow:0 0 0 6px rgba(52,211,153,.08)}
 .node.diff .marker:before{border-color:var(--warn);box-shadow:0 0 0 6px rgba(251,191,36,.08)}
+.node.runtime .marker:before{border-color:#fb7185;box-shadow:0 0 0 6px rgba(251,113,133,.08)}
 .node.network .marker:before{border-color:#c084fc;box-shadow:0 0 0 6px rgba(192,132,252,.08)}
 .card{width:100%;min-width:0;border:1px solid var(--line);border-radius:18px;background:rgba(17,24,39,.92);box-shadow:0 18px 50px rgba(0,0,0,.22);overflow:hidden}
 .node.before .card,.node.after .card{width:auto;max-width:100%}
@@ -125,6 +128,7 @@ function escapeHtml(value){return String(value===undefined||value===null?'':valu
 function pretty(value){return escapeHtml(JSON.stringify(value,null,2));}
 function actionEvents(){return state.events.filter((event)=>event.type==='action.trace');}
 function networkEvents(){return state.events.filter((event)=>/^network\./.test(event.type));}
+function runtimeEvents(){return state.events.filter((event)=>event.type==='runtime.advisory');}
 function networkTransactions(){
   const groups=new Map();
   for(const event of networkEvents()){
@@ -168,17 +172,17 @@ function mergeEvent(event){
   state.events.sort((a,b)=>eventMillis(a)-eventMillis(b)||a.id.localeCompare(b.id));
 }
 function renderTimeline(){
-  const actions=actionEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
+  const actions=actionEvents(), runtimes=runtimeEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   const live=selectedIsCurrent()?'live':'history';
   const mockCount=allNetworks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
-  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${networks.length}/${allNetworks.length} network request(s), ${mockCount} mock(s)`;
-  if(actions.length===0&&allNetworks.length===0){
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${runtimes.length} runtime advisory(s), ${networks.length}/${allNetworks.length} network request(s), ${mockCount} mock(s)`;
+  if(actions.length===0&&allNetworks.length===0&&runtimes.length===0){
     timeline.className='';
     timeline.innerHTML='<div class="empty">No evidence yet. Run reticle act or enable the proxy while serve is running.</div>';
     return;
   }
   timeline.className='timeline';
-  const items=[...actions.map((event,index)=>({at:eventMillis(event),html:traceGroup(event,index+1)})),...networks.map((tx)=>({at:eventMillis(tx.request||tx.event),html:networkNode(tx)}))].sort((a,b)=>a.at-b.at);
+  const items=[...actions.map((event,index)=>({at:eventMillis(event),html:traceGroup(event,index+1)})),...runtimes.map((event)=>({at:eventMillis(event),html:runtimeNode(event)})),...networks.map((tx)=>({at:eventMillis(tx.request||tx.event),html:networkNode(tx)}))].sort((a,b)=>a.at-b.at);
   timeline.innerHTML=`<div class="lane-labels"><div>UI evidence</div><div></div><div>Network requests</div></div>${items.map((item)=>item.html).join('')}`;
   attachScreenshotPreviews();
   attachCopyChips();
@@ -211,15 +215,31 @@ function networkNode(tx){
   const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
   return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${mockMeta}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
 }
+function runtimeNode(event){
+  const p=event.payload||{}, kind=p.kind||'runtime advisory';
+  const facts=`<div class="facts"><div class="fact"><span>Kind</span><b>${escapeHtml(kind)}</b></div><div class="fact"><span>Previous</span><b>${escapeHtml(pidRuntimeLabel(p.previousPid,p.previousRuntime))}</b></div><div class="fact"><span>Current</span><b>${escapeHtml(pidRuntimeLabel(p.currentPid,p.currentRuntime))}</b></div></div>`;
+  const body=`${facts}<div class="artifact">${escapeHtml(p.message||'Runtime state changed.')}</div><details><summary>Runtime advisory payload</summary><pre>${pretty(p)}</pre></details>`;
+  return node(event,'runtime',formatTime(eventMillis(event)),'Runtime advisory','runtime',kind,body);
+}
+function pidRuntimeLabel(pid,runtime){
+  const parts=[];if(isPresent(pid)){parts.push(`pid=${pid}`);}if(isPresent(runtime)){parts.push(runtime);}return parts.join(' · ')||'unknown';
+}
 function traceGroup(event,index){
   const payload=event.payload||{}, target=payload.target||{}, result=payload.result||{};
   const time=formatTime(eventMillis(event)), targetSource=target.source||result.source||'unknown', targetRef=target.ref||result.ref||'none';
   const targetPoint=target.point?`${target.point.x}, ${target.point.y}`:(result.x&&result.y?`${result.x}, ${result.y}`:'none');
   const beforeBody=`<div class="shot-body"><div class="shot-copy"><div class="artifact">Snapshot: ${refLink(event,'beforeSnapshot','snapshot.json')}</div><details><summary>Evidence ref</summary><pre>${pretty({snapshot:event.refs&&event.refs.beforeSnapshot,screenshot:event.refs&&event.refs.beforeScreenshot})}</pre></details></div><div class="media">${screenshot(event,'beforeScreenshot')}</div></div>`;
-  const actionBody=`<div class="facts"><div class="fact"><span>Selector</span><b>${escapeHtml(selectorLabel(payload.selector))}</b></div><div class="fact"><span>Target source</span><b>${escapeHtml(targetSource)}</b></div><div class="fact"><span>Point</span><b>${escapeHtml(targetPoint)}</b></div></div><details><summary>Selector JSON</summary><pre>${pretty(payload.selector||{})}</pre></details><details><summary>Target / result JSON</summary><pre>${pretty(payload.target||payload.result||{})}</pre></details>`;
+  const actionBody=`<div class="facts"><div class="fact"><span>Selector</span><b>${escapeHtml(selectorLabel(payload.selector))}</b></div><div class="fact"><span>Target source</span><b>${escapeHtml(targetSource)}</b></div><div class="fact"><span>Point</span><b>${escapeHtml(targetPoint)}</b></div></div>${selectorChips(payload.selector,target,result)}<details><summary>Selector JSON</summary><pre>${pretty(payload.selector||{})}</pre></details><details><summary>Target / result JSON</summary><pre>${pretty(payload.target||payload.result||{})}</pre></details>`;
   const afterBody=`<div class="shot-body"><div class="shot-copy"><div class="artifact">Snapshot: ${refLink(event,'afterSnapshot','snapshot.json')}</div><details><summary>Evidence ref</summary><pre>${pretty({snapshot:event.refs&&event.refs.afterSnapshot,screenshot:event.refs&&event.refs.afterScreenshot})}</pre></details></div><div class="media">${screenshot(event,'afterScreenshot')}</div></div>`;
   const diffBody=`<div class="artifact">Manifest: ${refLink(event,'manifest','trace.json')} &middot; target ref: ${escapeHtml(targetRef)}</div><div class="diff-target" data-event-id="${escapeHtml(event.id)}">Loading diff...</div><details><summary>Artifact refs</summary><pre>${pretty(event.refs||{})}</pre></details><details><summary>Full payload</summary><pre>${pretty(payload)}</pre></details>`;
   return `<article class="trace-group">${node(event,'before',time,`Screenshot`,`${index}.1 evidence`,event.refs&&event.refs.beforeScreenshot?'screenshot':'snapshot only',beforeBody)}${node(event,'action',time,labelFor(event),`${index}.2 action`,targetSource,actionBody)}${node(event,'after',time,`Screenshot`,`${index}.3 evidence`,event.refs&&event.refs.afterScreenshot?'screenshot':'snapshot only',afterBody)}${node(event,'diff',time,`Diff`,`${index}.4 changes`,`${payload.changeCount||0} change(s)`,diffBody)}</article>`;
+}
+function selectorChips(selector,target,result){
+  const chips=[];
+  const add=(label,value)=>{if(isPresent(value)){chips.push(`<button class="copy-chip selector-chip" type="button" data-copy="${escapeHtml(value)}">${escapeHtml(label)} ${escapeHtml(value)}</button>`);}};
+  selector=selector||{};target=target||{};result=result||{};
+  add('test-id',selector.testId);add('css',selector.cssSelector);add('ref',selector.ref||target.ref||result.ref);add('resource',selector.resourceId);add('point',target.point?`${target.point.x},${target.point.y}`:(result.x&&result.y?`${result.x},${result.y}`:null));
+  return chips.length?`<div class="selector-chips">${chips.join('')}</div>`:'';
 }
 function openLightbox(src,label){lightboxImage.src=src;lightboxImage.alt=label;lightboxCaption.textContent=label;lightbox.hidden=false;document.body.classList.add('modal-open');}
 function closeLightbox(){lightbox.hidden=true;lightboxImage.removeAttribute('src');document.body.classList.remove('modal-open');}
@@ -294,6 +314,7 @@ function connectStream(){
   stream.addEventListener('network.request',handleMessage);
   stream.addEventListener('network.response',handleMessage);
   stream.addEventListener('network.error',handleMessage);
+  stream.addEventListener('runtime.advisory',handleMessage);
   stream.onerror=()=>{statusEl.textContent='Live event stream disconnected; retrying...';};
 }
 sessionPicker.addEventListener('change',async()=>{state.selectedSession=sessionPicker.value;if(state.stream){state.stream.close();state.stream=null;}await loadHistory();connectStream();});

@@ -152,6 +152,11 @@ row and want to avoid starting a new helper process for each call. Do not assume
 the broker exists: plain one-shot commands still work without `serve`, and
 `--use-daemon` requires a live daemon started with `--helper-broker`.
 
+When `serve` is running, open `/panel` to review action traces, network traffic,
+and runtime advisories in one timeline. Action cards include copyable selector
+and target chips; prefer those chips for quick follow-up commands, but refresh
+with `ui outline --live` after navigation or a runtime advisory.
+
 Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.
