@@ -99,6 +99,13 @@ cross-checks `debug logcat` to tell *not-linked* from *bound-port-failed*),
 with `adb shell am force-stop <pkg>` then relaunch), or **FOREIGN** (some other
 server on the port — pick a different `--port`).
 
+`status --package <pkg>` also compares the current app PID/runtime with the last
+Reticle observation for that `serial + package`. If it prints `advisory:`, treat
+the previous snapshot/alias/trace context as stale: the app may have restarted,
+stopped, or lost its healthy runtime. JSON output carries the same object under
+`data.advisory`; when `serve` is running the warning is also published as a
+`runtime.advisory` session event.
+
 `doctor`/commands also pre-check device readiness: an `offline` device triggers a
 bounded `adb reconnect`, and `unauthorized`/`offline` produce an actionable error
 instead of a 30s hang.

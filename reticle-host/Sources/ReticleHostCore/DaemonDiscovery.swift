@@ -83,17 +83,33 @@ public struct DaemonEventPublisher {
 
     /// Publishes an action trace file to the running daemon if one is discoverable.
     public func publishActionTrace(path: String) -> Result<Void, Error> {
-        guard let info = discovery.readLive() else { return .success(()) }
-        guard let url = URL(string: "http://127.0.0.1:\(info.port)/sessions/current/action-traces") else {
-            return .failure(HelperError("invalid daemon URL"))
-        }
-        let body = ["path": path]
+        publishEventBody(["path": path], path: "sessions/current/action-traces")
+    }
+
+    /// Publishes a daemon event to the running daemon if one is discoverable.
+    public func publishEvent(_ event: EventPostRequest) -> Result<Void, Error> {
         do {
-            let data = try JSONSerialization.data(withJSONObject: body)
-            return post(url: url, data: data)
+            return publishEventBody(try JSONEncoder().encode(event), path: "sessions/current/events")
         } catch {
             return .failure(error)
         }
+    }
+
+    private func publishEventBody(_ body: [String: Any], path: String) -> Result<Void, Error> {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: body)
+            return publishEventBody(data, path: path)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func publishEventBody(_ data: Data, path: String) -> Result<Void, Error> {
+        guard let info = discovery.readLive() else { return .success(()) }
+        guard let url = URL(string: "http://127.0.0.1:\(info.port)/\(path)") else {
+            return .failure(HelperError("invalid daemon URL"))
+        }
+        return post(url: url, data: data)
     }
 
     private func post(url: URL, data: Data) -> Result<Void, Error> {

@@ -286,6 +286,13 @@ avoid repeated helper startup. Device selection still follows the normal
 `--serial` rule; a per-command `--serial` overrides the broker default for that
 request.
 
+`reticle status --package <pkg>` also keeps a small local
+`~/.reticle/process-state.json` baseline. If a later status sees the app PID
+change, the process disappear, or the runtime move from healthy to an unhealthy
+state, text output includes an `advisory:` line and JSON output includes an
+`advisory` object. When `serve` is running, the same advisory is published as a
+`runtime.advisory` event.
+
 Snapshots and screenshots are referenced from `refs` instead of inlined. The
 panel consumes each action trace as a vertical evidence timeline:
 screenshot/snapshot evidence nodes, the action, and the compact diff are

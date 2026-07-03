@@ -34,7 +34,7 @@ public struct ReticleEventEnvelope: Codable, Equatable {
 }
 
 /// Incoming event body accepted by `POST /sessions/current/events`.
-public struct EventPostRequest: Decodable {
+public struct EventPostRequest: Codable {
     public let target: String?
     public let source: String
     public let type: String
