@@ -1,6 +1,6 @@
 import Foundation
 
-func cmdDevices(_ c: HelperClient, _ args: Args) throws {
+func cmdDevices(_ c: HelperCalling, _ args: Args) throws {
     let r = try c.call("listDevices")
     let devices = (r["devices"] as? [[String: Any]]) ?? []
     if JsonEnvelope.enabled(args) {
@@ -11,7 +11,7 @@ func cmdDevices(_ c: HelperClient, _ args: Args) throws {
     for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
 }
 
-func cmdDoctor(_ c: HelperClient, _ args: Args) throws {
+func cmdDoctor(_ c: HelperCalling, _ args: Args) throws {
     let ping = try c.call("ping")
     let devicesResponse = try c.call("listDevices")
     let devices = (devicesResponse["devices"] as? [[String: Any]]) ?? []
@@ -24,7 +24,7 @@ func cmdDoctor(_ c: HelperClient, _ args: Args) throws {
     for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
 }
 
-func cmdStatus(_ c: HelperClient, _ args: Args) throws {
+func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("status", ["package": pkg])
     if JsonEnvelope.enabled(args) {
@@ -38,7 +38,7 @@ func cmdStatus(_ c: HelperClient, _ args: Args) throws {
     print("runtime: \(r["runtime"] ?? "unknown")")
 }
 
-func cmdInject(_ c: HelperClient, _ args: Args) throws {
+func cmdInject(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     var params: [String: Any] = ["package": pkg]
     let devPayload = "reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar"
@@ -54,7 +54,7 @@ func cmdInject(_ c: HelperClient, _ args: Args) throws {
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
 }
 
-func cmdUiReport(_ c: HelperClient, _ args: Args) throws {
+func cmdUiReport(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     let outDir = args.option("output") ?? "reticle-report"
     let r = try c.call("uiReport", ["package": pkg])
@@ -103,7 +103,7 @@ func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
     return removed
 }
 
-func cmdLaunch(_ c: HelperClient, _ args: Args) throws {
+func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("launch", ["package": pkg])
     if JsonEnvelope.enabled(args) {
@@ -113,7 +113,7 @@ func cmdLaunch(_ c: HelperClient, _ args: Args) throws {
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
 }
 
-func cmdAct(_ c: HelperClient, _ args: Args) throws {
+func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/type)") }
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]

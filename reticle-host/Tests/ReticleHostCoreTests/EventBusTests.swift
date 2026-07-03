@@ -108,6 +108,63 @@ struct EventBusTests {
         #expect(decoded.events.first?.type == "action.trace")
     }
 
+    @Test func httpServerForwardsHelperRpcWhenBrokerEnabled() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let helper = FakeHelperClient(result: [
+            "version": "test",
+            "devices": [["serial": "emulator-5554", "state": "device"]],
+        ])
+        let server = try ReticleHttpServer(store: store, port: 0, helper: helper)
+        try server.start()
+        defer { server.stop() }
+
+        let response = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/helper/rpc")!,
+            body: HelperRpcRequestFixture(method: "listDevices", params: ["target": "android"])
+        )
+
+        #expect(response.status == 200)
+        let decoded = try JSONDecoder().decode(HelperRpcResponse.self, from: response.data)
+        #expect(decoded.ok)
+        #expect(decoded.result?["version"] == .string("test"))
+        #expect(helper.calls == ["listDevices"])
+    }
+
+    @Test func daemonHelperClientUsesLiveDiscoveryAndForwardsSerial() throws {
+        let root = try temporaryDirectory()
+        let discovery = DaemonDiscovery(fileURL: root.appendingPathComponent("daemon.json"))
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let helper = FakeHelperClient(result: ["ok": true])
+        let server = try ReticleHttpServer(store: store, port: 0, helper: helper)
+        try server.start()
+        defer { server.stop() }
+        try discovery.write(DaemonInfo(pid: getpid(), port: server.port, session: "test", startedAt: 1))
+
+        let result = try DaemonHelperClient(discovery: discovery, timeout: 2, serial: "device-1")
+            .call("status", ["package": "pkg"])
+
+        #expect(result["ok"] as? Bool == true)
+        #expect(helper.calls == ["status"])
+        #expect(helper.lastParams["serial"] as? String == "device-1")
+        #expect(helper.lastParams["package"] as? String == "pkg")
+    }
+
+    @Test func httpServerRejectsHelperRpcWithoutBroker() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let response = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/helper/rpc")!,
+            body: HelperRpcRequestFixture(method: "ping", params: [:])
+        )
+
+        #expect(response.status == 404)
+    }
+
     @Test func httpServerServesReadOnlyPanel() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
@@ -385,6 +442,30 @@ struct EventBusTests {
         close(fd)
         guard !bytes.isEmpty else { throw TestFailure.read }
         return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+private struct HelperRpcRequestFixture: Encodable {
+    let method: String
+    let params: [String: String]
+}
+
+private final class FakeHelperClient: HelperCalling, @unchecked Sendable {
+    private let result: [String: Any]
+    private let lock = NSLock()
+    private(set) var calls: [String] = []
+    private(set) var lastParams: [String: Any] = [:]
+
+    init(result: [String: Any]) {
+        self.result = result
+    }
+
+    func call(_ method: String, _ params: [String: Any]) throws -> [String: Any] {
+        lock.lock()
+        calls.append(method)
+        lastParams = params
+        lock.unlock()
+        return result
     }
 }
 

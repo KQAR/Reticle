@@ -6,6 +6,7 @@ import NIOCore
 public final class ReticleHttpServer: @unchecked Sendable {
     private let store: EventStore
     private let mockStore: NetworkMockStore?
+    private let helper: HelperCalling?
     private let ready = DispatchSemaphore(value: 0)
     private let traceIngest = ActionTraceIngest()
     private let lock = NSLock()
@@ -16,9 +17,15 @@ public final class ReticleHttpServer: @unchecked Sendable {
     public private(set) var port: Int
 
     /// Creates a daemon HTTP server on `port`; pass 0 for an ephemeral port.
-    public init(store: EventStore, port: Int, mockStore: NetworkMockStore? = nil) throws {
+    public init(
+        store: EventStore,
+        port: Int,
+        mockStore: NetworkMockStore? = nil,
+        helper: HelperCalling? = nil
+    ) throws {
         self.store = store
         self.mockStore = mockStore
+        self.helper = helper
         self.port = port
     }
 
@@ -82,6 +89,7 @@ public final class ReticleHttpServer: @unchecked Sendable {
         let router = Router()
         ReticleSessionRoutes(store: store, traceIngest: traceIngest, port: { [weak self] in self?.port ?? 0 }).register(on: router)
         ReticleMockRoutes(mockStore: mockStore).register(on: router)
+        ReticleHelperRoutes(helper: helper).register(on: router)
         ReticleStreamRoutes(store: store).register(on: router)
         return router
     }
