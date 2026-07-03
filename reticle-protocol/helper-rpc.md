@@ -85,7 +85,7 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `inject` | `package` (req), `payloadDex?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
-| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector or `alias`; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries |
+| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector or `alias`; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries. Host `act batch --file` expands a JSON array into repeated `act` RPC calls; it is not a separate helper method. |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |

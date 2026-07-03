@@ -338,6 +338,22 @@ reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
   --verify '#checkout.status'
 ```
 
+Short deterministic flows can be sequenced from a JSON file. The Swift host
+expands each step into the same single-action helper RPC, stopping on the first
+failure:
+
+```json
+[
+  { "gesture": "tap", "testId": "scenario.checkout" },
+  { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
+]
+```
+
+```bash
+reticle act batch --package dev.reticle.sample --file steps.json \
+  --trace-output reticle-batch
+```
+
 Expected: `/panel` shows the current session selected in the picker and a
 vertical evidence timeline. Each action expands into screenshot evidence, action,
 screenshot evidence, and diff cards; the checkout pay diff contains

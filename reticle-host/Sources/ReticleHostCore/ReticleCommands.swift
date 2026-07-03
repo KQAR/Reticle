@@ -131,6 +131,10 @@ func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
 
 func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/type)") }
+    if gesture == "batch" {
+        try cmdActBatch(c, args)
+        return
+    }
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]
     for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "region", "from", "to", "duration", "text"] {
@@ -156,6 +160,79 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     if let trace = r["trace"] as? [String: Any] {
         printTrace(trace)
         publishTraceIfDaemonIsRunning(trace)
+    }
+}
+
+func cmdActBatch(_ c: HelperCalling, _ args: Args) throws {
+    let pkg = try args.require("package")
+    let file = try args.require("file")
+    let data = try Data(contentsOf: URL(fileURLWithPath: file))
+    let steps = try actionBatchSteps(from: data)
+    guard !steps.isEmpty else {
+        throw HelperError("act batch file must contain at least one step")
+    }
+    let traceRoot = args.option("trace-output")
+    var results: [[String: Any]] = []
+    for (index, rawStep) in steps.enumerated() {
+        var params = rawStep
+        let gesture = params["gesture"] as? String ?? ""
+        guard !gesture.isEmpty else {
+            throw HelperError("act batch step \(index + 1) is missing gesture")
+        }
+        params["package"] = params["package"] ?? pkg
+        if let traceRoot, params["traceOutput"] == nil {
+            params["traceOutput"] = URL(fileURLWithPath: traceRoot)
+                .appendingPathComponent(String(format: "step-%02d-%@", index + 1, gesture))
+                .path
+        }
+        if let delay = args.option("trace-delay"), params["traceDelayMs"] == nil {
+            params["traceDelayMs"] = Int(delay) ?? 250
+        }
+        let result = try c.call("act", params)
+        results.append(["index": index + 1, "gesture": gesture, "result": result])
+        if JsonEnvelope.enabled(args) == false {
+            print("step \(index + 1) \(gesture): \(compactResultLine(result))")
+            if let verify = result["verify"] as? [String: Any] { printVerify(verify) }
+            if let trace = result["trace"] as? [String: Any] {
+                printTrace(trace)
+                publishTraceIfDaemonIsRunning(trace)
+            }
+        }
+        if let delayMs = batchInt(params["delayMs"]), delayMs > 0 {
+            Thread.sleep(forTimeInterval: Double(delayMs) / 1000.0)
+        }
+    }
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(["count": results.count, "steps": results])
+    }
+}
+
+func actionBatchSteps(from data: Data) throws -> [[String: Any]] {
+    let value = try JSONSerialization.jsonObject(with: data)
+    guard let array = value as? [[String: Any]] else {
+        throw HelperError("act batch file must be a JSON array of step objects")
+    }
+    return array
+}
+
+private func compactResultLine(_ result: [String: Any]) -> String {
+    result
+        .filter { $0.key != "verify" && $0.key != "trace" }
+        .map { "\($0)=\($1)" }
+        .sorted()
+        .joined(separator: " ")
+}
+
+private func batchInt(_ value: Any?) -> Int? {
+    switch value {
+    case let int as Int:
+        return int
+    case let number as NSNumber:
+        return number.intValue
+    case let double as Double:
+        return Int(double)
+    default:
+        return nil
     }
 }
 

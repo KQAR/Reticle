@@ -232,6 +232,26 @@ emoji — which `adb input text` silently drops) is staged on the device clipboa
 by the in-process agent and pasted into the focused field, so it **requires a
 reachable runtime** and a focused input. Tap the field first.
 
+Use `act batch --file steps.json` for short, deterministic multi-step flows.
+The file is a JSON array; each object is one normal act RPC using helper-style
+keys such as `gesture`, `testId`, `css`, `from`, `to`, `text`, `verify`, and
+optional `delayMs` after that step:
+
+```json
+[
+  { "gesture": "tap", "testId": "checkout.name" },
+  { "gesture": "type", "text": "Ada" },
+  { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
+]
+```
+
+```bash
+reticle act batch --package <pkg> --file steps.json --trace-output reticle-batch
+```
+
+Batch is host-side sequencing: it stops on the first failing step and still uses
+the same tap/swipe/drag/type backend as individual `act` commands.
+
 **`--verify` — act and check the result in one command.** Add `--verify` to any
 `act` and Reticle captures the watched node before the gesture, acts, then polls
 until it changes (or a ~2s budget elapses) and prints the before→after diff.
