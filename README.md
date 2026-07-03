@@ -217,6 +217,16 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
     --property text --value "Paid!"
 ```
 
+All helper-backed commands accept `--json` for machine-readable output. Success
+uses `{ "ok": true, "data": ... }`; failures use `{ "ok": false, "error": ... }`.
+Text output remains the default for interactive use:
+
+```bash
+$CLI doctor --json
+$CLI act tap --package dev.reticle.sample --test-id checkout.payButton --verify --json
+$CLI ui node --live --package dev.reticle.sample --test-id checkout.status --json
+```
+
 ## Local session event bus
 
 `reticle serve` starts the local daemon: a Hummingbird-backed localhost REST/SSE

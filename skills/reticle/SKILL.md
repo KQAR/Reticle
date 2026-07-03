@@ -125,6 +125,11 @@ reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
 ```
 
+Use `--json` when another tool or script will parse the result. Helper-backed
+commands return one envelope shape: `{ "ok": true, "data": ... }` on success and
+`{ "ok": false, "error": ... }` on failure. Keep text output for human-readable
+interactive sessions.
+
 Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.

@@ -68,7 +68,11 @@ public enum ReticleCLI {
             client.shutdown()
             return 0
         } catch {
-            writeError("error: \(error)\n")
+            if JsonEnvelope.enabled(args) {
+                JsonEnvelope.error(error)
+            } else {
+                writeError("error: \(error)\n")
+            }
             client.shutdown()
             return 1
         }
@@ -76,8 +80,8 @@ public enum ReticleCLI {
 
     private static func dispatch(command: String, args: Args, client: HelperClient) throws {
         switch command {
-        case "doctor": try cmdDoctor(client)
-        case "devices": try cmdDevices(client)
+        case "doctor": try cmdDoctor(client, args)
+        case "devices": try cmdDevices(client, args)
         case "status": try cmdStatus(client, args)
         case "app":
             switch args.positional(1) {

@@ -1,21 +1,38 @@
 import Foundation
 
-func cmdDevices(_ c: HelperClient) throws {
+func cmdDevices(_ c: HelperClient, _ args: Args) throws {
     let r = try c.call("listDevices")
     let devices = (r["devices"] as? [[String: Any]]) ?? []
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(["devices": devices])
+        return
+    }
     if devices.isEmpty { print("devices: none"); return }
     for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
 }
 
-func cmdDoctor(_ c: HelperClient) throws {
+func cmdDoctor(_ c: HelperClient, _ args: Args) throws {
     let ping = try c.call("ping")
+    let devicesResponse = try c.call("listDevices")
+    let devices = (devicesResponse["devices"] as? [[String: Any]]) ?? []
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(["helper": ping, "devices": devices])
+        return
+    }
     print("helper: ok (cli version \(ping["version"] ?? "?"))")
-    try cmdDevices(c)
+    if devices.isEmpty { print("devices: none"); return }
+    for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
 }
 
 func cmdStatus(_ c: HelperClient, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("status", ["package": pkg])
+    if JsonEnvelope.enabled(args) {
+        var data = r
+        data["package"] = pkg
+        try JsonEnvelope.success(data)
+        return
+    }
     print("package: \(pkg)")
     print("running: \(r["running"] ?? false)\(r["pid"].map { " (pid=\($0))" } ?? "")")
     print("runtime: \(r["runtime"] ?? "unknown")")
@@ -30,6 +47,10 @@ func cmdInject(_ c: HelperClient, _ args: Args) throws {
             ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
     if let payload { params["payloadDex"] = payload }
     let r = try c.call("inject", params)
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(r)
+        return
+    }
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
 }
 
@@ -45,6 +66,21 @@ func cmdUiReport(_ c: HelperClient, _ args: Args) throws {
         guard let tree = r[key] else { continue }
         let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted])
         try data.write(to: URL(fileURLWithPath: "\(outDir)/\(key).json"))
+    }
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success([
+            "output": outDir,
+            "nodeCount": r["nodeCount"] ?? NSNull(),
+            "compactItemCount": r["compactItemCount"] ?? NSNull(),
+            "semanticNodeCount": r["semanticNodeCount"] ?? NSNull(),
+            "prunedStaleArtifacts": pruned,
+            "files": [
+                "snapshot": "\(outDir)/snapshot.json",
+                "semantics": "\(outDir)/semantics.json",
+                "compact": "\(outDir)/compact.json",
+            ],
+        ])
+        return
     }
     print("wrote report to \(outDir)")
     print("nodes: \(r["nodeCount"] ?? "?"), compact items: \(r["compactItemCount"] ?? "?"), semantic nodes: \(r["semanticNodeCount"] ?? "?")")
@@ -70,6 +106,10 @@ func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
 func cmdLaunch(_ c: HelperClient, _ args: Args) throws {
     let pkg = try args.require("package")
     let r = try c.call("launch", ["package": pkg])
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(r)
+        return
+    }
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
 }
 
@@ -91,6 +131,10 @@ func cmdAct(_ c: HelperClient, _ args: Args) throws {
     if let t = args.option("trace-delay") { params["traceDelayMs"] = Int(t) ?? 250 }
 
     let r = try c.call("act", params)
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(r)
+        return
+    }
     print(r.filter { $0.key != "verify" && $0.key != "trace" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
     if let verify = r["verify"] as? [String: Any] { printVerify(verify) }
     if let trace = r["trace"] as? [String: Any] {
