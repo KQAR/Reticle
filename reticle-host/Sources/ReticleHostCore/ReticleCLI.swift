@@ -2,7 +2,7 @@ import Foundation
 
 /// Reticle host command-line entry point.
 public enum ReticleCLI {
-    public static let version = "0.6.4"
+    public static let version = "0.6.5"
     public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|mock|serve|version> [--serial <id>] [options]"
 
     /// Runs the Reticle CLI and returns a process exit code.
