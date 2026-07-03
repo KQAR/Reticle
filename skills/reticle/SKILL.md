@@ -120,6 +120,7 @@ reticle app inject  --package <pkg>              # debuggable app w/o the AAR: l
 reticle status      --package <pkg>              # probe runtime health + identity if anything's off
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
+reticle ui outline  --live --package <pkg>       # numbered agent-facing outline + @N alias cache
 reticle ui node     reticle-report/snapshot.json --test-id <id>   # full node
 reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM node
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
@@ -133,6 +134,13 @@ interactive sessions.
 Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.
+
+`ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
+visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
+alias cache for that package. Use `reticle act tap --package <pkg> --alias @N`
+only immediately after the matching outline; re-run outline after navigation,
+scrolling, or modal changes. Stable automation should still prefer
+`--test-id`, `--resource-id`, `--css`, or `--ref`.
 
 **`--live` — inspect the running app without writing a report.** Any `ui` view
 (`node`/`compact`/`tree`/`regions`) takes `--live --package <pkg>` instead of a

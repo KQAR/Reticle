@@ -188,6 +188,11 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
+# For agent-facing ad-hoc flows, outline numbers visible targets and caches
+# short-lived aliases for the current package. Re-run outline after navigation.
+$CLI ui outline --live --package dev.reticle.sample
+$CLI act tap --package dev.reticle.sample --alias @1
+
 # Act on the app (semantic/selector first, frame fallback)
 $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton

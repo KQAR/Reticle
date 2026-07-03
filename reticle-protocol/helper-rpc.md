@@ -69,7 +69,7 @@ it does not change this helper stdio contract.
 
 Common optional params on device methods: `serial`, `port`, `hostPort`. Selector
 params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
-`ref`, `point` ("x,y"), `region`.
+`ref`, `point` ("x,y"), `region`, `alias` (`@N` from the last outline cache).
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -79,12 +79,12 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `inject` | `package` (req), `payloadDex?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
-| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries |
+| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector or `alias`; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
 | `screenshot` | `package?` | `{ "via", "pngBase64" }` — agent `/screenshot` if reachable, else `adb screencap` |
-| `render` | `view` (tree/semantics/compact/node/regions), `snapshot` (path), `depth?`, selector | `{ "text": "<rendered>" }` — local snapshot rendering; derivation stays in Kotlin, host just prints |
+| `render` | `view` (tree/semantics/compact/outline/node/regions), `snapshot` (path), `depth?`, selector, optional `package` to write outline alias cache | `{ "text": "<rendered>" }` — local snapshot rendering; derivation stays in Kotlin, host just prints |
 | `proxyStatus` | `serial?` | `{ "httpProxy": "<host:port>" }` or empty when unset |
 | `proxySet` | `serial?`, either `host` + `port` or raw `value` | `{ "previous", "current" }` — configures Android global `http_proxy`; `127.0.0.1:<port>` also creates `adb reverse tcp:<port> tcp:<port>` |
 | `proxyClear` | `serial?`, `port?` | `{ "previous", "current": "" }` — clears Android global `http_proxy` and removes the matching adb reverse when `port` is supplied |

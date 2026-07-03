@@ -100,6 +100,7 @@ public enum ReticleCLI {
             case "screenshot": try cmdScreenshot(client, args)
             case "tree": try cmdUiRender(client, args, view: "tree")
             case "compact": try cmdUiRender(client, args, view: "compact")
+            case "outline": try cmdUiRender(client, args, view: "outline")
             case "node": try cmdUiRender(client, args, view: "node")
             case "regions": try cmdUiRender(client, args, view: "regions")
             default: throw HelperError("unknown ui subcommand: \(args.positional(1) ?? "<none>")")
