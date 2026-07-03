@@ -11,11 +11,25 @@ public struct HelperError: Error, CustomStringConvertible {
     public var description: String { message }
 }
 
+/// Minimal call surface shared by local helper processes and daemon-forwarded RPC.
+public protocol HelperCalling: AnyObject, Sendable {
+    @discardableResult
+    func call(_ method: String, _ params: [String: Any]) throws -> [String: Any]
+}
+
+public extension HelperCalling {
+    @discardableResult
+    func call(_ method: String) throws -> [String: Any] {
+        try call(method, [:])
+    }
+}
+
 /// A long-lived client over the Kotlin helper's JSONL stdio RPC.
-final class HelperClient {
+final class HelperClient: HelperCalling, @unchecked Sendable {
     private let process = Process()
     private let stdinPipe = Pipe()
     private let stdoutPipe = Pipe()
+    private let callLock = NSLock()
     private var reader: LineReader!
     private var nextId = 1
     private let serial: String?
@@ -44,6 +58,9 @@ final class HelperClient {
     /// Sends one request and returns the successful `result` object.
     @discardableResult
     func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
+        callLock.lock()
+        defer { callLock.unlock() }
+
         let id = nextId
         nextId += 1
 

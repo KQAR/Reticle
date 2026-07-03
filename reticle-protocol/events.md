@@ -67,6 +67,7 @@ The skeleton serves these endpoints on `127.0.0.1`:
 | `GET` | `/sessions/current/mocks/values` | List current-session mock response values. |
 | `POST` | `/sessions/current/mocks/values` | Create or update a mock response value. |
 | `DELETE` | `/sessions/current/mocks/values/{id}` | Remove an unreferenced mock value. |
+| `POST` | `/helper/rpc` | Present only when `serve --helper-broker` is enabled; forwards one helper RPC through the daemon-owned helper process. |
 | `GET` | `/events/stream?since=<id>` | Server-Sent Events replay followed by live events. |
 
 SSE responses use `text/event-stream; charset=utf-8`, one event per frame:
@@ -95,6 +96,31 @@ automatically writes trace packages under
 `~/.reticle/sessions/<session>/traces` and publishes them as `action.trace`
 events on a best-effort basis. If runtime evidence is unavailable for an
 auto-trace, the action still runs; explicit `--trace-output` remains strict.
+
+## Helper broker
+
+`reticle serve --helper-broker` starts one long-lived `reticle-helper` process
+owned by the daemon and exposes `POST /helper/rpc` on the same localhost server.
+One-shot commands opt into that path with `--use-daemon` or
+`RETICLE_USE_DAEMON=1`; default commands still spawn their own helper and do not
+require a daemon.
+
+Request:
+
+```json
+{ "method": "status", "params": { "package": "dev.reticle.sample" } }
+```
+
+Response:
+
+```json
+{ "ok": true, "result": { "running": true } }
+```
+
+Helper errors stay in-band as `{ "ok": false, "error": "..." }`, matching the
+underlying helper contract. The route exists only when the broker is enabled;
+otherwise it returns 404. `--serial` on the one-shot command is forwarded in that
+request and overrides the daemon broker's default serial for that call.
 
 ## Network proxy events
 

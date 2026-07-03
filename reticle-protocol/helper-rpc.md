@@ -11,7 +11,9 @@ like the wire protocol (`snapshot.schema.json`). The payloads that carry UI tree
 
 The daemon event bus is a separate contract: `reticle serve` exposes localhost
 REST/SSE and persists `events.jsonl` session timelines. See `events.md` for that
-surface; do not add daemon endpoints to this helper stdio RPC contract.
+surface. When `serve --helper-broker` is enabled, the daemon also exposes a
+thin HTTP wrapper around this same helper RPC; that wrapper does not add helper
+methods or change the JSONL stdio contract below.
 
 The helper ships as the no-JDK native `reticle-helper` (GraalVM native-image).
 **Build note:** the helper talks to the in-app loopback server over HTTP
@@ -29,6 +31,10 @@ protocol http … not enabled" (the `:reticle-helper:nativeHelper` task does thi
 - **stdout is protocol-only.** All diagnostics go to stderr. The host can parse
   stdout as a clean JSONL stream.
 - Closing the helper's stdin ends its loop (clean shutdown).
+- The Swift daemon can broker the same calls through `POST /helper/rpc` when
+  `reticle serve --helper-broker` is enabled. One-shot commands opt in with
+  `--use-daemon` or `RETICLE_USE_DAEMON=1`; the default path still spawns a
+  command-owned helper process.
 
 ## Envelope
 

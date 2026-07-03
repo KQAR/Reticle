@@ -17,6 +17,7 @@ public struct ServeOptions {
     public let proxyInstallCa: Bool
     public let proxyTlsHosts: [String]
     public let helper: String?
+    public let helperBroker: Bool
 
     /// Creates daemon options with Reticle defaults.
     public init(args: Args) {
@@ -39,6 +40,7 @@ public struct ServeOptions {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty } ?? []
         helper = resolveHelper(args)
+        helperBroker = args.option("helper-broker") == "true"
     }
 
     /// Default session name for ad-hoc serve runs.
@@ -55,6 +57,7 @@ public final class ServeRuntime {
     private var server: ReticleHttpServer?
     private var proxyServer: NetworkProxyServer?
     private var proxyRestore: DeviceProxyRestore?
+    private var helperBroker: HelperClient?
     private let stopSemaphore = DispatchSemaphore(value: 0)
     private var signalSources: [DispatchSourceSignal] = []
 
@@ -71,9 +74,17 @@ public final class ServeRuntime {
             limit: options.eventLimit
         )
         let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
-        let server = try ReticleHttpServer(store: store, port: options.port, mockStore: mockStore)
-        self.server = server
-        try server.start()
+        let broker = try startHelperBrokerIfNeeded()
+        let server: ReticleHttpServer
+        do {
+            server = try ReticleHttpServer(store: store, port: options.port, mockStore: mockStore, helper: broker)
+            self.server = server
+            try server.start()
+        } catch {
+            helperBroker?.shutdown()
+            helperBroker = nil
+            throw error
+        }
         if let proxyPort = effectiveProxyPort {
             let certificates = try options.proxyCaDirectory.map { store in
                 let certificates = ProxyCertificateStore(directory: store)
@@ -112,6 +123,9 @@ public final class ServeRuntime {
 
         print("reticle serve: session \(options.session)")
         print("reticle serve: http://127.0.0.1:\(server.port)")
+        if options.helperBroker {
+            print("reticle serve: helper broker enabled")
+        }
         if let proxyServer {
             print("reticle serve: proxy http://127.0.0.1:\(proxyServer.port)")
         }
@@ -127,9 +141,26 @@ public final class ServeRuntime {
     /// Stops the server and removes owned discovery metadata.
     public func stop() {
         restoreDeviceProxy()
+        helperBroker?.shutdown()
+        helperBroker = nil
         proxyServer?.stop()
         server?.stop()
         options.discovery.clearIfOwned(by: getpid())
+    }
+
+    private func startHelperBrokerIfNeeded() throws -> HelperClient? {
+        guard options.helperBroker else { return nil }
+        guard let helper = options.helper else {
+            throw HelperError("could not find reticle-helper for --helper-broker")
+        }
+        let client = HelperClient(
+            launcher: helper,
+            javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
+            serial: options.serial
+        )
+        try client.start()
+        helperBroker = client
+        return client
     }
 
     private var effectiveProxyPort: Int? {

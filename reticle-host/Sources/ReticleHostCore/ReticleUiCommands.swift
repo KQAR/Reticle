@@ -1,6 +1,6 @@
 import Foundation
 
-func cmdMutate(_ c: HelperClient, _ args: Args) throws {
+func cmdMutate(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     var params: [String: Any] = [
         "package": pkg,
@@ -18,7 +18,7 @@ func cmdMutate(_ c: HelperClient, _ args: Args) throws {
     print("mutated \(r["ref"] ?? "?") (was \(r["previousValue"] ?? "?"))")
 }
 
-func cmdDebug(_ c: HelperClient, _ args: Args) throws {
+func cmdDebug(_ c: HelperCalling, _ args: Args) throws {
     switch args.positional(1) {
     case "logs":
         let pkg = try args.require("package")
@@ -50,7 +50,7 @@ func cmdDebug(_ c: HelperClient, _ args: Args) throws {
     }
 }
 
-func cmdScreenshot(_ c: HelperClient, _ args: Args) throws {
+func cmdScreenshot(_ c: HelperCalling, _ args: Args) throws {
     let out = args.option("output") ?? "screenshot.png"
     var params: [String: Any] = [:]
     if let pkg = args.option("package") { params["package"] = pkg }
@@ -70,7 +70,7 @@ func cmdScreenshot(_ c: HelperClient, _ args: Args) throws {
     print("wrote \(out) (\(data.count) bytes) via \(r["via"] ?? "?")")
 }
 
-func cmdUiRender(_ c: HelperClient, _ args: Args, view: String) throws {
+func cmdUiRender(_ c: HelperCalling, _ args: Args, view: String) throws {
     var params: [String: Any] = ["view": view]
     let live = args.option("live") != nil
     if live {
