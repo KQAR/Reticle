@@ -45,6 +45,17 @@ class OutlineRendererTest {
         }
     }
 
+    @Test
+    fun marksRepeatedVerticalItemsWithOrdinals() {
+        val (text, entries) = OutlineRenderer.render(listSnapshot())
+
+        assertContains(text, "@1 #row.one button \"One\" [20,100 300x48] tappable item 1/3")
+        assertContains(text, "@2 #row.two button \"Two\" [20,160 300x48] tappable item 2/3")
+        assertContains(text, "@3 #row.three button \"Three\" [20,220 300x48] tappable item 3/3")
+        assertEquals(listOf(1, 2, 3), entries.map { it.listIndex })
+        assertEquals(listOf(3, 3, 3), entries.map { it.listSize })
+    }
+
     private fun sampleSnapshot(): Snapshot = Snapshot(
         capturedAtMillis = 123L,
         screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
@@ -79,5 +90,34 @@ class OutlineRendererTest {
                 isInteractive = false,
             ),
         ),
+    )
+
+    private fun listSnapshot(): Snapshot = Snapshot(
+        capturedAtMillis = 456L,
+        screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+        rootRef = "app",
+        nodes = linkedMapOf(
+            "app" to Node(
+                ref = "app",
+                kind = NodeKind.application,
+                typeName = "Application",
+                children = listOf("one", "two", "three"),
+            ),
+            "one" to row("one", "row.one", "One", 100.0),
+            "two" to row("two", "row.two", "Two", 160.0),
+            "three" to row("three", "row.three", "Three", 220.0),
+        ),
+    )
+
+    private fun row(ref: String, testId: String, text: String, y: Double): Node = Node(
+        ref = ref,
+        parentRef = "app",
+        kind = NodeKind.view,
+        typeName = "android.widget.Button",
+        role = "button",
+        testId = testId,
+        text = text,
+        frame = Rect(20.0, y, 300.0, 48.0),
+        isInteractive = true,
     )
 }

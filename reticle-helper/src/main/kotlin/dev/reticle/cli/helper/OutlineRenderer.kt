@@ -32,6 +32,8 @@ internal object OutlineRenderer {
         val css: String?,
         val enabled: Boolean,
         val interactive: Boolean,
+        val listIndex: Int? = null,
+        val listSize: Int? = null,
     )
 
     fun render(snapshot: Snapshot): Pair<String, List<Entry>> {
@@ -79,7 +81,7 @@ internal object OutlineRenderer {
         val nodes = snapshot.nodes.values
             .filter { it.isVisible && it.frame != null && (it.isInteractive || it.hasLabelOrSelector()) }
             .sortedWith(compareBy<Node>({ it.frame?.y ?: 0.0 }, { it.frame?.x ?: 0.0 }))
-        return nodes.mapIndexed { index, node ->
+        val entries = nodes.mapIndexed { index, node ->
             Entry(
                 alias = "@${index + 1}",
                 ref = node.ref,
@@ -92,6 +94,25 @@ internal object OutlineRenderer {
                 enabled = node.isEnabled,
                 interactive = node.isInteractive,
             )
+        }
+        return withListOrdinals(entries)
+    }
+
+    private fun withListOrdinals(entries: List<Entry>): List<Entry> {
+        val groups = entries
+            .withIndex()
+            .groupBy { (_, entry) -> listKey(entry) }
+            .filterValues { group -> group.size >= 2 }
+        if (groups.isEmpty()) return entries
+        val ordinalByAlias = mutableMapOf<String, Pair<Int, Int>>()
+        groups.values.forEach { group ->
+            group.sortedWith(compareBy({ it.value.frame.y }, { it.value.frame.x })).forEachIndexed { index, item ->
+                ordinalByAlias[item.value.alias] = (index + 1) to group.size
+            }
+        }
+        return entries.map { entry ->
+            val ordinal = ordinalByAlias[entry.alias] ?: return@map entry
+            entry.copy(listIndex = ordinal.first, listSize = ordinal.second)
         }
     }
 
@@ -107,6 +128,9 @@ internal object OutlineRenderer {
             .append(entry.frame.height.toInt()).append("]")
         if (!entry.enabled) append(" disabled")
         if (entry.interactive) append(" tappable")
+        if (entry.listIndex != null && entry.listSize != null) {
+            append(" item ").append(entry.listIndex).append("/").append(entry.listSize)
+        }
     }
 
     private fun selector(entry: Entry): String? =
@@ -138,6 +162,8 @@ internal object OutlineRenderer {
                         e.css?.let { put("css", it) }
                         put("enabled", e.enabled)
                         put("interactive", e.interactive)
+                        e.listIndex?.let { put("listIndex", it) }
+                        e.listSize?.let { put("listSize", it) }
                         put("frame", buildJsonObject {
                             put("x", e.frame.x)
                             put("y", e.frame.y)
@@ -167,7 +193,17 @@ internal object OutlineRenderer {
             css = item["css"]?.jsonPrimitive?.content,
             enabled = item["enabled"]?.jsonPrimitive?.content == "true",
             interactive = item["interactive"]?.jsonPrimitive?.content == "true",
+            listIndex = item["listIndex"]?.jsonPrimitive?.int,
+            listSize = item["listSize"]?.jsonPrimitive?.int,
         )
+    }
+
+    private fun listKey(entry: Entry): String {
+        val frame = entry.frame
+        val quantizedX = (frame.x / 24.0).toInt()
+        val quantizedWidth = (frame.width / 24.0).toInt()
+        val quantizedHeight = (frame.height / 12.0).toInt()
+        return "${entry.role}|$quantizedX|$quantizedWidth|$quantizedHeight|${entry.interactive}"
     }
 
     private fun aliasMiss(alias: String, entries: JsonArray): String {
