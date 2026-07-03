@@ -221,11 +221,15 @@ reticle mock import --input /tmp/reticle-mocks.json
 
 `GET /panel` serves a zero-build HTML/CSS/JS panel from the daemon itself. It
 loads history from the current or selected session events endpoint, listens for
-live `action.trace` events over SSE when the current session is selected, and
-uses the artifact endpoint above to render a vertical evidence timeline. One
+live `action.trace`, `network.*`, and `runtime.advisory` events over SSE when
+the current session is selected, and uses the artifact endpoint above to render
+a vertical evidence timeline. One
 `action.trace` event is flattened in the UI into screenshot/snapshot evidence
 cards around the action plus a compact diff card; the persisted event log
-remains unchanged. The panel uses a centered axis with a network request lane.
+remains unchanged. Action cards include copyable selector/target chips derived
+from the trace payload. Runtime advisory events render as standalone cards with
+previous/current PID and runtime details. The panel uses a centered axis with a
+network request lane.
 `network.*` events are grouped by `requestId` into request cards with method,
 URL, status, duration, MITM/tunnel/mock mode, request/response headers, body
 artifact links, small text previews for captured bodies, filter buttons for

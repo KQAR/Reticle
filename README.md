@@ -304,9 +304,11 @@ network request spans occupy the other. Network requests are grouped by request
 id with method, URL, status, timing, request/response headers, body artifact
 links, and small text previews for captured bodies. Sensitive header values such
 as cookies and authorization are redacted. Mocked responses are labeled with the
-rule/value ids that produced them. The session picker can switch between the live
-current session and static historical sessions under `~/.reticle/sessions`. It
-is display-only: it does not drive input or mutate app state.
+rule/value ids that produced them. Runtime advisories appear as first-class
+timeline cards, and action cards expose copyable selector/target chips for quick
+follow-up commands. The session picker can switch between the live current
+session and static historical sessions under `~/.reticle/sessions`. It is
+display-only: it does not drive input or mutate app state.
 
 While `serve` is running, `reticle mock` can return fixed responses from the
 host proxy without touching the app. Rules and response values are stored
