@@ -21,11 +21,11 @@ data class CompactObservation(
             val items = ArrayList<CompactItem>()
             fun visit(ref: String) {
                 val node = snapshot.nodes[ref] ?: return
-                val labelled = node.testId != null ||
-                    node.resourceId != null ||
-                    node.contentDescription != null ||
-                    !node.text.isNullOrBlank()
-                if ((node.isInteractive || labelled) && node.isVisible) {
+                // Same targeting-signal test as the semantic tree, plus a
+                // visibility filter: the compact view is for acting *now*, so a
+                // hidden-but-labelled node is intentionally omitted here even
+                // though the semantic tree keeps it.
+                if (node.hasTargetingSignal() && node.isVisible) {
                     items.add(
                         CompactItem(
                             ref = node.ref,

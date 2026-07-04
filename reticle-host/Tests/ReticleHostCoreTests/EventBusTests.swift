@@ -20,6 +20,28 @@ struct EventBusTests {
         #expect(replayed.events().map(\.type) == ["ui.snapshot", "action.trace", "log"])
     }
 
+    @Test func eventStoreSkipsCorruptOrPartialTrailingLine() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        _ = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        _ = try store.append(EventPostRequest(source: "action", type: "action.trace"))
+
+        // Simulate a crash mid-append: a torn/partial JSON line with no newline.
+        let handle = try FileHandle(forWritingTo: store.eventsFile)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"id\":\"evt_000000000000".utf8))
+        try handle.close()
+
+        // Reopening must not throw and must recover the two valid events.
+        let reopened = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        #expect(reopened.events().map(\.type) == ["ui.snapshot", "action.trace"])
+
+        // And a fresh append after recovery must get the next sequence id, not
+        // collide with the salvaged events.
+        let next = try reopened.append(EventPostRequest(source: "log", type: "log"))
+        #expect(next.id == "evt_0000000000000003")
+    }
+
     @Test func daemonDiscoveryResolvesAutomaticTraceDirectory() throws {
         let root = try temporaryDirectory()
         let discovery = DaemonDiscovery(fileURL: root.appendingPathComponent("daemon.json"))
