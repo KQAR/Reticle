@@ -97,6 +97,47 @@ class SnapshotDerivationsTest {
     }
 
     @Test
+    fun semanticTree_rootAndChildRefsAlwaysResolve() {
+        val tree = SemanticTree.build(sampleSnapshot())
+        // The synthesized root resolves (the app root was dropped, so this is the
+        // regression guard: rootRef must point at a node that exists).
+        assertNotNull(tree.node(tree.rootRef), "rootRef must resolve to a node")
+        assertNotNull(tree.root(), "root() must resolve")
+
+        // Every child ref referenced by any node must exist in the node set, and
+        // every non-root node's parentRef must too — no dangling refs.
+        for (node in tree.nodes.values) {
+            for (childRef in node.children) {
+                assertNotNull(tree.node(childRef), "child ref $childRef must resolve")
+            }
+            node.parentRef?.let { parentRef ->
+                assertNotNull(tree.node(parentRef), "parent ref $parentRef must resolve")
+            }
+        }
+
+        // The whole kept set is reachable by walking children from the root.
+        val reachable = HashSet<String>()
+        fun walk(ref: String) {
+            if (!reachable.add(ref)) return
+            tree.node(ref)?.children?.forEach(::walk)
+        }
+        walk(tree.rootRef)
+        assertTrue("pay" in reachable, "pay must be reachable from root")
+        assertTrue("webPay" in reachable, "webPay must be reachable from root")
+        assertEquals(tree.nodes.keys, reachable, "every kept node must be reachable from root")
+    }
+
+    @Test
+    fun semanticTree_liftsChildrenAcrossDroppedContainer() {
+        // 'box' (bare container) is dropped, so 'pay'/'label'/'web' must be
+        // reparented onto the synthesized root rather than the dropped 'box'.
+        val tree = SemanticTree.build(sampleSnapshot())
+        val pay = assertNotNull(tree.findByTestId("pay"))
+        assertNotNull(tree.node(pay.parentRef!!), "pay's parent must resolve, not point at dropped 'box'")
+        assertEquals(tree.rootRef, pay.parentRef, "pay lifts to the root since 'box' was dropped")
+    }
+
+    @Test
     fun uiReport_derivesEveryViewFromOneSnapshot() {
         val snapshot = sampleSnapshot()
         val report = UiReport.from(snapshot)

@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Slimmed the wire payload: `ReticleJson` now omits null and default-valued
+  fields (`encodeDefaults=false`, `explicitNulls=false`, schema-required
+  defaults pinned with `@EncodeDefault(ALWAYS)`), the agent serves HTTP
+  responses with the compact (non-pretty) instance, and the `MetadataValue`
+  `_type` discriminator uses short tags (`text`/`bool`/`int`/`real`) instead of
+  fully-qualified Kotlin class names. Lossless; ~60% smaller snapshot responses.
+- Fixed `SemanticTree.build` producing a dangling root and child refs: the tree
+  now synthesizes a resolvable root, reparents kept nodes across dropped
+  containers, and guarantees every node is reachable from the root.
+- Unified the "targeting signal" test behind `Node.hasTargetingSignal()` so the
+  semantic tree and compact observation can no longer disagree about which nodes
+  are targetable.
+- Hardened `input text` shell quoting to single-quote wrapping so typed text
+  can no longer be interpreted by the device shell (`$(…)`, backticks).
+- Made the daemon event store tolerate a corrupt or partially-written trailing
+  JSONL line instead of failing to load the whole session.
+
+Validation:
+
+- reticle-core, Android helper, and Swift host tests.
+- Plugin manifest/version-lockstep validation.
+- GitHub CI for all optimization pull requests.
+
 ## 0.6.5 - 2026-07-03
 
 - Added structured JSON result envelopes for host commands, including `--json`
