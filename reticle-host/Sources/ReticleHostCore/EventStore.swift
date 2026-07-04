@@ -137,9 +137,16 @@ public final class EventStore: @unchecked Sendable {
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
         var loaded: [ReticleEventEnvelope] = []
         var highest: UInt64 = 0
+        // Tolerate a corrupt or partially-written line rather than failing the
+        // whole session: an append is not atomic and not fsync'd, so a crash
+        // mid-write can leave a truncated trailing line (or a torn one). Skip
+        // what won't decode and keep the rest — one bad line must not make
+        // `reticle serve` unable to start on an otherwise valid session.
         for line in text.split(separator: "\n") {
-            guard let lineData = String(line).data(using: .utf8) else { continue }
-            let event = try decoder.decode(ReticleEventEnvelope.self, from: lineData)
+            guard let lineData = String(line).data(using: .utf8),
+                  let event = try? decoder.decode(ReticleEventEnvelope.self, from: lineData) else {
+                continue
+            }
             loaded.append(event)
             highest = max(highest, sequence(from: event.id) ?? 0)
         }
@@ -212,9 +219,11 @@ public final class EventStore: @unchecked Sendable {
         let data = try Data(contentsOf: file)
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return [] }
         let decoder = JSONDecoder()
-        return try text.split(separator: "\n").compactMap { line in
+        // Skip corrupt/partial lines (see loadExistingEvents) instead of throwing,
+        // so listing sessions and reading history never fail on one torn line.
+        return text.split(separator: "\n").compactMap { line in
             guard let data = String(line).data(using: .utf8) else { return nil }
-            return try decoder.decode(ReticleEventEnvelope.self, from: data)
+            return try? decoder.decode(ReticleEventEnvelope.self, from: data)
         }
     }
 
