@@ -1,5 +1,7 @@
 package dev.reticle.core
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
@@ -9,12 +11,15 @@ import kotlinx.serialization.Serializable
  * On Android the tree is rooted at the application, then each attached window
  * root view (WindowManagerGlobal.getRootViews), then the View hierarchy.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Snapshot(
-    val schemaVersion: Int = 1,
+    // schema-`required`, but defaulted here — pin it so the omit-defaults wire
+    // config in ReticleJson can never drop it.
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val schemaVersion: Int = 1,
     /** Wall-clock millis when captured, stamped by the agent. */
     val capturedAtMillis: Long,
-    val platform: String = "android",
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val platform: String = "android",
     val screen: ScreenInfo,
     val rootRef: String,
     val nodes: Map<String, Node>,
@@ -83,4 +88,18 @@ data class Node(
     val suspectedMultiRegion: Boolean = false,
     /** Character-position grid for text nodes; enables substring targeting. */
     val charGrid: CharGrid? = null,
-)
+) {
+    /**
+     * True when this node carries a signal an agent can target it by: a stable
+     * id, an a11y label, non-blank visible text, or interactivity. The single
+     * source of truth for "is this worth keeping" — shared by the semantic-tree
+     * and compact-observation projections so the two can never silently disagree
+     * about which nodes are targetable.
+     */
+    fun hasTargetingSignal(): Boolean =
+        testId != null ||
+            resourceId != null ||
+            contentDescription != null ||
+            !text.isNullOrBlank() ||
+            isInteractive
+}

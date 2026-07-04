@@ -25,19 +25,8 @@ class InputBackend(private val adb: DeviceController) : InputDispatcher {
     override fun drag(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): CommandResult =
         adb.shell("input swipe $x1 $y1 $x2 $y2 $durationMs")
 
-    override fun text(value: String): CommandResult {
-        // `input text` treats spaces specially and chokes on some punctuation;
-        // encode spaces as %s and escape shell-significant characters.
-        val escaped = value
-            .replace("\\", "\\\\")
-            .replace(" ", "%s")
-            .replace("'", "\\'")
-            .replace("\"", "\\\"")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
-            .replace("&", "\\&")
-        return adb.shell("input text \"$escaped\"")
-    }
+    override fun text(value: String): CommandResult =
+        adb.shell("input text ${shellArgForInputText(value)}")
 
     override fun keyevent(keyCode: String): CommandResult =
         adb.shell("input keyevent $keyCode")
@@ -52,6 +41,27 @@ class InputBackend(private val adb: DeviceController) : InputDispatcher {
          * through the agent clipboard + paste path instead.
          */
         fun isAsciiTypeable(text: String): Boolean = text.all { it.code in 0x20..0x7E }
+
+        /**
+         * Build the shell argument for `adb shell input text`. Two independent
+         * layers:
+         *
+         *  1. `input text` semantics: a literal space separates arguments, so
+         *     spaces are encoded as `%s` (the tool decodes them back to spaces).
+         *  2. Shell safety: the payload is wrapped in single quotes so the device
+         *     shell interprets nothing — `$`, backticks, `(`, `)`, `&`, `\`, `"`
+         *     are passed through literally rather than expanded or executed. This
+         *     closes the injection the previous double-quote wrapping left open
+         *     (`$(…)` / backticks in typed text ran on device). A literal single
+         *     quote is emitted with the POSIX `'\''` idiom.
+         *
+         * Gated by [isAsciiTypeable]; non-ASCII goes through the clipboard path.
+         */
+        fun shellArgForInputText(value: String): String {
+            val spaceEncoded = value.replace(" ", "%s")
+            val quoted = spaceEncoded.replace("'", "'\\''")
+            return "'$quoted'"
+        }
     }
 
     fun pinch(): Nothing =

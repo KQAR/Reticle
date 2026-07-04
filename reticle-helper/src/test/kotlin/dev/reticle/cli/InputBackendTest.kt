@@ -2,6 +2,7 @@ package dev.reticle.cli
 
 import dev.reticle.cli.platform.android.InputBackend
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -49,5 +50,30 @@ class InputBackendTest {
     @Test
     fun emptyStringIsTriviallyTypeable() {
         assertTrue(InputBackend.isAsciiTypeable(""))
+    }
+
+    @Test
+    fun shellArg_encodesSpacesAsPercentS() {
+        assertEquals("'hello%sworld'", InputBackend.shellArgForInputText("hello world"))
+    }
+
+    @Test
+    fun shellArg_neutralizesShellExpansionAndCommandSubstitution() {
+        // The whole payload is single-quoted, so $, backticks, and $(...) are
+        // literal — the injection the old double-quote wrapping allowed.
+        assertEquals("'\$HOME'", InputBackend.shellArgForInputText("\$HOME"))
+        assertEquals("'`id`'", InputBackend.shellArgForInputText("`id`"))
+        assertEquals("'\$(rm%s-rf%s/)'", InputBackend.shellArgForInputText("\$(rm -rf /)"))
+    }
+
+    @Test
+    fun shellArg_escapesEmbeddedSingleQuote() {
+        // POSIX '\'' idiom: close quote, escaped literal quote, reopen quote.
+        assertEquals("'it'\\''s'", InputBackend.shellArgForInputText("it's"))
+    }
+
+    @Test
+    fun shellArg_passesPunctuationThroughLiterally() {
+        assertEquals("'a-b_c%s(d)%s&%se%s\"f\"'", InputBackend.shellArgForInputText("a-b_c (d) & e \"f\""))
     }
 }

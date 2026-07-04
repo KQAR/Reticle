@@ -32,15 +32,20 @@ reticle-protocol/
 
 These are not incidental — implementations must match them exactly:
 
-- `encodeDefaults = true`: every field is emitted, including defaults; nullable
-  fields appear explicitly as JSON `null`.
+- `encodeDefaults = false`, `explicitNulls = false`: a field is omitted when its
+  value equals its default (including `null` for nullable fields, `[]`/`{}` for
+  empty collections, and the default booleans). This is **lossless** — an omitted
+  field decodes back to exactly that default, and any non-default value is always
+  emitted — and it is the primary reason a Reticle snapshot stays token-cheap
+  despite full fidelity. The two schema-`required` fields that carry a default,
+  `schemaVersion` and `platform`, are pinned with `@EncodeDefault(ALWAYS)` in the
+  Kotlin model so they are always present; every other `required` field is
+  non-defaulted and therefore always emitted anyway.
 - The sealed `MetadataValue` is discriminated by a **`_type`** property whose
-  value is the fully-qualified Kotlin class name (e.g.
-  `dev.reticle.core.MetadataValue.Real`). A non-Kotlin implementation must emit
-  these exact discriminator strings to stay wire-compatible. (If this coupling to
-  Kotlin class names ever becomes a burden for another platform, the fix is to
-  add `@SerialName` aliases in `reticle-core` and update the schema enum + this
-  note in lockstep — not to diverge silently.)
+  value is a short, language-neutral tag: `text` / `bool` / `int` / `real`. These
+  are `@SerialName` aliases in `reticle-core`; a non-Kotlin implementation must
+  emit these exact strings to stay wire-compatible. Keep the aliases, the schema
+  enum, and this note in lockstep — do not diverge silently.
 - `Long` → JSON integer; `Double` → JSON number.
 
 ## Current coverage
