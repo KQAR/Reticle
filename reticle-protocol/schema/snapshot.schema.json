@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://reticle.dev/schema/snapshot.schema.json",
   "title": "Snapshot",
-  "description": "The authoritative wire contract for a Reticle view-tree snapshot: a flat ref->Node map plus a root ref and screen info. This schema is the single source of truth across platforms; the Kotlin types in reticle-core are one implementation, verified against this file in CI. Serialization notes that this schema encodes: encodeDefaults=true (every field is emitted, nullable fields as JSON null), the sealed MetadataValue uses a `_type` discriminator holding the fully-qualified Kotlin class name, Long maps to a JSON integer and Double to a JSON number.",
+  "description": "The authoritative wire contract for a Reticle view-tree snapshot: a flat ref->Node map plus a root ref and screen info. This schema is the single source of truth across platforms; the Kotlin types in reticle-core are one implementation, verified against this file in CI. Serialization notes that this schema encodes: null fields and fields equal to their default are omitted (encodeDefaults=false, explicitNulls=false) — a missing field decodes back to its default, so this is lossless; schema-required fields with a default (schemaVersion, platform) are always emitted. The sealed MetadataValue uses a `_type` discriminator holding a short tag (text/bool/int/real). Long maps to a JSON integer and Double to a JSON number.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -83,18 +83,13 @@
       "description": "Node origin, including merged Compose semantics and read-only WebView DOM nodes."
     },
     "MetadataValue": {
-      "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying the fully-qualified Kotlin class name.",
+      "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying a short tag (text/bool/int/real).",
       "type": "object",
       "required": ["_type", "value"],
       "properties": {
         "_type": {
           "type": "string",
-          "enum": [
-            "dev.reticle.core.MetadataValue.Text",
-            "dev.reticle.core.MetadataValue.Bool",
-            "dev.reticle.core.MetadataValue.Integer",
-            "dev.reticle.core.MetadataValue.Real"
-          ]
+          "enum": ["text", "bool", "int", "real"]
         },
         "value": {
           "type": ["string", "boolean", "integer", "number"]
@@ -103,25 +98,25 @@
       "allOf": [
         {
           "if": {
-            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Text" } }
+            "properties": { "_type": { "const": "text" } }
           },
           "then": { "properties": { "value": { "type": "string" } } }
         },
         {
           "if": {
-            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Bool" } }
+            "properties": { "_type": { "const": "bool" } }
           },
           "then": { "properties": { "value": { "type": "boolean" } } }
         },
         {
           "if": {
-            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Integer" } }
+            "properties": { "_type": { "const": "int" } }
           },
           "then": { "properties": { "value": { "type": "integer" } } }
         },
         {
           "if": {
-            "properties": { "_type": { "const": "dev.reticle.core.MetadataValue.Real" } }
+            "properties": { "_type": { "const": "real" } }
           },
           "then": { "properties": { "value": { "type": "number" } } }
         }
