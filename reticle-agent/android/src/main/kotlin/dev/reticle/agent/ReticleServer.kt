@@ -146,35 +146,35 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                     agentVersion = runtime.agentVersion,
                     port = boundPort,
                 )
-                writeJson(out, ReticleJson.instance.encodeToString(RuntimeInfo.serializer(), info))
+                writeJson(out, ReticleJson.compact.encodeToString(RuntimeInfo.serializer(), info))
             }
 
             method == "GET" && path == Endpoints.SNAPSHOT -> {
                 val snapshot = SnapshotCapture(context).capture()
-                writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.Snapshot.serializer(), snapshot))
+                writeJson(out, ReticleJson.compact.encodeToString(dev.reticle.core.Snapshot.serializer(), snapshot))
             }
 
             method == "GET" && path == Endpoints.REPORT -> {
                 val snapshot = SnapshotCapture(context).capture()
                 val report = UiReport.from(snapshot)
-                writeJson(out, ReticleJson.instance.encodeToString(UiReport.serializer(), report))
+                writeJson(out, ReticleJson.compact.encodeToString(UiReport.serializer(), report))
             }
 
             method == "GET" && path == Endpoints.SEMANTICS -> {
                 val snapshot = SnapshotCapture(context).capture()
                 val tree = SemanticTree.build(snapshot)
-                writeJson(out, ReticleJson.instance.encodeToString(SemanticTree.serializer(), tree))
+                writeJson(out, ReticleJson.compact.encodeToString(SemanticTree.serializer(), tree))
             }
 
             method == "GET" && path == Endpoints.COMPACT -> {
                 val snapshot = SnapshotCapture(context).capture()
                 val compact = CompactObservation.from(snapshot)
-                writeJson(out, ReticleJson.instance.encodeToString(CompactObservation.serializer(), compact))
+                writeJson(out, ReticleJson.compact.encodeToString(CompactObservation.serializer(), compact))
             }
 
             method == "GET" && path == Endpoints.LOGS -> {
                 val batch = LogBatch(runtime.collectedLogs())
-                writeJson(out, ReticleJson.instance.encodeToString(LogBatch.serializer(), batch))
+                writeJson(out, ReticleJson.compact.encodeToString(LogBatch.serializer(), batch))
             }
 
             method == "GET" && path == Endpoints.SCREENSHOT -> {
@@ -187,9 +187,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
             }
 
             method == "POST" && path == Endpoints.MUTATE -> {
-                val request = ReticleJson.instance.decodeFromString(MutationRequest.serializer(), body)
+                val request = ReticleJson.compact.decodeFromString(MutationRequest.serializer(), body)
                 val result = MutationEngine(context).apply(request)
-                writeJson(out, ReticleJson.instance.encodeToString(dev.reticle.core.MutationResult.serializer(), result))
+                writeJson(out, ReticleJson.compact.encodeToString(dev.reticle.core.MutationResult.serializer(), result))
             }
 
             method == "POST" && path == Endpoints.CLIPBOARD -> {
