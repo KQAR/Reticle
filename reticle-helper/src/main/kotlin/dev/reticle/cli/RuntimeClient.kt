@@ -145,7 +145,7 @@ class RuntimeClient(
         conn.requestMethod = "GET"
         conn.connectTimeout = connectTimeout
         conn.readTimeout = readTimeout
-        return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        return conn.readBody(path).toString(Charsets.UTF_8)
     }
 
     private fun getBytes(path: String): ByteArray {
@@ -153,7 +153,7 @@ class RuntimeClient(
         conn.requestMethod = "GET"
         conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
         conn.readTimeout = DEFAULT_READ_TIMEOUT
-        return conn.inputStream.use { it.readBytes() }
+        return conn.readBody(path)
     }
 
     private fun post(path: String, body: String, contentType: String = "application/json"): String {
@@ -164,7 +164,24 @@ class RuntimeClient(
         conn.readTimeout = DEFAULT_READ_TIMEOUT
         conn.setRequestProperty("Content-Type", contentType)
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        return conn.readBody(path).toString(Charsets.UTF_8)
+    }
+
+    /**
+     * Read a 2xx response body, or throw with the error body on a non-2xx.
+     * Draining and closing [HttpURLConnection.errorStream] on failure is what
+     * lets the underlying connection be pooled/reused instead of leaking a
+     * socket; `post` also relied on this to notice a failed status at all.
+     */
+    private fun HttpURLConnection.readBody(path: String): ByteArray {
+        val code = responseCode
+        if (code !in 200..299) {
+            val detail = errorStream?.use { it.readBytes().toString(Charsets.UTF_8).trim() }
+                .orEmpty()
+                .take(200)
+            throw CliError("$requestMethod $path -> HTTP $code${if (detail.isEmpty()) "" else ": $detail"}")
+        }
+        return inputStream.use { it.readBytes() }
     }
 
     private companion object {
