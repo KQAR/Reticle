@@ -55,7 +55,7 @@ object Helper {
         if (debug) System.err.println("reticle-helper: stdin closed, exiting")
     }
 
-    private fun handleLine(line: String): String {
+    internal fun handleLine(line: String): String {
         // Parse the envelope defensively: a bad line gets an error response with
         // id=-1 rather than crashing the loop.
         val request = runCatching {
