@@ -36,15 +36,16 @@ class SelectorResolver(
         // 1. Raw point wins if explicitly provided.
         selector.point?.let { return Resolved(it, "point", null) }
 
-        // 2. Semantic tree first.
+        // 2. Semantic tree first. Use the matched node's own ref rather than
+        //    re-scanning for it — the semantic tree preserves snapshot refs.
         selector.testId?.let { id ->
-            semantic.findByTestId(id)?.frame?.let { return Resolved(center(it), "semantic:testId", refByTestId(id)) }
+            semantic.findByTestId(id)?.let { n -> n.frame?.let { return Resolved(center(it), "semantic:testId", n.ref) } }
         }
         selector.resourceId?.let { id ->
-            semantic.findByResourceId(id)?.frame?.let { return Resolved(center(it), "semantic:resourceId", refByResourceId(id)) }
+            semantic.findByResourceId(id)?.let { n -> n.frame?.let { return Resolved(center(it), "semantic:resourceId", n.ref) } }
         }
         selector.cssSelector?.let { css ->
-            nodeByCssSelector(css)?.frame?.let { return Resolved(center(it), "dom:css", refByCssSelector(css)) }
+            nodeByCssSelector(css)?.let { n -> n.frame?.let { return Resolved(center(it), "dom:css", n.ref) } }
         }
         selector.ref?.let { ref ->
             semantic.node(ref)?.frame?.let { return Resolved(center(it), "semantic:ref", ref) }
@@ -76,8 +77,9 @@ class SelectorResolver(
         // 1. Discovered region by label match.
         node.regions
             .firstOrNull { it.label?.contains(needle, ignoreCase = true) == true }
-            ?.tapPoint()
-            ?.let { return Resolved(it, "region:${node.regions.first { r -> r.label?.contains(needle, true) == true }.source}", node.ref) }
+            ?.let { region ->
+                region.tapPoint()?.let { return Resolved(it, "region:${region.source}", node.ref) }
+            }
 
         // 2. Char grid substring.
         node.charGrid?.let { grid ->
@@ -102,15 +104,6 @@ class SelectorResolver(
     }
 
     private fun center(rect: Rect) = Point(rect.centerX, rect.centerY)
-
-    private fun refByTestId(id: String): String? =
-        snapshot.nodes.values.firstOrNull { it.testId == id }?.ref
-
-    private fun refByResourceId(id: String): String? =
-        snapshot.nodes.values.firstOrNull { it.resourceId == id }?.ref
-
-    private fun refByCssSelector(cssSelector: String): String? =
-        nodeByCssSelector(cssSelector)?.ref
 
     private fun nodeByCssSelector(cssSelector: String): Node? =
         snapshot.nodes.values.firstOrNull { node ->
