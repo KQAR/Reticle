@@ -25,9 +25,15 @@ class ScreenshotCapture(private val context: Context) {
 
     fun capturePng(): ByteArray? {
         val bitmap = runOnMainSync { renderTopWindow() } ?: return null
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        return stream.toByteArray()
+        return try {
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            stream.toByteArray()
+        } finally {
+            // Free the full-screen ARGB_8888 bitmap now instead of waiting for GC;
+            // repeated screenshots otherwise build real peak-memory pressure.
+            bitmap.recycle()
+        }
     }
 
     private fun renderTopWindow(): Bitmap? {

@@ -1,6 +1,8 @@
 package dev.reticle.agent
 
 import dev.reticle.core.Rect
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reflective reader for Compose SemanticsNode. Kept isolated so the rest of the
@@ -16,9 +18,26 @@ import dev.reticle.core.Rect
  */
 object SemanticsReflect {
 
+    /**
+     * Cache of resolved no-arg getters keyed by (declaring class, method name).
+     * The walk calls these once per node × property; without caching each call
+     * scanned the class's whole method array, making capture O(nodes × methods)
+     * on large Compose trees. Misses (shape mismatch) are not cached — those are
+     * the already-degraded incompatible-runtime paths.
+     */
+    private val methodCache = ConcurrentHashMap<String, Method>()
+
+    private fun getter(target: Any, name: String): Method? {
+        val cls = target.javaClass
+        methodCache["${cls.name}#$name"]?.let { return it }
+        val m = cls.methods.firstOrNull { it.name == name } ?: return null
+        methodCache["${cls.name}#$name"] = m
+        return m
+    }
+
     fun children(node: Any): List<Any> {
         return try {
-            val m = node.javaClass.methods.firstOrNull { it.name == "getChildren" } ?: return emptyList()
+            val m = getter(node, "getChildren") ?: return emptyList()
             (m.invoke(node) as? List<*>)?.filterNotNull() ?: emptyList()
         } catch (_: Throwable) {
             emptyList()
@@ -57,12 +76,12 @@ object SemanticsReflect {
      */
     fun boundsInWindow(node: Any): Rect? {
         return try {
-            val m = node.javaClass.methods.firstOrNull { it.name == "getBoundsInWindow" } ?: return null
+            val m = getter(node, "getBoundsInWindow") ?: return null
             val rect = m.invoke(node) ?: return null
-            val left = (rect.javaClass.methods.first { it.name == "getLeft" }.invoke(rect) as Float).toDouble()
-            val top = (rect.javaClass.methods.first { it.name == "getTop" }.invoke(rect) as Float).toDouble()
-            val right = (rect.javaClass.methods.first { it.name == "getRight" }.invoke(rect) as Float).toDouble()
-            val bottom = (rect.javaClass.methods.first { it.name == "getBottom" }.invoke(rect) as Float).toDouble()
+            val left = (getter(rect, "getLeft")!!.invoke(rect) as Float).toDouble()
+            val top = (getter(rect, "getTop")!!.invoke(rect) as Float).toDouble()
+            val right = (getter(rect, "getRight")!!.invoke(rect) as Float).toDouble()
+            val bottom = (getter(rect, "getBottom")!!.invoke(rect) as Float).toDouble()
             Rect(x = left, y = top, width = right - left, height = bottom - top)
         } catch (_: Throwable) {
             null
@@ -81,14 +100,14 @@ object SemanticsReflect {
      */
     private fun configValue(node: Any, keyName: String): Any? {
         return try {
-            val getConfig = node.javaClass.methods.firstOrNull { it.name == "getConfig" } ?: return null
+            val getConfig = getter(node, "getConfig") ?: return null
             val config = getConfig.invoke(node) as? Iterable<*> ?: return null
             for (entry in config) {
                 entry ?: continue
-                val key = entry.javaClass.methods.firstOrNull { it.name == "getKey" }?.invoke(entry) ?: continue
-                val name = key.javaClass.methods.firstOrNull { it.name == "getName" }?.invoke(key)?.toString()
+                val key = getter(entry, "getKey")?.invoke(entry) ?: continue
+                val name = getter(key, "getName")?.invoke(key)?.toString()
                 if (name == keyName) {
-                    return entry.javaClass.methods.firstOrNull { it.name == "getValue" }?.invoke(entry)
+                    return getter(entry, "getValue")?.invoke(entry)
                 }
             }
             null

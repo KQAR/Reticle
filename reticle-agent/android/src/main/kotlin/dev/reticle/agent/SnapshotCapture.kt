@@ -39,14 +39,15 @@ class SnapshotCapture(private val context: Context) {
         // async UI-thread callbacks, so they are appended after the view walk
         // while this server thread waits off the main looper.
         val draft = runOnMainSync { captureLocked() }
-        val nodes = LinkedHashMap(draft.snapshot.nodes)
+        // draft.nodes is the same mutable map the snapshot already holds, so the
+        // WebView DOM nodes append straight into it — no full-map copy + copy().
         WebViewBridge.captureInto(
             pending = draft.webViews,
             density = draft.snapshot.screen.density,
             handler = handler,
-            nodes = nodes,
+            nodes = draft.nodes,
         ) { makeRef() }
-        return draft.snapshot.copy(nodes = nodes)
+        return draft.snapshot
     }
 
     /**
@@ -65,6 +66,8 @@ class SnapshotCapture(private val context: Context) {
     private data class CaptureDraft(
         val snapshot: Snapshot,
         val webViews: List<WebViewBridge.Pending>,
+        /** The same mutable map [snapshot] holds; WebView DOM nodes append here. */
+        val nodes: MutableMap<String, Node>,
     )
 
     private fun captureLocked(viewIndex: MutableMap<String, View>? = null): CaptureDraft {
@@ -122,6 +125,7 @@ class SnapshotCapture(private val context: Context) {
                 nodes = nodes,
             ),
             webViews = webViews,
+            nodes = nodes,
         )
     }
 
