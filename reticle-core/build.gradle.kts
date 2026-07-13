@@ -1,18 +1,18 @@
 // reticle-core — pure JVM shared models. Shared by the host CLI and the
 // in-app agent, so it must stay free of any Android framework dependency.
 plugins {
-    id("org.jetbrains.kotlin.jvm")
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 dependencies {
-    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    api(libs.kotlinx.serialization.json)
 
     testImplementation(kotlin("test"))
     // Test-only: validate emitted JSON against the authoritative protocol schema.
     // Stays out of the main classpath so the Android agent (which consumes core
     // as Java 8 bytecode) never links it.
-    testImplementation("com.networknt:json-schema-validator:1.5.2")
+    testImplementation(libs.json.schema.validator)
 }
 
 tasks.test {

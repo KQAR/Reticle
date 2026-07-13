@@ -2,8 +2,8 @@
 // view/accessibility/semantics capture, auto-started by a no-op ContentProvider
 // so a host app only needs to add the dependency (no code changes).
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 // Nesting the module under reticle-agent/ makes the Gradle leaf project name
@@ -49,18 +49,19 @@ val payload: Configuration by configurations.creating {
 
 dependencies {
     api(project(":reticle-core"))
-    implementation("androidx.annotation:annotation:1.9.1")
+    implementation(libs.androidx.annotation)
     // Compose semantics bridge is reflective + optional; no hard Compose dep so
     // the agent links cleanly into pure-View apps too.
-    compileOnly("androidx.compose.ui:ui:1.7.5")
+    compileOnly(libs.androidx.compose.ui)
 
     // The exact JARs the injected dex must carry at runtime for the UNLINKED
     // (JDWP-injection) path: reticle-core + kotlin-stdlib + kotlinx-serialization.
-    // Android framework classes are provided by the host process; Compose stays
-    // compileOnly, so neither lands in the payload.
+    // These come from the SAME catalog entries reticle-core uses, so the payload
+    // can't drift from what core links. Android framework classes are provided by
+    // the host process; Compose stays compileOnly, so neither lands in the payload.
     "payload"(project(":reticle-core"))
-    "payload"("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
-    "payload"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    "payload"(libs.kotlin.stdlib)
+    "payload"(libs.kotlinx.serialization.json)
 }
 
 /**
