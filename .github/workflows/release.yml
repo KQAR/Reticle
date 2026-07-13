@@ -42,6 +42,30 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: reticle-host/.build
+          key: swiftpm-${{ runner.os }}-xcode16.4-${{ hashFiles('reticle-host/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-xcode16.4-
+
+      # Gate the release on the same checks CI runs on main: nothing forces a
+      # tag to sit on a green commit, and an unvalidated tag previously
+      # published broken artifacts (including version skew validate_plugin.py
+      # exists to catch).
+      - name: "Gate: JVM unit tests"
+        run: ./gradlew :reticle-core:test :reticle-helper:test --stacktrace
+
+      - name: "Gate: Swift host tests"
+        run: swift test --package-path reticle-host
+
+      - name: "Gate: plugin manifests + version lockstep"
+        run: python3 scripts/validate_plugin.py
+
       - name: Build the native helper (no-JDK reticle-helper)
         run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 

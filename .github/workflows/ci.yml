@@ -92,8 +92,26 @@ jobs:
           distribution: graalvm
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # This runner bills at 10x; without this cache every push recompiles the
+      # full swift-nio/hummingbird dependency graph from scratch.
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: reticle-host/.build
+          key: swiftpm-${{ runner.os }}-xcode16.4-${{ hashFiles('reticle-host/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-xcode16.4-
+
       - name: Build the native helper
         run: ./gradlew :reticle-helper:nativeHelper --stacktrace
+
+      # The Swift host is the user-facing CLI and the sole producer of the
+      # event stream; its test suite must gate merges, not just compile.
+      - name: Run Swift host tests
+        run: swift test --package-path reticle-host
 
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
@@ -107,4 +125,9 @@ jobs:
           # version needs no helper/device; proves the host binary runs.
           "$HOST" version
           # the native helper's RPC loop answers ping with no JDK.
-          printf '{"id":1,"method":"ping","params":{}}\n' | "$HELPER" helper
+          printf '{"id":1,"method":"ping","params":{}}\n' | "$HELPER" helper | grep -q '"ok":true'
+          # render decodes a full Snapshot through kotlinx-serialization — the
+          # code path most likely to regress under native-image (enums, the
+          # polymorphic MetadataValue). ping alone never touches deserialization.
+          printf '{"id":2,"method":"render","params":{"view":"compact","snapshot":"reticle-protocol/fixtures/snapshot.golden.json"}}\n' \
+            | "$HELPER" helper | grep -q '"ok":true'
