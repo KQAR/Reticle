@@ -2,7 +2,6 @@ package dev.reticle.agent
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -284,7 +283,4 @@ class SnapshotCapture(private val context: Context) {
         @Suppress("UNCHECKED_CAST")
         return result as T
     }
-
-    @Suppress("unused")
-    private fun sdkInt(): Int = Build.VERSION.SDK_INT
 }

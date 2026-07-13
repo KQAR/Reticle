@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.1
 import PackageDescription
 
 // reticle-host — the Swift host CLI. It drives Android through the Kotlin

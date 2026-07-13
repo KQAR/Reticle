@@ -25,6 +25,16 @@ object Reticle {
         ReticleRuntime.shared.attachMetadata(testId, metadata.toScalarMap())
     }
 
+    /**
+     * Register a synthetic probe node addressed by [testId] — a stable,
+     * addressable point of interest for a spot where no concrete view is
+     * convenient (a canvas region, an off-screen state). It appears in the
+     * snapshot as a child of the application node.
+     */
+    fun registerProbe(testId: String, metadata: Map<String, Any?> = emptyMap()) {
+        ReticleProbeRegistry.register(testId, metadata.toScalarMap())
+    }
+
     private fun Map<String, Any?>.toScalarMap(): Map<String, MetadataValue> {
         val out = LinkedHashMap<String, MetadataValue>()
         for ((key, value) in this) {
