@@ -71,8 +71,13 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
 
         let request: [String: Any] = ["id": id, "method": method, "params": params]
         let data = try JSONSerialization.data(withJSONObject: request)
-        stdinPipe.fileHandleForWriting.write(data)
-        stdinPipe.fileHandleForWriting.write(Data("\n".utf8))
+        // The throwing write surfaces EPIPE as a HelperError; the legacy
+        // write(_:) raises an uncatchable ObjC exception when the helper died.
+        do {
+            try stdinPipe.fileHandleForWriting.write(contentsOf: data + Data("\n".utf8))
+        } catch {
+            throw HelperError("failed to send '\(method)' to helper (process exited?): \(error.localizedDescription)")
+        }
 
         guard let line = reader.nextLine() else {
             throw HelperError("helper closed stdout before responding to '\(method)'")
@@ -91,7 +96,7 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
 
     /// Closes stdin so the helper exits its serve loop.
     func shutdown() {
-        stdinPipe.fileHandleForWriting.closeFile()
+        try? stdinPipe.fileHandleForWriting.close()
         process.waitUntilExit()
     }
 }
@@ -113,7 +118,14 @@ final class LineReader {
                 return String(data: lineData, encoding: .utf8)
             }
             let chunk = handle.availableData
-            if chunk.isEmpty { return nil }
+            if chunk.isEmpty {
+                // EOF: hand back a final unterminated line rather than dropping
+                // it — a helper that crashes mid-reply still gets its last
+                // (possibly diagnostic) output surfaced instead of swallowed.
+                guard !buffer.isEmpty else { return nil }
+                defer { buffer.removeAll() }
+                return String(data: buffer, encoding: .utf8)
+            }
             buffer.append(chunk)
         }
     }

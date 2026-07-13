@@ -100,7 +100,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
             writeError(.badGateway, context: context)
             return
         } catch {
-            emitError(requestId: requestId, target: target, message: "\(error)", start: start)
+            emitError(base: payload, refs: refs, message: "\(error)")
             writeError(.badGateway, context: context)
             return
         }
@@ -127,7 +127,11 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                     _ = try? self.store.append(self.factory.event(.response, payload: responsePayload, refs: responseRefs))
                     self.write(responseData, response: response, version: head.version, context: context)
                 case .failure(let error):
-                    self.emitError(requestId: requestId, target: target, message: "\(error)", start: start)
+                    // Reuse the request payload so the error event keeps the
+                    // real method/headers/body refs (the MITM path already
+                    // does); rebuilding from the target alone recorded the
+                    // method as "UNKNOWN".
+                    self.emitError(base: requestPayload, refs: requestRefs, message: "\(error)")
                     self.writeError(.badGateway, context: context)
                 }
                 self.resumeReads(context: context)
@@ -140,7 +144,9 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         let start = currentMillis()
         guard let target = HTTPProxyTarget(connectTarget: head.uri) else {
             emitError(requestId: requestId, message: "invalid CONNECT target", start: start)
-            writeError(.badRequest, context: context)
+            // handlingTunnel is already set, so this handler would never route
+            // another request on this connection — close instead of wedging it.
+            writeError(.badRequest, context: context, closeAfter: true)
             return
         }
         let wantsMitm = tlsPolicy.allows(host: target.host)
@@ -171,7 +177,10 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                     }
                 case .failure(let error):
                     self.emitError(requestId: requestId, target: target, message: "\(error)", start: start)
-                    self.writeError(.badGateway, context: context)
+                    // Same wedge as above: after a failed CONNECT the handler
+                    // ignores all further reads, so a keep-alive client would
+                    // hang forever on this connection.
+                    self.writeError(.badGateway, context: context, closeAfter: true)
                 }
             }
     }
@@ -308,10 +317,20 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
     }
 
-    private func writeError(_ status: HTTPResponseStatus, context: ChannelHandlerContext) {
-        let head = HTTPResponseHead(version: .http1_1, status: status, headers: HTTPHeaders([("Content-Length", "0")]))
+    private func writeError(_ status: HTTPResponseStatus, context: ChannelHandlerContext, closeAfter: Bool = false) {
+        var headers = HTTPHeaders([("Content-Length", "0")])
+        if closeAfter { headers.replaceOrAdd(name: "Connection", value: "close") }
+        let head = HTTPResponseHead(version: .http1_1, status: status, headers: headers)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        if closeAfter {
+            let promise = context.eventLoop.makePromise(of: Void.self)
+            promise.futureResult.whenComplete { [channel = context.channel] _ in
+                channel.close(promise: nil)
+            }
+            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: promise)
+        } else {
+            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        }
     }
 
     private func pauseReads(context: ChannelHandlerContext) {
@@ -326,11 +345,18 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     }
 
     private func emitError(requestId: String, target: HTTPProxyTarget? = nil, message: String, start: Int64) {
-        var payload = target?.payload(requestId: requestId, method: "UNKNOWN", start: start, tunnel: false, mitm: false)
+        let payload = target?.payload(requestId: requestId, method: "UNKNOWN", start: start, tunnel: false, mitm: false)
             ?? NetworkEventPayload(requestId: requestId, scheme: "unknown", method: "UNKNOWN", url: "", host: "", port: 0, path: "", startMillis: start, tunnel: false, mitm: false)
+        emitError(base: payload, message: message)
+    }
+
+    /// Emits a `network.error` event carrying everything already known about
+    /// the request (method, headers, body refs) instead of a bare skeleton.
+    private func emitError(base: NetworkEventPayload, refs: [String: String] = [:], message: String) {
+        var payload = base
         payload.endMillis = currentMillis()
         payload.error = message
-        _ = try? store.append(factory.event(.error, payload: payload))
+        _ = try? store.append(factory.event(.error, payload: payload, refs: refs))
     }
 
     private func emitMockError(_ error: NetworkMockError, payload: NetworkEventPayload, refs: [String: String]) {
