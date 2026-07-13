@@ -37,10 +37,6 @@ class RuntimeClient(
         }
     }
 
-    fun tearDownForward() {
-        adb.removeForward(hostPort)
-    }
-
     fun runtime(): RuntimeInfo =
         ReticleJson.instance.decodeFromString(RuntimeInfo.serializer(), getString(Endpoints.RUNTIME))
 

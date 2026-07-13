@@ -68,6 +68,10 @@ class Adb(
         }
         outThread.join(1000)
         errThread.join(1000)
+        // A non-zero exit (screencap dying mid-stream) leaves partial bytes
+        // that would pass through as a valid-looking-but-truncated PNG; treat
+        // it like a timeout so callers' isEmpty guards catch it.
+        if (process.exitValue() != 0) return ByteArray(0)
         return out.toByteArray()
     }
 

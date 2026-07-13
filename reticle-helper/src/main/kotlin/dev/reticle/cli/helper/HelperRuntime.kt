@@ -51,11 +51,6 @@ internal data class ResolvedInputTarget(
     val ref: String?,
 )
 
-internal fun resolvePoint(device: DeviceController, pkg: String, params: JsonObject): Pair<Int, Int> {
-    val resolved = resolveInputTarget(device, pkg, params)
-    return resolved.point.x.toInt() to resolved.point.y.toInt()
-}
-
 internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
     params.str("alias")?.let { alias ->
         val entry = OutlineRenderer.resolveAlias(params.str("serial"), pkg, alias)
