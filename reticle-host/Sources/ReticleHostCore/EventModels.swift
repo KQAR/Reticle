@@ -2,6 +2,12 @@ import Foundation
 
 /// Common event envelope persisted by `reticle serve`.
 public struct ReticleEventEnvelope: Codable, Equatable {
+    /// Current envelope generation. Bumped only on a breaking envelope-shape
+    /// change (a field renamed/removed/retyped) — per-payload versions like
+    /// `traceVersion` are independent. See reticle-protocol/schema/event.schema.json.
+    public static let currentSchemaVersion = 1
+
+    public let schemaVersion: Int
     public let id: String
     public let ts: Int64
     public let session: String
@@ -20,8 +26,10 @@ public struct ReticleEventEnvelope: Codable, Equatable {
         source: String,
         type: String,
         payload: [String: JSONValue] = [:],
-        refs: [String: String] = [:]
+        refs: [String: String] = [:],
+        schemaVersion: Int = ReticleEventEnvelope.currentSchemaVersion
     ) {
+        self.schemaVersion = schemaVersion
         self.id = id
         self.ts = ts
         self.session = session
@@ -30,6 +38,25 @@ public struct ReticleEventEnvelope: Codable, Equatable {
         self.type = type
         self.payload = payload
         self.refs = refs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, ts, session, target, source, type, payload, refs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Legacy events.jsonl written before the marker existed decode as v1
+        // rather than being skipped as corrupt — the field is additive.
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        id = try c.decode(String.self, forKey: .id)
+        ts = try c.decode(Int64.self, forKey: .ts)
+        session = try c.decode(String.self, forKey: .session)
+        target = try c.decodeIfPresent(String.self, forKey: .target)
+        source = try c.decode(String.self, forKey: .source)
+        type = try c.decode(String.self, forKey: .type)
+        payload = try c.decodeIfPresent([String: JSONValue].self, forKey: .payload) ?? [:]
+        refs = try c.decodeIfPresent([String: String].self, forKey: .refs) ?? [:]
     }
 }
 

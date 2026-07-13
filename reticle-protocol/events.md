@@ -18,6 +18,7 @@ Every line in `events.jsonl` is one JSON object:
 
 ```json
 {
+  "schemaVersion": 1,
   "id": "evt_0000000000000001",
   "ts": 1782751906383,
   "session": "reticle-e2e",
@@ -29,6 +30,12 @@ Every line in `events.jsonl` is one JSON object:
 }
 ```
 
+- `schemaVersion` is the envelope generation (currently `1`). It is bumped only
+  on a **breaking** envelope-shape change — a top-level field renamed, removed,
+  or retyped. Additive fields do not bump it. Per-payload shapes carry their own
+  independent versions (e.g. `payload.traceVersion`). A consumer should read
+  `schemaVersion` to decide whether it understands the envelope; lines written
+  before this field existed are read as generation `1`.
 - `id` is daemon-assigned, sortable, and monotonically increasing within a
   session.
 - `ts` is epoch milliseconds stamped by the daemon.
