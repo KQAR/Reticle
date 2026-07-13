@@ -11,6 +11,9 @@ public final class EventStore: @unchecked Sendable {
     private var buffer: [ReticleEventEnvelope] = []
     private var subscribers: [UUID: Subscriber] = [:]
     private var nextSequence: UInt64 = 1
+    /// Long-lived append handle, opened once and kept at end-of-file, so each
+    /// append is one write instead of open+seek+write+close.
+    private var writeHandle: FileHandle?
     /// Canonical directory paths artifacts may be served from. Seeded with the
     /// sessions root (where in-process producers — network bodies, screenshots —
     /// write). Trusted ingest paths widen it via `registerArtifactRoot`.
@@ -171,14 +174,22 @@ public final class EventStore: @unchecked Sendable {
 
     private func appendStampedLocked(_ event: ReticleEventEnvelope) throws -> [Subscriber] {
         let line = try encoder.encode(event) + Data("\n".utf8)
-        let handle = try FileHandle(forWritingTo: eventsFile)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: line)
-        try handle.close()
+        try writeHandleLocked().write(contentsOf: line)
 
         buffer.append(event)
         trimBuffer()
         return Array(subscribers.values)
+    }
+
+    /// The append handle, opened and positioned at end on first use and then
+    /// reused. Called only under `lock` (appends are serialized), and only this
+    /// store writes the file, so the position stays at end between writes.
+    private func writeHandleLocked() throws -> FileHandle {
+        if let writeHandle { return writeHandle }
+        let handle = try FileHandle(forWritingTo: eventsFile)
+        try handle.seekToEnd()
+        writeHandle = handle
+        return handle
     }
 
     private func loadExistingEvents() throws {
@@ -239,14 +250,16 @@ public final class EventStore: @unchecked Sendable {
             guard values.isDirectory == true else { return nil }
             let id = url.lastPathComponent
             guard isSafeSessionID(id) else { return nil }
-            let events = try loadEvents(session: id, rootDirectory: rootDirectory)
+            // Count by scanning lines rather than decoding every event into a
+            // model just to size the listing — the panel polls this repeatedly.
+            let counts = countEvents(session: id, rootDirectory: rootDirectory)
             let eventsFile = eventsFile(session: id, rootDirectory: rootDirectory)
             let updatedAt = modificationMillis(for: eventsFile) ?? values.contentModificationDate.map(millis)
             return SessionInfo(
                 id: id,
                 path: url.path,
-                eventCount: events.count,
-                actionTraceCount: events.filter { $0.type == "action.trace" }.count,
+                eventCount: counts.total,
+                actionTraceCount: counts.actionTraces,
                 updatedAtMillis: updatedAt,
                 isCurrent: id == currentSession
             )
@@ -255,6 +268,22 @@ public final class EventStore: @unchecked Sendable {
             if $0.isCurrent != $1.isCurrent { return $0.isCurrent }
             return ($0.updatedAtMillis ?? 0) > ($1.updatedAtMillis ?? 0)
         }
+    }
+
+    /// Cheap event counts for the session listing: total non-empty lines and
+    /// lines carrying the action.trace type, without decoding each line's JSON.
+    private static func countEvents(session id: String, rootDirectory: URL) -> (total: Int, actionTraces: Int) {
+        let file = eventsFile(session: id, rootDirectory: rootDirectory)
+        guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) else {
+            return (0, 0)
+        }
+        var total = 0
+        var traces = 0
+        for line in text.split(separator: "\n") where !line.isEmpty {
+            total += 1
+            if line.contains("\"type\":\"action.trace\"") { traces += 1 }
+        }
+        return (total, traces)
     }
 
     private static func loadEvents(session id: String, rootDirectory: URL) throws -> [ReticleEventEnvelope] {
