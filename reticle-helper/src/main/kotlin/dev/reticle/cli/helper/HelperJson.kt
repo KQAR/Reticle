@@ -53,7 +53,9 @@ internal fun selectorFrom(params: JsonObject): Selector = Selector(
 internal fun parseXY(value: String): Pair<Int, Int> {
     val parts = value.split(",")
     if (parts.size != 2) throw CliError("expected x,y but got '$value'")
-    return parts[0].trim().toInt() to parts[1].trim().toInt()
+    val x = parts[0].trim().toIntOrNull() ?: throw CliError("expected numeric x,y but got '$value'")
+    val y = parts[1].trim().toIntOrNull() ?: throw CliError("expected numeric x,y but got '$value'")
+    return x to y
 }
 
 internal fun parseValue(raw: String): MetadataValue = when {
