@@ -104,6 +104,7 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 // bodies (e.g. Chinese text) and blocks until the socket times
                 // out — even though the request was complete.
                 val input = socket.getInputStream()
+                val out = socket.getOutputStream()
                 val requestLine = readHeaderLine(input) ?: return
                 val parts = requestLine.split(" ")
                 if (parts.size < 2) return
@@ -119,6 +120,18 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                     }
                 }
 
+                // Bound the body BEFORE allocating: contentLength is
+                // client-controlled, and ByteArray(contentLength) with a huge or
+                // negative value would OOM or crash the host app's process.
+                if (contentLength < 0) {
+                    writeText(out, 400, "invalid Content-Length")
+                    return
+                }
+                if (contentLength > MAX_BODY_BYTES) {
+                    writeText(out, 413, "request body too large (max $MAX_BODY_BYTES bytes)")
+                    return
+                }
+
                 val body = if (contentLength > 0) {
                     val bytes = ByteArray(contentLength)
                     var read = 0
@@ -130,7 +143,17 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                     String(bytes, 0, read, StandardCharsets.UTF_8)
                 } else ""
 
-                route(socket.getOutputStream(), method, path, body)
+                try {
+                    route(out, method, path, body)
+                } catch (t: Throwable) {
+                    // A failed route (malformed MUTATE body, capture blowing up
+                    // mid-walk) must still answer: silently closing the socket
+                    // gives the CLI an undiagnosable "empty reply from server".
+                    Log.w(TAG, "route failed: $method $path", t)
+                    runCatching {
+                        writeText(out, 500, "${t.javaClass.simpleName}: ${t.message ?: "internal error"}")
+                    }
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "request handling failed", t)
             }
@@ -150,6 +173,11 @@ class ReticleServer(private val runtime: ReticleRuntime) {
             sawAny = true
             if (b == '\n'.code) break
             if (b != '\r'.code) sb.append(b.toChar())
+            // A line that never ends would otherwise grow this buffer until the
+            // socket timeout; past any sane header size, give up on the request.
+            if (sb.length > MAX_HEADER_LINE_BYTES) {
+                throw java.io.IOException("header line exceeds $MAX_HEADER_LINE_BYTES bytes")
+            }
         }
         return sb.toString()
     }
@@ -255,7 +283,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
 
     private fun statusText(status: Int): String = when (status) {
         200 -> "OK"
+        400 -> "Bad Request"
         404 -> "Not Found"
+        413 -> "Payload Too Large"
         500 -> "Internal Server Error"
         503 -> "Service Unavailable"
         else -> "OK"
@@ -278,5 +308,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
         const val TAG = RETICLE_LOG_TAG
         const val MAX_WORKERS = 16
         const val SOCKET_READ_TIMEOUT_MS = 15_000
+
+        // Requests are small JSON (MUTATE) or clipboard text; 4 MiB is generous.
+        const val MAX_BODY_BYTES = 4 * 1024 * 1024
+        const val MAX_HEADER_LINE_BYTES = 16 * 1024
     }
 }
