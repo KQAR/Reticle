@@ -79,5 +79,5 @@ object Bootstrap {
         }
     }
 
-    private const val TAG = "Reticle"
+    private const val TAG = RETICLE_LOG_TAG
 }

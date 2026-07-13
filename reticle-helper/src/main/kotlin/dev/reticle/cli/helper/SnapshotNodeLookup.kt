@@ -1,6 +1,5 @@
 package dev.reticle.cli
 
-import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.Snapshot
 import kotlinx.serialization.json.JsonObject
@@ -14,9 +13,7 @@ internal fun findNode(snapshot: Snapshot, params: JsonObject): Node? {
     return when {
         testId != null -> snapshot.nodes.values.firstOrNull { it.testId == testId }
         resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == resourceId }
-        cssSelector != null -> snapshot.nodes.values.firstOrNull { node ->
-            (node.custom["domCssSelector"] as? MetadataValue.Text)?.value == cssSelector
-        }
+        cssSelector != null -> snapshot.nodes.values.firstOrNull { it.domCssSelector() == cssSelector }
         ref != null -> snapshot.nodes[ref]
         else -> throw CliError("node needs testId, resourceId, css, or ref")
     }

@@ -10,8 +10,6 @@ import dev.reticle.core.MetadataValue
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.MutationResult
 import dev.reticle.core.Selector
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Allowlisted runtime property mutation: only a bounded set of View properties
@@ -35,7 +33,7 @@ class MutationEngine(private val context: Context) {
                 message = "property '${request.property}' is not in the mutation allowlist $allowedProperties",
             )
         }
-        return runOnMainSync {
+        return runOnMainSync(handler) {
             val view = resolve(request.selector)
                 ?: return@runOnMainSync MutationResult(
                     applied = false,
@@ -184,19 +182,6 @@ class MutationEngine(private val context: Context) {
         else -> "gone"
     }
 
-    private fun <T> runOnMainSync(block: () -> T): T? {
-        if (Looper.myLooper() == Looper.getMainLooper()) return block()
-        var result: T? = null
-        val latch = CountDownLatch(1)
-        handler.post {
-            try {
-                result = block()
-            } finally {
-                latch.countDown()
-            }
-        }
-        return if (latch.await(5, TimeUnit.SECONDS)) result else null
-    }
 }
 
 private fun MetadataValue.asDouble(): Double? = when (this) {

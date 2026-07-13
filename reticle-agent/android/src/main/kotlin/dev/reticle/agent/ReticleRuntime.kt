@@ -112,7 +112,7 @@ class ReticleRuntime private constructor() {
         const val DEFAULT_PORT = PortMap.BASE_PORT
         /** App version, sourced from the repo-root VERSION file via reticle-core. */
         val VERSION: String = dev.reticle.core.RETICLE_VERSION
-        private const val TAG = "Reticle"
+        private const val TAG = RETICLE_LOG_TAG
 
         /** Cap on retained app-authored log lines (newest kept). */
         private const val MAX_LOGS = 1000

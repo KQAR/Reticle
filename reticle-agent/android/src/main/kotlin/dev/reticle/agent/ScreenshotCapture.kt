@@ -7,8 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * In-process screenshot. Renders the attached window roots into a bitmap on the
@@ -24,7 +22,7 @@ class ScreenshotCapture(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
 
     fun capturePng(): ByteArray? {
-        val bitmap = runOnMainSync { renderTopWindow() } ?: return null
+        val bitmap = runOnMainSync(handler) { renderTopWindow() } ?: return null
         return try {
             val stream = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
@@ -43,19 +41,5 @@ class ScreenshotCapture(private val context: Context) {
         val canvas = Canvas(bitmap)
         target.draw(canvas)
         return bitmap
-    }
-
-    private fun <T> runOnMainSync(block: () -> T): T? {
-        if (Looper.myLooper() == Looper.getMainLooper()) return block()
-        var result: T? = null
-        val latch = CountDownLatch(1)
-        handler.post {
-            try {
-                result = block()
-            } finally {
-                latch.countDown()
-            }
-        }
-        return if (latch.await(5, TimeUnit.SECONDS)) result else null
     }
 }
