@@ -314,6 +314,7 @@ object RegionProbe {
             val hostId = android.view.accessibility.AccessibilityNodeProvider.HOST_VIEW_ID
             val root = provider.createAccessibilityNodeInfo(hostId) ?: return emptyList()
             val childCount = root.childCount
+            recycleQuietly(root)
             val loc = IntArray(2)
             view.getLocationOnScreen(loc)
             for (i in 0 until childCount) {
@@ -323,11 +324,13 @@ object RegionProbe {
                 val childInfo = provider.createAccessibilityNodeInfo(i) ?: continue
                 val bounds = AndroidRect()
                 childInfo.getBoundsInScreen(bounds)
+                val label = childInfo.text?.toString() ?: childInfo.contentDescription?.toString()
+                recycleQuietly(childInfo)
                 if (bounds.width() <= 0 || bounds.height() <= 0) continue
                 out.add(
                     InteractionRegion(
                         source = RegionSource.a11yVirtual,
-                        label = childInfo.text?.toString() ?: childInfo.contentDescription?.toString(),
+                        label = label,
                         rects = listOf(
                             Rect(
                                 x = bounds.left.toDouble(),
@@ -345,7 +348,31 @@ object RegionProbe {
         return out
     }
 
+    // AccessibilityNodeInfo instances are pooled below API 33; not recycling
+    // them churns the pool for every virtual node on every snapshot.
+    @Suppress("DEPRECATION")
+    private fun recycleQuietly(info: android.view.accessibility.AccessibilityNodeInfo) {
+        if (android.os.Build.VERSION.SDK_INT < 33) {
+            try {
+                info.recycle()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     // --- Channel 3: touch delegate ----------------------------------------
+
+    // TouchDelegate stores its bounds privately; resolve the Field ONCE — the
+    // getDeclaredField + isAccessible toggle ran per delegated view per
+    // snapshot, on the main thread inside runOnMainSync.
+    private val touchDelegateBoundsField: java.lang.reflect.Field? by lazy {
+        try {
+            android.view.TouchDelegate::class.java.getDeclaredField("mBounds")
+                .apply { isAccessible = true }
+        } catch (_: Throwable) {
+            null
+        }
+    }
 
     private fun touchDelegateRegion(view: View): InteractionRegion? {
         val delegate = try {
@@ -353,10 +380,8 @@ object RegionProbe {
         } catch (_: Throwable) {
             null
         } ?: return null
-        // TouchDelegate stores its bounds privately; read mBounds reflectively.
         return try {
-            val field = android.view.TouchDelegate::class.java.getDeclaredField("mBounds")
-            field.isAccessible = true
+            val field = touchDelegateBoundsField ?: return null
             val b = field.get(delegate) as? AndroidRect ?: return null
             val loc = IntArray(2)
             view.getLocationOnScreen(loc)
