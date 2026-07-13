@@ -3,9 +3,14 @@
   "$id": "https://reticle.dev/schema/event.schema.json",
   "title": "Reticle daemon event envelope",
   "type": "object",
-  "required": ["id", "ts", "session", "source", "type", "payload", "refs"],
+  "required": ["schemaVersion", "id", "ts", "session", "source", "type", "payload", "refs"],
   "additionalProperties": false,
   "properties": {
+    "schemaVersion": {
+      "description": "Envelope generation marker. Bumped only on a breaking envelope change; per-payload shapes carry their own version (e.g. traceVersion).",
+      "type": "integer",
+      "const": 1
+    },
     "id": {
       "type": "string",
       "pattern": "^evt_[0-9]{16}$"
