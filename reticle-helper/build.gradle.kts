@@ -3,13 +3,13 @@
 // `reticle-helper` whose `helper` subcommand is the RPC server the Swift host
 // (reticle-host) drives. See reticle-protocol/helper-rpc.md.
 plugins {
-    id("org.jetbrains.kotlin.jvm")
+    alias(libs.plugins.kotlin.jvm)
     application
 }
 
 dependencies {
     implementation(project(":reticle-core"))
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(kotlin("test"))
 }
