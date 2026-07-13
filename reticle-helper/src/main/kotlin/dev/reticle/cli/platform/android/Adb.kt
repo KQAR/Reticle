@@ -27,10 +27,15 @@ class Adb(
         val process = ProcessBuilder(command).redirectErrorStream(false).start()
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
-        val outThread = Thread { process.inputStream.copyTo(out) }.apply { start() }
-        val errThread = Thread { process.errorStream.copyTo(err) }.apply { start() }
+        val outThread = Thread { process.inputStream.copyTo(out) }.apply { isDaemon = true; start() }
+        val errThread = Thread { process.errorStream.copyTo(err) }.apply { isDaemon = true; start() }
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
+            // Join the readers before touching `out`: destroyForcibly closes the
+            // streams so the copies unblock, and reading the non-thread-safe
+            // ByteArrayOutputStream while they may still be writing is a race.
+            outThread.join(1000)
+            errThread.join(1000)
             return CommandResult(124, out.toString(Charsets.UTF_8), "adb timed out after ${timeoutSeconds}s")
         }
         outThread.join(1000)
@@ -49,13 +54,20 @@ class Adb(
         }
         val process = ProcessBuilder(command).start()
         val out = ByteArrayOutputStream()
-        val outThread = Thread { process.inputStream.copyTo(out) }.apply { start() }
-        process.errorStream.readBytes()
+        val outThread = Thread { process.inputStream.copyTo(out) }.apply { isDaemon = true; start() }
+        // Drain stderr on its own thread. Reading it inline (before waitFor)
+        // blocks until stderr EOF and can deadlock a large stdout (e.g. a
+        // screencap PNG) that fills the pipe buffer while we wait on stderr.
+        val errThread = Thread { process.errorStream.copyTo(ByteArrayOutputStream()) }
+            .apply { isDaemon = true; start() }
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
+            outThread.join(1000)
+            errThread.join(1000)
             return ByteArray(0)
         }
         outThread.join(1000)
+        errThread.join(1000)
         return out.toByteArray()
     }
 
