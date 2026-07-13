@@ -6,7 +6,7 @@ import android.util.Log
 import dev.reticle.core.LogEntry
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.PortMap
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.ArrayDeque
 
 /**
  * Process-wide runtime singleton: owns the localhost server lifecycle, the
@@ -29,7 +29,13 @@ class ReticleRuntime private constructor() {
      */
     val boundPort: Int get() = server?.boundPort ?: -1
 
-    private val logs = CopyOnWriteArrayList<LogEntry>()
+    /**
+     * Bounded ring of the most recent app-authored log lines. Capped so a
+     * long-lived process can't grow it without limit; a plain CopyOnWriteArrayList
+     * also made every append an O(n) copy (O(n²) overall). Guarded by its own
+     * monitor since the server handles requests on multiple worker threads.
+     */
+    private val logs = ArrayDeque<LogEntry>()
 
     /** testId -> app-attached scalar metadata. */
     private val metadataByTestId = HashMap<String, MutableMap<String, MetadataValue>>()
@@ -75,17 +81,19 @@ class ReticleRuntime private constructor() {
     // --- App-authored bridge (the log / view-metadata bridge) ---------------
 
     fun log(level: String, message: String, metadata: Map<String, MetadataValue> = emptyMap()) {
-        logs.add(
-            LogEntry(
-                timestampMillis = System.currentTimeMillis(),
-                level = level,
-                message = message,
-                metadata = metadata,
-            )
+        val entry = LogEntry(
+            timestampMillis = System.currentTimeMillis(),
+            level = level,
+            message = message,
+            metadata = metadata,
         )
+        synchronized(logs) {
+            logs.addLast(entry)
+            while (logs.size > MAX_LOGS) logs.removeFirst()
+        }
     }
 
-    fun collectedLogs(): List<LogEntry> = logs.toList()
+    fun collectedLogs(): List<LogEntry> = synchronized(logs) { logs.toList() }
 
     fun attachMetadata(testId: String, metadata: Map<String, MetadataValue>) {
         synchronized(metadataByTestId) {
@@ -104,6 +112,9 @@ class ReticleRuntime private constructor() {
         const val DEFAULT_PORT = PortMap.BASE_PORT
         const val VERSION = "0.6.5"
         private const val TAG = "Reticle"
+
+        /** Cap on retained app-authored log lines (newest kept). */
+        private const val MAX_LOGS = 1000
 
         @JvmStatic
         val shared: ReticleRuntime by lazy { ReticleRuntime() }
