@@ -5,6 +5,9 @@ public final class EventStore: @unchecked Sendable {
     public typealias Subscriber = (ReticleEventEnvelope) -> Void
 
     private let lock = NSLock()
+    /// Serializes file appends only, so encoding + disk I/O never hold `lock`
+    /// (which every reader — GET /events, SSE replay — contends on).
+    private let writeLock = NSLock()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let limit: Int
@@ -84,25 +87,36 @@ public final class EventStore: @unchecked Sendable {
     @discardableResult
     public func append(_ request: EventPostRequest) throws -> ReticleEventEnvelope {
         lock.lock()
-        let event: ReticleEventEnvelope
-        let callbacks: [Subscriber]
+        let event = ReticleEventEnvelope(
+            id: allocateIdLocked(),
+            ts: currentMillis(),
+            session: session,
+            target: request.target,
+            source: request.source,
+            type: request.type,
+            payload: request.payload,
+            refs: request.refs
+        )
+        buffer.append(event)
+        trimBuffer()
+        let callbacks = Array(subscribers.values)
+        lock.unlock()
+
+        // Encode + write OUTSIDE `lock`: serializing a large network payload
+        // under the buffer lock stalled every concurrent reader. Two racing
+        // appends may land in the file out of id order (loads sort by id);
+        // a failed write leaves the event visible in memory — persistence was
+        // always best-effort (appends are not fsync'd).
+        let line = try encoder.encode(event) + Data("\n".utf8)
+        writeLock.lock()
         do {
-            event = ReticleEventEnvelope(
-                id: allocateIdLocked(),
-                ts: currentMillis(),
-                session: session,
-                target: request.target,
-                source: request.source,
-                type: request.type,
-                payload: request.payload,
-                refs: request.refs
-            )
-            callbacks = try appendStampedLocked(event)
-            lock.unlock()
+            try writeHandleLocked().write(contentsOf: line)
+            writeLock.unlock()
         } catch {
-            lock.unlock()
+            writeLock.unlock()
             throw error
         }
+
         callbacks.forEach { $0(event) }
         return event
     }
@@ -172,18 +186,9 @@ public final class EventStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func appendStampedLocked(_ event: ReticleEventEnvelope) throws -> [Subscriber] {
-        let line = try encoder.encode(event) + Data("\n".utf8)
-        try writeHandleLocked().write(contentsOf: line)
-
-        buffer.append(event)
-        trimBuffer()
-        return Array(subscribers.values)
-    }
-
     /// The append handle, opened and positioned at end on first use and then
-    /// reused. Called only under `lock` (appends are serialized), and only this
-    /// store writes the file, so the position stays at end between writes.
+    /// reused. Called only under `writeLock` (appends are serialized), and only
+    /// this store writes the file, so the position stays at end between writes.
     private func writeHandleLocked() throws -> FileHandle {
         if let writeHandle { return writeHandle }
         let handle = try FileHandle(forWritingTo: eventsFile)
@@ -210,6 +215,10 @@ public final class EventStore: @unchecked Sendable {
             loaded.append(event)
             highest = max(highest, sequence(from: event.id) ?? 0)
         }
+        // Racing appends may persist out of id order (encode happens outside
+        // the allocation lock); ids are fixed-width so a string sort restores
+        // the true order.
+        loaded.sort { $0.id < $1.id }
         lock.lock()
         buffer = Array(loaded.suffix(limit))
         nextSequence = highest + 1
