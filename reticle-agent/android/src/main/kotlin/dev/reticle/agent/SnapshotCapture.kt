@@ -49,12 +49,25 @@ class SnapshotCapture(private val context: Context) {
         return draft.snapshot.copy(nodes = nodes)
     }
 
+    /**
+     * Resolve a snapshot [ref] back to its View, using the exact same tree walk
+     * and ref numbering that [capture] uses — so a ref taken from a snapshot maps
+     * to the same View here. Non-View refs (Compose/probe/WebView-DOM nodes) are
+     * absent, since only Views can be mutated. Must be called on the main thread
+     * (or off it — it hops on internally); it skips the async WebView DOM pass.
+     */
+    fun viewByRef(ref: String): View? {
+        val index = HashMap<String, View>()
+        runOnMainSync { captureLocked(viewIndex = index) }
+        return index[ref]
+    }
+
     private data class CaptureDraft(
         val snapshot: Snapshot,
         val webViews: List<WebViewBridge.Pending>,
     )
 
-    private fun captureLocked(): CaptureDraft {
+    private fun captureLocked(viewIndex: MutableMap<String, View>? = null): CaptureDraft {
         nextRef = 0
         val nodes = LinkedHashMap<String, Node>()
         val webViews = ArrayList<WebViewBridge.Pending>()
@@ -70,6 +83,7 @@ class SnapshotCapture(private val context: Context) {
                 kindOverride = NodeKind.window,
                 nodes = nodes,
                 webViews = webViews,
+                viewIndex = viewIndex,
             )
             windowRefs.add(windowRef)
         }
@@ -117,8 +131,10 @@ class SnapshotCapture(private val context: Context) {
         kindOverride: NodeKind? = null,
         nodes: MutableMap<String, Node>,
         webViews: MutableList<WebViewBridge.Pending>,
+        viewIndex: MutableMap<String, View>? = null,
     ): String {
         val ref = makeRef()
+        viewIndex?.put(ref, view)
         val location = IntArray(2)
         view.getLocationOnScreen(location)
         val frame = Rect(
@@ -132,7 +148,15 @@ class SnapshotCapture(private val context: Context) {
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
                 view.getChildAt(i)?.let { child ->
-                    childRefs.add(captureView(child, parentRef = ref, nodes = nodes, webViews = webViews))
+                    childRefs.add(
+                        captureView(
+                            child,
+                            parentRef = ref,
+                            nodes = nodes,
+                            webViews = webViews,
+                            viewIndex = viewIndex,
+                        )
+                    )
                 }
             }
         }

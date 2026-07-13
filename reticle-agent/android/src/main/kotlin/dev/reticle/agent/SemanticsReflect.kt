@@ -49,7 +49,13 @@ object SemanticsReflect {
 
     fun hasClickAction(node: Any): Boolean = configValue(node, "OnClick") != null
 
-    fun boundsInScreen(node: Any): Rect? {
+    /**
+     * Bounds of the node relative to its host window (Compose's
+     * getBoundsInWindow). Callers convert to screen coordinates by adding the
+     * host View's window origin, so Compose frames sit in the same coordinate
+     * space as View frames (which use getLocationOnScreen).
+     */
+    fun boundsInWindow(node: Any): Rect? {
         return try {
             val m = node.javaClass.methods.firstOrNull { it.name == "getBoundsInWindow" } ?: return null
             val rect = m.invoke(node) ?: return null
