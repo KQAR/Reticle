@@ -202,9 +202,14 @@ class Adb(
      * these lines distinguish "agent not linked at all" (no Reticle lines) from
      * "linked but couldn't bind its port" (a FAILED line) — a split the network
      * probe alone can't make. `-d` dumps and exits; non-blocking.
+     *
+     * No `-t <n>`: logcat applies the tail count to the RAW buffer *before* the
+     * `-s` tag filter, so on a busy device the (relatively rare) Reticle lines
+     * fall outside the last n raw lines and vanish — making a linked agent look
+     * unlinked. Dump the full tag-filtered stream and bound it in code below.
      */
     override fun agentLog(maxLines: Int): List<String> {
-        val result = run("logcat", "-d", "-v", "brief", "-t", "2000", "-s", LOG_TAG, timeoutSeconds = 15)
+        val result = run("logcat", "-d", "-v", "brief", "-s", LOG_TAG, timeoutSeconds = 15)
         if (!result.ok) return emptyList()
         return result.stdout.lineSequence()
             .map { it.trim() }
