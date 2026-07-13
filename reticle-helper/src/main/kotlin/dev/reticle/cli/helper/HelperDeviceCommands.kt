@@ -235,9 +235,22 @@ internal object HelperDeviceCommands {
         params: JsonObject,
     ): JsonObject {
         val text = params.str("text") ?: throw CliError("type needs 'text'")
+        // If the caller named a target field, tap it first so the text lands in
+        // THAT field. `input text` / paste both go to whatever currently holds
+        // focus, so without this a `type --test-id foo` silently typed into the
+        // wrong (or no) field. With no target, type into the current focus.
+        var focus: ResolvedInputTarget? = null
+        if (hasInputTarget(params)) {
+            focus = resolveInputTarget(device, pkg, params)
+            input.tap(focus.point.x.toInt(), focus.point.y.toInt())
+            Thread.sleep(FOCUS_SETTLE_MS)
+        }
         if (InputBackend.isAsciiTypeable(text)) {
             input.text(text)
-            return buildJsonObject { put("gesture", "type"); put("chars", text.length); put("via", "input text") }
+            return buildJsonObject {
+                put("gesture", "type"); put("chars", text.length); put("via", "input text")
+                focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+            }
         }
         val client = runtimeClientFor(device, pkg, params)
         assertHealthy(client, pkg)
@@ -246,8 +259,15 @@ internal object HelperDeviceCommands {
         if (!pasted.ok) {
             throw CliError("staged text on clipboard but paste failed: ${pasted.stderr.ifBlank { "no focused input?" }}")
         }
-        return buildJsonObject { put("gesture", "type"); put("chars", text.length); put("via", "clipboard paste") }
+        return buildJsonObject {
+            put("gesture", "type"); put("chars", text.length); put("via", "clipboard paste")
+            focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+        }
     }
+
+    /** Whether the caller supplied any field-targeting selector for `type`. */
+    private fun hasInputTarget(params: JsonObject): Boolean =
+        SELECTOR_KEYS.any { params.str(it) != null }
 
     private fun reportJson(snapshot: Snapshot, semantic: SemanticTree, compact: CompactObservation): JsonElement =
         buildJsonObject {
@@ -263,4 +283,12 @@ internal object HelperDeviceCommands {
         // The client already returns PNG bytes; no need to round-trip through a
         // temp file (write + read back) as this used to.
         runCatching { client.screenshotBytes() }.getOrNull()
+
+    /** Params [resolveInputTarget]/[selectorFrom] read as a targeting selector. */
+    private val SELECTOR_KEYS = listOf(
+        "alias", "point", "testId", "resourceId", "css", "cssSelector", "ref", "region",
+    )
+
+    /** Time for a tapped field to take focus before we dispatch text. */
+    private const val FOCUS_SETTLE_MS = 200L
 }
