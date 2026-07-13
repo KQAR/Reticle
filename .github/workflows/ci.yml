@@ -39,6 +39,12 @@ jobs:
       - name: Build CLI distribution
         run: ./gradlew :reticle-helper:installDist --stacktrace
 
+      # The injectable dex payload is the most build-environment-sensitive task
+      # (needs d8 + the platform jar). It previously ran only at release time, so
+      # a break surfaced only when tagging. Smoke it here.
+      - name: Build injectable dex payload
+        run: ./gradlew :reticle-agent:android:dexPayload --stacktrace
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6

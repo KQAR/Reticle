@@ -72,31 +72,40 @@ dependencies {
 val dexPayload by tasks.registering(Exec::class) {
     group = "reticle"
     description = "Dex the agent + runtime deps into an injectable payload jar."
-    dependsOn("bundleLibRuntimeToJarRelease")
+
+    // Consume the bundle task's declared output rather than a hand-written
+    // intermediates path, which shifts between AGP versions.
+    val bundleTask = tasks.named("bundleLibRuntimeToJarRelease")
+    dependsOn(bundleTask)
 
     val sdkDir = android.sdkDirectory
-    val buildToolsVer = "35.0.0"
+    // Derive the build-tools and platform from the AGP config so this doesn't
+    // break when only a different SDK version is installed locally / in CI.
+    val buildToolsVer = android.buildToolsVersion
+    val compileSdkVersion = android.compileSdk ?: error("android.compileSdk is not set")
+    val minApi = android.defaultConfig.minSdk ?: 24
     val d8 = File(sdkDir, "build-tools/$buildToolsVer/d8")
-    val androidJar = File(sdkDir, "platforms/android-35/android.jar")
-    val agentClassesJar = layout.buildDirectory
-        .file("intermediates/runtime_library_classes_jar/release/bundleLibRuntimeToJarRelease/classes.jar")
+    val androidJar = File(sdkDir, "platforms/android-$compileSdkVersion/android.jar")
+    val classesJars = bundleTask.map { task -> task.outputs.files.filter { it.name.endsWith(".jar") } }
     val outJar = layout.buildDirectory.file("reticle-payload/reticle-agent-payload.jar")
 
-    inputs.file(agentClassesJar)
+    inputs.files(classesJars)
     inputs.files(payload)
     outputs.file(outJar)
 
     doFirst {
+        require(d8.exists()) { "d8 not found at $d8 (build-tools $buildToolsVer). Install it via the SDK manager." }
+        require(androidJar.exists()) { "android.jar not found at $androidJar (platform android-$compileSdkVersion)." }
         outJar.get().asFile.parentFile.mkdirs()
-        val inputs = buildList {
+        val args = buildList {
             add(d8.absolutePath)
             add("--release")
-            add("--min-api"); add("24")
+            add("--min-api"); add(minApi.toString())
             add("--lib"); add(androidJar.absolutePath)
             add("--output"); add(outJar.get().asFile.absolutePath)
-            add(agentClassesJar.get().asFile.absolutePath)
+            classesJars.get().forEach { add(it.absolutePath) }
             payload.files.forEach { add(it.absolutePath) }
         }
-        commandLine(inputs)
+        commandLine(args)
     }
 }
