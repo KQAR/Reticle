@@ -13,7 +13,11 @@
     "nodes"
   ],
   "properties": {
-    "schemaVersion": { "type": "integer" },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Wire format version. This schema describes version 1; a producer emitting a different value is not this contract. Bump in lockstep with Snapshot.SCHEMA_VERSION on an incompatible change."
+    },
     "capturedAtMillis": {
       "type": "integer",
       "description": "Wall-clock millis when captured, stamped by the agent."
