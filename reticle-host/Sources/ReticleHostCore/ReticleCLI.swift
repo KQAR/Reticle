@@ -7,6 +7,10 @@ public enum ReticleCLI {
 
     /// Runs the Reticle CLI and returns a process exit code.
     public static func run(_ argv: [String]) -> Int32 {
+        // A write to a dead helper's stdin pipe (or a closed client socket)
+        // must surface as an error at the call site, not deliver SIGPIPE and
+        // kill the whole process — fatal for the long-lived serve daemon.
+        signal(SIGPIPE, SIG_IGN)
         let args = Args(argv)
         guard let command = args.positional(0) else {
             writeError("\(usage)\n")
