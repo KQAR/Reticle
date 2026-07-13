@@ -1,6 +1,5 @@
 package dev.reticle.cli
 
-import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.Selector
 import dev.reticle.core.Snapshot
@@ -68,7 +67,4 @@ internal object SelectorDiagnostics {
         return "$kind candidates (${values.size}${if (values.size == 12) "+" else ""}): " +
             values.joinToString(", ") { "'$it'" }
     }
-
-    private fun Node.domCssSelector(): String? =
-        (custom["domCssSelector"] as? MetadataValue.Text)?.value
 }

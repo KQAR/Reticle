@@ -275,7 +275,7 @@ class ReticleServer(private val runtime: ReticleRuntime) {
     }
 
     private companion object {
-        const val TAG = "Reticle"
+        const val TAG = RETICLE_LOG_TAG
         const val MAX_WORKERS = 16
         const val SOCKET_READ_TIMEOUT_MS = 15_000
     }

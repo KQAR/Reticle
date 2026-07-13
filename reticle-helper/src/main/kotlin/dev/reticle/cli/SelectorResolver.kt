@@ -1,6 +1,5 @@
 package dev.reticle.cli
 
-import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.Point
 import dev.reticle.core.Rect
@@ -106,7 +105,5 @@ class SelectorResolver(
     private fun center(rect: Rect) = Point(rect.centerX, rect.centerY)
 
     private fun nodeByCssSelector(cssSelector: String): Node? =
-        snapshot.nodes.values.firstOrNull { node ->
-            (node.custom["domCssSelector"] as? MetadataValue.Text)?.value == cssSelector
-        }
+        snapshot.nodes.values.firstOrNull { it.domCssSelector() == cssSelector }
 }

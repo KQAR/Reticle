@@ -5,8 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Sets the device's primary clipboard from inside the app process.
@@ -25,24 +23,10 @@ class ClipboardWriter(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
 
     /** Returns true if the clipboard was set. */
-    fun set(text: String, label: String = "reticle"): Boolean = runOnMainSync {
+    fun set(text: String, label: String = "reticle"): Boolean = runOnMainSync(handler) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             ?: return@runOnMainSync false
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
         true
     } ?: false
-
-    private fun <T> runOnMainSync(block: () -> T): T? {
-        if (Looper.myLooper() == Looper.getMainLooper()) return block()
-        var result: T? = null
-        val latch = CountDownLatch(1)
-        handler.post {
-            try {
-                result = block()
-            } finally {
-                latch.countDown()
-            }
-        }
-        return if (latch.await(5, TimeUnit.SECONDS)) result else null
-    }
 }
