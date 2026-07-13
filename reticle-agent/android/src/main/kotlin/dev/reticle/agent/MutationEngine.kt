@@ -132,8 +132,15 @@ class MutationEngine(private val context: Context) {
     /** testId/resource-id first, then ref, then point — the resolution order. */
     private fun resolve(selector: Selector): View? {
         val roots = ReticleWindows.rootViews()
-        for (root in roots) {
-            findIn(root, selector)?.let { return it }
+        if (selector.testId != null || selector.resourceId != null) {
+            for (root in roots) {
+                findIn(root, selector)?.let { return it }
+            }
+        }
+        // ref: resolve against the same tree walk / ref numbering as capture, so
+        // a ref taken from a snapshot maps back to the same View.
+        selector.ref?.let { ref ->
+            SnapshotCapture(context).viewByRef(ref)?.let { return it }
         }
         // Point fallback: deepest hit view at the coordinate.
         selector.point?.let { p ->
