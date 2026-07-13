@@ -39,6 +39,12 @@ struct ReticleSessionRoutes: Sendable {
             let body = try await badRequestOnDecode {
                 try await traceIngest.event(from: requestBodyData(request))
             }
+            // A trace's evidence lives in the trace directory the caller pointed
+            // at (e.g. a user-chosen --trace-output). Trust that directory so its
+            // artifacts can be served, without opening the whole filesystem.
+            for path in body.refs.values {
+                store.registerArtifactRoot(URL(fileURLWithPath: path).deletingLastPathComponent())
+            }
             return try jsonResponse(store.append(body), status: .created)
         }
     }
@@ -68,6 +74,12 @@ struct ReticleSessionRoutes: Sendable {
             throw HTTPError(.notFound, message: "artifact ref not found")
         }
         let url = URL(fileURLWithPath: path)
+        // Confine reads to trusted artifact roots so a ref (which any local
+        // process can inject via POST /sessions/current/events) cannot be used
+        // to read arbitrary files off the host.
+        guard store.isArtifactPathAllowed(url) else {
+            throw HTTPError(.notFound, message: "artifact path is not allowed")
+        }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
             throw HTTPError(.notFound, message: "artifact file not found")
         }

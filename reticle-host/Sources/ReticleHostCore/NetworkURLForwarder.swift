@@ -12,7 +12,15 @@ final class NetworkURLForwarder: @unchecked Sendable {
         configuration.connectionProxyDictionary = [:]
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 60
-        session = URLSession(configuration: configuration)
+        // An inspection proxy must forward 3xx to the app rather than silently
+        // following them itself, or the app never sees the redirect and the
+        // trace only records the final hop. NoRedirectDelegate cancels the
+        // automatic follow so the redirect response passes straight through.
+        session = URLSession(
+            configuration: configuration,
+            delegate: NoRedirectDelegate(),
+            delegateQueue: nil
+        )
     }
 
     /// Sends a proxied HTTP request upstream without blocking the proxy event loop.
@@ -63,4 +71,18 @@ final class NetworkForwardingTask: @unchecked Sendable {
 
 enum NetworkForwardingError: Error {
     case nonHTTPResponse
+}
+
+/// Cancels URLSession's automatic redirect following so 3xx responses are
+/// forwarded to the client unchanged.
+private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
 }

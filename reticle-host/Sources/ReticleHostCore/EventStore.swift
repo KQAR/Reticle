@@ -11,6 +11,10 @@ public final class EventStore: @unchecked Sendable {
     private var buffer: [ReticleEventEnvelope] = []
     private var subscribers: [UUID: Subscriber] = [:]
     private var nextSequence: UInt64 = 1
+    /// Canonical directory paths artifacts may be served from. Seeded with the
+    /// sessions root (where in-process producers — network bodies, screenshots —
+    /// write). Trusted ingest paths widen it via `registerArtifactRoot`.
+    private var allowedArtifactRoots: Set<String> = []
 
     public let session: String
     public let rootDirectory: URL
@@ -28,7 +32,49 @@ public final class EventStore: @unchecked Sendable {
         if !FileManager.default.fileExists(atPath: eventsFile.path) {
             _ = FileManager.default.createFile(atPath: eventsFile.path, contents: nil)
         }
+        allowedArtifactRoots = [Self.canonicalPath(rootDirectory)]
         try loadExistingEvents()
+    }
+
+    /// Marks [directory] as a trusted root artifacts may be served from. Called
+    /// when the daemon ingests a trace whose evidence lives outside the sessions
+    /// root (e.g. a user-chosen `--trace-output`).
+    public func registerArtifactRoot(_ directory: URL) {
+        let canonical = Self.canonicalPath(directory)
+        lock.lock()
+        allowedArtifactRoots.insert(canonical)
+        lock.unlock()
+    }
+
+    /// Whether [fileURL] resolves to a file inside one of the allowed artifact
+    /// roots. Symlinks and `..` are resolved first so a stored ref cannot escape
+    /// the allowlist to read arbitrary files (e.g. an event POSTed by a local
+    /// process pointing at `/etc/passwd`).
+    public func isArtifactPathAllowed(_ fileURL: URL) -> Bool {
+        let target = Self.canonicalComponents(fileURL)
+        lock.lock()
+        let roots = allowedArtifactRoots
+        lock.unlock()
+        for root in roots {
+            let rootComponents = root.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            guard target.count > rootComponents.count else { continue }
+            if Array(target.prefix(rootComponents.count)) == rootComponents {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func canonicalURL(_ url: URL) -> URL {
+        url.resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private static func canonicalPath(_ url: URL) -> String {
+        canonicalURL(url).path
+    }
+
+    private static func canonicalComponents(_ url: URL) -> [String] {
+        canonicalURL(url).pathComponents.filter { $0 != "/" }
     }
 
     /// Appends and persists an incoming event, assigning daemon-owned id and time.
