@@ -229,9 +229,6 @@ internal object OutlineRenderer {
     private fun Node.hasLabelOrSelector(): Boolean =
         testId != null || resourceId != null || contentDescription != null || !text.isNullOrBlank() || domCssSelector() != null
 
-    private fun Node.domCssSelector(): String? =
-        (custom["domCssSelector"] as? dev.reticle.core.MetadataValue.Text)?.value
-
     private fun clean(value: String): String = value.replace('\n', ' ').replace('\r', ' ')
 }
 

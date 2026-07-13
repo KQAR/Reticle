@@ -83,6 +83,6 @@ class ReticleInitProvider : ContentProvider() {
     ): Int = 0
 
     private companion object {
-        const val TAG = "Reticle"
+        const val TAG = RETICLE_LOG_TAG
     }
 }
