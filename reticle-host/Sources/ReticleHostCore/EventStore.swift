@@ -143,8 +143,11 @@ public final class EventStore: @unchecked Sendable {
 
     /// Finds a persisted event by id in either the current or a historical session.
     public func historicalEvent(session id: String, eventId: String) throws -> ReticleEventEnvelope? {
-        if id == session {
-            return event(id: eventId)
+        // For the current session, prefer the in-memory buffer, but fall back to
+        // disk: an event that has aged out of the bounded ring is still persisted
+        // in events.jsonl, and its artifacts must remain fetchable.
+        if id == session, let buffered = event(id: eventId) {
+            return buffered
         }
         return try Self.loadEvents(session: id, rootDirectory: rootDirectory).first { $0.id == eventId }
     }
