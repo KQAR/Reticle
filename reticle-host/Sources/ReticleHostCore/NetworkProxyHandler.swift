@@ -75,7 +75,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
 
     private func forwardHTTP(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
         let requestId = UUID().uuidString
-        let start = millis()
+        let start = currentMillis()
         guard let target = HTTPProxyTarget(head: head, defaultScheme: "http") else {
             emitError(requestId: requestId, message: "invalid proxy request target", start: start)
             writeError(.badRequest, context: context)
@@ -116,7 +116,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                 case .success(let (responseData, response)):
                     var responseRefs = requestRefs
                     var responsePayload = requestPayload
-                    responsePayload.endMillis = self.millis()
+                    responsePayload.endMillis = currentMillis()
                     responsePayload.status = response.statusCode
                     responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
                     if let stored = try? self.bodyStore.store(responseData, requestId: requestId, role: "response") {
@@ -137,7 +137,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
 
     private func handleConnect(_ head: HTTPRequestHead, context: ChannelHandlerContext) {
         let requestId = UUID().uuidString
-        let start = millis()
+        let start = currentMillis()
         guard let target = HTTPProxyTarget(connectTarget: head.uri) else {
             emitError(requestId: requestId, message: "invalid CONNECT target", start: start)
             writeError(.badRequest, context: context)
@@ -160,7 +160,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                 switch result {
                 case .success(let peer):
                     var done = payload
-                    done.endMillis = self.millis()
+                    done.endMillis = currentMillis()
                     done.status = 200
                     _ = try? self.store.append(self.factory.event(.response, payload: done))
                     if let sslContext {
@@ -253,7 +253,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     ) {
         var responseRefs = refs
         var responsePayload = payload
-        responsePayload.endMillis = millis()
+        responsePayload.endMillis = currentMillis()
         responsePayload.status = mock.value.status
         responsePayload.responseHeaders = mock.value.headers
         responsePayload.mocked = true
@@ -328,14 +328,14 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     private func emitError(requestId: String, target: HTTPProxyTarget? = nil, message: String, start: Int64) {
         var payload = target?.payload(requestId: requestId, method: "UNKNOWN", start: start, tunnel: false, mitm: false)
             ?? NetworkEventPayload(requestId: requestId, scheme: "unknown", method: "UNKNOWN", url: "", host: "", port: 0, path: "", startMillis: start, tunnel: false, mitm: false)
-        payload.endMillis = millis()
+        payload.endMillis = currentMillis()
         payload.error = message
         _ = try? store.append(factory.event(.error, payload: payload))
     }
 
     private func emitMockError(_ error: NetworkMockError, payload: NetworkEventPayload, refs: [String: String]) {
         var errorPayload = payload
-        errorPayload.endMillis = millis()
+        errorPayload.endMillis = currentMillis()
         errorPayload.error = error.description
         if case .missingValue(let ruleId, let valueId) = error {
             errorPayload.mocked = true
@@ -345,7 +345,4 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         _ = try? store.append(factory.event(.error, payload: errorPayload, refs: refs))
     }
 
-    private func millis() -> Int64 {
-        Int64(Date().timeIntervalSince1970 * 1000)
-    }
 }

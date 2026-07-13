@@ -145,7 +145,7 @@ private struct RuntimeProcessObservation {
             running: running,
             pid: pid,
             runtime: runtime,
-            observedAtMillis: Int64(Date().timeIntervalSince1970 * 1000)
+            observedAtMillis: currentMillis()
         )
     }
 }
