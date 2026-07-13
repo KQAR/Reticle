@@ -46,7 +46,11 @@ let package = Package(
         ),
         .testTarget(
             name: "ReticleHostCoreTests",
-            dependencies: ["ReticleHostCore"],
+            dependencies: [
+                "ReticleHostCore",
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
+            ],
             path: "Tests/ReticleHostCoreTests"
         )
     ]
