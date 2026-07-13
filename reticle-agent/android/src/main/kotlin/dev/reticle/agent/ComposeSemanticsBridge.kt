@@ -47,7 +47,19 @@ object ComposeSemanticsBridge {
                 ?: return emptyList()
             val rootNode = rootMethod.invoke(owner) ?: return emptyList()
 
-            val ref = visit(rootNode, parentRef, nodes, makeRef)
+            // Compose reports bounds relative to the host window; View frames use
+            // screen coordinates (getLocationOnScreen). Convert Compose bounds to
+            // screen space by adding the host View's window origin so both trees
+            // share one coordinate system (matters under status bars, dialogs,
+            // and split-screen where window != screen origin).
+            val onScreen = IntArray(2)
+            val inWindow = IntArray(2)
+            view.getLocationOnScreen(onScreen)
+            view.getLocationInWindow(inWindow)
+            val offsetX = (onScreen[0] - inWindow[0]).toDouble()
+            val offsetY = (onScreen[1] - inWindow[1]).toDouble()
+
+            val ref = visit(rootNode, parentRef, nodes, offsetX, offsetY, makeRef)
             if (ref != null) listOf(ref) else emptyList()
         } catch (_: Throwable) {
             emptyList()
@@ -58,6 +70,8 @@ object ComposeSemanticsBridge {
         semanticsNode: Any,
         parentRef: String,
         nodes: MutableMap<String, Node>,
+        offsetX: Double,
+        offsetY: Double,
         makeRef: () -> String,
     ): String? {
         val ref = makeRef()
@@ -65,12 +79,13 @@ object ComposeSemanticsBridge {
         val testTag = SemanticsReflect.testTag(semanticsNode)
         val text = SemanticsReflect.text(semanticsNode)
         val contentDescription = SemanticsReflect.contentDescription(semanticsNode)
-        val frame = SemanticsReflect.boundsInScreen(semanticsNode)
+        val frame = SemanticsReflect.boundsInWindow(semanticsNode)
+            ?.let { it.copy(x = it.x + offsetX, y = it.y + offsetY) }
         val role = SemanticsReflect.role(semanticsNode) ?: "composable"
 
         val childRefs = ArrayList<String>()
         for (child in SemanticsReflect.children(semanticsNode)) {
-            visit(child, ref, nodes, makeRef)?.let(childRefs::add)
+            visit(child, ref, nodes, offsetX, offsetY, makeRef)?.let(childRefs::add)
         }
 
         nodes[ref] = Node(
