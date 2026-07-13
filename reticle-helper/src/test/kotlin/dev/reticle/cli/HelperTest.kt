@@ -44,6 +44,34 @@ class HelperTest {
     }
 
     @Test
+    fun typeMismatchedEnvelopeFieldsYieldErrorsNotCrashes() {
+        // Well-formed JSON with wrong-typed envelope fields must be answered,
+        // not thrown: any escape here kills the long-lived serve() loop.
+        val fractionalId = handle("""{"id":1.5,"method":"ping"}""")
+        assertEquals(-1, fractionalId["id"]!!.jsonPrimitive.int)
+        assertTrue(fractionalId["ok"]!!.jsonPrimitive.boolean)
+
+        val objectId = handle("""{"id":{},"method":"ping"}""")
+        assertEquals(-1, objectId["id"]!!.jsonPrimitive.int)
+
+        val objectMethod = handle("""{"id":4,"method":{}}""")
+        assertEquals(4, objectMethod["id"]!!.jsonPrimitive.int)
+        assertFalse(objectMethod["ok"]!!.jsonPrimitive.boolean)
+        assertTrue(objectMethod["error"]!!.jsonPrimitive.content.contains("method"))
+
+        val numericMethod = handle("""{"id":4,"method":5}""")
+        assertFalse(numericMethod["ok"]!!.jsonPrimitive.boolean)
+
+        val scalarParams = handle("""{"id":9,"method":"ping","params":5}""")
+        assertEquals(9, scalarParams["id"]!!.jsonPrimitive.int)
+        assertFalse(scalarParams["ok"]!!.jsonPrimitive.boolean)
+        assertTrue(scalarParams["error"]!!.jsonPrimitive.content.contains("params"))
+
+        val arrayParams = handle("""{"id":9,"method":"ping","params":[1]}""")
+        assertFalse(arrayParams["ok"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
     fun pingSucceedsWithoutADevice() {
         val r = handle("""{"id":1,"method":"ping"}""")
         assertEquals(1, r["id"]!!.jsonPrimitive.int)

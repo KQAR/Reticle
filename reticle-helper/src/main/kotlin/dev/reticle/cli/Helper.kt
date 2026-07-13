@@ -3,10 +3,10 @@ package dev.reticle.cli
 import dev.reticle.core.ReticleJson
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -62,10 +62,17 @@ object Helper {
             ReticleJson.compact.parseToJsonElement(line).jsonObject
         }.getOrNull() ?: return errorResponse(-1, "malformed request JSON")
 
-        val id = request["id"]?.jsonPrimitive?.int ?: -1
-        val method = request["method"]?.jsonPrimitive?.content
+        // Field extraction must be as defensive as the parse: `.jsonPrimitive`/
+        // `.int`/`.jsonObject` throw on type mismatches, and anything thrown here
+        // would escape serve()'s loop and kill the long-lived process.
+        val id = (request["id"] as? JsonPrimitive)?.intOrNull ?: -1
+        val method = (request["method"] as? JsonPrimitive)?.takeIf { it.isString }?.content
             ?: return errorResponse(id, "missing 'method'")
-        val params = request["params"]?.jsonObject ?: JsonObject(emptyMap())
+        val params = when (val p = request["params"]) {
+            null -> JsonObject(emptyMap())
+            is JsonObject -> p
+            else -> return errorResponse(id, "'params' must be an object")
+        }
 
         return try {
             okResponse(id, dispatch(method, params))
