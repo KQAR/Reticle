@@ -66,7 +66,7 @@ jobs:
           set -uo pipefail
           for attempt in 1 2 3; do
             echo "::group::swift test (attempt $attempt)"
-            if swift test --package-path reticle-host; then echo "::endgroup::"; exit 0; fi
+            if swift test --no-parallel --package-path reticle-host; then echo "::endgroup::"; exit 0; fi
             echo "::endgroup::"
             echo "swift test attempt $attempt failed"
           done
