@@ -14,7 +14,6 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.io.File
 import java.util.Base64
 
 /** Device/runtime-backed helper RPC commands. */
@@ -260,14 +259,8 @@ internal object HelperDeviceCommands {
             put("compact", ReticleJson.compact.encodeToJsonElement(CompactObservation.serializer(), compact))
         }
 
-    private fun captureAgentScreenshot(client: RuntimeClient): ByteArray? {
-        val tmp = File.createTempFile("reticle-shot", ".png")
-        return try {
-            runCatching { client.screenshot(tmp) }
-                .map { tmp.readBytes() }
-                .getOrNull()
-        } finally {
-            tmp.delete()
-        }
-    }
+    private fun captureAgentScreenshot(client: RuntimeClient): ByteArray? =
+        // The client already returns PNG bytes; no need to round-trip through a
+        // temp file (write + read back) as this used to.
+        runCatching { client.screenshotBytes() }.getOrNull()
 }
