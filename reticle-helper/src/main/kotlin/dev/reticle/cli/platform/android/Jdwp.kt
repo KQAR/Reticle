@@ -493,19 +493,30 @@ class JdwpClient(private val socket: Socket) : Closeable {
 
     private fun nextEventPacketOrNull(timeoutMillis: Int): Packet? {
         pendingEvents.removeFirstOrNull()?.let { return it }
+        // Apply the timeout ONLY to the first byte. If nothing arrives, no bytes
+        // were consumed and the stream stays aligned. Once a byte is in hand we
+        // are committed to a full packet, so read the remainder in blocking mode
+        // — a timeout partway through readPacket() would abandon consumed bytes
+        // and desync every subsequent packet.
         socket.soTimeout = timeoutMillis
-        return try {
-            val packet = readPacket()
-            if (packet.isReply) null else packet
+        val firstByte = try {
+            input.readUnsignedByte()
         } catch (_: java.net.SocketTimeoutException) {
-            null
+            return null
         } finally {
             socket.soTimeout = 0
         }
+        val length = (firstByte shl 24) or
+            (input.readUnsignedByte() shl 16) or
+            (input.readUnsignedByte() shl 8) or
+            input.readUnsignedByte()
+        val packet = readPacketBody(length)
+        return if (packet.isReply) null else packet
     }
 
-    private fun readPacket(): Packet {
-        val length = input.readInt()
+    private fun readPacket(): Packet = readPacketBody(input.readInt())
+
+    private fun readPacketBody(length: Int): Packet {
         val id = input.readInt()
         val flags = input.readByte().toInt() and 0xFF
         val body = ByteArray(length - 11)

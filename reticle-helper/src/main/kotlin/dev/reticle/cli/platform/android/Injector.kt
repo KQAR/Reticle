@@ -138,9 +138,17 @@ object Injector : AppInjector {
                     adb.removeForward(hostPort)
                     adb.forwardJdwp(hostPort, pid)
                 }
-                val client = JdwpClient(java.net.Socket("127.0.0.1", hostPort))
-                client.handshake()
-                return client
+                val socket = java.net.Socket("127.0.0.1", hostPort)
+                try {
+                    val client = JdwpClient(socket)
+                    client.handshake()
+                    return client
+                } catch (e: Throwable) {
+                    // Close the socket before retrying — otherwise each of the
+                    // ~20 handshake attempts across the dead-zone leaks one.
+                    runCatching { socket.close() }
+                    throw e
+                }
             } catch (e: Throwable) {
                 if (debug) System.err.println("jdwp: handshake attempt $attempt failed: ${e.javaClass.simpleName} ${e.message}")
                 lastError = e
