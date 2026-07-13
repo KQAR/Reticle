@@ -31,17 +31,21 @@ class ProtocolContractTest {
         javaClass.classLoader.getResourceAsStream(path)?.bufferedReader()?.readText()
             ?: fail("missing test resource on classpath: $path (is reticle-protocol/ mounted as a test resource?)")
 
-    private fun snapshotSchema(): JsonSchema {
+    private fun schema(path: String): JsonSchema {
         val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
-        return factory.getSchema(resource("schema/snapshot.schema.json"))
+        return factory.getSchema(resource(path))
     }
+
+    private fun snapshotSchema(): JsonSchema = schema("schema/snapshot.schema.json")
+
+    private fun eventSchema(): JsonSchema = schema("schema/event.schema.json")
 
     private fun assertValid(schema: JsonSchema, json: String, label: String) {
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
         val node = mapper.readTree(json)
         val errors = schema.validate(node)
         if (errors.isNotEmpty()) {
-            fail("$label did not satisfy snapshot.schema.json:\n" +
+            fail("$label did not satisfy its schema:\n" +
                 errors.joinToString("\n") { "  - $it" })
         }
     }
@@ -81,6 +85,26 @@ class ProtocolContractTest {
         // And re-serializing the decoded model must itself satisfy the schema.
         val reencoded = ReticleJson.instance.encodeToString(Snapshot.serializer(), decoded)
         assertValid(snapshotSchema(), reencoded, "re-encoded golden fixture")
+    }
+
+    @Test
+    fun kotlinSchemaVersionMatchesSchemaConst() {
+        // The code's SCHEMA_VERSION and the schema's `const` must agree, or the
+        // "single source of truth" claim is false. Read the const out of the
+        // schema file and compare.
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val schemaNode = mapper.readTree(resource("schema/snapshot.schema.json"))
+        val declared = schemaNode.get("properties").get("schemaVersion").get("const").asInt()
+        assertEquals(declared, Snapshot.SCHEMA_VERSION, "Snapshot.SCHEMA_VERSION vs schema const")
+        assertEquals(declared, Snapshot(capturedAtMillis = 0, screen = ScreenInfo(Size(1.0, 1.0), 1.0), rootRef = "r0", nodes = emptyMap()).schemaVersion)
+    }
+
+    @Test
+    fun eventGoldenFixturesSatisfyEventSchema() {
+        // The daemon event envelope has its own authoritative schema; validate the
+        // checked-in golden fixtures against it so they can't silently drift.
+        assertValid(eventSchema(), resource("fixtures/action-trace-event.golden.json"), "action-trace event fixture")
+        assertValid(eventSchema(), resource("fixtures/network-response-event.golden.json"), "network-response event fixture")
     }
 
     private fun sampleSnapshot(): Snapshot = Snapshot(

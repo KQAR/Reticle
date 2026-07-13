@@ -161,6 +161,10 @@ normalized network events into the same event stream:
   headers. Sensitive values such as `Authorization`, `Cookie`, `Set-Cookie`, and
   proxy credentials are redacted before they enter the event log.
 - `payload.error`: proxy or upstream failure text for `network.error`.
+- `payload.requestBodyBytes`, `payload.responseBodyBytes`: the captured body
+  size in bytes, present when a body was stored.
+- `payload.requestBodyTruncated`, `payload.responseBodyTruncated`: true when the
+  stored artifact was capped below the full body size.
 
 Request and response bodies are never inlined. If captured, they are written
 under the session directory and referenced through `refs`, for example

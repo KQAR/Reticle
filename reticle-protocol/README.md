@@ -53,8 +53,16 @@ These are not incidental — implementations must match them exactly:
 - `schema/snapshot.schema.json` — the `Snapshot` view-tree payload and every
   nested type (`Node`, `ScreenInfo`, `Rect`, `MetadataValue`, `InteractionRegion`,
   `CharGrid`, `NodeKind.domNode`, …). This is the primary capture payload.
+  `schemaVersion` is pinned with `const: 1`, matched to `Snapshot.SCHEMA_VERSION`
+  by the contract test.
+- `schema/event.schema.json` — the daemon event envelope (`id`, `ts`, `session`,
+  `target`, `source`, `type`, `payload`, `refs`). The `action-trace` and
+  `network-response` golden fixtures are validated against it by the contract
+  test. Per-`type` `payload` shapes are documented in `events.md` but not yet
+  constrained by sub-schemas (payload is `additionalProperties: true`).
 
 Not yet schematized (tracked for later, as the roadmap phases reach them):
 `UiReport`, `SemanticTree`, `CompactObservation`, the `Protocol`
-request/response envelopes, and action/session event envelopes. Add each with a
-golden fixture and extend the contract test when the corresponding feature lands.
+request/response envelopes, and per-`type` event `payload` sub-schemas. Add each
+with a golden fixture and extend the contract test when the corresponding
+feature lands.

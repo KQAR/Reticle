@@ -16,7 +16,7 @@ import kotlinx.serialization.Serializable
 data class Snapshot(
     // schema-`required`, but defaulted here — pin it so the omit-defaults wire
     // config in ReticleJson can never drop it.
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val schemaVersion: Int = 1,
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val schemaVersion: Int = SCHEMA_VERSION,
     /** Wall-clock millis when captured, stamped by the agent. */
     val capturedAtMillis: Long,
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val platform: String = "android",
@@ -30,6 +30,16 @@ data class Snapshot(
 
     fun children(ref: String): List<Node> =
         nodes[ref]?.children?.mapNotNull { nodes[it] } ?: emptyList()
+
+    companion object {
+        /**
+         * The wire format version this build emits. Must equal the `const` on
+         * `schemaVersion` in snapshot.schema.json — ProtocolContractTest pins the
+         * two together so the code and the authoritative schema can't drift.
+         * Bump both, in lockstep, on an incompatible wire change.
+         */
+        const val SCHEMA_VERSION = 1
+    }
 }
 
 @Serializable
