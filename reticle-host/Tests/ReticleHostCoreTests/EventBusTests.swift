@@ -413,6 +413,19 @@ struct EventBusTests {
         #expect(text.contains("event: ui.snapshot"))
     }
 
+    @Test func evictedCurrentSessionEventStillResolvesFromDisk() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 1)
+
+        let first = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        _ = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+
+        // `first` has aged out of the in-memory ring (limit 1)...
+        #expect(store.event(id: first.id) == nil)
+        // ...but its artifact lookup must still find it, from events.jsonl.
+        #expect(try store.historicalEvent(session: "test", eventId: first.id)?.id == first.id)
+    }
+
     @Test func artifactPathsAreConfinedToAllowedRoots() throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
