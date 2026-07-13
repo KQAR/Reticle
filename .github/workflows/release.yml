@@ -61,7 +61,16 @@ jobs:
         run: ./gradlew :reticle-core:test :reticle-helper:test --stacktrace
 
       - name: "Gate: Swift host tests"
-        run: swift test --package-path reticle-host
+        # Retry the executor-flaky Hummingbird serve tests (see ci.yml).
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            echo "::group::swift test (attempt $attempt)"
+            if swift test --package-path reticle-host; then echo "::endgroup::"; exit 0; fi
+            echo "::endgroup::"
+            echo "swift test attempt $attempt failed"
+          done
+          exit 1
 
       - name: "Gate: plugin manifests + version lockstep"
         run: python3 scripts/validate_plugin.py

@@ -9,6 +9,8 @@ captures/
 .externalNativeBuild/
 .cxx/
 reticle-report*/
+# Default CLI screenshot output — ad-hoc captures shouldn't be committed.
+/screenshot.png
 # SwiftPM build output (e.g. the spikes/swift-host spike)
 .build/
 # SwiftPM/Xcode per-user state (xcuserdata etc.)
