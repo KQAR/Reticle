@@ -413,6 +413,24 @@ struct EventBusTests {
         #expect(text.contains("event: ui.snapshot"))
     }
 
+    @Test func artifactPathsAreConfinedToAllowedRoots() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+
+        // A file under the sessions root (where in-process producers write) is
+        // allowed; an arbitrary file outside it is not.
+        let inside = root.appendingPathComponent("test/network-bodies/x.bin")
+        #expect(store.isArtifactPathAllowed(inside))
+        #expect(!store.isArtifactPathAllowed(URL(fileURLWithPath: "/etc/passwd")))
+
+        // A trace directory becomes allowed only after it is explicitly registered.
+        let traceDir = try temporaryDirectory().appendingPathComponent("out", isDirectory: true)
+        let traceArtifact = traceDir.appendingPathComponent("before.json")
+        #expect(!store.isArtifactPathAllowed(traceArtifact))
+        store.registerArtifactRoot(traceDir)
+        #expect(store.isArtifactPathAllowed(traceArtifact))
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

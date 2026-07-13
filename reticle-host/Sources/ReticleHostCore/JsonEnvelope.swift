@@ -51,6 +51,15 @@ public enum JsonEnvelope {
             return array.map(jsonSafe)
         case let value as String:
             return value
+        // NSNumber must be inspected before Bool/Int: an NSNumber wrapping 0 or 1
+        // (as produced by JSONSerialization when parsing helper replies) bridges
+        // to Bool, so `as? Bool` would turn integer counts into true/false.
+        // Distinguish real booleans via CFBoolean, matching JSONValue.fromAny.
+        case let value as NSNumber:
+            if CFGetTypeID(value) == CFBooleanGetTypeID() {
+                return value.boolValue
+            }
+            return value
         case let value as Bool:
             return value
         case let value as Int:

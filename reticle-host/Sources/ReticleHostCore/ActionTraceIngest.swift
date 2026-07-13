@@ -67,6 +67,10 @@ public struct ActionTraceIngest: @unchecked Sendable {
         }
         for (key, value) in artifacts {
             guard let filename = value as? String else { continue }
+            // Artifact names are plain filenames within the trace directory.
+            // Reject separators / traversal so a manifest cannot point refs
+            // outside the directory that will be trusted for reads.
+            guard !filename.isEmpty, !filename.contains("/"), filename != "..", filename != "." else { continue }
             refs[key] = traceDirectory?.appendingPathComponent(filename).path ?? filename
         }
         return refs
