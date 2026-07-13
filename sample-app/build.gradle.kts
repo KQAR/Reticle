@@ -2,8 +2,8 @@
 // auto-start, snapshotting, selector resolution, and CLI-driven input end
 // to end.
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -68,5 +68,5 @@ dependencies {
     // facade (sample-app/src/noagent) so MainActivity still compiles, while the
     // APK carries none of the runtime classes.
     "linkedImplementation"(project(":reticle-agent:android"))
-    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation(libs.androidx.appcompat)
 }
