@@ -110,7 +110,8 @@ class ReticleRuntime private constructor() {
     companion object {
         /** Historical fixed default; real port is derived per-app via [PortMap]. */
         const val DEFAULT_PORT = PortMap.BASE_PORT
-        const val VERSION = "0.6.5"
+        /** App version, sourced from the repo-root VERSION file via reticle-core. */
+        val VERSION: String = dev.reticle.core.RETICLE_VERSION
         private const val TAG = "Reticle"
 
         /** Cap on retained app-authored log lines (newest kept). */

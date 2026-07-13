@@ -19,6 +19,31 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Generate RETICLE_VERSION from the repo-root VERSION file — the single source
+// of truth for the app version. Both the helper CLI and the Android agent read
+// this constant (they depend on core) instead of embedding their own literal.
+val versionFile = rootProject.layout.projectDirectory.file("VERSION")
+val generatedVersionDir = layout.buildDirectory.dir("generated/version/kotlin")
+val generateVersion by tasks.registering {
+    inputs.file(versionFile)
+    outputs.dir(generatedVersionDir)
+    doLast {
+        val v = versionFile.asFile.readText().trim()
+        val pkgDir = generatedVersionDir.get().dir("dev/reticle/core").asFile
+        pkgDir.mkdirs()
+        pkgDir.resolve("ReticleVersion.kt").writeText(
+            """
+            package dev.reticle.core
+
+            /** Generated from the repo-root VERSION file — do not edit by hand. */
+            const val RETICLE_VERSION: String = "$v"
+            """.trimIndent() + "\n"
+        )
+    }
+}
+kotlin.sourceSets.getByName("main").kotlin.srcDir(generatedVersionDir)
+tasks.named("compileKotlin") { dependsOn(generateVersion) }
+
 // The authoritative protocol spec + golden fixtures live in reticle-protocol/
 // (a sibling, language-neutral directory — not a Gradle module). Expose them to
 // the contract test as test resources rather than duplicating them into core.
