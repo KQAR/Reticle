@@ -23,6 +23,18 @@ import dev.reticle.core.Rect
  */
 object ComposeSemanticsBridge {
 
+    // Scanning javaClass.methods on every capture is a full array walk per
+    // Compose host; resolve once per (class, name), like SemanticsReflect does.
+    private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
+
+    private fun cachedMethod(target: Any, name: String): java.lang.reflect.Method? {
+        val key = "${target.javaClass.name}#$name"
+        methodCache[key]?.let { return it }
+        val method = target.javaClass.methods.firstOrNull { it.name == name } ?: return null
+        methodCache[key] = method
+        return method
+    }
+
     /**
      * If [view] is a Compose host, append composeSemantics child nodes under
      * [parentRef] and return their refs. Otherwise return an empty list.
@@ -38,13 +50,11 @@ object ComposeSemanticsBridge {
 
         return try {
             // AndroidComposeView.getSemanticsOwner(): SemanticsOwner
-            val ownerMethod = view.javaClass.methods.firstOrNull { it.name == "getSemanticsOwner" }
-                ?: return emptyList()
+            val ownerMethod = cachedMethod(view, "getSemanticsOwner") ?: return emptyList()
             val owner = ownerMethod.invoke(view) ?: return emptyList()
 
             // SemanticsOwner.getRootSemanticsNode(): SemanticsNode
-            val rootMethod = owner.javaClass.methods.firstOrNull { it.name == "getRootSemanticsNode" }
-                ?: return emptyList()
+            val rootMethod = cachedMethod(owner, "getRootSemanticsNode") ?: return emptyList()
             val rootNode = rootMethod.invoke(owner) ?: return emptyList()
 
             // Compose reports bounds relative to the host window; View frames use
