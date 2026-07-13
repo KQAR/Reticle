@@ -18,6 +18,10 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -40,6 +44,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
     var boundPort: Int = 0
         private set
 
+    @Volatile
+    private var workers: ExecutorService? = null
+
     fun start(port: Int, bindHost: String) {
         stop()
         val address = InetAddress.getByName(bindHost)
@@ -47,6 +54,17 @@ class ReticleServer(private val runtime: ReticleRuntime) {
         serverSocket = socket
         boundPort = socket.localPort
         running = true
+
+        // Bounded worker pool with backpressure: when all workers are busy,
+        // CallerRunsPolicy runs the request on the accept loop itself, which
+        // stops accepting new connections until a worker frees up. This caps
+        // the thread count instead of spawning one unbounded thread per client.
+        workers = ThreadPoolExecutor(
+            0, MAX_WORKERS, 30L, TimeUnit.SECONDS,
+            SynchronousQueue(),
+            { r -> Thread(r, "reticle-worker").apply { isDaemon = true } },
+            ThreadPoolExecutor.CallerRunsPolicy(),
+        )
 
         thread(name = "reticle-server", isDaemon = true) {
             while (running) {
@@ -56,8 +74,8 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                     if (running) Log.w(TAG, "accept failed", t)
                     break
                 }
-                // Handle each request on its own short-lived thread.
-                thread(isDaemon = true) { handle(client) }
+                val pool = workers
+                if (pool != null) pool.execute { handle(client) } else handle(client)
             }
         }
     }
@@ -69,11 +87,17 @@ class ReticleServer(private val runtime: ReticleRuntime) {
         } catch (_: Throwable) {
         }
         serverSocket = null
+        workers?.shutdownNow()
+        workers = null
     }
 
     private fun handle(client: Socket) {
         client.use { socket ->
             try {
+                // Bound how long a client may hold this worker: a peer that
+                // connects and never finishes sending a request would otherwise
+                // block a worker forever (read() has no timeout by default).
+                socket.soTimeout = SOCKET_READ_TIMEOUT_MS
                 // Read the request line + headers byte-wise, then the body as
                 // exactly Content-Length BYTES. A char-based reader would read
                 // Content-Length *chars*, which over-reads for multibyte UTF-8
@@ -252,5 +276,7 @@ class ReticleServer(private val runtime: ReticleRuntime) {
 
     private companion object {
         const val TAG = "Reticle"
+        const val MAX_WORKERS = 16
+        const val SOCKET_READ_TIMEOUT_MS = 15_000
     }
 }
