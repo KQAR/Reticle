@@ -120,7 +120,7 @@ public struct DaemonEventPublisher {
         request.httpBody = data
 
         let sema = DispatchSemaphore(value: 0)
-        let box = ResultBox()
+        let box = ResultBox<Void>(fallback: .success(()))
         let task = URLSession.shared.dataTask(with: request) { _, response, error in
             defer { sema.signal() }
             if let error {
@@ -141,19 +141,3 @@ public struct DaemonEventPublisher {
     }
 }
 
-private final class ResultBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<Void, Error> = .success(())
-
-    var value: Result<Void, Error> {
-        lock.lock()
-        defer { lock.unlock() }
-        return result
-    }
-
-    func set(_ value: Result<Void, Error>) {
-        lock.lock()
-        result = value
-        lock.unlock()
-    }
-}

@@ -63,7 +63,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private func forward(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
         let requestId = UUID().uuidString
-        let start = Int64(Date().timeIntervalSince1970 * 1000)
+        let start = currentMillis()
         guard let url = upstreamURL(for: head) else {
             var errorPayload = NetworkEventPayload(
                 requestId: requestId,
@@ -77,7 +77,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
                 tunnel: false,
                 mitm: true
             )
-            errorPayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+            errorPayload.endMillis = currentMillis()
             errorPayload.error = "invalid intercepted request URI"
             _ = try? store.append(factory.event(.error, payload: errorPayload))
             writeError(context: context)
@@ -113,7 +113,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             writeError(context: context)
             return
         } catch {
-            payload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+            payload.endMillis = currentMillis()
             payload.error = "\(error)"
             _ = try? store.append(factory.event(.error, payload: payload, refs: refs))
             writeError(context: context)
@@ -130,7 +130,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
                 switch result {
                 case .success(let (data, response)):
                     var responsePayload = requestPayload
-                    responsePayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+                    responsePayload.endMillis = currentMillis()
                     responsePayload.status = response.statusCode
                     responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
                     var responseRefs = requestRefs
@@ -143,7 +143,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
                     self.write(data, response: response, version: head.version, context: context)
                 case .failure(let error):
                     var errorPayload = requestPayload
-                    errorPayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+                    errorPayload.endMillis = currentMillis()
                     errorPayload.error = "\(error)"
                     _ = try? self.store.append(self.factory.event(.error, payload: errorPayload, refs: requestRefs))
                     self.writeError(context: context)
@@ -170,7 +170,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         context: ChannelHandlerContext
     ) {
         var responsePayload = payload
-        responsePayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        responsePayload.endMillis = currentMillis()
         responsePayload.status = mock.value.status
         responsePayload.responseHeaders = mock.value.headers
         responsePayload.mocked = true
@@ -243,7 +243,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
 
     private func emitMockError(_ error: NetworkMockError, payload: NetworkEventPayload, refs: [String: String]) {
         var errorPayload = payload
-        errorPayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        errorPayload.endMillis = currentMillis()
         errorPayload.error = error.description
         if case .missingValue(let ruleId, let valueId) = error {
             errorPayload.mocked = true

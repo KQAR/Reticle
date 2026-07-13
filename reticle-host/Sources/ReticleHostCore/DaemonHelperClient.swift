@@ -34,7 +34,7 @@ final class DaemonHelperClient: HelperCalling, @unchecked Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let sema = DispatchSemaphore(value: 0)
-        let box = DaemonHelperResultBox()
+        let box = ResultBox<[String: Any]>(fallback: .success([:]))
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             defer { sema.signal() }
             if let error {
@@ -65,19 +65,3 @@ final class DaemonHelperClient: HelperCalling, @unchecked Sendable {
     }
 }
 
-private final class DaemonHelperResultBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<[String: Any], Error> = .success([:])
-
-    var value: Result<[String: Any], Error> {
-        lock.lock()
-        defer { lock.unlock() }
-        return result
-    }
-
-    func set(_ value: Result<[String: Any], Error>) {
-        lock.lock()
-        result = value
-        lock.unlock()
-    }
-}

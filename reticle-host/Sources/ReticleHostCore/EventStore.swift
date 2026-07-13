@@ -89,7 +89,7 @@ public final class EventStore: @unchecked Sendable {
         do {
             event = ReticleEventEnvelope(
                 id: allocateIdLocked(),
-                ts: currentTimeMillis(),
+                ts: currentMillis(),
                 session: session,
                 target: request.target,
                 source: request.source,
@@ -226,10 +226,6 @@ public final class EventStore: @unchecked Sendable {
         if buffer.count > limit {
             buffer.removeFirst(buffer.count - limit)
         }
-    }
-
-    private func currentTimeMillis() -> Int64 {
-        Int64(Date().timeIntervalSince1970 * 1000)
     }
 
     private func sequence(from id: String) -> UInt64? {

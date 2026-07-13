@@ -116,7 +116,7 @@ public final class ServeRuntime {
             pid: getpid(),
             port: server.port,
             session: options.session,
-            startedAt: Int64(Date().timeIntervalSince1970 * 1000)
+            startedAt: currentMillis()
         )
         try options.discovery.write(info)
         installSignalHandlers()

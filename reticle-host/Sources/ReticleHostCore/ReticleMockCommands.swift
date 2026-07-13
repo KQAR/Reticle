@@ -265,7 +265,7 @@ private final class DaemonMockClient {
             request.httpBody = body
         }
         let semaphore = DispatchSemaphore(value: 0)
-        let box = HTTPResultBox<Data>()
+        let box = ResultBox<Data>(fallback: .failure(HelperError("daemon mock API returned no result")))
         let task = URLSession.shared.dataTask(with: request) { data, rawResponse, error in
             defer { semaphore.signal() }
             if let error {
@@ -296,19 +296,3 @@ private final class DaemonMockClient {
 
 private struct EmptyResponse: Decodable {}
 
-private final class HTTPResultBox<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<T, Error>?
-
-    var value: Result<T, Error> {
-        lock.lock()
-        defer { lock.unlock() }
-        return result ?? .failure(HelperError("daemon mock API returned no result"))
-    }
-
-    func set(_ result: Result<T, Error>) {
-        lock.lock()
-        self.result = result
-        lock.unlock()
-    }
-}
