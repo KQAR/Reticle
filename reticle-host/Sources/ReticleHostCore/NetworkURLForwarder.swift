@@ -11,7 +11,11 @@ final class NetworkURLForwarder: @unchecked Sendable {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
         configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 60
+        // The resource timeout caps a transfer's TOTAL duration and silently
+        // overrides any longer per-request timeout, so keep it well above what
+        // callers can configure; stalls are still cut by the per-request idle
+        // timeout (request.timeoutInterval set in data(for:)).
+        configuration.timeoutIntervalForResource = 600
         // An inspection proxy must forward 3xx to the app rather than silently
         // following them itself, or the app never sees the redirect and the
         // trace only records the final hop. NoRedirectDelegate cancels the
