@@ -131,7 +131,10 @@ class MutationEngine(private val context: Context) {
     private fun resolve(selector: Selector): View? {
         val roots = ReticleWindows.rootViews()
         if (selector.testId != null || selector.resourceId != null) {
-            for (root in roots) {
+            // Topmost window first, matching the point fallback below: when a
+            // dialog and its background activity both contain a match, the
+            // visible (dialog) view must win for every selector type.
+            for (root in roots.reversed()) {
                 findIn(root, selector)?.let { return it }
             }
         }
