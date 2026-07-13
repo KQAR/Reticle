@@ -273,6 +273,11 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         for (name, value) in response.allHeaderFields {
             guard let name = name as? String else { continue }
             guard ProxyHopByHopHeaders.shouldForwardResponseHeader(name, in: response.allHeaderFields) else { continue }
+            // URLSession hands us a decoded body; forwarding the upstream
+            // Content-Encoding/Content-Length would make the client try to
+            // decode again. We re-set Content-Length below from the decoded size.
+            let lower = name.lowercased()
+            if lower == "content-encoding" || lower == "content-length" { continue }
             headers.replaceOrAdd(name: name, value: "\(value)")
         }
         headers.replaceOrAdd(name: "Content-Length", value: "\(data.count)")

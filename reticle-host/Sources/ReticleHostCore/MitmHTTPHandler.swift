@@ -64,7 +64,25 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     private func forward(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
         let requestId = UUID().uuidString
         let start = Int64(Date().timeIntervalSince1970 * 1000)
-        let url = upstreamURL(for: head)
+        guard let url = upstreamURL(for: head) else {
+            var errorPayload = NetworkEventPayload(
+                requestId: requestId,
+                scheme: "https",
+                method: head.method.rawValue,
+                url: head.uri,
+                host: target.host,
+                port: target.port,
+                path: "/",
+                startMillis: start,
+                tunnel: false,
+                mitm: true
+            )
+            errorPayload.endMillis = Int64(Date().timeIntervalSince1970 * 1000)
+            errorPayload.error = "invalid intercepted request URI"
+            _ = try? store.append(factory.event(.error, payload: errorPayload))
+            writeError(context: context)
+            return
+        }
         var refs: [String: String] = [:]
         var payload = NetworkEventPayload(
             requestId: requestId,
@@ -135,11 +153,13 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         }
     }
 
-    private func upstreamURL(for head: HTTPRequestHead) -> URL {
+    private func upstreamURL(for head: HTTPRequestHead) -> URL? {
         if let absolute = URL(string: head.uri), absolute.scheme != nil {
             return absolute
         }
-        return URL(string: "https://\(target.host):\(target.port)\(head.uri)")!
+        // head.uri comes off an intercepted TLS connection and may contain
+        // characters that make URL(string:) fail — never force-unwrap it.
+        return URL(string: "https://\(target.host):\(target.port)\(head.uri)")
     }
 
     private func writeMock(
@@ -171,6 +191,11 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         for (name, value) in response.allHeaderFields {
             guard let name = name as? String else { continue }
             guard ProxyHopByHopHeaders.shouldForwardResponseHeader(name, in: response.allHeaderFields) else { continue }
+            // URLSession hands us a decoded body; forwarding the upstream
+            // Content-Encoding/Content-Length would make the client try to
+            // decode again. We re-set Content-Length below from the decoded size.
+            let lower = name.lowercased()
+            if lower == "content-encoding" || lower == "content-length" { continue }
             headers.replaceOrAdd(name: name, value: "\(value)")
         }
         headers.replaceOrAdd(name: "Content-Length", value: "\(data.count)")
