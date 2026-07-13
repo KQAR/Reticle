@@ -72,7 +72,9 @@ final class NetworkProxyServer: @unchecked Sendable {
             }
             self.ready.signal()
         }
-        switch ready.wait(timeout: .now() + 5) {
+        // See ReticleHttpServer: the bind wait must tolerate a slow/cold CI
+        // runner scheduling the bootstrap; it signals immediately on success.
+        switch ready.wait(timeout: .now() + 30) {
         case .success:
             if let error = lock.withLock({ startupError }) { throw error }
         case .timedOut:

@@ -61,7 +61,12 @@ public final class ReticleHttpServer: @unchecked Sendable {
                 throw error
             }
         }
-        switch ready.wait(timeout: .now() + 5) {
+        // Generous bind wait: onServerRunning signals the instant the socket is
+        // bound (so the success path pays nothing), but Hummingbird runs on a
+        // Task and a loaded/cold CI runner can take well over 5s just to
+        // schedule it — a tight bound turned that into a flaky failure. A real
+        // bind error still surfaces immediately via startupError.
+        switch ready.wait(timeout: .now() + Self.startupTimeoutSeconds) {
         case .success:
             if let error = lock.withLock({ startupError }) {
                 throw error
@@ -70,6 +75,8 @@ public final class ReticleHttpServer: @unchecked Sendable {
             throw ReticleHttpServerError.startTimedOut
         }
     }
+
+    private static let startupTimeoutSeconds: Double = 30
 
     /// Stops accepting new connections.
     public func stop() {
@@ -101,7 +108,7 @@ public enum ReticleHttpServerError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .startTimedOut:
-            "reticle serve did not report a listening socket within 5 seconds"
+            "reticle serve did not report a listening socket within 30 seconds"
         }
     }
 }
