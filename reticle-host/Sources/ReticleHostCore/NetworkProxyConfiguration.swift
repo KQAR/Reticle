@@ -58,7 +58,7 @@ enum NetworkProxyError: Error, CustomStringConvertible {
         case .caMaterialMissing(let message):
             "proxy CA material is incomplete: \(message)"
         case .startTimedOut:
-            "network proxy did not report a listening socket within 5 seconds"
+            "network proxy did not report a listening socket within 30 seconds"
         }
     }
 }
