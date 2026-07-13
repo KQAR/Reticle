@@ -110,8 +110,23 @@ jobs:
 
       # The Swift host is the user-facing CLI and the sole producer of the
       # event stream; its test suite must gate merges, not just compile.
+      #
+      # Retry up to 3 times: the Hummingbird `serve` tests start the server on a
+      # Swift-concurrency Task while start() blocks on a semaphore. If a runner's
+      # cooperative pool happens to be width-1, that blocking wait starves the
+      # server Task and the socket never binds — a per-runner flake (production
+      # is unaffected: `serve` runs on the main thread with full cores). A clean
+      # pass on any attempt means every test genuinely ran and passed.
       - name: Run Swift host tests
-        run: swift test --package-path reticle-host
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            echo "::group::swift test (attempt $attempt)"
+            if swift test --package-path reticle-host; then echo "::endgroup::"; exit 0; fi
+            echo "::endgroup::"
+            echo "swift test attempt $attempt failed"
+          done
+          exit 1
 
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
