@@ -78,7 +78,7 @@ internal object HelperProxyCommands {
         return if (value == "null" || value == ":0") "" else value
     }
 
-    private fun validateProxyValue(value: String) {
+    internal fun validateProxyValue(value: String) {
         val ok = Regex("""^[A-Za-z0-9._:-]+$""").matches(value) && value.contains(":")
         if (!ok) throw CliError("unsafe proxy value: $value")
     }
