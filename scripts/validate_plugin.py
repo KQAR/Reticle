@@ -129,12 +129,20 @@ def collect_code_versions():
     at runtime — the surface the skew bug lived on. This must cover EVERY binary
     that prints a version: the launcher, the Kotlin helper, the Android agent, and
     the Swift host (the user-facing CLI — its `reticle version`)."""
+    # The repo-root VERSION file is the single source of truth. The Kotlin
+    # helper and Android agent no longer embed a literal — they read the
+    # generated dev.reticle.core.RETICLE_VERSION, itself produced from VERSION —
+    # so they are omitted here. The remaining copies (launcher, Swift host, and
+    # manifests) are lockstep-checked against VERSION below.
+    version_path = os.path.join(ROOT, "VERSION")
+    if os.path.isfile(version_path):
+        with open(version_path, encoding="utf-8") as f:
+            versions.append(("VERSION", f.read().strip()))
+    else:
+        errors.append("VERSION: missing repo-root VERSION file (single source of truth)")
+
     sources = [
         ("bin/reticle", re.compile(r'RETICLE_VERSION="\$\{RETICLE_VERSION:-([^}"]+)\}"')),
-        ("reticle-helper/src/main/kotlin/dev/reticle/cli/Main.kt",
-         re.compile(r'RETICLE_VERSION\s*=\s*"([^"]+)"')),
-        ("reticle-agent/android/src/main/kotlin/dev/reticle/agent/ReticleRuntime.kt",
-         re.compile(r'VERSION\s*=\s*"([^"]+)"')),
         ("reticle-host/Sources/ReticleHostCore/ReticleCLI.swift",
          re.compile(r'let\s+version\s*=\s*"([^"]+)"')),
     ]

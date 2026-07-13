@@ -2,8 +2,8 @@ package dev.reticle.cli
 
 import kotlin.system.exitProcess
 
-/** Version, kept in lockstep with the agent and plugin manifest. */
-const val RETICLE_VERSION = "0.6.5"
+/** Version, sourced from the repo-root VERSION file via reticle-core. */
+val RETICLE_VERSION: String = dev.reticle.core.RETICLE_VERSION
 
 /**
  * Entry point for the **Android helper** behind the Swift host (`reticle-host`).
