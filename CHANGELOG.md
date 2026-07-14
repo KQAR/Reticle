@@ -1,7 +1,46 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-07-14
 
+- `act type` now focuses the target field first: given a targeting selector
+  (`--test-id`, `--css`, `--point`, …) it taps the resolved field and waits a
+  short settle before dispatching text, so input lands in that field instead of
+  whatever happened to hold focus. Text is still inserted at the cursor.
+- Added `Reticle.registerProbe(testId, metadata)`: a linked app can register a
+  synthetic, addressable probe node for a spot with no convenient concrete view
+  (canvas region, off-screen state).
+- Added `schemaVersion` to the event envelope (currently `1`, required by the
+  schema); legacy persisted session lines without it decode as version 1.
+- Fixed `debug logcat` missing agent lines on busy devices: the tail cap was
+  applied to the raw buffer before the tag filter, so Reticle lines could fall
+  outside it and a linked agent looked unlinked. The dump is now tag-filtered
+  first and bounded in code.
+- Fixed mutation selector resolution and agent screenshots to consider all
+  visible window roots topmost-first, so dialogs/overlays resolve and render
+  correctly instead of the base activity winning.
+- Hardened the agent's loopback HTTP server: route handler errors return a 500
+  instead of dropping the connection; request bodies are capped at 4 MiB (413),
+  header lines at 16 KiB, and a negative Content-Length is rejected (400).
+- Hardened the helper RPC loop against type-mismatched request fields (a
+  non-integer `id`, non-string `method`, or non-object `params` now yields a
+  structured error instead of crashing the loop).
+- Proxy correctness: a failed CONNECT now closes the client channel instead of
+  leaking it, and `network.error` events preserve the real request method.
+- Host resilience: SIGPIPE is ignored (a dead helper no longer kills the CLI),
+  helper writes surface errors instead of trapping, and the final unterminated
+  helper output line is read at EOF.
+- Event store: id allocation and buffer mutation are serialized independently
+  of file writes, and recovery sorts persisted events by id.
+- Agent capture efficiency: AccessibilityNodeInfo instances are recycled and
+  reflection lookups in the region/Compose probes go through a method cache.
+- `adb` byte commands (screencap) return empty on a non-zero exit instead of
+  passing through a truncated PNG.
+- Raised host server bind-wait timeouts from 5s to 30s for slow CI machines.
+- CI: Swift host tests now gate merges and releases (serialized suites to avoid
+  a cross-suite server-start deadlock on core-scarce runners, with retries),
+  SwiftPM dependency caching, a native-image serialization smoke test, and the
+  release workflow runs the full test gates before publishing artifacts. Added
+  a MITM/CONNECT proxy test suite.
 - Slimmed the wire payload: `ReticleJson` now omits null and default-valued
   fields (`encodeDefaults=false`, `explicitNulls=false`, schema-required
   defaults pinned with `@EncodeDefault(ALWAYS)`), the agent serves HTTP
@@ -23,7 +62,11 @@ Validation:
 
 - reticle-core, Android helper, and Swift host tests.
 - Plugin manifest/version-lockstep validation.
-- GitHub CI for all optimization pull requests.
+- GitHub CI for all pull requests.
+- Real-device end-to-end pass on freshly installed builds: capture, tap/type
+  (ASCII + CJK), mutate, screenshot, logcat, JDWP inject into the agent-free
+  flavor, `serve` health, real-network proxy capture, and envelope
+  `schemaVersion` — all verified on a physical device.
 
 ## 0.6.5 - 2026-07-03
 

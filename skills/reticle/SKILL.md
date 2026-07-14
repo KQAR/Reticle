@@ -222,15 +222,19 @@ reticle act tap   --package <pkg> --test-id checkout.payButton
 reticle act tap   --package <pkg> --css '#web-pay'
 reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
-reticle act type  --package <pkg> --text "hello"
+reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
 
-`act type` types **any** text. ASCII goes through `adb input text` and works
-even on apps that don't link/inject the agent. Non-ASCII (CJK, accented Latin,
-emoji — which `adb input text` silently drops) is staged on the device clipboard
-by the in-process agent and pasted into the focused field, so it **requires a
-reachable runtime** and a focused input. Tap the field first.
+`act type` types **any** text. Give it a targeting selector (`--test-id`,
+`--css`, `--point`, …) and it taps that field first so the text lands in *that*
+field; with no selector it types into whatever currently holds focus. Text is
+**inserted at the cursor** (standard Android input) — it does not clear the
+field, so clear first (or mutate the value) when you need replacement rather
+than appending. ASCII goes through `adb input text` and works even on apps that
+don't link/inject the agent. Non-ASCII (CJK, accented Latin, emoji — which
+`adb input text` silently drops) is staged on the device clipboard by the
+in-process agent and pasted, so it **requires a reachable runtime**.
 
 Use `act batch --file steps.json` for short, deterministic multi-step flows.
 The file is a JSON array; each object is one normal act RPC using helper-style
@@ -239,8 +243,7 @@ optional `delayMs` after that step:
 
 ```json
 [
-  { "gesture": "tap", "testId": "checkout.name" },
-  { "gesture": "type", "text": "Ada" },
+  { "gesture": "type", "testId": "checkout.name", "text": "Ada" },
   { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
 ]
 ```
