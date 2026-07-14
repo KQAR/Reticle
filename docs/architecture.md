@@ -108,6 +108,12 @@ is allowed because the agent runs inside the foreground app) and then pasted
 with `KEYCODE_PASTE`. The non-ASCII path therefore needs a reachable runtime and
 a focused input field; the ASCII path does not.
 
+When `act type` is given a targeting selector (`--test-id`, `--css`,
+`--point`, …), the host taps the resolved field first and waits a short settle
+so the text lands in *that* field rather than whatever happened to hold focus;
+with no selector it types into the current focus. Either way the text is
+inserted at the cursor — `type` never clears the field.
+
 The one gap is multi-touch `pinch`, which `input` can't express — it would need
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.
