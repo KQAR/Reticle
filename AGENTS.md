@@ -111,6 +111,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   no `JAVA_HOME` needed. (A too-new default like JDK 26 otherwise crashes the
   daemon and AGP 8.7.) If no JDK 17 is auto-detected, install one or set
   `JAVA_HOME=$(/usr/libexec/java_home -v 17)` as a fallback.
+- GraalVM 21 with `native-image` for `:reticle-helper:nativeHelper`, located
+  via `$GRAALVM_HOME` or `native-image` on PATH.
+- Optional: `mise install` (repo-root `mise.toml`) provisions both JDKs —
+  temurin-17 as primary plus a GraalVM 21 whose `native-image` is on PATH.
 - Gradle 8.13 via the wrapper.
 
 ## Verification

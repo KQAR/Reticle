@@ -2,6 +2,8 @@
 build/
 */build/
 local.properties
+# Per-user mise overrides (the shared config is mise.toml, which IS committed).
+mise.local.toml
 .idea/
 *.iml
 .DS_Store
