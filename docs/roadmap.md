@@ -2,10 +2,13 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: roadmap and current-state doc (2026-07-01). Captures the agreed direction for evolving
-Reticle from a single-platform Android CLI into a multi-platform runtime harness
-with an integrated capture proxy and a live web panel. `docs/architecture.md`
-describes the current implementation in more operational detail.
+Status: roadmap and current-state doc (updated 2026-07-15, tracking 0.7.0). Captures
+the agreed direction for evolving Reticle from a single-platform Android CLI into a
+multi-platform runtime harness with an integrated capture proxy and a live web panel.
+`docs/architecture.md` describes the current implementation in more operational
+detail. The final section, **Proposed next: evidence workflows + security-evidence
+lane**, records the next set of not-yet-built proposals that ride on the primitives
+already landed through Phase 1–3.
 
 ## Vision
 
@@ -53,8 +56,9 @@ contract, in whatever language fits the platform.
 
 ## Principle: the protocol is the spine, not the code
 
-The agent and CLI already communicate over loopback HTTP + JSON (8 endpoints in
-`reticle-core/Protocol.kt`). A future iOS (Swift) or HarmonyOS (ArkTS/C++) agent
+The agent and CLI already communicate over loopback HTTP + JSON (9 endpoints in
+`reticle-core/Protocol.kt`: `/report` `/snapshot` `/semantics` `/compact`
+`/screenshot` `/mutate` `/clipboard` `/runtime` `/logs`). A future iOS (Swift) or HarmonyOS (ArkTS/C++) agent
 **does not need to share Kotlin code** — it only needs to produce the same JSON.
 The Kotlin types in `reticle-core` are one implementation of the spec; each
 platform brings its own.
@@ -138,7 +142,7 @@ Why this shape, and not a full Swift rewrite of everything:
 
 - **JDWP injection cannot sink into the agent.** The whole point of JDWP
   injection is to get the agent into a process that *doesn't have it yet* — the
-  agent is the *result* of injection, not a precondition. So the ~669-line JDWP
+  agent is the *result* of injection, not a precondition. So the ~680-line JDWP
   codec is irreducibly host-side, and irreducibly Android-specific.
 - **Android's dirty-work is most natural in the JVM** (JDWP, dex, `d8`). Rewriting
   it in Swift is the single highest-risk part of any rewrite (every fix in its
@@ -190,10 +194,12 @@ through the Kotlin helper end-to-end on a real device. What exists today:
 
 - **Kotlin helper** — a `reticle helper` subcommand (`reticle-helper/.../Helper.kt`):
   a long-lived JSONL stdio RPC loop (one request per stdin line, one response per
-  stdout line; stdout protocol-only, diagnostics to stderr). Methods: `ping`,
-  `listDevices`, `status`, `inject`, `uiReport` — reusing the existing `Platform`
-  SPI and `RuntimeClient` verbatim (the helper *is* today's Android host layer
-  behind an RPC seam). Resident loop, not fork-per-call; a bad/unknown request
+  stdout line; stdout protocol-only, diagnostics to stderr). Methods (as of 0.7.0):
+  `ping`, `listDevices`, `status`, `inject`, `launch`, `uiReport`, `act`, `mutate`,
+  `logs`, `logcat`, `screenshot`, `render` (helper-side tree/compact/node/regions/
+  outline rendering), and `proxyStatus` / `proxySet` / `proxyClear` /
+  `proxyInstallCa` — reusing the existing `Platform` SPI and `RuntimeClient`
+  verbatim (the helper *is* today's Android host layer behind an RPC seam). Resident loop, not fork-per-call; a bad/unknown request
   returns a structured error without taking the loop down. `inject` accepts an
   explicit `payloadDex`; `uiReport` fetches the agent-derived `/report` bundle
   and returns the finished `snapshot`/`semantics`/`compact` JSON.
@@ -519,6 +525,15 @@ Android first and complete; everything else reserved behind the spec + SPI.
   Keep `PortMap` on both ends as a protocol rule. This is the real "make the CLI
   clean" work surfaced by the language question — it makes the CLI language-free
   and tightens single-capture consistency. See "CLI is a thin client" above.
+- **Agent-facing targeting + batch (landed, 0.6.5–0.7.0)** — `ui outline --live`
+  numbers visible targets and caches short-lived `@N` aliases; `act --alias`
+  taps them; selector misses report same-kind candidates from the current
+  snapshot. `act batch` sequences a deterministic flow from a JSON file, stopping
+  on first failure. `Reticle.registerProbe(testId, metadata)` lets a linked app
+  register a synthetic addressable node for a spot with no convenient concrete
+  view (canvas region, off-screen state). These keep the deterministic-selector
+  backbone while lowering the cost of agent-driven targeting — they are *not* a
+  screenshot/NL-exploration path.
 
 ### Phase 2 — Proxy + daemon
 - Done: `reticle serve`, the event store, session model, SSE/REST surface,
@@ -542,6 +557,107 @@ Android first and complete; everything else reserved behind the spec + SPI.
   — natively in the host where the ecosystem matches (iOS: simctl/DYLD in a Swift
   host) or as a helper where it doesn't (Android: the Kotlin `reticle-android-
   helper`). See "Direction: Swift host + per-platform helpers".
+
+# Proposed next: evidence workflows + security-evidence lane
+
+Not yet built. Everything below is a **productization layer on top of primitives
+that already exist** (action traces, screenshots, network events, node rects, the
+session timeline) — it adds no new capture mechanism and does not move the
+defining line. Three constraints hold verbatim across every item here:
+
+1. **Evidence, not verdicts.** These workflows emit richer, more comparable
+   evidence and difference magnitudes only. No `assert`/`verify` primitive; no
+   pass/fail or risk grade is produced by Reticle — the agent or a human decides.
+2. **Deterministic selectors stay the backbone.** No natural-language-target /
+   guess-from-screenshot mechanism is promoted to the primary targeting path. The
+   landed `ui outline --live` + `@N` aliases are the acceptable convenience layer;
+   exploration is a coverage aid, never the verification path.
+3. **No root / no repackage / no hook / no pinning bypass.** The security lane is
+   a *defensive evidence engine*, not an attack or bypass tool.
+
+## Workstream A — evidence-workflow products
+
+Each assembles existing primitives into a product a human can consume directly.
+
+- **A1 — PR evidence bot (`reticle review`).** A CI/PR wrapper: read the diff →
+  drive a deterministic flow to the affected screens → assemble action trace +
+  before/after compact diff + network events + screenshots into a PR comment.
+  Reuses `act batch`, `act --trace-output`, the session timeline, and the panel's
+  evidence-ranking logic. Posts evidence only; the human makes the call. *Builds
+  on Phase 1 traces; CI/GitHub integration lands with Phase 3.*
+- **A2 — visual regression (`reticle diff visual`).** Pixel-diff screenshots
+  between two builds (or before/after one build) with a configurable threshold and
+  a change-region overlay report. Complements the existing structural diff:
+  structural diff answers "text/state changed", pixel diff answers "layout/render
+  drifted". The threshold is a hint, not a verdict. *Report first (Phase 1),
+  panel card later (Phase 3).*
+- **A3 — design-fidelity evidence (`reticle diff design`).** Align a design
+  frame's component boxes with the live node rects (`ui report` / `ui regions` /
+  `ui node`) and emit per-region deltas (position / size / color / text) plus an
+  overlay. Design data comes through the existing Figma channel. Emit the delta
+  magnitudes, **not a letter grade** — grading is a verdict left to the consumer.
+  Reticle only measures the geometric/style delta against a given frame; it does
+  not judge whether the design is correct. *Phase 1 evidence; panel Phase 3.*
+- **A4 — flow replay artifact (`reticle replay gif`).** Stitch a flow's per-step
+  screenshots into a device-framed GIF/MP4 for human review and PR communication;
+  step captions come from the trace's gesture/selector. Lowest cost, highest
+  review leverage — do first. *Phase 1.*
+- **A5 — navigation / coverage map (`reticle map`, scoped carefully).** Fold
+  `ui outline` + action-trace screen transitions into a "screen → reachable path"
+  map, **positioned as a coverage aid** ("which screens/paths are not yet covered
+  by an E2E flow"), never an auto-verification path. Discovery only; verify with
+  deterministic-selector flows afterward. *After Phase 1; lower priority.*
+
+## Workstream B — security-evidence lane (Reticle's own scope)
+
+Security is a first-class direction, but its scope must be drawn precisely.
+In a security context Reticle is a **defensive evidence engine**: it observes,
+drives, and captures security-relevant evidence for review — it does not hook,
+bypass pinning, or inject.
+
+**Out of scope (crosses the no-hook line — Frida/root territory):** certificate
+pinning *bypass* / runtime CA-trust injection / pinning neutralization; hooking
+the capture pipeline or virtual-camera / deepfake injection (PAD/IAD red-team);
+reversing or cracking the binary itself.
+
+**In scope (all within observe/drive/capture + reflectable metadata + host proxy):**
+
+- **B1 — sensitive-data-in-transit evidence.** On the existing host proxy/MITM
+  lane, observe and annotate how sensitive data moves and emit evidence (not a
+  "vulnerable" verdict): plaintext-HTTP transmission flags; annotated positions of
+  suspected sensitive fields (configurable patterns) in request/response bodies;
+  and an honest "opaque, not decrypted" annotation when an HTTPS CONNECT tunnel
+  can't be decrypted. Reuses `network.*` events and the panel's existing
+  cookie/authorization redaction. When pinning blocks capture, it reports
+  "not observable" rather than crossing the line to defeat it. *Phase 2 (additive
+  on the proxy).*
+- **B2 — risk-control flow E2E regression harness (highest fit, do first in B).**
+  Use deterministic-selector drive as a regression harness for the risk-control
+  features themselves: drive liveness / 1:1 face-upload / device-check UI flows,
+  capture their calls to external verification/attestation services, and use
+  session-scoped `mock` to simulate different external verdicts (trusted /
+  untrusted / degraded) so the client's per-branch UI and follow-up calls can be
+  verified deterministically. Reticle only *drives the real flow + mocks the
+  external return + records evidence*; it does not fabricate captured content or
+  attack the liveness check (that is red-team, not here). *Phase 2 (needs mock +
+  proxy).*
+- **B3 — client security-posture evidence (observe-only).** Emit a read-only
+  snapshot of security-relevant client configuration, entirely within the
+  reflectable-metadata and host-observable boundary: whether the app is
+  debuggable; user-CA-trust / network-security-config annotations; whether the
+  WebView has JS enabled and whether mixed content is present (from the existing
+  WebView/DOM bridge); and the component-exposure surface visible through
+  class/field metadata reflection (built on the Phase 1 live-object-inspection /
+  `ui audit` capability, viewed through a security lens). Lists observable facts
+  only — no heap enumeration, no arbitrary reads, no "insecure" verdict. *After
+  the Phase 1 object/layout diagnostics land.*
+
+## Suggested sequencing
+
+Do **A4 + A1 + A2** first — they reuse existing traces/screenshots with near-zero
+new mechanism and directly raise human-review and PR-evidence quality. On the
+security lane, do **B2** first — it fits Reticle's deterministic-drive + mock
+shape best and carries the most value. A3 / B1 / B3 follow; A5 is lowest priority.
 
 ## Honest boundaries (carry into every doc and the skill)
 
@@ -575,15 +691,18 @@ mistaken for settled. Revisit when the trigger arrives.
   reverse-drive is wanted, it forces a bidirectional transport (WebSocket over
   the current SSE) plus a meaningful chunk of front-end interaction work — decide
   before committing the Phase 3 transport so SSE-vs-WebSocket isn't reworked.
-- **Host language: Swift host + Kotlin Android helper (chosen, not scheduled).**
-  The long-term shape is decided (see "Direction: Swift host + per-platform
-  helpers"): the host program (CLI + daemon + Web) goes Swift, the entire current
-  Android layer stays Kotlin as a long-lived `reticle-android-helper` invoked over
-  an RPC contract. JDWP is *not* rewritten. This is a direction, not yet
-  scheduled — the host stays Kotlin/JVM until it is executed, and execution is
-  **spike-first** (prove host↔helper RPC before porting the core). *Open
-  sub-questions:* the helper RPC contract (goes in `reticle-protocol`); whether
-  the Kotlin helper ships as a JVM jar or its own GraalVM native-image; and how
-  the Swift daemon and Kotlin helper (two resident processes) are supervised.
-  *Trigger to schedule:* when the Swift Web service / daemon work begins, since
-  that is the same process as the host and forces the language decision.
+- **Host language: Swift host + Kotlin Android helper — DONE (shipped, no longer
+  deferred).** The chosen shape has been executed and ships today: the host
+  program (CLI + daemon + Web) is Swift (`reticle-host`, SwiftPM), the entire
+  current Android layer stays Kotlin as the long-lived `reticle-helper` invoked
+  over an RPC contract, and JDWP is *not* rewritten. `bin/reticle` runs the Swift
+  host + native helper as the default; there is no user-facing Kotlin/JVM CLI
+  anymore. The three open sub-questions are all resolved: the helper RPC contract
+  is in `reticle-protocol/helper-rpc.md`; the Kotlin helper ships as its own
+  **GraalVM native-image** (no-JDK single-file `reticle-helper`), not a JVM jar;
+  and the two resident processes are supervised via the `reticle serve`
+  helper-broker (0.6.5), which keeps one helper alive behind the daemon and routes
+  `--use-daemon` / `RETICLE_USE_DAEMON=1` command RPC through it. See "Direction:
+  Swift host + per-platform helpers" and "Status (2026-06-26): a working Swift host
+  CLI exists" above — this item is retained here only as a pointer; it is no longer
+  an open question.
