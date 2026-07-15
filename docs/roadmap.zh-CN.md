@@ -2,9 +2,10 @@
 
 [English](roadmap.md) | **简体中文**
 
-状态:路线图与当前状态文档(2026-07-01)。记录了将 Reticle 从单平台 Android CLI
-演进为多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定方向。
-`docs/architecture.md` 描述当前实现的操作细节。
+状态:路线图与当前状态文档(2026-07-15 更新,对应 0.7.0)。记录了将 Reticle 从单
+平台 Android CLI 演进为多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定
+方向。`docs/architecture.md` 描述当前实现的操作细节。最后一节**下一步提案:证据
+工作流 + 安全证据线**记录了一组尚未构建、建在 Phase 1–3 已落地原语之上的提案。
 
 ## 愿景
 
@@ -44,7 +45,8 @@ loopback 契约来互操作,用什么语言由平台自定。
 ## 原则:协议才是脊柱,代码不是
 
 agent 与 CLI 已经通过 loopback HTTP + JSON 通信(`reticle-core/Protocol.kt` 中的
-8 个端点)。未来的 iOS(Swift)或鸿蒙(ArkTS/C++)agent **不需要共享 Kotlin
+9 个端点:`/report` `/snapshot` `/semantics` `/compact` `/screenshot` `/mutate`
+`/clipboard` `/runtime` `/logs`)。未来的 iOS(Swift)或鸿蒙(ArkTS/C++)agent **不需要共享 Kotlin
 代码**——它只需产出同样的 JSON。`reticle-core` 里的 Kotlin 类型是该 spec 的一种
 实现;每个平台带自己的实现。
 
@@ -112,7 +114,7 @@ HTTP 传输层(`RuntimeClient`)**已经是平台中立的**——任何讲该协
 为什么是这种形态,而不是把一切都用 Swift 重写:
 
 - **JDWP 注入无法下沉到 agent。** JDWP 注入的全部意义,就是把 agent 弄进一个
-  *还没有它*的进程——agent 是注入的*结果*,不是前提。所以那 ~669 行 JDWP codec
+  *还没有它*的进程——agent 是注入的*结果*,不是前提。所以那 ~680 行 JDWP codec
   在本质上是 host 侧的,也在本质上是 Android 特有的。
 - **Android 的脏活在 JVM 里最自然**(JDWP、dex、`d8`)。用 Swift 重写它是任何
   重写里风险最高的一块(它 git 历史里每个修复都是一个来之不易的 ART/dexopt/GC
@@ -158,9 +160,12 @@ helper 驱动 Android。当前已存在的:
 
 - **Kotlin helper**——一个 `reticle helper` 子命令(`reticle-helper/.../Helper.kt`):
   长生命周期的 JSONL stdio RPC 循环(stdin 一行一个请求,stdout 一行一个响应;
-  stdout 只走协议,诊断走 stderr)。方法:`ping`、`listDevices`、`status`、
-  `inject`、`uiReport`——原样复用现有 `Platform` SPI 与 `RuntimeClient`(helper
-  *就是*今天的 Android host 层,藏在 RPC 接缝后面)。常驻循环,不是 fork-per-call;
+  stdout 只走协议,诊断走 stderr)。方法(截至 0.7.0):`ping`、`listDevices`、
+  `status`、`inject`、`launch`、`uiReport`、`act`、`mutate`、`logs`、`logcat`、
+  `screenshot`、`render`(helper 侧 tree/compact/node/regions/outline 渲染),以及
+  `proxyStatus` / `proxySet` / `proxyClear` / `proxyInstallCa`——原样复用现有
+  `Platform` SPI 与 `RuntimeClient`(helper *就是*今天的 Android host 层,藏在 RPC
+  接缝后面)。常驻循环,不是 fork-per-call;
   坏的/未知请求返回结构化错误而不会掀翻循环。`inject` 接受显式 `payloadDex`;
   `uiReport` 在设备侧派生树并返回成品 `snapshot`/`semantics`/`compact` JSON。
 - **RPC 契约**——形式化在 `reticle-protocol/helper-rpc.md`(信封、方法清单、显式
@@ -449,6 +454,12 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   已经在 app 进程内完成。剩余工作:把 action 的选择器解析也移到 agent,让 CLI 消费成品 target JSON。`PortMap` 作为协议
   规则在两端各留一份。这是语言话题牵出的、真正"让 CLI 干净"的工作——它让 CLI
   语言无关,并收紧单次捕获的一致性。见上文"CLI 是薄客户端"。
+- **面向 agent 的定位 + 批处理(已落地,0.6.5–0.7.0)**——`ui outline --live` 给
+  可见目标编号并缓存短生命周期 `@N` 别名;`act --alias` 点击它们;选择器未命中时
+  从当前快照报同类候选。`act batch` 从 JSON 文件顺序跑确定性 flow,首个失败即停。
+  `Reticle.registerProbe(testId, metadata)` 让已链接应用为没有合适具体 view 的位置
+  (canvas 区域、离屏状态)注册一个可寻址的合成节点。它们在保住确定性 selector 骨干
+  的同时降低 agent 驱动定位的成本——**不是**截图/自然语言探索路径。
 
 ### Phase 2 —— 代理 + daemon
 - 已完成:`reticle serve`、事件存储、session 模型、SSE/REST 表面、action trace
@@ -468,6 +479,80 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   提供它的三个缝——生态匹配时在 host 内原生做(iOS:Swift host 里的 simctl/DYLD),
   不匹配时做成 helper(Android:Kotlin `reticle-android-helper`)。见"方向:
   Swift host + 逐平台 helper"。
+
+# 下一步提案:证据工作流 + 安全证据线
+
+尚未构建。下面全部是**建在已存在原语之上的产品化层**(action trace、截图、网络
+事件、节点 rect、session 时间线)——不引入新的捕获机制,不移动核心红线。三条约束
+在这里的每一项都原样成立:
+
+1. **证据,不下判定。** 这些工作流只产出更可比的证据与差异量;不新增
+   `assert`/`verify` 原语;Reticle 不产出 pass/fail 或风险评级——判定交给 agent 或人。
+2. **确定性 selector 仍是骨干。** 不把「自然语言 target / 从截图猜坐标」提升为主
+   定位路径。已落地的 `ui outline --live` + `@N` 别名是可接受的便利层;探索式只作
+   覆盖率辅助,绝不作验证主路径。
+3. **无 root / 无重打包 / 无 hook / 不绕 pinning。** 安全线是**防御侧证据引擎**,
+   不是攻击或绕过工具。
+
+## 工作流 A —— 证据工作流产品
+
+每项都把现有原语组装成一个人能直接消费的成品。
+
+- **A1 —— PR 证据机器人(`reticle review`)。** 一层 CI/PR 包装:读 diff → 用确定性
+  flow 驱动到改动界面 → 把 action trace + 前后 compact diff + 网络事件 + 截图汇成
+  PR 评论。复用 `act batch`、`act --trace-output`、session 时间线、面板的证据排序
+  逻辑。只贴证据,判定交给人。*建在 Phase 1 trace 上;CI/GitHub 集成随 Phase 3 落地。*
+- **A2 —— 视觉回归(`reticle diff visual`)。** 两个 build(或同 build 前后)间截图
+  像素级 diff,可配阈值,出差异区域叠加报告。补结构 diff 的盲区:结构 diff 回答
+  「文字/状态变了」,像素 diff 回答「布局/渲染漂了」。阈值是提示,不是 verdict。
+  *先出报告(Phase 1),面板卡片随后(Phase 3)。*
+- **A3 —— 设计保真度证据(`reticle diff design`)。** 把设计稿组件框与活屏节点 rect
+  (`ui report` / `ui regions` / `ui node`)对齐,产出逐区域偏差(位置/尺寸/颜色/
+  文案)+ 叠加图。设计数据经现有 Figma 通道取回。**给偏差量,不给字母评级**——评级
+  是判定,留给使用方。Reticle 只测「活屏与给定设计框的几何/样式差」,不判断设计
+  对不对。*Phase 1 证据;面板 Phase 3。*
+- **A4 —— 流程回放产物(`reticle replay gif`)。** 把一段 flow 的逐步截图拼成带设备
+  边框的 GIF/MP4,供人审与 PR 沟通;步骤字幕取自 trace 的 gesture/selector。成本
+  最低、回报最高,优先做。*Phase 1。*
+- **A5 —— 导航/覆盖图(`reticle map`,谨慎定位)。** 由 `ui outline` + action trace
+  的界面转移归并出「界面 → 可达路径」图,**定位为覆盖率辅助**(「哪些界面/路径还
+  没被 E2E 覆盖」),绝不作自动验证路径。只用于发现,发现后仍走确定性 selector 的
+  flow 去验证。*Phase 1 之后;优先级更低。*
+
+## 工作流 B —— 安全证据线(Reticle 自己的范围)
+
+安全是一等方向,但范围必须划精确。在安全语境里 Reticle 是**防御侧证据引擎**:它
+观测、驱动、抓取,产出可复核的安全相关证据——它不 hook、不绕 pinning、不注入。
+
+**超出范围(越 no-hook 线——Frida/root 地界):** 证书 pinning **绕过** / 运行时
+注入 CA 信任 / 中和 pinning;hook 采集链路或虚拟摄像头/deepfake 注入(PAD/IAD
+红队);逆向或破解二进制本身。
+
+**在范围内(都在 observe/drive/capture + 可反射元数据 + 主机代理边界内):**
+
+- **B1 —— 敏感数据流转证据。** 在现有主机代理/MITM 通道上,观测并标注敏感数据如何
+  流转,产出证据(不下「有漏洞」判定):明文 HTTP 传输标注;请求/响应体中疑似敏感
+  字段(可配模式)的位置标注;HTTPS CONNECT 隧道无法解密时如实标注「opaque,未
+  解密」。复用 `network.*` 事件与面板已有的 cookie/authorization 脱敏。pinning 挡住
+  时如实报「不可观测」,不越线破解。*Phase 2(代理上的 additive 增强)。*
+- **B2 —— 风控流程 E2E 回归 harness(最契合,B 里优先做)。** 用确定性 selector 驱动
+  给风控功能本身当回归 harness:驱动活体 / 1:1 人脸上传 / 设备校验 UI 流程,抓取其
+  对外部校验/风控服务的调用,并用 session 级 `mock` 模拟不同外部 verdict(可信/
+  不可信/降级),让客户端在各分支下的 UI 与后续调用可确定性复现验证。Reticle 只
+  *驱动真实流程 + mock 外部返回 + 存证*,不伪造采集内容、不攻击活体(那是红队,不在
+  此)。*Phase 2(依赖 mock + 代理)。*
+- **B3 —— 客户端安全态势证据(observe-only)。** 产出一份安全相关客户端配置的只读
+  快照,全部落在可反射元数据与主机可观测边界内:应用是否 debuggable;用户 CA 信任 /
+  network security config 标注;WebView 是否启用 JS、是否有混合内容(based on 现有
+  WebView/DOM 桥);以及经类/字段元数据反射可见的组件暴露面(建在 Phase 1 的活对象
+  检查 / `ui audit` 之上,以安全视角归纳)。只列可观测事实——不做堆枚举、不做任意
+  读、不下「不安全」判定。*Phase 1 的对象/布局诊断落地之后。*
+
+## 建议顺序
+
+先做 **A4 + A1 + A2**——复用现成 trace/截图、近零新机制,直接提升人审与 PR 证据
+质量。安全线先做 **B2**——最契合 Reticle 的确定性驱动 + mock 形态,价值最高。
+A3 / B1 / B3 随后;A5 优先级最低。
 
 ## 诚实边界(贯穿每份文档与 skill)
 
@@ -494,12 +579,14 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   *触发条件:* 若需要反向驱动,它会逼出一个双向传输(在当前 SSE 之上加 WebSocket)
   外加一大块前端交互工作——在敲定 Phase 3 传输之前决定,免得 SSE-vs-WebSocket
   返工。
-- **host 语言:Swift host + Kotlin Android helper(已选定,未排期)。** 长期形态
-  已定(见"方向:Swift host + 逐平台 helper"):host 程序(CLI + daemon + Web)转
-  Swift,整个当前 Android 层保留为 Kotlin,做成一个长生命周期 `reticle-android-
-  helper`,经一个 RPC 契约被调用。JDWP *不*重写。这是方向,尚未排期——在它被执行
-  之前 host 保持 Kotlin/JVM,且执行采取 **spike 优先**(先证实 host↔helper RPC
-  再移植核心)。*待定子问题:* helper 的 RPC 契约(归 `reticle-protocol`);Kotlin
-  helper 以 JVM jar 还是自己的 GraalVM native-image 分发;以及 Swift daemon 与
-  Kotlin helper(两个常驻进程)如何被监管。*排期触发条件:* 当 Swift Web 服务 /
-  daemon 工作启动时,因为那与 host 是同一进程,会逼出语言决定。
+- **host 语言:Swift host + Kotlin Android helper —— 已完成(已交付,不再搁置)。**
+  选定形态已被执行并在今天交付:host 程序(CLI + daemon + Web)已是 Swift
+  (`reticle-host`,SwiftPM),整个当前 Android 层保留为 Kotlin,做成长生命周期
+  `reticle-helper` 经 RPC 契约被调用,JDWP *不*重写。`bin/reticle` 默认跑 Swift
+  host + native helper;已不再有面向用户的 Kotlin/JVM CLI。三个待定子问题全部解决:
+  helper RPC 契约在 `reticle-protocol/helper-rpc.md`;Kotlin helper 以自己的
+  **GraalVM native-image** 分发(无 JDK 单文件 `reticle-helper`),不是 JVM jar;
+  两个常驻进程经 `reticle serve` helper-broker(0.6.5)监管——它在 daemon 后面常驻
+  一个 helper,并把 `--use-daemon` / `RETICLE_USE_DAEMON=1` 的命令 RPC 路由过去。
+  见上文"方向:Swift host + 逐平台 helper"与"现状(2026-06-26):一个可用的 Swift
+  host CLI 已存在"——此项仅作指针保留,已不再是待定问题。
