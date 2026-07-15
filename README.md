@@ -373,6 +373,12 @@ To *build from source* (developers):
   target macOS 14+
 - Gradle 8.13 (via the wrapper)
 
+Both JDKs can be provisioned in one step with [mise](https://mise.jdx.dev/):
+`mise install` in the repo root installs JDK 17 (primary `java`/`JAVA_HOME`)
+and a GraalVM 21 whose `native-image` lands on `PATH` — no `GRAALVM_HOME`
+needed. This is optional; manually installed JDKs keep working as before.
+Xcode/Swift and the Android SDK are managed outside mise (see `mise.toml`).
+
 See `AGENTS.md` for the agent-facing map and architecture rules.
 
 ## Inspiration

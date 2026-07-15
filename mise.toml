@@ -1,0 +1,12 @@
+# Optional, for local development: `mise install` provisions the two JDKs the
+# build needs, so no manual JDK setup or $GRAALVM_HOME is required.
+#
+#   - temurin-17 (first entry = primary): `java`/`JAVA_HOME` for Gradle/AGP.
+#     The wrapper's daemon pin (gradle/gradle-daemon-jvm.properties) finds it.
+#   - oracle-graalvm-21: also added to PATH, which is where the
+#     :reticle-helper:nativeHelper task picks up `native-image`.
+#
+# Deliberately NOT managed here: Gradle (pinned by the wrapper), the Swift
+# toolchain/Xcode, and the Android SDK — see README "Toolchain".
+[tools]
+java = ["temurin-17", "oracle-graalvm-21"]
