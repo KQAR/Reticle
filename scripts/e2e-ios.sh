@@ -93,6 +93,19 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 "$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#style-target" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
+# Playwright-style piercing: an OPEN shadow root's content must fold in with a
+# chained selector, and activation must resolve chains through shadow roots and
+# same-origin iframes (works with no HID — the real-device path).
+"$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.shadowButton" \
+  || { echo "FAIL: expected shadow DOM content (complex.shadowButton) folded in"; exit 1; }
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#shadow-host >>> #shadow-button"
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#fixture-frame >>> #iframe-button"
+# In-process dom activation with an observable side effect.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
+"$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
+  || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="
