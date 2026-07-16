@@ -19,6 +19,12 @@ struct Router {
             case ("GET", Endpoints.compact):
                 return try json(CompactObservation.from(captureSnapshot()))
             case ("GET", Endpoints.logs):
+                #if canImport(WebKit)
+                // Pull buffered web evidence (console / JS errors / network)
+                // into the log ring before answering.
+                let webViews = MainThread.sync { WebEvidence.scanPending() }
+                WebEvidence.installAndDrain(pending: webViews)
+                #endif
                 return try json(LogBatch(entries: ReticleRuntime.shared.collectedLogs()))
             case ("GET", Endpoints.screenshot):
                 return screenshot()
@@ -48,6 +54,10 @@ struct Router {
         let transport = MainThread.sync { SnapshotCapture().captureForTransport() }
         var snapshot = transport.snapshot
         WebViewBridge.captureInto(&snapshot, pending: transport.pendingWebViews, nextRef: transport.nextRef)
+        // Every observation also pulls buffered web evidence and (re)installs
+        // the hooks, so console/error/network collection starts at the first
+        // time Reticle sees a page.
+        WebEvidence.installAndDrain(pending: transport.pendingWebViews)
         return snapshot
         #else
         return try MainThread.sync { try SnapshotCapture().capture() }

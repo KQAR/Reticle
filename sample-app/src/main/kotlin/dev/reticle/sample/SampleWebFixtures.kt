@@ -169,6 +169,10 @@ object SampleWebFixtures {
               </div>
               <div id="editable" data-testid="complex.editable" contenteditable="true">Editable text</div>
               <a id="anchor-link" data-testid="complex.anchorLink" href="#scroll-target">Jump to scroll target</a>
+              <button id="web-evidence" data-testid="complex.webEvidence"
+                onclick="console.log('evidence button clicked'); fetch('data:text/plain,ok');">
+                Emit web evidence
+              </button>
               <button class="generated-selector" data-testid="complex.generatedSelector"
                 onclick="this.innerText='Generated clicked'">
                 Generated selector

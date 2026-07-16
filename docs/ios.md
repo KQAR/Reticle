@@ -88,6 +88,15 @@ the full `pointerdown → mousedown → pointerup → mouseup → click` sequenc
 needs no HID surface, so it is the web-content tap path for real devices (and
 for the iOS 26.2 simulator runtime where HID recognition is broken).
 
+Web pages also emit **evidence**: on first observation the agent installs
+passthrough hooks (console.*, uncaught errors / unhandled rejections, fetch /
+XHR timing) into each WKWebView. Events buffer in an in-page ring and drain
+into `/logs` on every observation as `web_console` / `web_error` /
+`web_network` entries with structured metadata (url, method, status,
+durationMs). Honest boundaries: collection starts at the first observation of
+a page (earlier events are absent); a document-start `WKUserScript` covers
+later navigations from their start; main-frame only for the immediate install.
+
 ## Building & running
 
 ```
