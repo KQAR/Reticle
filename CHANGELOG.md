@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- iOS: web evidence hooks. The agent injects Playwright-style passthrough
+  wrappers (console.*, window error / unhandledrejection, fetch / XHR timing)
+  into every observed WKWebView; events buffer in an in-page ring (cap 200,
+  drop-counted) and are drained into the agent log ring on every observation
+  (`/report`, `/snapshot`, `/logs`), surfacing as `web_console` / `web_error` /
+  `web_network` entries with structured metadata (url, method, status,
+  durationMs). Pull-based like every Reticle observation: collection starts at
+  the FIRST observation of a page; a document-start WKUserScript re-installs
+  the hooks for later navigations. The sample fixture gained an evidence
+  button and the e2e asserts console + fetch events end-to-end. Android port
+  of the same script is a follow-up.
+
 - WebView DOM walk (both platforms, shared script) now pierces **open shadow
   roots** and **same-origin iframes**, Playwright-style: pierced elements fold
   in as regular domNodes carrying a chained selector
