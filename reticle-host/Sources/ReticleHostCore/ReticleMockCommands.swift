@@ -76,7 +76,7 @@ private func ruleRequest(_ args: Args, defaultValueId: String?) throws -> Networ
     let match: NetworkMockMatch
     if let raw = args.option("match") {
         guard let parsed = NetworkMockMatch(rawValue: raw) else {
-            throw HelperError("--match must be exact or prefix")
+            throw HelperError("--match must be exact, prefix, or regex")
         }
         match = parsed
     } else {
