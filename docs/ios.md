@@ -15,6 +15,9 @@ reticle --target ios ui report --package <bundle-id> --output out/
 reticle --target ios ui compact out/snapshot.json
 reticle --target ios ui screenshot --package <bundle-id> --output shot.png
 reticle --target ios mutate  --package <bundle-id> --test-id <id> --property alpha --value 0.3
+reticle --target ios ui regions out/snapshot.json
+reticle --target ios act activate --package <bundle-id> --test-id <id>
+reticle --target ios act tap --package <bundle-id> --test-id <id> --region "Privacy"
 ```
 
 ## How it works (vs Android)
@@ -31,6 +34,47 @@ The in-process agent is `reticle-agent/ios` (SwiftPM: `ReticleKit` +
 `ReticleInjection` + `CReticleBootstrap`). The host logic is native in
 `reticle-host` (`IosHelperClient`), no Kotlin helper. Both share the Swift
 `ReticleProtocol` (`reticle-swift`).
+
+## Multi-region controls (iOS channels)
+
+The same collapse Android suffers exists on iOS — UILabel has no native link
+handling, so real agreement rows ship as YYText-style self-drawn labels or
+`UITextView` attributed text, and both report as ONE node. `RegionProbe`
+(in `ReticleKit`) decomposes them through the same protocol channels:
+
+- **`span`** — real `.link` attribute runs, with per-line rects (a `UITextView`
+  lends its own TextKit stack — exact; a `UILabel` gets an equivalent stack
+  rebuilt from its attributed text and `textRect(forBounds:)`).
+- **`a11yVirtual`** — child `accessibilityElements` a view exposes (the YYText
+  pattern). The view's own whole-text proxy element is filtered out.
+- **`colorSpan`** — a minority-colored `.foregroundColor` run that is not a real
+  link ("highlight = tappable"), surfaced with its actual color.
+- **`textMarker`** — script-agnostic bracketed (`«…»`, `《…》`, …) / markdown
+  links on a self-drawn label, one region per marker, fired only for a
+  user-interaction-enabled label flagged `suspectedMultiRegion`.
+- **char grid** — exact per-character boundary X per line fragment for any
+  UILabel/UITextView text, so `act tap --region "User Agreement"` resolves a
+  plain phrase with no markers at all.
+
+`act tap --region` resolves a discovered region's rect first, then falls back to
+locating the substring through the char grid — same semantics as Android.
+`act activate` additionally resolves `axElement` nodes (SwiftUI content, e.g. a
+`NavigationLink` row with an `.accessibilityIdentifier`) and fires the element's
+own `accessibilityActivate()` — the navigation/tap path that also works on a
+real device.
+
+## WKWebView DOM
+
+The read-only DOM bridge is ported: a WKWebView seen during the view walk stays
+an opaque node on the main thread, then the server thread evaluates the shared
+DOM script (`WebViewDomScript.swift`, kept in sync with the Android
+`WebViewDomScript.kt`) via `evaluateJavaScript` with a 750 ms timeout and folds
+the visible DOM in as `domNode` children — same element payload, `data-testid`
+as `testId`, `domCssSelector` + computed-style / image metadata, page-to-screen
+coordinate folding (CSS points are UIKit points, so the scale is normally 1.0).
+`ui node --css "#id"` and `act tap --css "#id"` resolve exactly like Android.
+On any failure (JS timeout, detached view) the WebView remains an opaque view
+node — the honest L0 fallback.
 
 ## Building & running
 
@@ -79,6 +123,21 @@ scripts/e2e-ios.sh                                      # full simulator round t
   are still resolved from SimulatorKit by `dlsym`. Verified on-simulator: a
   synthesized tap increments the sample app's tap counter. Simulator-only (a real
   device has no HID surface) and fragile across Xcode versions by nature.
+  **Known breakage: on the iOS 26.2 simulator runtime (Xcode 26.3) synthesized
+  taps do not trigger native UIKit/SwiftUI controls** — observed for this path
+  AND for independent implementations of it. Notably the same tap DOES fire an
+  onclick inside WKWebView content, so the Indigo messages are delivered and the
+  failure is in the native gesture/touch recognition layer (timing or event
+  flags), not the transport. Until that is root-caused, scripts must not depend
+  on HID for native controls: `act activate` (in-process) is the portable
+  navigation/tap path, and `act tap --region` still *resolves* exact points
+  (useful as evidence) even where recognition is broken.
+- **SwiftUI `Text` with inline markdown links collapses in accessibility.** The
+  whole Text surfaces as one `axElement` ("Read the Terms and Privacy") with no
+  per-link child elements, so individual links inside one SwiftUI `Text` are not
+  separately targetable — unlike UIKit rows, where the region probe decomposes
+  them. Give each link its own `Link`/`Button` (or an
+  `.accessibilityIdentifier`) to make it addressable.
 - **Headless suspension.** An app launched by `simctl` on a simulator that isn't
   displayed gets suspended by the OS, which closes the agent's socket. Keep
   Simulator.app open (or hold the app foreground) for a reliable session.

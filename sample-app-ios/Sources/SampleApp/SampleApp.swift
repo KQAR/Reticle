@@ -2,11 +2,10 @@ import SwiftUI
 import UIKit
 import ReticleKit
 
-// The linked demo. It starts the agent explicitly at launch. The UI mixes a
-// SwiftUI button that carries an `.accessibilityIdentifier` (so it surfaces as an
-// addressable `axElement`), a SwiftUI button with NO identifier (so it stays
-// intentionally unaddressable — the documented SwiftUI boundary), and a real
-// UIKit button (so the view-tree walk has a concrete node to resolve).
+// The linked demo, structured like the Android sample: a home list where each
+// row opens one focused Reticle scenario, so a report stays readable instead of
+// mixing every probe target on one screen. It starts the agent explicitly at
+// launch (the linked path).
 @main
 struct SampleApp: App {
     init() {
@@ -16,62 +15,107 @@ struct SampleApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeView()
         }
     }
 }
 
-struct ContentView: View {
-    @State private var taps = 0
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui`
+/// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
+/// depend on synthesizing a navigation tap first.
+private func initialScenario() -> String? {
+    ProcessInfo.processInfo.environment["RETICLE_SAMPLE_SCENARIO"]
+}
+
+struct HomeView: View {
+    @State private var pushed = initialScenario()
 
     var body: some View {
-        VStack(spacing: 24) {
-            Text("Reticle iOS Sample")
-                .font(.title2)
-                .accessibilityIdentifier("title")
-
-            Button("Sign In") { taps += 1 }
-                .accessibilityIdentifier("login.signIn")
-
-            // Deliberately unlabeled: must NOT be addressable by selector.
-            Button("Unlabeled") { taps += 1 }
-
-            Text("Taps: \(taps)")
-                .accessibilityIdentifier("tapCount")
-
-            UIKitButtonView { taps += 1 }
-                .frame(width: 240, height: 50)
+        NavigationView {
+            List {
+                scenarioRow(
+                    title: "Checkout controls",
+                    subtitle: "Button tap, status mutation, text input, and app logs",
+                    testId: "scenario.checkout",
+                    tag: "checkout"
+                ) {
+                    ScenarioScreen { CheckoutViewController() }
+                        .navigationTitle("Checkout")
+                }
+                scenarioRow(
+                    title: "Agreement regions",
+                    subtitle: "Link attribute, text markers, char grid, and color runs",
+                    testId: "scenario.agreements",
+                    tag: "agreements"
+                ) {
+                    ScenarioScreen { AgreementViewController() }
+                        .navigationTitle("Agreements")
+                }
+                scenarioRow(
+                    title: "WebView DOM",
+                    subtitle: "Native title bar with a full-screen WKWebView underneath",
+                    testId: "scenario.webview",
+                    tag: "webview"
+                ) {
+                    ScenarioScreen { WebViewScenarioViewController() }
+                        .navigationTitle("WebView DOM")
+                }
+                scenarioRow(
+                    title: "SwiftUI boundary",
+                    subtitle: "Addressable vs unaddressable elements and markdown links",
+                    testId: "scenario.swiftui",
+                    tag: "swiftui"
+                ) {
+                    SwiftUIBoundaryView()
+                        .navigationTitle("SwiftUI")
+                }
+            }
+            .navigationTitle("Reticle Sample")
+            .onAppear {
+                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(4)])
+            }
         }
-        .padding()
+        .navigationViewStyle(.stack)
+    }
+
+    /// A visible scenario row that is also programmatically pushable via the
+    /// e2e scenario hook (selection-driven NavigationLink).
+    private func scenarioRow<Destination: View>(
+        title: String,
+        subtitle: String,
+        testId: String,
+        tag: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink(
+            destination: destination(),
+            tag: tag,
+            selection: Binding(
+                get: { pushed },
+                set: { newValue in
+                    pushed = newValue
+                    if newValue == tag {
+                        Reticle.log("scenario_opened", metadata: ["scenario": .text(testId)])
+                    }
+                }
+            )
+        ) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.subheadline).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 6)
+        }
+        .accessibilityIdentifier(testId)
     }
 }
 
-/// A concrete UIKit control embedded in SwiftUI, to exercise the view-tree walk
-/// and in-process activation. Its touchUpInside increments the shared counter so
-/// an `act activate --test-id checkout.payButton` is observable.
-struct UIKitButtonView: UIViewRepresentable {
-    let onTap: () -> Void
+/// Hosts a UIKit scenario view controller inside the SwiftUI navigation shell —
+/// the scenarios themselves are deliberately UIKit, matching how the real apps
+/// that motivated them are built.
+struct ScenarioScreen<VC: UIViewController>: UIViewControllerRepresentable {
+    let make: () -> VC
 
-    func makeCoordinator() -> Coordinator { Coordinator(onTap: onTap) }
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle("Continue (UIKit)", for: .normal)
-        button.backgroundColor = UIColor.systemBlue
-        button.setTitleColor(.white, for: .normal)
-        button.layer.cornerRadius = 8
-        button.accessibilityIdentifier = "checkout.payButton"
-        button.addTarget(context.coordinator, action: #selector(Coordinator.fire), for: .touchUpInside)
-        return button
-    }
-
-    func updateUIView(_ uiView: UIButton, context: Context) {
-        context.coordinator.onTap = onTap
-    }
-
-    final class Coordinator: NSObject {
-        var onTap: () -> Void
-        init(onTap: @escaping () -> Void) { self.onTap = onTap }
-        @objc func fire() { onTap() }
-    }
+    func makeUIViewController(context: Context) -> VC { make() }
+    func updateUIViewController(_ uiViewController: VC, context: Context) {}
 }

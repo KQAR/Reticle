@@ -2,6 +2,9 @@ import Foundation
 import ReticleProtocol
 #if canImport(UIKit)
 import UIKit
+#if canImport(WebKit)
+import WebKit
+#endif
 
 /// Walks the live UIKit hierarchy into a `Snapshot` — the iOS analogue of the
 /// Android `SnapshotCapture`. Rooted at a synthetic application node, then each
@@ -15,6 +18,14 @@ struct SnapshotCapture {
         var nextRef = 0
         var nodes: [String: Node] = [:]
         var index: [String: UIView] = [:]
+        /// ref -> accessibility element, for axElement nodes (SwiftUI content),
+        /// so activation can target the element itself.
+        var axIndex: [String: NSObject] = [:]
+        #if canImport(WebKit)
+        /// WKWebViews seen during the walk; their DOM is folded in afterwards,
+        /// off the main thread (see `WebViewBridge`).
+        var pendingWebViews: [WebViewBridge.Pending] = []
+        #endif
 
         func makeRef() -> String {
             let r = "r\(nextRef)"
@@ -30,6 +41,35 @@ struct SnapshotCapture {
     /// Capture plus a ref -> UIView index, for the mutation engine to re-resolve a
     /// ref to a live view.
     func captureWithIndex() -> (Snapshot, [String: UIView]) {
+        let (snapshot, index, _) = captureWithIndexes()
+        return (snapshot, index)
+    }
+
+    /// Capture plus both live indexes: ref -> UIView for view nodes, and
+    /// ref -> accessibility element for axElement nodes.
+    func captureWithIndexes() -> (Snapshot, [String: UIView], [String: NSObject]) {
+        let (snapshot, b) = captureCore()
+        return (snapshot, b.index, b.axIndex)
+    }
+
+    #if canImport(WebKit)
+    /// What the server transport needs: the snapshot, the WKWebViews whose DOM
+    /// still has to be folded in (off-main), and the next free ref for those
+    /// dom nodes. `@unchecked Sendable`: the web view handles cross threads
+    /// opaquely and are only dereferenced back on the main queue.
+    struct TransportCapture: @unchecked Sendable {
+        let snapshot: Snapshot
+        let pendingWebViews: [WebViewBridge.Pending]
+        let nextRef: Int
+    }
+
+    func captureForTransport() -> TransportCapture {
+        let (snapshot, b) = captureCore()
+        return TransportCapture(snapshot: snapshot, pendingWebViews: b.pendingWebViews, nextRef: b.nextRef)
+    }
+    #endif
+
+    private func captureCore() -> (Snapshot, Builder) {
         let b = Builder()
         let appRef = b.makeRef()
 
@@ -57,7 +97,7 @@ struct SnapshotCapture {
             rootRef: appRef,
             nodes: b.nodes
         )
-        return (snapshot, b.index)
+        return (snapshot, b)
     }
 
     // MARK: - Windows / screen
@@ -118,6 +158,18 @@ struct SnapshotCapture {
             custom.merge(ReticleRuntime.shared.metadata(for: testId)) { _, new in new }
         }
 
+        // Sub-node interaction evidence (link runs, virtual a11y elements,
+        // re-colored runs, text markers, char grid).
+        let probed = RegionProbe.probe(view, isSwiftUIHost: !hostingEvidence.isEmpty)
+
+        #if canImport(WebKit)
+        // A WKWebView stays an opaque view node here; its DOM is folded in as
+        // domNode children afterwards, off the main thread.
+        if let webView = view as? WKWebView, let webFrame = screenFrame(view) {
+            b.pendingWebViews.append(WebViewBridge.Pending(webView: webView, parentRef: ref, frame: webFrame))
+        }
+        #endif
+
         b.nodes[ref] = Node(
             ref: ref,
             parentRef: parentRef,
@@ -133,7 +185,10 @@ struct SnapshotCapture {
             isEnabled: isEnabled(view),
             isInteractive: isInteractive(view),
             custom: custom,
-            children: children
+            children: children,
+            regions: probed.regions,
+            suspectedMultiRegion: probed.suspectedMultiRegion,
+            charGrid: probed.charGrid
         )
         return ref
     }
@@ -146,7 +201,7 @@ struct SnapshotCapture {
             // Only synthesize elements that are genuinely accessibility elements.
             let isElement = (element.value(forKey: "isAccessibilityElement") as? Bool) ?? false
             let label = (element.accessibilityLabel ?? "")
-            let identifier = (element as? UIAccessibilityIdentification)?.accessibilityIdentifier ?? ""
+            let identifier = SnapshotCapture.accessibilityIdentifier(of: element)
             let traits = element.accessibilityTraits
             let frame = element.accessibilityFrame
             let signature = "\(identifier)|\(traits.rawValue)|\(label)|\(frame.debugDescription)"
@@ -154,6 +209,7 @@ struct SnapshotCapture {
             if !seenSignatures.insert(signature).inserted { continue }
 
             let ref = b.makeRef()
+            b.axIndex[ref] = element
             let role = SwiftUISupport.role(for: traits)
             let testId = identifier.isEmpty ? nil : identifier
             b.nodes[ref] = Node(
@@ -191,6 +247,20 @@ struct SnapshotCapture {
             custom: probe.metadata
         )
         return ref
+    }
+
+    /// SwiftUI's private accessibility nodes respond to `accessibilityIdentifier`
+    /// without declaring `UIAccessibilityIdentification` conformance, so a
+    /// protocol cast comes back nil and would drop the identifier (observed on
+    /// List rows). Ask via the selector instead.
+    static func accessibilityIdentifier(of element: NSObject) -> String {
+        if let conforming = element as? UIAccessibilityIdentification {
+            return conforming.accessibilityIdentifier ?? ""
+        }
+        let sel = NSSelectorFromString("accessibilityIdentifier")
+        guard element.responds(to: sel),
+              let value = element.perform(sel)?.takeUnretainedValue() as? String else { return "" }
+        return value
     }
 
     // MARK: - Node field helpers
@@ -275,14 +345,8 @@ struct SnapshotCapture {
         return out
     }
 
-    /// #AARRGGBB, resolving dynamic (trait-dependent) colors first so the value is
-    /// the one actually on screen.
     private func hex(_ color: UIColor, in traits: UITraitCollection) -> String {
-        let resolved = color.resolvedColor(with: traits)
-        var r: CGFloat = 0, g: CGFloat = 0, bl: CGFloat = 0, a: CGFloat = 0
-        resolved.getRed(&r, green: &g, blue: &bl, alpha: &a)
-        func c(_ v: CGFloat) -> Int { max(0, min(255, Int((v * 255.0).rounded()))) }
-        return String(format: "#%02X%02X%02X%02X", c(a), c(r), c(g), c(bl))
+        ColorHex.hex(color, in: traits)
     }
 }
 #endif
