@@ -56,6 +56,24 @@ public enum ReticleCLI {
 
     private static func runHelperBacked(command: String, args: Args) -> Int32 {
         let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
+
+        // iOS is handled natively in-host (simctl / DYLD / direct HTTP / CoreSimulator
+        // HID) — no Kotlin helper, no daemon broker. Select it with `--target ios`.
+        if (args.option("target") ?? "android") == "ios" {
+            let client = IosHelperClient(serial: serialArg)
+            do {
+                try dispatch(command: command, args: args, client: client)
+                return 0
+            } catch {
+                if JsonEnvelope.enabled(args) {
+                    JsonEnvelope.error(error)
+                } else {
+                    writeError("error: \(error)\n")
+                }
+                return 1
+            }
+        }
+
         if shouldUseDaemonHelper(args) {
             let client = DaemonHelperClient(serial: serialArg)
             do {

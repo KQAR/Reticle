@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "capturedAtMillis": 1719400000000,
+  "platform": "ios",
+  "screen": {
+    "size": { "width": 393.0, "height": 852.0 },
+    "density": 3.0,
+    "interfaceStyle": "dark"
+  },
+  "rootRef": "r0",
+  "nodes": {
+    "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "UIApplication",
+      "role": "application",
+      "children": ["r1"]
+    },
+    "r1": {
+      "ref": "r1",
+      "parentRef": "r0",
+      "kind": "window",
+      "typeName": "UIWindow",
+      "role": "window",
+      "frame": { "x": 0.0, "y": 0.0, "width": 393.0, "height": 852.0 },
+      "children": ["r2", "r3"]
+    },
+    "r2": {
+      "ref": "r2",
+      "parentRef": "r1",
+      "kind": "view",
+      "typeName": "UIButton",
+      "role": "button",
+      "text": "Continue",
+      "contentDescription": "Continue",
+      "testId": "checkout.payButton",
+      "frame": { "x": 24.0, "y": 720.0, "width": 345.0, "height": 50.0 },
+      "isInteractive": true,
+      "custom": {
+        "alpha": { "_type": "real", "value": 1.0 },
+        "backgroundColor": { "_type": "text", "value": "#FF007AFF" },
+        "tintColor": { "_type": "text", "value": "#FFFFFFFF" }
+      }
+    },
+    "r3": {
+      "ref": "r3",
+      "parentRef": "r1",
+      "kind": "axElement",
+      "typeName": "SwiftUI.Button",
+      "role": "button",
+      "text": "Sign In",
+      "contentDescription": "Sign In",
+      "testId": "login.signIn",
+      "frame": { "x": 24.0, "y": 640.0, "width": 345.0, "height": 44.0 },
+      "isInteractive": true,
+      "custom": {
+        "observationBackend": { "_type": "text", "value": "native-accessibility" },
+        "swiftUIOrigin": { "_type": "text", "value": "host" }
+      }
+    }
+  }
+}

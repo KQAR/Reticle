@@ -23,6 +23,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.19.2"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.0"),
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.1"),
+        // The Swift implementation of reticle-protocol — shared with the iOS agent
+        // so the host never re-ports models, PortMap, or the tree renderers.
+        .package(path: "../reticle-swift"),
     ],
     targets: [
         .target(
@@ -36,8 +39,17 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
                 .product(name: "X509", package: "swift-certificates"),
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
+                "CReticleSimHID",
             ],
             path: "Sources/ReticleHostCore"
+        ),
+        // Private CoreSimulator HID input synthesis for the iOS simulator. Isolated
+        // in a C target that dlopens the Xcode private frameworks at runtime, so a
+        // missing/renamed symbol degrades to a clear error instead of a link failure.
+        .target(
+            name: "CReticleSimHID",
+            path: "Sources/CReticleSimHID"
         ),
         .executableTarget(
             name: "ReticleHost",
