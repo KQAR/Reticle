@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+- iOS: multi-region decomposition reached parity with Android for UIKit text.
+  The agent's new `RegionProbe` emits `span` regions from `.link` attribute runs
+  (exact TextKit rects; UITextView lends its own stack, UILabel gets a rebuilt
+  one), `a11yVirtual` regions from any view's child `accessibilityElements`
+  (whole-view proxy elements filtered out), `colorSpan` regions for
+  minority-colored runs, script-agnostic `textMarker` regions plus the
+  `suspectedMultiRegion` flag for self-drawn bracketed/markdown rows, and a
+  per-character `charGrid` for every UILabel/UITextView — so
+  `act tap --region "Privacy"` resolves a phrase-level point on iOS (region rect
+  first, char-grid substring fallback), same semantics as Android.
+- iOS: `act activate` can now target SwiftUI content. axElement nodes resolve to
+  their live accessibility element and fire `accessibilityActivate()` (e.g. a
+  `NavigationLink` row navigates), `--region` narrows activation to an
+  `a11yVirtual` sub-element, and text-range regions report an honest
+  `no in-process activation surface` instead of tapping the whole view. Fixed
+  SwiftUI `accessibilityIdentifier` being dropped for elements that respond to
+  the selector without declaring `UIAccessibilityIdentification` (List rows),
+  which made `--test-id scenario.*` unresolvable.
+- iOS sample: restructured into the Android sample's scenario shape — a home
+  list (Checkout / Agreement regions / SwiftUI boundary) with UIKit scenario
+  screens mirroring the Android agreement cases (UITextView `.link` row,
+  self-drawn bracketed-links label, plain-phrase label with non-default
+  metrics, colorSpan row), plus a `RETICLE_SAMPLE_SCENARIO` launch-env hook so
+  e2e runs can open a scenario without synthesizing navigation input.
+- iOS: ported the read-only WebView DOM bridge to WKWebView. The view walk
+  records web views on the main thread; the server thread then runs the shared
+  DOM script (same payload as Android's `WebViewDomScript`) through
+  `evaluateJavaScript` (750 ms timeout) and folds visible elements in as
+  `domNode` children with `data-testid` selectors, `domCssSelector`, computed
+  styles, and image metadata. `--css` selector resolution was added to the
+  shared Swift `Render.findNode` (exact `domCssSelector` match, mirroring the
+  Kotlin helper), so `ui node --css` and `act tap --css` now work on iOS. The
+  sample gained the Android WebView scenario (same complex fixture) and the
+  e2e asserts folded domNodes + CSS resolution.
+- iOS: documented (docs/ios.md) that simulator HID taps do not trigger native
+  UIKit/SwiftUI controls on the iOS 26.2 runtime (also reproduced with an
+  independent implementation; the same tap DOES fire onclick inside WKWebView
+  content, so delivery works and native gesture recognition is what rejects
+  it); scripted flows should navigate via `act activate`. `scripts/e2e-ios.sh`
+  now does, and asserts the agreement scenario's span/textMarker/colorSpan
+  regions end-to-end.
+
 - Proxy now **streams** upstream responses back to the client chunk-by-chunk
   instead of buffering the whole body first: identity bodies are forwarded under
   their original `Content-Length`, decoded/unknown-length bodies under
