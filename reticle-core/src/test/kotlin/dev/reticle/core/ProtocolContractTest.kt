@@ -58,6 +58,21 @@ class ProtocolContractTest {
     }
 
     @Test
+    fun iosGoldenFixtureSatisfiesSchema() {
+        // The iOS agent (reticle-agent/ios) is a separate Swift implementation of
+        // this same schema; pin its wire shape here so an Android-only change that
+        // narrows the contract (e.g. dropping the axElement NodeKind) fails CI.
+        val ios = resource("fixtures/ios-snapshot.golden.json")
+        assertValid(snapshotSchema(), ios, "iOS golden fixture")
+        // Also decodes through the Kotlin model losslessly and re-satisfies the schema.
+        val decoded = ReticleJson.instance.decodeFromString(Snapshot.serializer(), ios)
+        assertEquals("ios", decoded.platform)
+        assertEquals(NodeKind.axElement, decoded.nodes.getValue("r3").kind)
+        val reencoded = ReticleJson.instance.encodeToString(Snapshot.serializer(), decoded)
+        assertValid(snapshotSchema(), reencoded, "re-encoded iOS golden fixture")
+    }
+
+    @Test
     fun kotlinEmittedJsonSatisfiesSchema() {
         val snapshot = sampleSnapshot()
         val json = ReticleJson.instance.encodeToString(Snapshot.serializer(), snapshot)

@@ -11,12 +11,26 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
 
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
   observations, wire protocol, selectors. No Android dependency. Shared by the
-  CLI and the in-app agent.
+  CLI and the in-app agent. One implementation of `reticle-protocol`; the Swift
+  `ReticleProtocol` is the parallel one.
+- `reticle-swift` (`ReticleProtocol`): SwiftPM library — the Swift implementation
+  of `reticle-protocol` (Codable models with omit-defaults JSON, `SemanticTree` /
+  `CompactObservation` derivations, `PortMap`, host-side tree/compact/node
+  renderers). Depended on by both the iOS agent and the Swift host so the protocol
+  is never re-ported. Outside the Gradle build.
 - `reticle-agent/android` (`:reticle-agent:android`): Android library (AAR).
   In-process loopback HTTP server, view-tree + Compose-semantics capture,
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata
   bridge, and an auto-start `ContentProvider`. `reticle-agent/` is a grouping
   directory (no build.gradle); per-platform agents are its children.
+- `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` +
+  `ReticleInjectionBootstrap`): SwiftPM package — the in-process iOS agent. Same
+  shape as the Android agent: loopback HTTP server, UIKit view-tree capture, a
+  SwiftUI bridge that emits `axElement` nodes only from natively-exposed
+  accessibility elements (never private SwiftUI internals), allowlist mutation,
+  in-process screenshot, `Reticle` facade, and dual auto-start (a DYLD-constructor
+  bootstrap for injection, plus a linked `Reticle.start()`). Emits `platform="ios"`
+  protocol JSON. Built by SwiftPM, invisible to Gradle.
 - `reticle-helper`: the Android host layer (Kotlin) — adb + JDWP injector + input
   + loopback client. **Not a user-facing CLI**: its only entry points are
   `helper` (a long-lived JSONL RPC server, `Helper.kt`), `version`, and `help`.
