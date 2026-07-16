@@ -302,7 +302,30 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     private func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
         if let p = parsePoint(params["point"]) { return p }
         let selector = selectorFromParams(params)
-        if let node = Render.findNode(snapshot, selector), let f = node.frame {
+        guard let node = Render.findNode(snapshot, selector) else {
+            throw HelperError("could not resolve a tap point from selector \(selector.describe())")
+        }
+        // --region narrows to a sub-target inside the node: a discovered region
+        // label first (real hit-rect), else the char grid locates the substring
+        // (self-drawn rows with no structural markers). Plain substring
+        // matching, mirroring the Android selector resolver.
+        if let query = selector.region, !query.isEmpty {
+            if let region = node.regions.first(where: { ($0.label ?? "").contains(query) }),
+               let p = region.tapPoint() {
+                return p
+            }
+            if let grid = node.charGrid {
+                let text = grid.text as NSString
+                let r = text.range(of: query)
+                if r.location != NSNotFound,
+                   let rect = grid.rangeRects(start: r.location, end: r.location + r.length).first {
+                    return Point(x: rect.centerX, y: rect.centerY)
+                }
+            }
+            throw HelperError("node matched but no region or text matched '\(query)' "
+                + "(\(node.regions.count) region(s), charGrid=\(node.charGrid != nil ? "yes" : "no"))")
+        }
+        if let f = node.frame {
             return Point(x: f.centerX, y: f.centerY)
         }
         throw HelperError("could not resolve a tap point from selector \(selector.describe())")

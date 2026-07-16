@@ -40,8 +40,18 @@ struct Router {
         HttpResponse.json(200, try ReticleJSON.encodeWire(value))
     }
 
+    /// Two-phase capture: the view walk runs on main; any WKWebView DOM is then
+    /// folded in from THIS (server) thread, which can safely block while the
+    /// JS evaluation completes back on main.
     private func captureSnapshot() throws -> Snapshot {
-        try MainThread.sync { try SnapshotCapture().capture() }
+        #if canImport(WebKit)
+        let transport = MainThread.sync { SnapshotCapture().captureForTransport() }
+        var snapshot = transport.snapshot
+        WebViewBridge.captureInto(&snapshot, pending: transport.pendingWebViews, nextRef: transport.nextRef)
+        return snapshot
+        #else
+        return try MainThread.sync { try SnapshotCapture().capture() }
+        #endif
     }
 
     private func screenshot() -> HttpResponse {
