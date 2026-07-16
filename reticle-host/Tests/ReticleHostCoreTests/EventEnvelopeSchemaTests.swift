@@ -25,7 +25,12 @@ struct EventEnvelopeSchemaTests {
     }
 
     @Test func goldenEventFixturesDecodeThroughTheProducerModel() throws {
-        for name in ["action-trace-event.golden.json", "network-response-event.golden.json"] {
+        for name in [
+            "action-trace-event.golden.json",
+            "network-request-event.golden.json",
+            "network-response-event.golden.json",
+            "network-error-event.golden.json"
+        ] {
             let event = try decodeFixture(name)
             #expect(event.schemaVersion == ReticleEventEnvelope.currentSchemaVersion)
             #expect(event.id.hasPrefix("evt_"))

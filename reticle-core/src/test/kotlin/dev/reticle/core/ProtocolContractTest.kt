@@ -40,6 +40,8 @@ class ProtocolContractTest {
 
     private fun eventSchema(): JsonSchema = schema("schema/event.schema.json")
 
+    private fun networkPayloadSchema(): JsonSchema = schema("schema/network-event-payload.schema.json")
+
     private fun assertValid(schema: JsonSchema, json: String, label: String) {
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
         val node = mapper.readTree(json)
@@ -104,7 +106,30 @@ class ProtocolContractTest {
         // The daemon event envelope has its own authoritative schema; validate the
         // checked-in golden fixtures against it so they can't silently drift.
         assertValid(eventSchema(), resource("fixtures/action-trace-event.golden.json"), "action-trace event fixture")
+        assertValid(eventSchema(), resource("fixtures/network-request-event.golden.json"), "network-request event fixture")
         assertValid(eventSchema(), resource("fixtures/network-response-event.golden.json"), "network-response event fixture")
+        assertValid(eventSchema(), resource("fixtures/network-error-event.golden.json"), "network-error event fixture")
+    }
+
+    @Test
+    fun networkFixturePayloadsSatisfyTypedPayloadSchema() {
+        // The event envelope leaves `payload` open; the proxy `network.*` payload
+        // has its own typed schema. Validate each fixture's payload against it so
+        // the host emitter and any consumer share one pinned shape.
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val schema = networkPayloadSchema()
+        for (name in listOf(
+            "network-request-event.golden.json",
+            "network-response-event.golden.json",
+            "network-error-event.golden.json"
+        )) {
+            val payload = mapper.readTree(resource("fixtures/$name")).get("payload")
+            val errors = schema.validate(payload)
+            if (errors.isNotEmpty()) {
+                fail("$name payload did not satisfy the network payload schema:\n" +
+                    errors.joinToString("\n") { "  - $it" })
+            }
+        }
     }
 
     private fun sampleSnapshot(): Snapshot = Snapshot(

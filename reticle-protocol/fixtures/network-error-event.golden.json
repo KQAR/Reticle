@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "evt_0000000000000004",
+  "ts": 1782751906600,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "proxy",
+  "type": "network.error",
+  "payload": {
+    "requestId": "net-0002",
+    "scheme": "http",
+    "method": "GET",
+    "url": "http://api.example.test/v1/orders",
+    "host": "api.example.test",
+    "port": 80,
+    "path": "/v1/orders",
+    "startMillis": 1782751906500,
+    "endMillis": 1782751906600,
+    "durationMs": 100,
+    "tunnel": false,
+    "mitm": false,
+    "requestHeaders": {
+      "Accept": "application/json"
+    },
+    "error": "connection refused"
+  },
+  "refs": {}
+}

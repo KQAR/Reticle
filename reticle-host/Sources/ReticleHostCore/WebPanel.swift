@@ -35,6 +35,13 @@ h1{margin:0;font-size:18px}
 .filterbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .filterbar button,.copy-chip{border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--muted);padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
 .filterbar button.active{border-color:rgba(96,165,250,.7);color:#bfdbfe;background:rgba(30,64,175,.28)}
+.search{margin-top:12px;width:100%;max-width:420px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:#0b1220;color:var(--text);font:inherit;font-size:12px}
+.search::placeholder{color:var(--muted)}
+.group{margin:0 0 26px}
+.group-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.group-head h2{margin:0;font-size:15px;font-weight:720;word-break:break-all}
+.group-head .count{color:var(--muted);font-size:12px;white-space:nowrap}
+.group-list{display:grid;gap:14px}
 .copy-chip{margin-left:6px;color:#bbf7d0;border-color:rgba(52,211,153,.45);background:rgba(6,78,59,.2)}
 .selector-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .selector-chips .copy-chip{margin-left:0}
@@ -102,7 +109,7 @@ th{color:var(--muted);font-weight:600}
 </head>
 <body>
 <header>
-<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div><div id="network-filters" class="filterbar"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="mock">MOCK</button><button type="button" data-filter="error">ERROR</button><button type="button" data-filter="mitm">MITM</button><button type="button" data-filter="tunnel">TUNNEL</button></div></div><label class="session-control">Session<select id="session-picker"></select></label></div>
+<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div><div id="view-toggle" class="filterbar"><button type="button" data-view="timeline" class="active">Timeline</button><button type="button" data-view="mocks">Mock groups</button></div><div id="network-filters" class="filterbar"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="mock">MOCK</button><button type="button" data-filter="error">ERROR</button><button type="button" data-filter="mitm">MITM</button><button type="button" data-filter="tunnel">TUNNEL</button></div><div id="network-status-filters" class="filterbar"><button type="button" data-status="all" class="active">Any status</button><button type="button" data-status="2xx">2xx</button><button type="button" data-status="3xx">3xx</button><button type="button" data-status="4xx">4xx</button><button type="button" data-status="5xx">5xx</button></div><input id="network-search" class="search" type="search" placeholder="Filter network: method, url, host, status, mock id..."></div><label class="session-control">Session<select id="session-picker"></select></label></div>
 </header>
 <main>
 <div id="timeline"></div>
@@ -115,11 +122,14 @@ th{color:var(--muted);font-weight:600}
   </div>
 </div>
 <script>
-const state={events:[],sessions:[],selectedSession:null,currentSession:null,manifests:new Map(),stream:null,networkFilter:'all'};
+const state={events:[],sessions:[],selectedSession:null,currentSession:null,manifests:new Map(),stream:null,networkFilter:'all',networkStatusClass:'all',networkSearch:'',view:'timeline'};
 const timeline=document.getElementById('timeline');
 const statusEl=document.getElementById('status');
 const sessionPicker=document.getElementById('session-picker');
 const networkFilters=document.getElementById('network-filters');
+const networkStatusFilters=document.getElementById('network-status-filters');
+const networkSearch=document.getElementById('network-search');
+const viewToggle=document.getElementById('view-toggle');
 const lightbox=document.getElementById('lightbox'),lightboxImage=document.getElementById('lightbox-image'),lightboxCaption=document.getElementById('lightbox-caption');
 function selectedIsCurrent(){return state.selectedSession===state.currentSession;}
 function sessionRoute(){return selectedIsCurrent()?'current':encodeURIComponent(state.selectedSession||'current');}
@@ -142,16 +152,50 @@ function networkTransactions(){
   }
   return [...groups.values()].map((tx)=>{tx.event=tx.error||tx.response||tx.request||tx.events[tx.events.length-1];tx.payload=Object.assign({},...(tx.events.map((e)=>e.payload||{})));return tx;});
 }
+function statusClassOf(payload){
+  const status=Number(payload.status);
+  if(!Number.isFinite(status)){return null;}
+  if(status>=200&&status<300){return '2xx';}
+  if(status>=300&&status<400){return '3xx';}
+  if(status>=400&&status<500){return '4xx';}
+  if(status>=500&&status<600){return '5xx';}
+  return null;
+}
 function networkFilterMatches(tx){
   const p=tx.payload||{};
   switch(state.networkFilter){
-    case 'mock': return !!p.mocked;
-    case 'error': return !!p.error;
-    case 'mitm': return !!p.mitm;
-    case 'tunnel': return !!p.tunnel;
-    default: return true;
+    case 'mock': if(!p.mocked){return false;} break;
+    case 'error': if(!p.error){return false;} break;
+    case 'mitm': if(!p.mitm){return false;} break;
+    case 'tunnel': if(!p.tunnel){return false;} break;
   }
+  if(state.networkStatusClass!=='all'&&statusClassOf(p)!==state.networkStatusClass){return false;}
+  if(state.networkSearch){
+    const needle=state.networkSearch.toLowerCase();
+    const hay=[p.method,p.url,p.host,p.path,p.status,p.mockRuleId,p.mockValueId].map((v)=>String(v===undefined||v===null?'':v).toLowerCase()).join(' ');
+    if(!hay.includes(needle)){return false;}
+  }
+  return true;
 }
+function slugForMock(value){
+  const slug=String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
+  return /^[a-z0-9]/.test(slug)?slug:`mock-${slug}`;
+}
+function shellQuote(value){return `'${String(value===undefined||value===null?'':value).replace(/'/g,"'\\''")}'`;}
+function mockCommandFor(tx){
+  const p=tx.payload||{}, refs=tx.refs||{};
+  const bodyRef=Object.keys(refs).find((ref)=>ref.startsWith('responseBody.'));
+  const bodyPath=bodyRef?refs[bodyRef]:null;
+  const id=slugForMock(`${p.host||'host'}${p.path||'/'}`);
+  const status=isPresent(p.status)?p.status:200;
+  const headers=p.responseHeaders||{};
+  const contentType=headers['Content-Type']||headers['content-type']||'application/json';
+  const parts=['reticle mock set',`--id ${id}`,`--value-id ${id}`,`--method ${p.method||'GET'}`,`--url ${shellQuote(p.path||'/')}`,'--match exact',`--status ${status}`,`--content-type ${shellQuote(contentType)}`];
+  if(p.host){parts.push(`--host ${shellQuote(p.host)}`);}
+  if(bodyPath){parts.push(`--body-file ${shellQuote(bodyPath)}`);}else{parts.push(`--body ${shellQuote('')}`);}
+  return parts.join(' ');
+}
+function canCopyAsMock(tx){const p=tx.payload||{};return !(p.tunnel&&!p.mitm);}
 function isPresent(value){return value!==undefined&&value!==null&&value!==''&&value!=='<null>';}
 function eventMillis(event){
   const payload=event.payload||{};
@@ -171,11 +215,16 @@ function mergeEvent(event){
   if(index>=0){state.events[index]=event;}else{state.events.push(event);}
   state.events.sort((a,b)=>eventMillis(a)-eventMillis(b)||a.id.localeCompare(b.id));
 }
-function renderTimeline(){
+function updateStatusLine(){
   const actions=actionEvents(), runtimes=runtimeEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   const live=selectedIsCurrent()?'live':'history';
   const mockCount=allNetworks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
   statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${runtimes.length} runtime advisory(s), ${networks.length}/${allNetworks.length} network request(s), ${mockCount} mock(s)`;
+}
+function renderTimeline(){
+  updateStatusLine();
+  if(state.view==='mocks'){renderNetworkGroups();return;}
+  const actions=actionEvents(), runtimes=runtimeEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   if(actions.length===0&&allNetworks.length===0&&runtimes.length===0){
     timeline.className='';
     timeline.innerHTML='<div class="empty">No evidence yet. Run reticle act or enable the proxy while serve is running.</div>';
@@ -187,6 +236,37 @@ function renderTimeline(){
   attachScreenshotPreviews();
   attachCopyChips();
   hydrateDiffs();
+  hydrateBodyPreviews();
+}
+function groupSection(title,count,txs){
+  const cards=[...txs].sort((a,b)=>eventMillis(a.request||a.event)-eventMillis(b.request||b.event)).map(networkCard).join('');
+  return `<section class="group"><div class="group-head"><h2>${escapeHtml(title)}</h2><div class="count">${escapeHtml(count)}</div></div><div class="group-list">${cards}</div></section>`;
+}
+function renderNetworkGroups(){
+  const networks=networkTransactions().filter(networkFilterMatches);
+  if(networks.length===0){
+    timeline.className='';
+    timeline.innerHTML='<div class="empty">No network requests match the current filters. Enable the proxy while serve is running, or relax the filters above.</div>';
+    return;
+  }
+  timeline.className='';
+  const groups=[];
+  const byRule=new Map();
+  for(const tx of networks.filter((tx)=>tx.payload&&tx.payload.mocked)){
+    const key=(tx.payload&&tx.payload.mockRuleId)||'(unknown rule)';
+    if(!byRule.has(key)){byRule.set(key,[]);}
+    byRule.get(key).push(tx);
+  }
+  for(const [ruleId,txs] of byRule){groups.push(groupSection(`Mock rule: ${ruleId}`,`${txs.length} hit(s)`,txs));}
+  const byHost=new Map();
+  for(const tx of networks.filter((tx)=>!(tx.payload&&tx.payload.mocked))){
+    const key=(tx.payload&&tx.payload.host)||'(unknown host)';
+    if(!byHost.has(key)){byHost.set(key,[]);}
+    byHost.get(key).push(tx);
+  }
+  for(const [host,txs] of byHost){groups.push(groupSection(`Host: ${host}`,`${txs.length} request(s)`,txs));}
+  timeline.innerHTML=groups.join('');
+  attachCopyChips();
   hydrateBodyPreviews();
 }
 function refLink(event,ref,label){
@@ -201,11 +281,12 @@ function screenshot(event,ref){
 function node(event,kind,time,title,phase,badge,body){
   return `<div class="node ${kind}"><div class="event-side"><div class="time">${escapeHtml(time)}</div><div class="card"><div class="card-head"><div><div class="phase">${escapeHtml(phase)}</div><div class="title">${escapeHtml(title)}</div><div class="meta">${escapeHtml(event.id)} &middot; ${escapeHtml(event.payload&&event.payload.packageName||event.target||'unknown target')}</div></div><div class="badge">${escapeHtml(badge)}</div></div><div class="body">${body}</div></div></div><div class="marker"></div><div class="network-side"></div></div>`;
 }
-function networkNode(tx){
+function networkCard(tx){
   const p=tx.payload||{}, event=tx.event, status=p.error?'error':(p.status||'pending'), duration=isPresent(p.durationMs)?`${p.durationMs} ms`:'pending';
   const mode=p.mocked?(p.mitm?'MOCK HTTPS MITM':'MOCK HTTP'):(p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP'));
   const badge=p.mocked?'MOCK':status;
   const mockMeta=p.mocked?` <button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockRuleId||'')}">rule ${escapeHtml(p.mockRuleId||'unknown')}</button><button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockValueId||'')}">value ${escapeHtml(p.mockValueId||'unknown')}</button>`:'';
+  const mockAction=canCopyAsMock(tx)?` <button class="copy-chip" type="button" data-copy="${escapeHtml(mockCommandFor(tx))}">copy as mock</button>`:'';
   const facts=`<div class="facts"><div class="fact"><span>Host</span><b title="${escapeHtml(p.host||'unknown')}">${escapeHtml(p.host||'unknown')}</b></div><div class="fact"><span>Status</span><b>${escapeHtml(status)}</b></div><div class="fact"><span>Duration</span><b>${escapeHtml(duration)}</b></div></div>`;
   const refs=Object.keys(tx.refs||{}), requestRef=refs.find((ref)=>ref.startsWith('requestBody.')), responseRef=refs.find((ref)=>ref.startsWith('responseBody.'));
   const body=(label,ref,bytes,truncated)=>!ref?'':`<div class="net-section"><h3>${label} body</h3><div class="artifact">${refLink(event,ref,`${bytes||0} bytes${truncated?' · truncated':''}`)}</div><pre class="body-preview" data-event-id="${escapeHtml(event.id)}" data-ref="${escapeHtml(ref)}">Loading preview...</pre></div>`;
@@ -213,7 +294,11 @@ function networkNode(tx){
   const refsBlock=refs.length?`<details class="net-section"><summary>Artifact refs</summary><pre>${pretty(tx.refs)}</pre></details>`:'';
   const request=`<div class="net-section"><h3>Request</h3><div class="meta">${escapeHtml(p.method||'HTTP')} ${escapeHtml(p.path||'/')}</div>${headers('request',p.requestHeaders)}${body('Request',requestRef,p.requestBodyBytes,p.requestBodyTruncated)}</div>`;
   const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
-  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side"><div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${mockMeta}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div></div></div>`;
+  return `<div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${mockMeta}${mockAction}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div>`;
+}
+function networkNode(tx){
+  const event=tx.event;
+  return `<div class="node network"><div class="event-side"><div class="time">${escapeHtml(formatTime(eventMillis(tx.request||event)))}</div></div><div class="marker"></div><div class="network-side">${networkCard(tx)}</div></div>`;
 }
 function runtimeNode(event){
   const p=event.payload||{}, kind=p.kind||'runtime advisory';
@@ -319,6 +404,9 @@ function connectStream(){
 }
 sessionPicker.addEventListener('change',async()=>{state.selectedSession=sessionPicker.value;if(state.stream){state.stream.close();state.stream=null;}await loadHistory();connectStream();});
 networkFilters.addEventListener('click',(event)=>{const button=event.target.closest('button[data-filter]');if(!button){return;}state.networkFilter=button.dataset.filter||'all';networkFilters.querySelectorAll('button').forEach((item)=>item.classList.toggle('active',item===button));renderTimeline();});
+networkStatusFilters.addEventListener('click',(event)=>{const button=event.target.closest('button[data-status]');if(!button){return;}state.networkStatusClass=button.dataset.status||'all';networkStatusFilters.querySelectorAll('button').forEach((item)=>item.classList.toggle('active',item===button));renderTimeline();});
+networkSearch.addEventListener('input',()=>{state.networkSearch=networkSearch.value.trim();renderTimeline();});
+viewToggle.addEventListener('click',(event)=>{const button=event.target.closest('button[data-view]');if(!button){return;}state.view=button.dataset.view||'timeline';viewToggle.querySelectorAll('button').forEach((item)=>item.classList.toggle('active',item===button));renderTimeline();});
 document.getElementById('lightbox-close').addEventListener('click',closeLightbox);
 lightbox.addEventListener('click',(event)=>{if(event.target===lightbox){closeLightbox();}});
 document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&!lightbox.hidden){closeLightbox();}});

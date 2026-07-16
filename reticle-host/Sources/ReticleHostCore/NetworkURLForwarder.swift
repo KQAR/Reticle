@@ -1,7 +1,18 @@
 import Foundation
 import NIOHTTP1
 
-/// Performs upstream HTTP forwarding without using the host's system proxy.
+/// Sink that receives a streamed upstream response: the head once, then zero or
+/// more body chunks as they arrive off the wire, then a single terminal
+/// `finish`. Implemented by the proxy exchange that forwards the response back
+/// to the client. Every callback arrives on URLSession's serial delegate queue.
+protocol UpstreamResponseSink: AnyObject, Sendable {
+    func receive(response: HTTPURLResponse)
+    func receive(bodyChunk: Data)
+    func finish(error: Error?)
+}
+
+/// Performs upstream HTTP forwarding without using the host's system proxy,
+/// streaming the response body chunk-by-chunk instead of buffering it whole.
 final class NetworkURLForwarder: @unchecked Sendable {
     static let shared = NetworkURLForwarder()
 
@@ -14,26 +25,21 @@ final class NetworkURLForwarder: @unchecked Sendable {
         // The resource timeout caps a transfer's TOTAL duration and silently
         // overrides any longer per-request timeout, so keep it well above what
         // callers can configure; stalls are still cut by the per-request idle
-        // timeout (request.timeoutInterval set in data(for:)).
+        // timeout (request.timeoutInterval set in stream(for:)).
         configuration.timeoutIntervalForResource = 600
-        // An inspection proxy must forward 3xx to the app rather than silently
-        // following them itself, or the app never sees the redirect and the
-        // trace only records the final hop. NoRedirectDelegate cancels the
-        // automatic follow so the redirect response passes straight through.
-        session = URLSession(
-            configuration: configuration,
-            delegate: NoRedirectDelegate(),
-            delegateQueue: nil
-        )
+        // Streaming and redirect suppression live on a per-task delegate (macOS
+        // 14+), so the session itself needs no delegate.
+        session = URLSession(configuration: configuration)
     }
 
-    /// Sends a proxied HTTP request upstream without blocking the proxy event loop.
-    func data(
+    /// Streams a proxied HTTP request upstream, delivering the response to `sink`
+    /// as it arrives without blocking the proxy event loop.
+    func stream(
         for head: HTTPRequestHead,
         url: URL,
         body: Data,
         timeout: TimeInterval,
-        completion: @escaping @Sendable (Result<(Data, HTTPURLResponse), Error>) -> Void
+        sink: UpstreamResponseSink
     ) -> NetworkForwardingTask {
         var request = URLRequest(url: url)
         request.httpMethod = head.method.rawValue
@@ -43,33 +49,35 @@ final class NetworkURLForwarder: @unchecked Sendable {
             request.setValue(header.value, forHTTPHeaderField: header.name)
         }
         request.httpBody = body.isEmpty ? nil : body
-        let task = session.dataTask(with: request) { data, response, error in
-            if let error {
-                completion(.failure(error))
-            } else if let data, let response {
-                guard let http = response as? HTTPURLResponse else {
-                    completion(.failure(NetworkForwardingError.nonHTTPResponse))
-                    return
-                }
-                completion(.success((data, http)))
-            } else {
-                completion(.failure(NetworkForwardingError.nonHTTPResponse))
-            }
-        }
+        let delegate = StreamingTaskDelegate(sink: sink)
+        let task = session.dataTask(with: request)
+        task.delegate = delegate
         task.resume()
-        return NetworkForwardingTask(task: task)
+        return NetworkForwardingTask(task: task, delegate: delegate)
     }
 }
 
+/// Handle to an in-flight upstream stream. `suspend`/`resume` back-pressure the
+/// upstream fetch when the client channel stops draining.
 final class NetworkForwardingTask: @unchecked Sendable {
     private let task: URLSessionDataTask
+    private let delegate: StreamingTaskDelegate
 
-    init(task: URLSessionDataTask) {
+    init(task: URLSessionDataTask, delegate: StreamingTaskDelegate) {
         self.task = task
+        self.delegate = delegate
     }
 
     func cancel() {
         task.cancel()
+    }
+
+    func suspend() {
+        task.suspend()
+    }
+
+    func resume() {
+        task.resume()
     }
 }
 
@@ -77,9 +85,39 @@ enum NetworkForwardingError: Error {
     case nonHTTPResponse
 }
 
-/// Cancels URLSession's automatic redirect following so 3xx responses are
-/// forwarded to the client unchanged.
-private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+/// Per-task URLSession delegate: forwards streamed head/body/completion to the
+/// sink and cancels URLSession's automatic redirect following so 3xx responses
+/// pass through to the client unchanged.
+final class StreamingTaskDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let sink: UpstreamResponseSink
+
+    init(sink: UpstreamResponseSink) {
+        self.sink = sink
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse else {
+            sink.finish(error: NetworkForwardingError.nonHTTPResponse)
+            completionHandler(.cancel)
+            return
+        }
+        sink.receive(response: http)
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        sink.receive(bodyChunk: data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        sink.finish(error: error)
+    }
+
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
