@@ -76,6 +76,18 @@ coordinate folding (CSS points are UIKit points, so the scale is normally 1.0).
 On any failure (JS timeout, detached view) the WebView remains an opaque view
 node — the honest L0 fallback.
 
+Borrowing Playwright's injected-script design (not its runtime — Playwright
+cannot attach to a system WKWebView), the walk additionally pierces **open
+shadow roots** and **same-origin iframes**: pierced elements carry a chained
+selector (`#shadow-host >>> #shadow-button`) and iframe content coordinates are
+folded into page space. Cross-origin frames stay opaque. And `act activate
+--css <chain>` performs an in-process DOM activation: the agent resolves the
+chain in the live document, runs an actionability check (attached / visible /
+enabled / receives pointer events — honest reasons on failure), then dispatches
+the full `pointerdown → mousedown → pointerup → mouseup → click` sequence. This
+needs no HID surface, so it is the web-content tap path for real devices (and
+for the iOS 26.2 simulator runtime where HID recognition is broken).
+
 ## Building & running
 
 ```

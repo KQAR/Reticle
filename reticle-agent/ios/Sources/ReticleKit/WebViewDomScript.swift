@@ -5,6 +5,11 @@ import Foundation
 /// KEEP IN SYNC with the Android agent's `WebViewDomScript.kt` — both platforms
 /// must emit the same element payload so the folded `domNode`s carry identical
 /// metadata keys on either side of the protocol.
+///
+/// The walk pierces OPEN shadow roots and same-origin iframes (borrowing
+/// Playwright's injected-script approach): pierced elements carry a chained
+/// selector (`#host >>> #inner`, resolvable by `WebActivationScript`), and
+/// iframe content coordinates are offset into page space.
 enum WebViewDomScript {
     static let script: String = """
         (function() {
@@ -22,7 +27,9 @@ enum WebViewDomScript {
             if (el.id) return "#" + cssEscape(el.id);
             var parts = [];
             var current = el;
-            while (current && current.nodeType === 1 && current !== document.documentElement) {
+            // Stop at the element's OWN document root (which may be an iframe's,
+            // not the top document's).
+            while (current && current.nodeType === 1 && current !== current.ownerDocument.documentElement) {
               var part = current.tagName.toLowerCase();
               if (current.classList && current.classList.length) {
                 part += "." + Array.prototype.slice.call(current.classList, 0, 2).map(cssEscape).join(".");
@@ -66,19 +73,48 @@ enum WebViewDomScript {
           function styleValue(style, key, max) {
             return clean(style ? style[key] : "", max || 40);
           }
-          function walk(el) {
+          // prefix: the " >>> " selector chain of the enclosing shadow host /
+          // iframe (empty at the top document). offset: accumulated page offset
+          // of the enclosing iframe viewport (0,0 at the top document).
+          function chainFor(el, prefix) {
+            var local = selectorFor(el);
+            return prefix ? prefix + " >>> " + local : local;
+          }
+          function walk(el, prefix, offset) {
             if (!el || count >= MAX) return null;
-            var style = window.getComputedStyle(el);
+            var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+            var style = win.getComputedStyle(el);
             if (!style || style.display === "none" || style.visibility === "hidden") return null;
             var rect = el.getBoundingClientRect();
+            var left = rect.left + offset.x;
+            var top = rect.top + offset.y;
+            var chain = chainFor(el, prefix);
             var children = [];
             for (var i = 0; i < el.children.length && count < MAX; i++) {
-              var child = walk(el.children[i]);
+              var child = walk(el.children[i], prefix, offset);
               if (child) children.push(child);
             }
+            // Pierce an OPEN shadow root: same coordinate space as the host,
+            // selectors chain through the host.
+            if (el.shadowRoot) {
+              for (var s = 0; s < el.shadowRoot.children.length && count < MAX; s++) {
+                var shadowChild = walk(el.shadowRoot.children[s], chain, offset);
+                if (shadowChild) children.push(shadowChild);
+              }
+            }
+            // Pierce a same-origin iframe: content coordinates are relative to
+            // the frame viewport, so accumulate the frame's page offset.
+            // Cross-origin frames throw / return null — they stay opaque.
+            var frameDoc = null;
+            try { frameDoc = el.contentDocument; } catch (e) { frameDoc = null; }
+            if (frameDoc && frameDoc.body) {
+              var frameOffset = { x: left + el.clientLeft, y: top + el.clientTop };
+              var frameBody = walk(frameDoc.body, chain, frameOffset);
+              if (frameBody) children.push(frameBody);
+            }
             var inViewport = rect.width > 0 && rect.height > 0 &&
-              rect.right >= 0 && rect.bottom >= 0 &&
-              rect.left <= window.innerWidth && rect.top <= window.innerHeight;
+              left + rect.width >= 0 && top + rect.height >= 0 &&
+              left <= window.innerWidth && top <= window.innerHeight;
             if (!inViewport && children.length === 0) return null;
             count++;
             var id = clean(el.id, 120);
@@ -88,7 +124,7 @@ enum WebViewDomScript {
               tag: clean(tag, 40),
               id: id,
               className: clean(el.className, 160),
-              selector: selectorFor(el),
+              selector: chain,
               testId: clean(el.getAttribute("data-testid") || el.getAttribute("data-test-id") || id, 120),
               role: roleFor(el),
               name: clean(el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt"), 160),
@@ -104,8 +140,8 @@ enum WebViewDomScript {
               inputType: clean(el.getAttribute("type"), 40),
               disabled: !!el.disabled || el.getAttribute("aria-disabled") === "true",
               interactive: interactive(el),
-              left: rect.left + window.scrollX,
-              top: rect.top + window.scrollY,
+              left: left + window.scrollX,
+              top: top + window.scrollY,
               width: rect.width,
               height: rect.height,
               marginTop: styleValue(style, "marginTop"),
@@ -146,7 +182,7 @@ enum WebViewDomScript {
             viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,
             scrollX: window.scrollX || window.pageXOffset || 0,
             scrollY: window.scrollY || window.pageYOffset || 0,
-            root: walk(document.body || document.documentElement)
+            root: walk(document.body || document.documentElement, "", { x: 0, y: 0 })
           });
         })();
         """
