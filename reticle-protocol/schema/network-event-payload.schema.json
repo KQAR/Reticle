@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reticle.dev/schema/network-event-payload.schema.json",
+  "title": "Reticle proxy network.* event payload",
+  "description": "Typed shape of the payload carried by proxy-sourced network.request / network.response / network.error events. The host proxy is the sole producer; this schema pins the fields so the Swift emitter and any consumer cannot silently drift.",
+  "type": "object",
+  "required": ["requestId", "scheme", "method", "url", "host", "port", "path", "startMillis", "tunnel", "mitm"],
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Stable id shared by the request/response/error events of one transaction.",
+      "type": "string",
+      "minLength": 1
+    },
+    "scheme": {
+      "type": "string",
+      "minLength": 1
+    },
+    "method": {
+      "type": "string",
+      "minLength": 1
+    },
+    "url": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "path": {
+      "type": "string"
+    },
+    "startMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "endMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "durationMs": {
+      "description": "endMillis - startMillis, present only alongside endMillis.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "description": "HTTP status when a response (or mock) is available.",
+      "type": "integer"
+    },
+    "error": {
+      "description": "Proxy or upstream failure text; present on network.error.",
+      "type": "string"
+    },
+    "tunnel": {
+      "description": "True for HTTPS CONNECT tunnel observations.",
+      "type": "boolean"
+    },
+    "mitm": {
+      "description": "True only for decrypted HTTPS requests admitted by the MITM allowlist.",
+      "type": "boolean"
+    },
+    "requestHeaders": {
+      "description": "Display-safe request headers; sensitive values are redacted before logging.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "responseHeaders": {
+      "description": "Display-safe response headers; sensitive values are redacted before logging.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "requestBodyBytes": {
+      "description": "Full captured request body size in bytes, present when a body was stored.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "responseBodyBytes": {
+      "description": "Full captured response body size in bytes, present when a body was stored.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "requestBodyTruncated": {
+      "description": "True when the stored request artifact is capped below the full body size.",
+      "type": "boolean"
+    },
+    "responseBodyTruncated": {
+      "description": "True when the stored response artifact is capped below the full body size.",
+      "type": "boolean"
+    },
+    "mocked": {
+      "description": "True when the proxy returned a configured mock instead of contacting upstream.",
+      "type": "boolean"
+    },
+    "mockRuleId": {
+      "type": "string"
+    },
+    "mockValueId": {
+      "type": "string"
+    }
+  }
+}

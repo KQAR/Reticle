@@ -173,10 +173,31 @@ normalized network events into the same event stream:
 - `payload.requestBodyTruncated`, `payload.responseBodyTruncated`: true when the
   stored artifact was capped below the full body size.
 
+The `network.*` payload has its own authoritative typed schema at
+`reticle-protocol/schema/network-event-payload.schema.json` (the event envelope's
+`payload` is otherwise open). The Swift host is the sole producer; a Kotlin
+contract test validates the golden fixtures against the schema, and a Swift test
+pins the emitter's field set to the same schema so neither side can drift.
+Golden fixtures: `network-request-event.golden.json`,
+`network-response-event.golden.json`, `network-error-event.golden.json`.
+
+Responses are **streamed** back to the client as they arrive off the upstream
+socket, not buffered whole. An identity body with a known length is forwarded
+under its original `Content-Length`; a decoded or unknown-length body is
+forwarded under `Transfer-Encoding: chunked`. A slow client back-pressures the
+upstream fetch (the transfer is suspended until the client drains), so a large
+response cannot force the daemon to hold it all in memory. The terminal
+`network.response` (or `network.error`) event is emitted when the stream
+finishes, so a consumer polling immediately after the client's last byte may
+briefly see the response before its event lands.
+
 Request and response bodies are never inlined. If captured, they are written
 under the session directory and referenced through `refs`, for example
-`requestBody.<requestId>` or `responseBody.<requestId>`. Body refs are subject to
-the same artifact endpoint restrictions as screenshots and trace manifests.
+`requestBody.<requestId>` or `responseBody.<requestId>`. The stored response
+artifact is capped at the body limit while the full body still reaches the
+client; `responseBodyBytes` reports the true transfer size and
+`responseBodyTruncated` flags the cap. Body refs are subject to the same artifact
+endpoint restrictions as screenshots and trace manifests.
 
 Android device capture uses host-controlled proxy settings (`adb reverse` plus
 global `http_proxy`) and restores the previous proxy value when the daemon exits.
@@ -203,14 +224,19 @@ app behavior. The daemon persists mock configuration next to the session:
 Rules match only traffic visible to the host proxy. Plain HTTP can be mocked
 directly. HTTPS requests can be mocked only after MITM decryption; opaque CONNECT
 tunnels expose only the target host/port and are not mockable in v1. Matching is
-method-scoped. A rule `url` that starts with `/` matches the request path;
-otherwise it matches the full URL. `match` is `exact` or `prefix`. Optional
-`host` narrows a rule to one hostname or a wildcard suffix such as
-`*.example.test`. Optional `query` is a JSON object; every declared key/value
-must be present in the request query, while extra query parameters are allowed.
-Enabled rules are evaluated by descending `priority`, then stable rule order.
-`prefix` is a raw string prefix; use `exact` for short paths when a broader
-prefix would accidentally cover unrelated endpoints.
+method-scoped, and `method` may be `ANY` to match every method. A rule `url` that
+starts with `/` matches the request path; otherwise it matches the full URL.
+`match` is `exact`, `prefix`, or `regex`. A `regex` rule's `url` is a regular
+expression (validated at upsert) matched against both the request path and the
+full URL, so either an anchored path pattern (`^/api/users/\d+$`) or a
+full-URL pattern works. Optional `host` narrows a rule to one hostname or a
+wildcard suffix such as `*.example.test`. Optional `query` is a JSON object;
+every declared key/value must be present in the request query (extra query
+parameters are allowed), and a value of `"*"` is a presence-only predicate
+(the key must exist with any value). Enabled rules are evaluated by descending
+`priority`, then stable rule order. `prefix` is a raw string prefix; use `exact`
+for short paths when a broader prefix would accidentally cover unrelated
+endpoints.
 
 The CLI manages the same REST API:
 
@@ -243,11 +269,18 @@ previous/current PID and runtime details. The panel uses a centered axis with a
 network request lane.
 `network.*` events are grouped by `requestId` into request cards with method,
 URL, status, duration, MITM/tunnel/mock mode, request/response headers, body
-artifact links, small text previews for captured bodies, filter buttons for
-MOCK/ERROR/MITM/TUNNEL, and copyable mock rule/value ids when present. Diff
-previews rank
-user-visible changes ahead of structural churn, and missing screenshot artifacts
-render inline errors.
+artifact links, small text previews for captured bodies, and copyable mock
+rule/value ids when present. Network cards can be filtered by mode
+(MOCK/ERROR/MITM/TUNNEL), by status class (2xx/3xx/4xx/5xx), and by a free-text
+search over method/url/host/path/status/mock ids — the three combine. A view
+toggle switches between the interleaved **Timeline** and a **Mock groups** view
+that groups mocked requests under their mock rule (with hit counts) and the rest
+by host. Each network card carries a **copy as mock** chip that assembles a
+ready-to-run `reticle mock set` command (method, path, host, status,
+content-type, and `--body-file` pointing at the captured response artifact) and
+copies it to the clipboard — the panel stays display-only and never mutates mock
+state itself. Diff previews rank user-visible changes ahead of structural churn,
+and missing screenshot artifacts render inline errors.
 
 The session picker loads `GET /sessions` and can switch from the live current
 session to a persisted historical session. Current keeps the SSE stream open;

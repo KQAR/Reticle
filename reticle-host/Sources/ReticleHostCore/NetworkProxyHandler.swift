@@ -20,6 +20,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     private var body = Data()
     private var handlingTunnel = false
     private var upstreamTask: NetworkForwardingTask?
+    private var upstreamPaused = false
 
     init(
         store: EventStore,
@@ -73,6 +74,21 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         upstreamTask = nil
     }
 
+    func channelWritabilityChanged(context: ChannelHandlerContext) {
+        // Back-pressure the upstream fetch when the client stops draining so a
+        // slow client can't make us buffer an unbounded response in memory.
+        guard let upstreamTask else {
+            context.fireChannelWritabilityChanged()
+            return
+        }
+        if context.channel.isWritable {
+            if upstreamPaused { upstreamPaused = false; upstreamTask.resume() }
+        } else {
+            if !upstreamPaused { upstreamPaused = true; upstreamTask.suspend() }
+        }
+        context.fireChannelWritabilityChanged()
+    }
+
     private func forwardHTTP(head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
         let requestId = UUID().uuidString
         let start = currentMillis()
@@ -106,37 +122,28 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         }
         pauseReads(context: context)
         let executor = ChannelContextExecutor(context)
-        let requestPayload = payload
-        let requestRefs = refs
-        upstreamTask = NetworkURLForwarder.shared.data(for: head, url: target.url, body: body, timeout: upstreamTimeoutSeconds) { result in
-            executor.execute { context in
-                self.upstreamTask = nil
-                guard context.channel.isActive else { return }
-                switch result {
-                case .success(let (responseData, response)):
-                    var responseRefs = requestRefs
-                    var responsePayload = requestPayload
-                    responsePayload.endMillis = currentMillis()
-                    responsePayload.status = response.statusCode
-                    responsePayload.responseHeaders = NetworkHeaders.response(response.allHeaderFields)
-                    if let stored = try? self.bodyStore.store(responseData, requestId: requestId, role: "response") {
-                        responseRefs[stored.refName] = stored.path
-                        responsePayload.responseBodyBytes = stored.bytes
-                        responsePayload.responseBodyTruncated = stored.truncated
-                    }
-                    _ = try? self.store.append(self.factory.event(.response, payload: responsePayload, refs: responseRefs))
-                    self.write(responseData, response: response, version: head.version, context: context)
-                case .failure(let error):
-                    // Reuse the request payload so the error event keeps the
-                    // real method/headers/body refs (the MITM path already
-                    // does); rebuilding from the target alone recorded the
-                    // method as "UNKNOWN".
-                    self.emitError(base: requestPayload, refs: requestRefs, message: "\(error)")
-                    self.writeError(.badGateway, context: context)
-                }
-                self.resumeReads(context: context)
+        let exchange = ProxyStreamingExchange(
+            executor: executor,
+            store: store,
+            bodyStore: bodyStore,
+            factory: factory,
+            clientVersion: head.version,
+            requestMethod: head.method.rawValue,
+            requestId: requestId,
+            requestPayload: payload,
+            requestRefs: refs,
+            onFinish: { [weak self] in
+                self?.upstreamTask = nil
+                self?.upstreamPaused = false
             }
-        }
+        )
+        upstreamTask = NetworkURLForwarder.shared.stream(
+            for: head,
+            url: target.url,
+            body: body,
+            timeout: upstreamTimeoutSeconds,
+            sink: exchange
+        )
     }
 
     private func handleConnect(_ head: HTTPRequestHead, context: ChannelHandlerContext) {
@@ -277,27 +284,6 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         write(status: mock.value.status, headers: mock.value.headers, contentType: mock.value.contentType, data: mock.body, version: version, context: context)
     }
 
-    private func write(_ data: Data, response: HTTPURLResponse, version: HTTPVersion, context: ChannelHandlerContext) {
-        var headers = HTTPHeaders()
-        for (name, value) in response.allHeaderFields {
-            guard let name = name as? String else { continue }
-            guard ProxyHopByHopHeaders.shouldForwardResponseHeader(name, in: response.allHeaderFields) else { continue }
-            // URLSession hands us a decoded body; forwarding the upstream
-            // Content-Encoding/Content-Length would make the client try to
-            // decode again. We re-set Content-Length below from the decoded size.
-            let lower = name.lowercased()
-            if lower == "content-encoding" || lower == "content-length" { continue }
-            headers.replaceOrAdd(name: name, value: "\(value)")
-        }
-        headers.replaceOrAdd(name: "Content-Length", value: "\(data.count)")
-        let head = HTTPResponseHead(version: version, status: HTTPResponseStatus(statusCode: response.statusCode), headers: headers)
-        var buffer = context.channel.allocator.buffer(capacity: data.count)
-        buffer.writeBytes(data)
-        context.write(wrapOutboundOut(.head(head)), promise: nil)
-        context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
-    }
-
     private func write(status: Int, headers: [String: String], contentType: String, data: Data, version: HTTPVersion, context: ChannelHandlerContext) {
         var responseHeaders = HTTPHeaders()
         var hasContentType = false
@@ -335,13 +321,6 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
 
     private func pauseReads(context: ChannelHandlerContext) {
         _ = context.channel.setOption(ChannelOptions.autoRead, value: false)
-    }
-
-    private func resumeReads(context: ChannelHandlerContext) {
-        _ = context.channel.setOption(ChannelOptions.autoRead, value: true)
-        if context.channel.isActive {
-            context.channel.read()
-        }
     }
 
     private func emitError(requestId: String, target: HTTPProxyTarget? = nil, message: String, start: Int64) {

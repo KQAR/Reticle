@@ -2,7 +2,8 @@
 
 [English](roadmap.md) | **简体中文**
 
-状态:路线图与当前状态文档(2026-07-15 更新,对应 0.7.0)。记录了将 Reticle 从单
+状态:路线图与当前状态文档(2026-07-16 更新,对应 0.7.0 及 Phase 2/3 的流式/schema/
+面板收尾)。记录了将 Reticle 从单
 平台 Android CLI 演进为多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定
 方向。`docs/architecture.md` 描述当前实现的操作细节。最后一节**下一步提案:证据
 工作流 + 安全证据线**记录了一组尚未构建、建在 Phase 1–3 已落地原语之上的提案。
@@ -197,9 +198,9 @@ JDWP/breakpoint 怪癖,不是 host 或边界问题。因此 `ui report` 是用**
 1080×2412 PNG、`--region "《隐私政策》"` 解析到精确坐标)。
 
 `reticle serve` 的 daemon、事件总线、Web 面板、HTTP/HTTPS 代理、MITM lane 与
-session 级网络 mock 已落在 Swift host。**完整 Swift host 仍待办的:** 更完善的
-代理并发/流式转发、类型化 network event schema、如果后续明确选择则加入面板反向驱动,
-以及一个流式 `logs --follow`。JDWP 永不重写。
+session 级网络 mock 已落在 Swift host。流式代理转发与类型化 `network.*` schema 也已
+落地(见下方 Phase 2)。**完整 Swift host 仍待办的:** 如果后续明确选择则加入面板反向
+驱动,以及一个流式 `logs --follow`。JDWP 永不重写。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 
@@ -465,14 +466,27 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
 - 已完成:`reticle serve`、事件存储、session 模型、SSE/REST 表面、action trace
   ingestion、纯 host HTTP 代理、设备自动配代理、CA 签发、可选 HTTPS MITM、以及
   session 级网络 mock。
-- 下一步:把剩余同步/大 body 边界推进到更流式的 NIO 转发,补 `network.*` 类型化
-  schema,并在不让 mock 状态耦合进 EventStore 的前提下增强 matcher 语义。
+- 已完成(0.7.x 收尾):**流式上游转发**——响应按块转发(identity 走
+  `Content-Length`,解码/未知长度走 chunked),带客户端驱动的背压,存档只保留有界
+  前缀,大 body 不再整体驻留在 daemon 内存;**类型化 `network.*` schema**
+  (`reticle-protocol/schema/network-event-payload.schema.json`)加 request/response/
+  error 三个 golden fixture,由 Kotlin 契约测试校验,并用 Swift 字段集测试把发射端
+  钉死到同一 schema;以及**更丰富的 mock 匹配**——`regex`(upsert 时校验,对 path 与
+  完整 URL 都尝试)、`ANY` method 通配、query `"*"` 存在性谓词,全部在
+  `NetworkMockStore` 内实现,mock 状态仍与 EventStore 解耦。
+- 下一步:把类型化 schema 覆盖扩展到其余事件族(action / runtime payload),并在出现
+  具体用例时为 header/body 增加 matcher 谓词。
 
 ### Phase 3 —— Web 面板
 - 已完成:localhost 只读证据面板,展示 action trace、截图/产物、network lane 卡片、
   body 预览、MITM/tunnel/mock 模式、以及 mock rule/value id。
-- 下一步:增加网络过滤器、按 mock 聚合、以及可选的"从已捕获请求生成 mock"工作流;
-  除非后续产品明确改变边界,面板仍保持 display-only。
+- 已完成(0.7.x 收尾):**网络过滤器**——模式(MOCK/ERROR/MITM/TUNNEL)、状态类
+  (2xx/3xx/4xx/5xx)、以及对 method/url/host/path/status/mock id 的自由文本搜索,三者
+  可组合;一个 **Mock groups** 视图切换,把已 mock 的请求按其规则聚合(含命中次数),其余
+  按 host 聚合;以及每张网络卡片上的 **copy as mock** 按钮,拼装出可直接运行的
+  `reticle mock set` 命令(含指向已捕获响应的 `--body-file`)复制到剪贴板。面板保持
+  display-only——只产出命令供用户运行,自身不 POST mock 状态。
+- 下一步:仅当下方 deferred 问题被回答(会强制双向传输)时再考虑反向驱动;否则面板边界不变。
 
 ### Phase 4 —— 多平台
 - iOS / 鸿蒙 agent 在各自的构建系统里,遵循协议 spec。host 与面板复用;每个新平台

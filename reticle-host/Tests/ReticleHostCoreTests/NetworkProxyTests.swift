@@ -26,6 +26,11 @@ struct NetworkProxyTests {
         )
 
         #expect(response.contains("200 OK"))
+        // Streaming emits the terminal response event when the upstream stream
+        // finishes, which can land just after the client has already read the
+        // full content-length body — so wait for it rather than assuming it is
+        // synchronous with the client's last byte.
+        #expect(waitForEvent(in: store) { $0.type == "network.response" })
         let networkEvents = store.events().filter { $0.source == "proxy" }
         #expect(networkEvents.map(\.type).contains("network.request"))
         #expect(networkEvents.map(\.type).contains("network.response"))
@@ -39,6 +44,23 @@ struct NetworkProxyTests {
         } else {
             Issue.record("missing response headers")
         }
+    }
+
+    /// Polls the event store until `predicate` matches an event or the timeout
+    /// elapses. The streamed proxy emits its terminal event on URLSession's
+    /// completion callback, so a consumer may briefly observe the client's
+    /// response before the matching event is recorded.
+    private func waitForEvent(
+        in store: EventStore,
+        timeoutSeconds: Double = 2,
+        _ predicate: (ReticleEventEnvelope) -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if store.events().contains(where: predicate) { return true }
+            usleep(5_000)
+        }
+        return store.events().contains(where: predicate)
     }
 
     @Test func httpProxyReturnsMockResponseAndPublishesMockMetadata() throws {
@@ -119,6 +141,7 @@ struct NetworkProxyTests {
 
         #expect(response.contains("200 OK"))
         #expect(!response.contains("mock"))
+        #expect(waitForEvent(in: store) { $0.type == "network.response" })
         #expect(store.events().filter { $0.type == "network.response" }.last?.payload["mocked"] == nil)
     }
 
@@ -165,6 +188,50 @@ struct NetworkProxyTests {
         #expect(slowDone.wait(timeout: .now() + 0.1) == .timedOut)
         upstream.stop()
         #expect(slowDone.wait(timeout: .now() + 2) == .success)
+    }
+
+    @Test func streamsFullBodyToClientWhileTruncatingStoredArtifact() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let bodyBytes = 200 * 1024
+        let upstream = try LargeBodyHTTPServer(bodyBytes: bodyBytes)
+        defer { upstream.stop() }
+
+        let limit = 64 * 1024
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test", bodyLimitBytes: limit)
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let response = try readSocket(
+            port: proxy.port,
+            request: "GET http://127.0.0.1:\(upstream.port)/big HTTP/1.1\r\nHost: 127.0.0.1:\(upstream.port)\r\n\r\n",
+            timeoutSeconds: 5
+        )
+
+        // The client receives the whole body even though we only keep a bounded
+        // prefix as an artifact.
+        #expect(response.contains("200 OK"))
+        if let headerEnd = response.range(of: "\r\n\r\n") {
+            #expect(response.distance(from: headerEnd.upperBound, to: response.endIndex) == bodyBytes)
+        } else {
+            Issue.record("no header terminator in response")
+        }
+
+        #expect(waitForEvent(in: store) { $0.type == "network.response" })
+        let responseEvent = store.events().last { $0.type == "network.response" }
+        #expect(responseEvent?.payload["responseBodyBytes"] == .number(Double(bodyBytes)))
+        #expect(responseEvent?.payload["responseBodyTruncated"] == .bool(true))
+
+        // The stored artifact is capped at the configured limit, not the full body.
+        let ref = responseEvent?.refs.first { $0.key.hasPrefix("responseBody.") }
+        #expect(ref != nil)
+        if let path = ref?.value {
+            let stored = try Data(contentsOf: URL(fileURLWithPath: path))
+            #expect(stored.count == limit)
+        }
     }
 
     @Test func proxyDoesNotForwardHopByHopHeaders() throws {
@@ -304,6 +371,39 @@ struct NetworkProxyTests {
         #expect(matched?.value.id == "filtered")
         #expect(wrongHost == nil)
         #expect(wrongQuery == nil)
+    }
+
+    @Test func mockStoreSupportsRegexAnyMethodAndQueryWildcard() throws {
+        let root = try temporaryDirectory()
+        let session = root.appendingPathComponent("session", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let store = try NetworkMockStore(sessionDirectory: session)
+        _ = try store.upsertValue(NetworkMockValueRequest(id: "v", status: 200, headers: [:], body: "ok", contentType: nil))
+
+        // regex on the path, ANY method, and a presence-only query predicate.
+        _ = try store.upsertRule(NetworkMockRuleRequest(
+            id: "regex",
+            enabled: true,
+            priority: 10,
+            method: "ANY",
+            url: #"^/api/users/\d+$"#,
+            match: .regex,
+            query: ["token": "*"],
+            valueId: "v"
+        ))
+
+        // Any method matches, the numeric id matches the pattern, token present.
+        #expect(try store.resolve(NetworkMockRequest(method: "GET", url: "http://a.test/api/users/42?token=abc", path: "/api/users/42?token=abc"))?.value.id == "v")
+        #expect(try store.resolve(NetworkMockRequest(method: "DELETE", url: "http://a.test/api/users/7?token=z", path: "/api/users/7?token=z"))?.value.id == "v")
+        // Non-numeric id fails the regex.
+        #expect(try store.resolve(NetworkMockRequest(method: "GET", url: "http://a.test/api/users/me?token=abc", path: "/api/users/me?token=abc")) == nil)
+        // Missing the required query key fails even though the path matches.
+        #expect(try store.resolve(NetworkMockRequest(method: "GET", url: "http://a.test/api/users/42", path: "/api/users/42")) == nil)
+
+        // An invalid regex is rejected at upsert rather than failing silently later.
+        #expect(throws: NetworkMockError.self) {
+            _ = try store.upsertRule(NetworkMockRuleRequest(id: "bad", enabled: true, priority: 1, method: "GET", url: "([", match: .regex, valueId: "v"))
+        }
     }
 
     @Test func mockStoreExportImportPreservesBinaryBodies() throws {
@@ -496,6 +596,56 @@ private final class RecordingHTTPServer: @unchecked Sendable {
         }
         response += "\r\nok"
         _ = response.withCString { ptr in send(connection, ptr, strlen(ptr), 0) }
+    }
+}
+
+/// Serves one identity response of `bodyBytes` 'A' characters with a
+/// Content-Length header, so the proxy takes the content-length streaming path.
+private final class LargeBodyHTTPServer: @unchecked Sendable {
+    let port: Int
+
+    private let fd: Int32
+    private let bodyBytes: Int
+
+    init(bodyBytes: Int) throws {
+        self.bodyBytes = bodyBytes
+        fd = try bindLoopbackSocket()
+        port = try boundPort(fd)
+        listen(fd, 4)
+        DispatchQueue.global().async { [self] in acceptOnce() }
+    }
+
+    func stop() {
+        shutdown(fd, SHUT_RDWR)
+        close(fd)
+    }
+
+    private func acceptOnce() {
+        let connection = accept(fd, nil, nil)
+        if connection < 0 { return }
+        defer {
+            shutdown(connection, SHUT_RDWR)
+            close(connection)
+        }
+        var request = Data()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = recv(connection, &buf, buf.count, 0)
+            if n <= 0 { break }
+            request.append(contentsOf: buf.prefix(n))
+            if request.range(of: Data("\r\n\r\n".utf8)) != nil { break }
+        }
+        var payload = Data("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(bodyBytes)\r\n\r\n".utf8)
+        payload.append(Data(repeating: UInt8(ascii: "A"), count: bodyBytes))
+        payload.withUnsafeBytes { raw in
+            var offset = 0
+            let base = raw.bindMemory(to: UInt8.self).baseAddress!
+            while offset < raw.count {
+                let sent = send(connection, base + offset, raw.count - offset, 0)
+                if sent <= 0 { break }
+                offset += sent
+            }
+        }
     }
 }
 

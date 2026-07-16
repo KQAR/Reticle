@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Proxy now **streams** upstream responses back to the client chunk-by-chunk
+  instead of buffering the whole body first: identity bodies are forwarded under
+  their original `Content-Length`, decoded/unknown-length bodies under
+  `Transfer-Encoding: chunked`. A slow client back-pressures the upstream fetch
+  (the transfer suspends until the client drains), and the stored response
+  artifact is capped at the body limit while the full body still reaches the app
+  (`responseBodyBytes` reports the true size, `responseBodyTruncated` flags the
+  cap). Shared by the plaintext and HTTPS-MITM paths.
+- Added a typed schema for proxy `network.*` payloads
+  (`reticle-protocol/schema/network-event-payload.schema.json`) plus
+  request/response/error golden fixtures. A Kotlin contract test validates the
+  fixtures against it, and a Swift test pins the host emitter's field set to the
+  same schema so the two ends can't drift.
+- Network mock matching gained `match=regex` (validated at upsert, matched
+  against both the request path and full URL), a `method=ANY` wildcard, and a
+  query `"*"` presence predicate (key must exist with any value).
+- Web panel: network cards can now be filtered by status class (2xx/3xx/4xx/5xx)
+  and a free-text search over method/url/host/path/status/mock ids, composable
+  with the existing mode filters; a new **Mock groups** view groups mocked
+  requests under their rule (with hit counts) and the rest by host; and each card
+  has a **copy as mock** chip that copies a ready-to-run `reticle mock set`
+  command (including `--body-file` for the captured response). The panel stays
+  display-only.
+
 ## 0.7.0 - 2026-07-14
 
 - `act type` now focuses the target field first: given a targeting selector

@@ -15,6 +15,7 @@ struct NetworkMockRule: Codable, Equatable {
 enum NetworkMockMatch: String, Codable {
     case exact
     case prefix
+    case regex
 }
 
 struct NetworkMockValue: Codable, Equatable {
@@ -202,6 +203,10 @@ public final class NetworkMockStore: @unchecked Sendable {
         guard !request.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw NetworkMockError.invalid("url is required")
         }
+        let match = request.match ?? .exact
+        if match == .regex, (try? NSRegularExpression(pattern: request.url)) == nil {
+            throw NetworkMockError.invalid("url is not a valid regular expression: \(request.url)")
+        }
         let host = normalizedHost(request.host)
         let query = normalizedQuery(request.query)
         lock.lock()
@@ -212,7 +217,7 @@ public final class NetworkMockStore: @unchecked Sendable {
             priority: request.priority ?? 0,
             method: request.method.uppercased(),
             url: request.url,
-            match: request.match ?? .exact,
+            match: match,
             host: host,
             query: query,
             valueId: request.valueId
@@ -365,7 +370,7 @@ public final class NetworkMockStore: @unchecked Sendable {
     func resolve(_ request: NetworkMockRequest) throws -> NetworkMockResult? {
         let snapshot = lock.withLock { rules.enumerated().map { ($0.offset, $0.element) } }
         let candidates = snapshot
-            .filter { _, rule in rule.enabled && rule.method == request.method.uppercased() && matches(rule, request: request) }
+            .filter { _, rule in rule.enabled && matchesMethod(rule.method, actual: request.method) && matches(rule, request: request) }
             .sorted {
                 if $0.1.priority != $1.1.priority { return $0.1.priority > $1.1.priority }
                 return $0.0 < $1.0
@@ -426,7 +431,18 @@ public final class NetworkMockStore: @unchecked Sendable {
             return actual == rule.url
         case .prefix:
             return actual.hasPrefix(rule.url)
+        case .regex:
+            // A regex often anchors on the path (`^/api/...`), so the literal-URL
+            // "starts with /" heuristic doesn't apply. Match against both the
+            // path and the full URL so either intent works.
+            return request.path.range(of: rule.url, options: .regularExpression) != nil
+                || request.url.range(of: rule.url, options: .regularExpression) != nil
         }
+    }
+
+    /// `ANY` is a method wildcard; every other value matches case-insensitively.
+    private func matchesMethod(_ expected: String, actual: String) -> Bool {
+        expected == "ANY" || expected == actual.uppercased()
     }
 
     private func matchesHost(_ expected: String, actual: String) -> Bool {
@@ -440,7 +456,12 @@ public final class NetworkMockStore: @unchecked Sendable {
 
     private func matchesQuery(_ expected: [String: String], actual: [String: String]) -> Bool {
         for (key, value) in expected {
-            guard actual[key] == value else { return false }
+            if value == "*" {
+                // Presence-only predicate: the key must exist with any value.
+                guard actual[key] != nil else { return false }
+            } else {
+                guard actual[key] == value else { return false }
+            }
         }
         return true
     }

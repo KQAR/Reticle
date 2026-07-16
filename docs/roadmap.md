@@ -2,7 +2,8 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: roadmap and current-state doc (updated 2026-07-15, tracking 0.7.0). Captures
+Status: roadmap and current-state doc (updated 2026-07-16, tracking 0.7.0 plus
+Phase 2/3 streaming + schema + panel follow-ups). Captures
 the agreed direction for evolving Reticle from a single-platform Android CLI into a
 multi-platform runtime harness with an integrated capture proxy and a live web panel.
 `docs/architecture.md` describes the current implementation in more operational
@@ -238,10 +239,10 @@ in Kotlin). All verified on a real device against the linked sample app
 PNG written, `--region "《隐私政策》"` resolved to a precise point).
 
 The daemon, Web panel, proxy, HTTPS MITM lane, and session-scoped network mocks
-now exist in `reticle serve`. **Still ahead for the full Swift host:** richer
-proxy concurrency/streaming, a typed network-event schema, reverse-drive panel
-controls if explicitly chosen later, and streaming `logs --follow`. JDWP is never
-rewritten.
+now exist in `reticle serve`. Streaming proxy forwarding and a typed `network.*`
+schema have since landed too (see Phase 2 below). **Still ahead for the full
+Swift host:** reverse-drive panel controls if explicitly chosen later, and
+streaming `logs --follow`. JDWP is never rewritten.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
@@ -539,17 +540,34 @@ Android first and complete; everything else reserved behind the spec + SPI.
 - Done: `reticle serve`, the event store, session model, SSE/REST surface,
   action-trace ingestion, pure-host HTTP proxy, device auto-proxy config, CA
   issuance, opt-in HTTPS MITM, and session-scoped network mocks.
-- Next: move remaining synchronous/large-body edges toward streaming NIO
-  forwarding, add typed schema coverage for `network.*`, and make matcher
-  semantics richer without coupling mock state to the event store.
+- Done (0.7.x follow-ups): **streaming upstream forwarding** — responses are
+  forwarded chunk-by-chunk (identity under `Content-Length`, decoded/unknown
+  under chunked) with client-driven back-pressure and a bounded stored-artifact
+  prefix, so a large body no longer buffers whole in the daemon; **typed
+  `network.*` schema** (`reticle-protocol/schema/network-event-payload.schema.json`)
+  plus request/response/error golden fixtures, validated by a Kotlin contract
+  test and pinned to the Swift emitter by a Swift field-set test; and **richer
+  mock matching** — `regex` match (validated at upsert, tried against path and
+  full URL), `ANY` method wildcard, and query `"*"` presence predicates, all in
+  `NetworkMockStore` with mock state still decoupled from the event store.
+- Next: expand typed schema coverage to the remaining event families (action /
+  runtime payloads) and add matcher predicates for headers/body when a concrete
+  use case appears.
 
 ### Phase 3 — Web panel
 - Done: a localhost read-only evidence panel showing action traces,
   screenshots/artifacts, network lane cards, body previews, MITM/tunnel/mock
   mode, and mock rule/value ids.
-- Next: add network filters, mock-focused grouping, and optional "create mock
-  from captured request" workflows while keeping the panel display-only unless a
-  later product decision changes that boundary.
+- Done (0.7.x follow-ups): **network filters** — mode (MOCK/ERROR/MITM/TUNNEL),
+  status class (2xx/3xx/4xx/5xx), and a free-text search over
+  method/url/host/path/status/mock ids, all composable; a **Mock groups** view
+  toggle that groups mocked requests under their rule (with hit counts) and the
+  rest by host; and a **copy as mock** chip on each network card that assembles a
+  ready-to-run `reticle mock set` command (including `--body-file` for the
+  captured response) to the clipboard. The panel stays display-only — it emits a
+  command for the user to run, it does not POST mock state itself.
+- Next: revisit reverse-drive only if the deferred question below is answered
+  (would force a bidirectional transport); otherwise the panel boundary holds.
 
 ### Phase 4 — Multi-platform
 - iOS / HarmonyOS agents in their own build systems, conforming to the protocol
