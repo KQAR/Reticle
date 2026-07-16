@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- WebView DOM walk (both platforms, shared script) now pierces **open shadow
+  roots** and **same-origin iframes**, Playwright-style: pierced elements fold
+  in as regular domNodes carrying a chained selector
+  (`#shadow-host >>> #shadow-button`), with iframe content coordinates offset
+  into page space. Cross-origin frames stay opaque. The sample's complex web
+  fixture moved its shadow/iframe section above the fold so the e2e assertion
+  doesn't sit on the viewport boundary.
+- iOS: `act activate --css <chain>` performs in-process DOM activation — the
+  agent resolves the selector chain in the live document (through shadow roots
+  and same-origin iframes), runs a Playwright-style actionability check
+  (attached / visible / enabled / receives pointer events, with honest failure
+  reasons like `disabled` or `no_match`), and dispatches the full
+  `pointerdown → mousedown → pointerup → mouseup → click` sequence. Needs no
+  HID surface: this is the web tap path for real devices and for simulator
+  runtimes with broken HID recognition. e2e asserts shadow/iframe chain
+  activation plus an observable onclick side effect.
+
 - iOS: multi-region decomposition reached parity with Android for UIKit text.
   The agent's new `RegionProbe` emits `span` regions from `.link` attribute runs
   (exact TextKit rects; UITextView lends its own stack, UILabel gets a rebuilt

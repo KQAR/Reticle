@@ -175,6 +175,15 @@ object SampleWebFixtures {
               </button>
             </section>
 
+            <section id="boundaries">
+              <div id="shadow-host" data-testid="complex.shadowHost">Shadow host</div>
+              <iframe id="fixture-frame" data-testid="complex.iframe"
+                srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'>Inside frame</button>">
+              </iframe>
+              <p id="hidden-display">Hidden by display</p>
+              <p id="hidden-visibility">Hidden by visibility</p>
+            </section>
+
             <section id="layout">
               <button id="scaled-button" data-testid="complex.scaledButton"
                 onclick="this.innerText='Scaled clicked'">
@@ -195,15 +204,6 @@ object SampleWebFixtures {
                 alt="Inline SVG photo"
                 src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='32'%3E%3Crect width='48' height='32' fill='%2334a853'/%3E%3Ctext x='6' y='21' fill='white'%3EIMG%3C/text%3E%3C/svg%3E">
               <div id="background-card" data-testid="complex.backgroundImage" title="Background image card"></div>
-            </section>
-
-            <section id="boundaries">
-              <div id="shadow-host" data-testid="complex.shadowHost">Shadow host</div>
-              <iframe id="fixture-frame" data-testid="complex.iframe"
-                srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'>Inside frame</button>">
-              </iframe>
-              <p id="hidden-display">Hidden by display</p>
-              <p id="hidden-visibility">Hidden by visibility</p>
             </section>
 
             <button id="fixed-cta" data-testid="complex.fixedCta"

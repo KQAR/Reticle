@@ -71,6 +71,16 @@ struct Router {
 
     private func activate(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(ActivationRequest.self, from: body)
+        #if canImport(WebKit)
+        // A CSS selector targets a domNode: resolve + dispatch inside the web
+        // content from THIS (server) thread, which can block on the JS round
+        // trip (the main thread cannot).
+        if let css = req.selector.cssSelector, !css.isEmpty {
+            let transport = MainThread.sync { SnapshotCapture().captureForTransport() }
+            let result = WebActivation.activate(selectorChain: css, pending: transport.pendingWebViews)
+            return try json(result)
+        }
+        #endif
         let result = try MainThread.sync { ActivationEngine().activate(req) }
         return try json(result)
     }
