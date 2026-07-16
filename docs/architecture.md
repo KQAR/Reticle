@@ -407,15 +407,34 @@ exposes), while `ui node` always returns the richer view-tree node.
 
 | Module | Kind | Contents |
 | --- | --- | --- |
-| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol |
+| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol (one implementation of `reticle-protocol`) |
+| `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, and the host-side tree/compact/node renderers. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
+| `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
 | `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
-| `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64); owns no device code — every device command is an RPC call to the native helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. |
-| `sample-app` | Android app | Demo linking the agent, proving the round trip |
+| `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`): Android device commands are RPC calls to the native Kotlin helper; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. |
+| `sample-app` | Android app | Demo linking the Android agent, proving the round trip |
+| `sample-app-ios` | iOS app | Demo with a `linked` target (links `ReticleKit`) and a `noagent` target (injection test), proving the iOS round trip |
 
-(`reticle-agent/` is a grouping directory — no build script of its own; future
-`ios/` and `harmony/` agents are siblings of `android/`, built by SwiftPM/hvigor
-and invisible to Gradle.)
+(`reticle-agent/` is a grouping directory — no build script of its own; the
+`ios/` agent is a sibling of `android/`, built by SwiftPM (`harmony/` by hvigor
+when it lands) and invisible to Gradle.)
+
+## The declarative-UI boundary: SwiftUI (iOS)
+
+The iOS analogue of the Compose rule above. Reticle does **not** synthesize a
+SwiftUI view tree or invent selectors from SwiftUI's private backing views
+(`_UIGraphicsView`, `CGDrawingView`, …). A SwiftUI element is a valid
+movement/input target only when it is exposed through the platform
+**accessibility** tree — the hosting view's `accessibilityElements` (read in one
+pass via the private `_accessibilityElements` accessor to stay O(N) on large
+hosting containers, with a guard for `CGDrawingView` returning `NSNotFound` from
+`accessibilityElementCount()`). Each such element becomes a `NodeKind.axElement`
+node. A SwiftUI element with no `.accessibilityIdentifier()` is therefore not
+addressable — this is a documented contract, not a bug. An optional, default-off
+`Mirror`-based reflection of a user `View`'s scalar `@State` (env
+`RETICLE_SWIFTUI_REFLECT=1`) is surfaced as evidence-tagged metadata, never as a
+selector.
 
 ## What stays on disk vs. what goes to the agent
 

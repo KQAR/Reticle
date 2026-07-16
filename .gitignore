@@ -17,3 +17,6 @@ reticle-report*/
 .build/
 # SwiftPM/Xcode per-user state (xcuserdata etc.)
 .swiftpm/
+
+# Generated iOS sample Xcode project (source of truth is xcode/project.yml)
+sample-app-ios/xcode/*.xcodeproj

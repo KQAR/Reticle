@@ -24,7 +24,7 @@
     },
     "platform": {
       "type": "string",
-      "description": "Source platform, e.g. \"android\". Reserved for ios/harmony."
+      "description": "Source platform: \"android\" or \"ios\". A free-form string (harmony and others reserved); consumers must not assume a closed set."
     },
     "screen": { "$ref": "#/$defs/ScreenInfo" },
     "rootRef": { "type": "string" },
@@ -83,8 +83,8 @@
     },
     "NodeKind": {
       "type": "string",
-      "enum": ["application", "window", "view", "composeSemantics", "domNode", "probe"],
-      "description": "Node origin, including merged Compose semantics and read-only WebView DOM nodes."
+      "enum": ["application", "window", "view", "composeSemantics", "axElement", "domNode", "probe"],
+      "description": "Node origin. Includes merged Android Compose semantics (composeSemantics), iOS accessibility-derived SwiftUI elements (axElement — the SwiftUI analogue of composeSemantics: synthesized only from natively-exposed accessibility elements, never from private SwiftUI internals), and read-only WebView DOM nodes (domNode)."
     },
     "MetadataValue": {
       "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying a short tag (text/bool/int/real).",

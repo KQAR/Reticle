@@ -47,7 +47,8 @@ enum class NodeKind {
     application,
     window,
     view,
-    composeSemantics, // a Compose accessibility-backed node
+    composeSemantics, // an Android Compose accessibility-backed node
+    axElement, // an iOS accessibility-derived SwiftUI element (the SwiftUI analogue of composeSemantics)
     domNode, // a read-only DOM element captured from an embedded WebView
     probe,
 }

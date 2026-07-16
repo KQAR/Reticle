@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# End-to-end smoke test for the iOS agent on a simulator. Builds the shared
+# protocol, the in-process agent, the sample apps, installs them, and exercises
+# the full round trip through `reticle --target ios`: linked launch + inject,
+# ui report, compact, screenshot, and a mutate verify.
+#
+# Requires: Xcode + an iOS Simulator runtime, and a built ReticleHost binary
+# (swift build --package-path reticle-host). Pass a booted simulator udid as $1,
+# or the script boots the first available iPhone.
+#
+# NOTE (headless caveat): a plain `simctl launch` app gets SUSPENDED on a
+# simulator that isn't displayed, which tears down the agent's loopback socket.
+# For a reliable run either keep Simulator.app open, or (as this script does for
+# the observation steps) hold the app foreground with `simctl launch --console-pty`.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+HOST="${RETICLE_HOST:-$ROOT/reticle-host/.build/debug/ReticleHost}"
+UDID="${1:-}"
+LINKED_ID="dev.reticle.sampleios"
+NOAGENT_ID="dev.reticle.sampleios.noagent"
+TMP="$(mktemp -d)"
+
+[ -x "$HOST" ] || { echo "build the host first: swift build --package-path reticle-host"; exit 1; }
+if [ -z "$UDID" ]; then
+  UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];print(next((x["udid"] for r in d.values() for x in r if "iPhone" in x["name"]),""))')"
+fi
+[ -n "$UDID" ] || { echo "no iPhone simulator available"; exit 1; }
+xcrun simctl boot "$UDID" 2>/dev/null || true
+
+echo "== build protocol + agent =="
+(cd reticle-swift && swift test >/dev/null)
+"$ROOT/scripts/build-ios-agent.sh" >/dev/null
+DYLIB="$ROOT/reticle-agent/ios/.build/arm64-apple-macosx/debug/libReticleInjection.dylib"
+
+echo "== build + install sample apps =="
+"$ROOT/scripts/build-sample-ios.sh" SampleApp        "$LINKED_ID"  "$UDID" >/dev/null
+"$ROOT/scripts/build-sample-ios.sh" SampleAppNoAgent "$NOAGENT_ID" "$UDID" >/dev/null
+
+hold_launch() { # bundleId [dylib port]
+  xcrun simctl terminate "$UDID" "$1" 2>/dev/null || true
+  sleep 1
+  if [ -n "${2:-}" ]; then
+    ( SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$2" SIMCTL_CHILD_RETICLE_PORT="$3" \
+        xcrun simctl launch --console-pty "$UDID" "$1" >/dev/null 2>&1 ) & echo $!
+  else
+    ( xcrun simctl launch --console-pty "$UDID" "$1" >/dev/null 2>&1 ) & echo $!
+  fi
+}
+
+echo "== LINKED path =="
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+"$HOST" --target ios status --package "$LINKED_ID"
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/linked"
+"$HOST" --target ios ui compact "$TMP/linked/snapshot.json"
+"$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
+"$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
+kill "$HOLD" 2>/dev/null || true
+
+echo "== INJECTION path (noagent app) =="
+PORT="$(/usr/bin/python3 -c 'x=0x811C9DC5
+for b in "'"$NOAGENT_ID"'".encode(): x^=b; x=(x*0x01000193)&0xFFFFFFFF
+print(8765+(x%1000))')"
+HOLD="$(hold_launch "$NOAGENT_ID" "$DYLIB" "$PORT")"; sleep 3
+"$HOST" --target ios ui report --package "$NOAGENT_ID" --output "$TMP/inject"
+"$HOST" --target ios ui compact "$TMP/inject/snapshot.json"
+kill "$HOLD" 2>/dev/null || true
+
+echo "== OK: artifacts in $TMP =="

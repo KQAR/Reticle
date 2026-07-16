@@ -33,7 +33,7 @@ func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
         result: r
     )
     if let advisory {
-        publishRuntimeAdvisoryIfDaemonIsRunning(package: pkg, advisory: advisory)
+        publishRuntimeAdvisoryIfDaemonIsRunning(package: pkg, target: platformTarget(args), advisory: advisory)
     }
     if JsonEnvelope.enabled(args) {
         var data = r
@@ -55,11 +55,18 @@ func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
 func cmdInject(_ c: HelperCalling, _ args: Args) throws {
     let pkg = try args.require("package")
     var params: [String: Any] = ["package": pkg]
-    let devPayload = "reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar"
-    let payload = args.option("payload-dex")
-        ?? (FileManager.default.fileExists(atPath: devPayload)
-            ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
-    if let payload { params["payloadDex"] = payload }
+    let isIos = (args.option("target") ?? "android") == "ios"
+    // On iOS the injectable is a dylib (resolved by IosHelperClient); the Android
+    // payload dex only applies to the Android/JDWP path.
+    if isIos {
+        if let payload = args.option("payload-dex") { params["payloadDex"] = payload }
+    } else {
+        let devPayload = "reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar"
+        let payload = args.option("payload-dex")
+            ?? (FileManager.default.fileExists(atPath: devPayload)
+                ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
+        if let payload { params["payloadDex"] = payload }
+    }
     let r = try c.call("inject", params)
     RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: r)
     if JsonEnvelope.enabled(args) {
@@ -272,9 +279,14 @@ private func publishTraceIfDaemonIsRunning(_ trace: [String: Any]) {
     }
 }
 
-private func publishRuntimeAdvisoryIfDaemonIsRunning(package: String, advisory: RuntimeProcessAdvisory) {
+/// The event-bus target prefix for the selected platform (`android:` / `ios:`).
+func platformTarget(_ args: Args) -> String {
+    (args.option("target") ?? "android")
+}
+
+private func publishRuntimeAdvisoryIfDaemonIsRunning(package: String, target: String, advisory: RuntimeProcessAdvisory) {
     let event = EventPostRequest(
-        target: "android:\(package)",
+        target: "\(target):\(package)",
         source: "runtime",
         type: "runtime.advisory",
         payload: advisory.jsonObject.mapValues(JSONValue.fromAny)
