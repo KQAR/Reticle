@@ -90,7 +90,9 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 "$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.title" \
   || { echo "FAIL: expected folded domNodes (complex.title) from the WKWebView"; exit 1; }
 # CSS selector resolution: node lookup and a tap point from the dom frame.
-"$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#style-target" >/dev/null \
+# (#role-button sits above the fold regardless of fixture growth; below-fold
+# elements are intentionally not captured.)
+"$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#role-button" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
 # Playwright-style piercing: an OPEN shadow root's content must fold in with a
@@ -106,6 +108,15 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
 "$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
   || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
+# Web evidence hooks: the report above installed them; the button logs to the
+# console and fetches, and both must surface through /logs.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#web-evidence"
+sleep 1
+WEBLOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$WEBLOGS" | grep -q "web_console: evidence button clicked" \
+  || { echo "FAIL: expected the web console event in /logs"; exit 1; }
+echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
+  || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="
