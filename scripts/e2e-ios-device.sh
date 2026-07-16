@@ -49,5 +49,9 @@ OUT="$(mktemp -d)"
 "$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/report"
 "$HOST" --target ios ui compact "$OUT/report/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$BUNDLE" --output "$OUT/shot.png"
+# Navigate into the Checkout scenario via in-process activation — the device
+# analogue of a tap (no HID surface on a real phone).
+"$HOST" --target ios act activate --package "$BUNDLE" --test-id scenario.checkout
+sleep 1
 "$HOST" --target ios mutate --package "$BUNDLE" --test-id checkout.payButton --property alpha --value 0.35
-echo "== OK (act/HID input is NOT available on a real device) — artifacts in $OUT =="
+echo "== OK (HID gestures are NOT available on a real device; activation is) — artifacts in $OUT =="

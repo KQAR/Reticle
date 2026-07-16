@@ -117,13 +117,21 @@ public enum Render {
     }
 
     /// Resolve a node from the view tree by selector: testId, then resourceId,
-    /// then ref. (Point is an action concern, not an inspection one.)
+    /// then CSS selector (an exact match on a domNode's emitted
+    /// `domCssSelector`, mirroring the Kotlin helper), then ref. (Point is an
+    /// action concern, not an inspection one.)
     public static func findNode(_ snapshot: Snapshot, _ selector: Selector) -> Node? {
         if let testId = selector.testId {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { $0.testId == testId }) { return n }
         }
         if let resourceId = selector.resourceId {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { $0.resourceId == resourceId }) { return n }
+        }
+        if let css = selector.cssSelector {
+            if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { node in
+                if case .text(let v)? = node.custom["domCssSelector"] { return v == css }
+                return false
+            }) { return n }
         }
         if let ref = selector.ref { return snapshot.nodes[ref] }
         return nil

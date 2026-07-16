@@ -52,10 +52,47 @@ hold_launch() { # bundleId [dylib port]
 echo "== LINKED path =="
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 "$HOST" --target ios status --package "$LINKED_ID"
-"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/linked"
-"$HOST" --target ios ui compact "$TMP/linked/snapshot.json"
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/home"
+"$HOST" --target ios ui compact "$TMP/home/snapshot.json"
+# Navigate into the Checkout scenario: the home row is a SwiftUI NavigationLink
+# (an axElement), driven by in-process activation — the path that also works on
+# a real device. (HID tap is broken on the iOS 26.2 simulator runtime — see
+# docs/ios.md "Honest boundaries" — so scripted navigation must not depend on it.)
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id scenario.checkout
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
+"$HOST" --target ios ui compact "$TMP/checkout/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
+kill "$HOLD" 2>/dev/null || true
+
+echo "== AGREEMENT regions =="
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=agreements
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/agreements"
+REGIONS="$("$HOST" --target ios ui regions "$TMP/agreements/snapshot.json")"
+echo "$REGIONS"
+echo "$REGIONS" | grep -q "span "       || { echo "FAIL: expected a span region (.link run)"; exit 1; }
+echo "$REGIONS" | grep -q "textMarker"  || { echo "FAIL: expected textMarker regions (self-drawn row)"; exit 1; }
+echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan region"; exit 1; }
+# --region resolution must produce a tap point from a discovered region rect and
+# from the char grid (plain phrase with no markers).
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
+kill "$HOLD" 2>/dev/null || true
+
+echo "== WEBVIEW DOM =="
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webview
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview"
+"$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.title" \
+  || { echo "FAIL: expected folded domNodes (complex.title) from the WKWebView"; exit 1; }
+# CSS selector resolution: node lookup and a tap point from the dom frame.
+"$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#style-target" >/dev/null \
+  || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="
