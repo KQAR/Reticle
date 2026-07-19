@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- iOS: HID input (`act tap`/`swipe`/`drag`/`type`) now requires the iOS 26.3+
+  simulator runtime and fails with a clear error below it. The reverse-
+  engineered `SimDeviceIO` HID path is tied to a specific system-framework
+  layout; on older runtimes the Indigo messages are delivered but the
+  frameworks don't route them to native controls, so a synthesized tap silently
+  did nothing. The host reads the target's runtime and refuses HID below 26.3
+  (guiding to `act activate`) rather than report a false success. `e2e-ios.sh`
+  detects the runtime and skips HID-only steps below 26.3; the activate / DOM-
+  activation paths are covered on every runtime.
+
 - iOS: web evidence hooks. The agent injects Playwright-style passthrough
   wrappers (console.*, window error / unhandledrejection, fetch / XHR timing)
   into every observed WKWebView; events buffer in an in-page ring (cap 200,

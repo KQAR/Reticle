@@ -86,7 +86,7 @@ chain in the live document, runs an actionability check (attached / visible /
 enabled / receives pointer events — honest reasons on failure), then dispatches
 the full `pointerdown → mousedown → pointerup → mouseup → click` sequence. This
 needs no HID surface, so it is the web-content tap path for real devices (and
-for the iOS 26.2 simulator runtime where HID recognition is broken).
+for simulator runtimes below the HID-supported 26.3).
 
 Web pages also emit **evidence**: on first observation the agent installs
 passthrough hooks (console.*, uncaught errors / unhandled rejections, fetch /
@@ -134,25 +134,23 @@ scripts/e2e-ios.sh                                      # full simulator round t
   accessibility runtime must be engaged for these elements to populate; a
   strictly headless simulator (no Simulator UI, no accessibility) may expose the
   UIKit tree but not SwiftUI `axElement`s.
-- **`act` input (HID) works on the simulator (Xcode 26 path).** Xcode 26 removed
-  the `SimDeviceLegacyHIDClient sendWithMessage:` path that idb and comparable
-  tools use, replacing it with a `SimDeviceIO` port graph. `CReticleSimHID`
-  reverse-engineers the new path: `SimDeviceIOClient(device) → ioPorts →` the
-  `SimLegacyHIDDescriptor` port `→ -legacyHIDEventPort` (an `OS_xpc_mach_send`)
-  `→ xpc_mach_send_copy_right →` a mach send right, then a two-payload Indigo
-  touch message is delivered with `mach_msg`. The `IndigoHIDMessageFor*` builders
-  are still resolved from SimulatorKit by `dlsym`. Verified on-simulator: a
-  synthesized tap increments the sample app's tap counter. Simulator-only (a real
-  device has no HID surface) and fragile across Xcode versions by nature.
-  **Known breakage: on the iOS 26.2 simulator runtime (Xcode 26.3) synthesized
-  taps do not trigger native UIKit/SwiftUI controls** — observed for this path
-  AND for independent implementations of it. Notably the same tap DOES fire an
-  onclick inside WKWebView content, so the Indigo messages are delivered and the
-  failure is in the native gesture/touch recognition layer (timing or event
-  flags), not the transport. Until that is root-caused, scripts must not depend
-  on HID for native controls: `act activate` (in-process) is the portable
-  navigation/tap path, and `act tap --region` still *resolves* exact points
-  (useful as evidence) even where recognition is broken.
+- **`act` input (HID) requires the iOS 26.3+ simulator runtime.** Xcode 26
+  removed the `SimDeviceLegacyHIDClient sendWithMessage:` path that idb and
+  comparable tools use, replacing it with a `SimDeviceIO` port graph.
+  `CReticleSimHID` reverse-engineers the new path: `SimDeviceIOClient(device) →
+  ioPorts →` the `SimLegacyHIDDescriptor` port `→ -legacyHIDEventPort` (an
+  `OS_xpc_mach_send`) `→ xpc_mach_send_copy_right →` a mach send right, then a
+  two-payload Indigo touch message is delivered with `mach_msg`. The
+  `IndigoHIDMessageFor*` builders are resolved from SimulatorKit by `dlsym`.
+  This reversing is tied to a specific system-framework layout, so **HID is
+  supported only on the iOS 26.3+ runtime**. On older runtimes the Indigo
+  messages are delivered (they DO fire an onclick inside WKWebView content) but
+  the frameworks don't route them to native UIKit/SwiftUI controls — a
+  synthesized tap silently does nothing. Rather than emit that false success,
+  the host checks the target's runtime and **fails `act tap/swipe/drag/type`
+  below 26.3** with guidance to use `act activate`. Simulator-only regardless
+  (a real device has no HID surface). Use `act activate` (selector or `--css`)
+  for the version-independent, real-device-capable path.
 - **SwiftUI `Text` with inline markdown links collapses in accessibility.** The
   whole Text surfaces as one `axElement` ("Read the Terms and Privacy") with no
   per-link child elements, so individual links inside one SwiftUI `Text` are not

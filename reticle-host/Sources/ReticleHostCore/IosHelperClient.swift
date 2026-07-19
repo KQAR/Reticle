@@ -250,6 +250,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 }
                 return try activate(pkg, params)
             }
+            try assertHidSupported(simUdid!)
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let point = try resolveTapPoint(params, snapshot: snapshot)
@@ -259,6 +260,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             guard let udid = simUdid else {
                 throw HelperError("\(gesture) needs a booted simulator (real devices have no HID input surface)")
             }
+            try assertHidSupported(udid)
             guard let from = parsePoint(params["from"]), let to = parsePoint(params["to"]) else {
                 throw HelperError("\(gesture) needs --from x,y and --to x,y")
             }
@@ -271,11 +273,44 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             guard let udid = simUdid else {
                 throw HelperError("type needs a booted simulator (real devices have no HID input surface)")
             }
+            try assertHidSupported(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             try IosInputBackend(udid: udid).type(text)
             return ["gesture": "type", "via": "hid", "text": text]
         default:
             throw HelperError("unknown gesture '\(gesture)'")
+        }
+    }
+
+    /// Minimum simulator runtime for HID input. The `SimDeviceIO` HID path is
+    /// reverse-engineered against a specific system-framework layout; on older
+    /// runtimes the Indigo messages are delivered but the frameworks don't route
+    /// them to native controls (a synthesized tap silently does nothing — the
+    /// worst failure for an agent that then believes it tapped). We therefore
+    /// only support HID on the iOS 26.3+ runtime and fail loudly below it.
+    private static let minHidRuntime = (major: 26, minor: 3)
+
+    /// Parse a device's runtime ("iOS-26-3") to (major, minor).
+    private func runtimeVersion(of udid: String) -> (major: Int, minor: Int)? {
+        guard let dev = (try? Simctl.listDevices())?.first(where: { $0.udid == udid }) else { return nil }
+        let nums = dev.runtime.split(separator: "-").compactMap { Int($0) }
+        guard nums.count >= 2 else { return nil }
+        return (nums[0], nums[1])
+    }
+
+    /// Throw a clear error when the target simulator predates the supported HID
+    /// runtime. An unknown/unparseable runtime is NOT blocked (don't punish a
+    /// device we can't classify) — the honest failure there is the tap simply
+    /// not landing, which the caller can catch with a verify.
+    private func assertHidSupported(_ udid: String) throws {
+        guard let v = runtimeVersion(of: udid) else { return }
+        let min = Self.minHidRuntime
+        if v.major < min.major || (v.major == min.major && v.minor < min.minor) {
+            throw HelperError(
+                "HID input (tap/swipe/drag/type) requires the iOS \(min.major).\(min.minor)+ simulator runtime; "
+                + "this device runs iOS \(v.major).\(v.minor), where the SimDeviceIO HID path does not reach native "
+                + "controls. Use `act activate` (selector or --css) instead — it drives controls in-process and needs no HID."
+            )
         }
     }
 
