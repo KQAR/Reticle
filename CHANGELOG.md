@@ -2,15 +2,22 @@
 
 ## Unreleased
 
-- iOS: HID input (`act tap`/`swipe`/`drag`/`type`) now requires the iOS 26.3+
-  simulator runtime and fails with a clear error below it. The reverse-
-  engineered `SimDeviceIO` HID path is tied to a specific system-framework
-  layout; on older runtimes the Indigo messages are delivered but the
-  frameworks don't route them to native controls, so a synthesized tap silently
-  did nothing. The host reads the target's runtime and refuses HID below 26.3
-  (guiding to `act activate`) rather than report a false success. `e2e-ios.sh`
-  detects the runtime and skips HID-only steps below 26.3; the activate / DOM-
-  activation paths are covered on every runtime.
+- iOS: fixed HID input (`act tap`/`swipe`/`drag`/`type`) silently doing nothing
+  on the simulator. The previous path built the event from
+  `IndigoHIDMessageForMouseNSEvent` and delivered it over a raw `SimDeviceIO`
+  mach send right; on iOS 26.2/26.3 that *sends* cleanly but the synthesized
+  touch never reaches native UIKit/SwiftUI controls (the worst failure — the
+  agent believes it tapped). `CReticleSimHID` now builds a real `IOHIDEvent`
+  digitizer parent + finger child, wraps it through
+  `IndigoHIDMessageForTrackpadEventFromHIDEventRef`, patches the touch-target
+  tag, and delivers via `SimDeviceLegacyHIDClient`
+  (`-sendWithMessage:freeWhenDone:…`); keyboard uses
+  `IndigoHIDMessageForHIDArbitrary`. Verified to land on native controls on iOS
+  26.2 and 26.3. This also corrects the mistaken "HID needs iOS 26.3+" gate: HID
+  is a capability, not a version cutoff — the host now guards on a capability
+  probe (fails loudly only when the private SimulatorKit path can't initialize)
+  and `e2e-ios.sh` runs HID steps on every runtime, asserting the tap actually
+  lands (`checkout.status → "Paid!"`) rather than merely not erroring.
 
 - iOS: web evidence hooks. The agent injects Playwright-style passthrough
   wrappers (console.*, window error / unhandledrejection, fetch / XHR timing)
