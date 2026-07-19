@@ -250,6 +250,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 }
                 return try activate(pkg, params)
             }
+            try assertHidAvailable(simUdid!)
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let point = try resolveTapPoint(params, snapshot: snapshot)
@@ -259,6 +260,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             guard let udid = simUdid else {
                 throw HelperError("\(gesture) needs a booted simulator (real devices have no HID input surface)")
             }
+            try assertHidAvailable(udid)
             guard let from = parsePoint(params["from"]), let to = parsePoint(params["to"]) else {
                 throw HelperError("\(gesture) needs --from x,y and --to x,y")
             }
@@ -271,12 +273,31 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             guard let udid = simUdid else {
                 throw HelperError("type needs a booted simulator (real devices have no HID input surface)")
             }
+            try assertHidAvailable(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             try IosInputBackend(udid: udid).type(text)
             return ["gesture": "type", "via": "hid", "text": text]
         default:
             throw HelperError("unknown gesture '\(gesture)'")
         }
+    }
+
+    /// Fail loudly before a gesture if HID can't be brought up on this simulator.
+    /// HID support is a *capability*, not a runtime-version cutoff: the recipe
+    /// (SimDeviceLegacyHIDClient + a digitizer IOHIDEvent wrapped through
+    /// SimulatorKit) lands touches on every runtime it can initialize on —
+    /// verified on iOS 26.2 and 26.3. `isAvailable()` builds and caches the HID
+    /// client (so the subsequent gesture reuses it) and returns false only when
+    /// the private class/symbols are absent — e.g. an Xcode without the
+    /// SimulatorKit layout this path is reverse-engineered against. In that case
+    /// there is no silent no-op to fear: we error here rather than pretend.
+    private func assertHidAvailable(_ udid: String) throws {
+        if IosInputBackend(udid: udid).isAvailable() { return }
+        throw HelperError(
+            "HID input (tap/swipe/drag/type) is unavailable on this simulator: the private SimulatorKit HID "
+            + "path could not be initialized (wrong/missing Xcode SimulatorKit layout). "
+            + "Use `act activate` (selector or --css) instead — it drives controls in-process and needs no HID."
+        )
     }
 
     /// In-process control activation via the agent's /activate endpoint.
