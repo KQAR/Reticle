@@ -230,10 +230,23 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         let pkg = try bundleId(params)
         let gesture = (params["gesture"] as? String) ?? "tap"
 
+        // When `--trace-output` (or an active session) is set, wrap the action in a
+        // before/after evidence package — the same trace shape Android emits, so
+        // `reticle serve` and the panel ingest an iOS action identically.
+        let tracer = (params["traceOutput"] as? String).map {
+            IosActionTrace(root: URL(fileURLWithPath: $0), packageName: pkg, http: IosAgentHTTP(bundleId: pkg))
+        }
+        let settleMs = (params["traceDelayMs"] as? Int) ?? 250
+        let selector = selectorForTrace(params)
+
         // Explicit in-process activation (the on-device "tap"): works everywhere,
         // no HID surface needed.
         if gesture == "activate" {
-            return try activate(pkg, params)
+            let before = tracer?.capture()
+            let result = try activate(pkg, params)
+            return try finishTrace(tracer, before, settleMs, gesture: "activate", selector: selector,
+                                   point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
+                                   result: result)
         }
 
         // HID (real touch/keyboard) needs a booted simulator; a real device has no
@@ -248,14 +261,21 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 if params["point"] != nil {
                     throw HelperError("point taps need a simulator HID surface; on a real device use `act activate` with a selector")
                 }
-                return try activate(pkg, params)
+                let before = tracer?.capture()
+                let result = try activate(pkg, params)
+                return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
+                                       point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
+                                       result: result)
             }
             try assertHidAvailable(simUdid!)
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let point = try resolveTapPoint(params, snapshot: snapshot)
+            let before = tracer?.capture()
             try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
-            return ["gesture": "tap", "via": "hid", "x": point.x, "y": point.y]
+            return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
+                                   point: point, source: params["point"] != nil ? "point" : "selector", ref: nil,
+                                   result: ["gesture": "tap", "via": "hid", "x": point.x, "y": point.y])
         case "swipe", "drag":
             guard let udid = simUdid else {
                 throw HelperError("\(gesture) needs a booted simulator (real devices have no HID input surface)")
@@ -267,19 +287,51 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let duration = Double((params["duration"] as? String) ?? "") ?? (gesture == "drag" ? 600 : 250)
+            let before = tracer?.capture()
             try IosInputBackend(udid: udid).swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
-            return ["gesture": gesture, "via": "hid", "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"]
+            return try finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
+                                   point: from, source: "point", ref: nil,
+                                   result: ["gesture": gesture, "via": "hid", "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"])
         case "type":
             guard let udid = simUdid else {
                 throw HelperError("type needs a booted simulator (real devices have no HID input surface)")
             }
             try assertHidAvailable(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
+            let before = tracer?.capture()
             try IosInputBackend(udid: udid).type(text)
-            return ["gesture": "type", "via": "hid", "text": text]
+            return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
+                                   point: nil, source: nil, ref: nil,
+                                   result: ["gesture": "type", "via": "hid", "text": text])
         default:
             throw HelperError("unknown gesture '\(gesture)'")
         }
+    }
+
+    /// Merge a trace evidence package into an action result when tracing is on and
+    /// the before-state was captured; otherwise return the result untouched.
+    private func finishTrace(
+        _ tracer: IosActionTrace?, _ before: IosActionTrace.Capture?, _ settleMs: Int,
+        gesture: String, selector: TargetSelector?,
+        point: Point?, source: String?, ref: String?,
+        result: [String: Any]
+    ) throws -> [String: Any] {
+        guard let tracer, let before else { return result }
+        var out = result
+        out["trace"] = try tracer.write(
+            gesture: gesture, selector: selector, targetPoint: point, targetSource: source, targetRef: ref,
+            result: result.mapValues { "\($0)" }, before: before, settleMs: settleMs
+        )
+        return out
+    }
+
+    /// The selector to record in a trace, or nil when no selector fields were
+    /// given (a bare point/coordinate action). Mirrors the helper's `selectorOrNull`.
+    private func selectorForTrace(_ params: [String: Any]) -> TargetSelector? {
+        let s = selectorFromParams(params)
+        let empty = s.testId == nil && s.resourceId == nil && s.cssSelector == nil
+            && s.ref == nil && s.point == nil && s.region == nil
+        return empty ? nil : s
     }
 
     /// Fail loudly before a gesture if HID can't be brought up on this simulator.

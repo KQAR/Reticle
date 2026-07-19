@@ -97,6 +97,29 @@ durationMs). Honest boundaries: collection starts at the first observation of
 a page (earlier events are absent); a document-start `WKUserScript` covers
 later navigations from their start; main-frame only for the immediate install.
 
+## Action traces (evidence packages)
+
+Every `act` (tap / swipe / drag / type / activate) can emit a per-action
+**evidence package**, the same shape Android produces, so an iOS action feeds the
+`reticle serve` timeline and web panel identically. Pass `--trace-output <dir>`
+(or just have a daemon running — one-shot commands auto-write into the session's
+trace dir), and Reticle captures a before snapshot + screenshot, dispatches the
+action, then captures an after snapshot + screenshot and writes:
+
+```
+<dir>/<millis>-<gesture>/
+  before.snapshot.json  after.snapshot.json
+  before.screenshot.png after.screenshot.png
+  trace.json            # manifest: gesture, selector, target, result, and a
+                        # compact before/after diff (the observable change)
+```
+
+The `trace.json` diff is the honest proof an action *landed* — e.g. a Pay-button
+tap records `checkout.status: "Cart: 3 items" → "Paid!"`. When `reticle serve` is
+running the trace publishes as an `action.trace` event targeted `ios:<pkg>`; the
+manifest carries `platform: "ios"` so the daemon labels it correctly. The diff is
+platform-neutral and matches `reticle-core`'s `ActionTraceDiff` field-for-field.
+
 ## Building & running
 
 ```

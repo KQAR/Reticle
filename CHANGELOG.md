@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- iOS: `act` (tap/swipe/drag/type/activate) now emits **action-trace evidence
+  packages** — the iOS analogue of Android's traces, so an iOS action feeds the
+  `reticle serve` timeline and web panel identically. `--trace-output <dir>` (or
+  an active daemon session, which auto-traces) writes before/after snapshots +
+  screenshots + a `trace.json` manifest whose compact diff records the observable
+  change (e.g. `checkout.status: "Cart: 3 items" → "Paid!"` — honest proof the
+  action landed). The manifest carries `platform: "ios"`, and the daemon now
+  labels ingested traces `ios:<pkg>` (previously hardcoded `android:`). The diff
+  is a field-for-field Swift port of `reticle-core`'s `ActionTraceDiff`, and
+  `e2e-ios.sh` asserts the trace package and its diff. This closes the iOS gap in
+  the evidence pipeline: iOS could drive actions but produced no evidence.
+
 - iOS: fixed HID input (`act tap`/`swipe`/`drag`/`type`) silently doing nothing
   on the simulator. The previous path built the event from
   `IndigoHIDMessageForMouseNSEvent` and delivered it over a raw `SimDeviceIO`
