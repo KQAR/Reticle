@@ -49,6 +49,13 @@ hold_launch() { # bundleId [dylib port]
   fi
 }
 
+# HID input (real synthesized touch/keyboard) works on every simulator runtime
+# where the private SimulatorKit HID path initializes — verified on iOS 26.2 and
+# 26.3. It is a capability, not a version cutoff, so HID steps run unconditionally
+# and each asserts an observable side effect (below): a tap that merely "doesn't
+# error" is worthless — the failure mode we guard against is a synthesized touch
+# that sends cleanly yet never reaches a native control.
+
 echo "== LINKED path =="
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 "$HOST" --target ios status --package "$LINKED_ID"
@@ -56,13 +63,23 @@ HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 "$HOST" --target ios ui compact "$TMP/home/snapshot.json"
 # Navigate into the Checkout scenario: the home row is a SwiftUI NavigationLink
 # (an axElement), driven by in-process activation — the path that also works on
-# a real device. (HID tap is broken on the iOS 26.2 simulator runtime — see
-# docs/ios.md "Honest boundaries" — so scripted navigation must not depend on it.)
+# a real device and on runtimes below the HID-supported iOS 26.3, so scripted
+# navigation never depends on HID.
 "$HOST" --target ios act activate --package "$LINKED_ID" --test-id scenario.checkout
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
 "$HOST" --target ios ui compact "$TMP/checkout/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
+# HID tap must LAND on a native control, not merely send without error. Tapping
+# the Pay button flips checkout.status to "Paid!" — observable proof the
+# synthesized touch reached UIKit. This is the regression guard for the silent
+# no-op that shipped when the HID message shape drifted from the runtime (the
+# tap sent fine and did nothing). Runs on every runtime; HID is a capability.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id checkout.payButton
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout-paid"
+"$HOST" --target ios ui compact "$TMP/checkout-paid/snapshot.json" | grep -q "Paid!" \
+  || { echo "FAIL: HID tap on payButton did not land (checkout.status never became Paid!)"; exit 1; }
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
 kill "$HOLD" 2>/dev/null || true
 
@@ -77,7 +94,8 @@ echo "$REGIONS" | grep -q "span "       || { echo "FAIL: expected a span region 
 echo "$REGIONS" | grep -q "textMarker"  || { echo "FAIL: expected textMarker regions (self-drawn row)"; exit 1; }
 echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan region"; exit 1; }
 # --region resolution must produce a tap point from a discovered region rect and
-# from the char grid (plain phrase with no markers).
+# from the char grid (plain phrase with no markers). Text regions have no
+# in-process activation surface, so this is HID-only.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
 kill "$HOLD" 2>/dev/null || true
@@ -94,6 +112,8 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 # elements are intentionally not captured.)
 "$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#role-button" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
+# HID tap onto a folded DOM frame; the observable click below goes through DOM
+# activation, which is HID-independent.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
 # Playwright-style piercing: an OPEN shadow root's content must fold in with a
 # chained selector, and activation must resolve chains through shadow roots and

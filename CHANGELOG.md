@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- iOS: fixed HID input (`act tap`/`swipe`/`drag`/`type`) silently doing nothing
+  on the simulator. The previous path built the event from
+  `IndigoHIDMessageForMouseNSEvent` and delivered it over a raw `SimDeviceIO`
+  mach send right; on iOS 26.2/26.3 that *sends* cleanly but the synthesized
+  touch never reaches native UIKit/SwiftUI controls (the worst failure — the
+  agent believes it tapped). `CReticleSimHID` now builds a real `IOHIDEvent`
+  digitizer parent + finger child, wraps it through
+  `IndigoHIDMessageForTrackpadEventFromHIDEventRef`, patches the touch-target
+  tag, and delivers via `SimDeviceLegacyHIDClient`
+  (`-sendWithMessage:freeWhenDone:…`); keyboard uses
+  `IndigoHIDMessageForHIDArbitrary`. Verified to land on native controls on iOS
+  26.2 and 26.3. This also corrects the mistaken "HID needs iOS 26.3+" gate: HID
+  is a capability, not a version cutoff — the host now guards on a capability
+  probe (fails loudly only when the private SimulatorKit path can't initialize)
+  and `e2e-ios.sh` runs HID steps on every runtime, asserting the tap actually
+  lands (`checkout.status → "Paid!"`) rather than merely not erroring.
+
 - iOS: web evidence hooks. The agent injects Playwright-style passthrough
   wrappers (console.*, window error / unhandledrejection, fetch / XHR timing)
   into every observed WKWebView; events buffer in an in-page ring (cap 200,

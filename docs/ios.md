@@ -86,7 +86,7 @@ chain in the live document, runs an actionability check (attached / visible /
 enabled / receives pointer events — honest reasons on failure), then dispatches
 the full `pointerdown → mousedown → pointerup → mouseup → click` sequence. This
 needs no HID surface, so it is the web-content tap path for real devices (and
-for the iOS 26.2 simulator runtime where HID recognition is broken).
+for any simulator where the private HID path can't initialize).
 
 Web pages also emit **evidence**: on first observation the agent installs
 passthrough hooks (console.*, uncaught errors / unhandled rejections, fetch /
@@ -134,25 +134,27 @@ scripts/e2e-ios.sh                                      # full simulator round t
   accessibility runtime must be engaged for these elements to populate; a
   strictly headless simulator (no Simulator UI, no accessibility) may expose the
   UIKit tree but not SwiftUI `axElement`s.
-- **`act` input (HID) works on the simulator (Xcode 26 path).** Xcode 26 removed
-  the `SimDeviceLegacyHIDClient sendWithMessage:` path that idb and comparable
-  tools use, replacing it with a `SimDeviceIO` port graph. `CReticleSimHID`
-  reverse-engineers the new path: `SimDeviceIOClient(device) → ioPorts →` the
-  `SimLegacyHIDDescriptor` port `→ -legacyHIDEventPort` (an `OS_xpc_mach_send`)
-  `→ xpc_mach_send_copy_right →` a mach send right, then a two-payload Indigo
-  touch message is delivered with `mach_msg`. The `IndigoHIDMessageFor*` builders
-  are still resolved from SimulatorKit by `dlsym`. Verified on-simulator: a
-  synthesized tap increments the sample app's tap counter. Simulator-only (a real
-  device has no HID surface) and fragile across Xcode versions by nature.
-  **Known breakage: on the iOS 26.2 simulator runtime (Xcode 26.3) synthesized
-  taps do not trigger native UIKit/SwiftUI controls** — observed for this path
-  AND for independent implementations of it. Notably the same tap DOES fire an
-  onclick inside WKWebView content, so the Indigo messages are delivered and the
-  failure is in the native gesture/touch recognition layer (timing or event
-  flags), not the transport. Until that is root-caused, scripts must not depend
-  on HID for native controls: `act activate` (in-process) is the portable
-  navigation/tap path, and `act tap --region` still *resolves* exact points
-  (useful as evidence) even where recognition is broken.
+- **`act` input (HID) is simulator-only and a capability, not a runtime-version
+  cutoff.** `CReticleSimHID` synthesizes real touch/keyboard via the private
+  SimulatorKit path, reverse-engineered from Xcode 26: build a real `IOHIDEvent`
+  digitizer parent + finger child (`IOHIDEventCreateDigitizerEvent` /
+  `…FingerEvent` / `IOHIDEventAppendEvent`), wrap it through
+  `IndigoHIDMessageForTrackpadEventFromHIDEventRef`, patch the touch-target tag
+  (`0x32`) into the message, and deliver it via `SimDeviceLegacyHIDClient`
+  (`-sendWithMessage:freeWhenDone:completionQueue:completion:`). Keyboard goes
+  through `IndigoHIDMessageForHIDArbitrary`. Verified to land on native
+  UIKit/SwiftUI controls on **iOS 26.2 and 26.3** (observable side effect, not
+  just a clean send). An earlier revision built the message from
+  `IndigoHIDMessageForMouseNSEvent` and delivered it over a raw `SimDeviceIO`
+  mach send right; that shape *sends* without error on iOS 26.3+ but the touch
+  is silently dropped (or misread as a Home gesture) — the worst failure for an
+  agent that then believes it tapped. Because the correct path either lands or
+  fails with an error (no silent no-op), the host guards `act tap/swipe/drag/type`
+  by a **capability probe** (`reticle_sim_hid_available`), failing loudly with
+  guidance to use `act activate` only when the private class/symbols are absent
+  (a mismatched Xcode SimulatorKit layout) — not by iOS version. A real device
+  has no HID surface regardless; use `act activate` (selector or `--css`) for
+  the real-device-capable path.
 - **SwiftUI `Text` with inline markdown links collapses in accessibility.** The
   whole Text surfaces as one `axElement` ("Read the Terms and Privacy") with no
   per-link child elements, so individual links inside one SwiftUI `Text` are not
