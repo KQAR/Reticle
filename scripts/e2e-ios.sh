@@ -49,6 +49,24 @@ hold_launch() { # bundleId [dylib port]
   fi
 }
 
+# HID input is only supported on the iOS 26.3+ simulator runtime (older
+# runtimes deliver the Indigo messages but the frameworks don't route them to
+# native controls). Detect the target's runtime so HID steps run only where
+# they can work; the activate / DOM-activation paths are exercised regardless.
+HID_OK="$(/usr/bin/python3 -c '
+import json, subprocess
+udid = "'"$UDID"'"
+devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "-j", "devices"]))["devices"]
+runtime = ""
+for r, lst in devices.items():
+    for x in lst:
+        if x.get("udid") == udid:
+            runtime = r
+nums = [int(p) for p in runtime.replace("com.apple.CoreSimulator.SimRuntime.", "").split("-") if p.isdigit()]
+print("1" if len(nums) >= 2 and (nums[0], nums[1]) >= (26, 3) else "0")
+')"
+if [ "$HID_OK" = "1" ]; then echo "HID: enabled (iOS 26.3+)"; else echo "HID: disabled (<26.3) — HID steps skipped, activate path still covered"; fi
+
 echo "== LINKED path =="
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 "$HOST" --target ios status --package "$LINKED_ID"
@@ -56,8 +74,8 @@ HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 "$HOST" --target ios ui compact "$TMP/home/snapshot.json"
 # Navigate into the Checkout scenario: the home row is a SwiftUI NavigationLink
 # (an axElement), driven by in-process activation — the path that also works on
-# a real device. (HID tap is broken on the iOS 26.2 simulator runtime — see
-# docs/ios.md "Honest boundaries" — so scripted navigation must not depend on it.)
+# a real device and on runtimes below the HID-supported iOS 26.3, so scripted
+# navigation never depends on HID.
 "$HOST" --target ios act activate --package "$LINKED_ID" --test-id scenario.checkout
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
@@ -77,9 +95,12 @@ echo "$REGIONS" | grep -q "span "       || { echo "FAIL: expected a span region 
 echo "$REGIONS" | grep -q "textMarker"  || { echo "FAIL: expected textMarker regions (self-drawn row)"; exit 1; }
 echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan region"; exit 1; }
 # --region resolution must produce a tap point from a discovered region rect and
-# from the char grid (plain phrase with no markers).
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
+# from the char grid (plain phrase with no markers). Text regions have no
+# in-process activation surface, so this is HID-only — 26.3+.
+if [ "$HID_OK" = "1" ]; then
+  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
+  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
+fi
 kill "$HOLD" 2>/dev/null || true
 
 echo "== WEBVIEW DOM =="
@@ -94,7 +115,11 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 # elements are intentionally not captured.)
 "$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#role-button" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
+# HID tap onto a folded DOM frame (26.3+ only); the observable click below goes
+# through DOM activation, which is HID-independent.
+if [ "$HID_OK" = "1" ]; then
+  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
+fi
 # Playwright-style piercing: an OPEN shadow root's content must fold in with a
 # chained selector, and activation must resolve chains through shadow roots and
 # same-origin iframes (works with no HID — the real-device path).
