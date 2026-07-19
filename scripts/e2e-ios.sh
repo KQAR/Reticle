@@ -49,23 +49,12 @@ hold_launch() { # bundleId [dylib port]
   fi
 }
 
-# HID input is only supported on the iOS 26.3+ simulator runtime (older
-# runtimes deliver the Indigo messages but the frameworks don't route them to
-# native controls). Detect the target's runtime so HID steps run only where
-# they can work; the activate / DOM-activation paths are exercised regardless.
-HID_OK="$(/usr/bin/python3 -c '
-import json, subprocess
-udid = "'"$UDID"'"
-devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "-j", "devices"]))["devices"]
-runtime = ""
-for r, lst in devices.items():
-    for x in lst:
-        if x.get("udid") == udid:
-            runtime = r
-nums = [int(p) for p in runtime.replace("com.apple.CoreSimulator.SimRuntime.", "").split("-") if p.isdigit()]
-print("1" if len(nums) >= 2 and (nums[0], nums[1]) >= (26, 3) else "0")
-')"
-if [ "$HID_OK" = "1" ]; then echo "HID: enabled (iOS 26.3+)"; else echo "HID: disabled (<26.3) — HID steps skipped, activate path still covered"; fi
+# HID input (real synthesized touch/keyboard) works on every simulator runtime
+# where the private SimulatorKit HID path initializes — verified on iOS 26.2 and
+# 26.3. It is a capability, not a version cutoff, so HID steps run unconditionally
+# and each asserts an observable side effect (below): a tap that merely "doesn't
+# error" is worthless — the failure mode we guard against is a synthesized touch
+# that sends cleanly yet never reaches a native control.
 
 echo "== LINKED path =="
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
@@ -81,6 +70,16 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
 "$HOST" --target ios ui compact "$TMP/checkout/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
+# HID tap must LAND on a native control, not merely send without error. Tapping
+# the Pay button flips checkout.status to "Paid!" — observable proof the
+# synthesized touch reached UIKit. This is the regression guard for the silent
+# no-op that shipped when the HID message shape drifted from the runtime (the
+# tap sent fine and did nothing). Runs on every runtime; HID is a capability.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id checkout.payButton
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout-paid"
+"$HOST" --target ios ui compact "$TMP/checkout-paid/snapshot.json" | grep -q "Paid!" \
+  || { echo "FAIL: HID tap on payButton did not land (checkout.status never became Paid!)"; exit 1; }
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
 kill "$HOLD" 2>/dev/null || true
 
@@ -96,11 +95,9 @@ echo "$REGIONS" | grep -q "textMarker"  || { echo "FAIL: expected textMarker reg
 echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan region"; exit 1; }
 # --region resolution must produce a tap point from a discovered region rect and
 # from the char grid (plain phrase with no markers). Text regions have no
-# in-process activation surface, so this is HID-only — 26.3+.
-if [ "$HID_OK" = "1" ]; then
-  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
-  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
-fi
+# in-process activation surface, so this is HID-only.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
 kill "$HOLD" 2>/dev/null || true
 
 echo "== WEBVIEW DOM =="
@@ -115,11 +112,9 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 # elements are intentionally not captured.)
 "$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#role-button" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
-# HID tap onto a folded DOM frame (26.3+ only); the observable click below goes
-# through DOM activation, which is HID-independent.
-if [ "$HID_OK" = "1" ]; then
-  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
-fi
+# HID tap onto a folded DOM frame; the observable click below goes through DOM
+# activation, which is HID-independent.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
 # Playwright-style piercing: an OPEN shadow root's content must fold in with a
 # chained selector, and activation must resolve chains through shadow roots and
 # same-origin iframes (works with no HID — the real-device path).
