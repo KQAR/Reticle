@@ -575,6 +575,14 @@ Android first and complete; everything else reserved behind the spec + SPI.
   — natively in the host where the ecosystem matches (iOS: simctl/DYLD in a Swift
   host) or as a helper where it doesn't (Android: the Kotlin `reticle-android-
   helper`). See "Direction: Swift host + per-platform helpers".
+- iOS status: agent + host platform, `act` (HID tap/swipe/drag/type verified to
+  land on iOS 26.2/26.3, plus in-process `activate`), WebView/DOM, and web
+  evidence hooks are landed. iOS `act` now also emits **action-trace evidence**
+  into the shared `reticle serve` timeline / panel (events targeted `ios:<pkg>`),
+  so iOS rides the same evidence pipeline as Android — the "Proposed next"
+  evidence-workflow products (A1/A2/A4) now apply cross-platform. Remaining iOS
+  gaps: host-side proxy/mock parity for the B-lane on iOS, and broader real-device
+  validation.
 
 # Proposed next: evidence workflows + security-evidence lane
 

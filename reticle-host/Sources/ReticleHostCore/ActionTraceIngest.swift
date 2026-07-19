@@ -31,7 +31,10 @@ public struct ActionTraceIngest: @unchecked Sendable {
         let artifacts = manifest["artifacts"] as? [String: Any] ?? [:]
         let refs = artifactRefs(artifacts: artifacts, traceDirectory: traceDirectory)
         let payload = tracePayload(from: manifest, refs: refs)
-        let target = (manifest["packageName"] as? String).map { "android:\($0)" }
+        // `platform` is emitted by the iOS trace writer; Android traces predate it
+        // and default to android, so the event target stays correct for both.
+        let platform = (manifest["platform"] as? String) ?? "android"
+        let target = (manifest["packageName"] as? String).map { "\(platform):\($0)" }
         return EventPostRequest(
             target: target,
             source: "action",
@@ -43,7 +46,7 @@ public struct ActionTraceIngest: @unchecked Sendable {
 
     private func tracePayload(from manifest: [String: Any], refs: [String: String]) -> [String: JSONValue] {
         var payload: [String: JSONValue] = [:]
-        for key in ["traceVersion", "actionId", "packageName", "recordedAtMillis", "gesture"] {
+        for key in ["traceVersion", "platform", "actionId", "packageName", "recordedAtMillis", "gesture"] {
             payload[key] = JSONValue.fromAny(manifest[key])
         }
         for key in ["selector", "target", "result"] {

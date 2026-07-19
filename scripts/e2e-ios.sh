@@ -75,11 +75,22 @@ sleep 1
 # synthesized touch reached UIKit. This is the regression guard for the silent
 # no-op that shipped when the HID message shape drifted from the runtime (the
 # tap sent fine and did nothing). Runs on every runtime; HID is a capability.
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id checkout.payButton
+# `--trace-output` also exercises the iOS action-trace evidence package (the
+# analogue of Android's traces): before/after snapshots + screenshots + a
+# trace.json manifest whose diff records the observable change.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id checkout.payButton --trace-output "$TMP/trace"
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout-paid"
 "$HOST" --target ios ui compact "$TMP/checkout-paid/snapshot.json" | grep -q "Paid!" \
   || { echo "FAIL: HID tap on payButton did not land (checkout.status never became Paid!)"; exit 1; }
+TRACE_JSON="$(find "$TMP/trace" -name trace.json | head -1)"
+[ -n "$TRACE_JSON" ] || { echo "FAIL: no action-trace manifest written under --trace-output"; exit 1; }
+grep -q '"platform":"ios"' "$TRACE_JSON" || grep -q '"platform": "ios"' "$TRACE_JSON" \
+  || { echo "FAIL: trace.json missing platform=ios"; exit 1; }
+grep -q "Paid!" "$TRACE_JSON" \
+  || { echo "FAIL: trace.json diff did not record the checkout.status change to Paid!"; exit 1; }
+[ -f "$(dirname "$TRACE_JSON")/before.snapshot.json" ] && [ -f "$(dirname "$TRACE_JSON")/after.snapshot.json" ] \
+  || { echo "FAIL: trace missing before/after snapshot artifacts"; exit 1; }
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
 kill "$HOLD" 2>/dev/null || true
 
