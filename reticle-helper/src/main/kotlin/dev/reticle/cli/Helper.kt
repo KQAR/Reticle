@@ -52,6 +52,9 @@ object Helper {
                 out.flush()
             }
         }
+        // Tear down the adb forwards we set up this session; they otherwise
+        // outlive the helper on the persistent adb server.
+        ForwardRegistry.cleanup()
         if (debug) System.err.println("reticle-helper: stdin closed, exiting")
     }
 
