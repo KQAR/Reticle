@@ -57,7 +57,7 @@ final class NetworkProxyServer: @unchecked Sendable {
                     ))
                 }
             }
-        bootstrap.bind(host: "127.0.0.1", port: configuration.port).whenComplete { [weak self] result in
+        bootstrap.bind(host: configuration.bindHost, port: configuration.port).whenComplete { [weak self] result in
             guard let self else { return }
             self.lock.withLock {
                 switch result {
