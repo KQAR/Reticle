@@ -60,12 +60,18 @@ struct Simctl {
     }
 
     /// All simulator devices across runtimes (from `simctl list -j devices`).
+    /// Throws on a real failure (non-zero `simctl`, unparseable JSON) so the true
+    /// cause (Xcode not selected, `xcrun` broken, …) surfaces instead of being
+    /// masked as "no booted simulator". Returns [] only for a valid, empty list.
     static func listDevices() throws -> [Device] {
         let r = try run(["list", "-j", "devices"])
-        guard r.code == 0, let data = r.out.data(using: .utf8),
+        guard r.code == 0 else {
+            throw SimctlError.failed("simctl list failed: \(r.err.isEmpty ? r.out : r.err)")
+        }
+        guard let data = r.out.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let byRuntime = root["devices"] as? [String: Any] else {
-            return []
+            throw SimctlError.failed("could not parse `simctl list -j devices` output")
         }
         var out: [Device] = []
         for (runtime, list) in byRuntime {
