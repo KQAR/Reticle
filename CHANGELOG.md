@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- iOS: `reticle serve --target ios` extends the host-side capture proxy
+  (`network.*` events, HTTPS MITM, session mocks) to iOS simulators, within the
+  same no-hook boundary as Android. Two host actions replace `adb`: the MITM CA
+  is trusted in the booted simulator via `xcrun simctl keychain add-root-cert`
+  (automatic with `--proxy-install-ca`, simulator-scoped), and — because a
+  simulator/real device has no per-app proxy hook and rides the host network —
+  proxy routing is **printed, not auto-applied**: `serve` emits the exact
+  `networksetup` set/restore commands for the active service so the user runs and
+  reverts the host-wide proxy explicitly (no risk of a killed daemon stranding
+  the Mac on a dead port). Captured traffic is attributed `ios:<udid>` (the proxy
+  target label is no longer hardcoded `android:`). Verified on iOS 26.3: a Safari
+  `https://example.com` fetch surfaced a decrypted `GET … 200` event targeted
+  `ios:<udid>`. This closes the iOS gap in the network-evidence lane and unblocks
+  the security B-lane (B1/B2) on iOS.
+
 - iOS: `act` (tap/swipe/drag/type/activate) now emits **action-trace evidence
   packages** — the iOS analogue of Android's traces, so an iOS action feeds the
   `reticle serve` timeline and web panel identically. `--trace-output <dir>` (or
