@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- iOS: hardened `scripts/e2e-ios-device.sh` and validated the full linked-agent
+  real-device path on an iPhone 13 Pro Max (iOS 26): `status / ui report /
+  ui compact / ui screenshot / act activate / mutate / debug logs` and the
+  action-trace evidence package all confirmed over the USB tunnel. Script fixes
+  surfaced by the run: auto-resolve the device via `idevice_id -l` (the hardware
+  ECID is the one id that works for `xcodebuild -destination`, `devicectl`, and
+  `iproxy` — the `devicectl` coredevice UUID does not); a lock-state precheck
+  (a locked device rejects launch and suspends the app); wait for the agent to
+  become reachable; and an action-trace assertion. Documented a real-device
+  behavior: SwiftUI `axElement`s materialize only after an accessibility *action*
+  (plain observation does not engage the tree), so the script does a throwaway
+  activation to warm it before selector steps. Agent-side auto-engagement remains
+  a follow-up (the `_AXSSetApplicationAccessibilityEnabled` flag alone did not
+  suffice).
+
 - iOS: `reticle serve --target ios` extends the host-side capture proxy
   (`network.*` events, HTTPS MITM, session mocks) to iOS simulators, within the
   same no-hook boundary as Android. Two host actions replace `adb`: the MITM CA
