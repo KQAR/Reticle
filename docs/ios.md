@@ -120,6 +120,38 @@ running the trace publishes as an `action.trace` event targeted `ios:<pkg>`; the
 manifest carries `platform: "ios"` so the daemon labels it correctly. The diff is
 platform-neutral and matches `reticle-core`'s `ActionTraceDiff` field-for-field.
 
+## Network capture (proxy / MITM / mock)
+
+`reticle serve --target ios` puts iOS on the same host-side capture proxy as
+Android — `network.*` events, HTTPS MITM, and session mocks — within the same
+no-hook boundary (whistle's ceiling: no pinning bypass, no in-app trust
+injection). Two host-side actions replace Android's `adb`:
+
+- **CA trust** is automatic with `--proxy-install-ca`: the MITM root is trusted
+  in the booted simulator via `xcrun simctl keychain <udid> add-root-cert` — a
+  simulator-scoped host action. (A real device instead needs the CA installed
+  and trusted as a configuration profile.)
+- **Routing is manual and printed, not auto-applied.** A simulator (and a real
+  device) has no per-app proxy hook — the simulator rides the host network, so
+  routing means the macOS *system* proxy, a host-wide setting. Rather than mutate
+  it (and risk leaving the whole Mac pointing at a dead port if the daemon is
+  killed), `serve` prints the exact `networksetup` set/restore commands for the
+  active network service; you run and revert them explicitly. This mirrors the
+  real-device story (set the proxy in Wi-Fi settings), so the whole iOS family is
+  consistent.
+
+```
+reticle serve --target ios --serial <udid> \
+  --proxy-mitm true --proxy-install-ca true --proxy-ssl-hosts example.com \
+  --proxy-device true            # prints the networksetup routing commands
+```
+
+MITM decryption is allowlist-gated (`--proxy-ssl-hosts host,*.host`); hosts not
+listed pass through as opaque CONNECT tunnels. Captured traffic is attributed to
+`ios:<udid>` in the timeline. Verified on iOS 26.3: a Safari fetch of
+`https://example.com` surfaced a decrypted `GET … 200` event targeted
+`ios:<udid>`.
+
 ## Building & running
 
 ```

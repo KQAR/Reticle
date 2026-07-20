@@ -9,6 +9,7 @@ public struct ServeOptions {
     public let eventLimit: Int
     public let rootDirectory: URL
     public let discovery: DaemonDiscovery
+    public let target: String
     public let serial: String?
     public let proxyPort: Int?
     public let proxyDevice: Bool
@@ -26,6 +27,7 @@ public struct ServeOptions {
         eventLimit = Int(args.option("event-limit") ?? "") ?? 500
         rootDirectory = DaemonDiscovery.reticleHome().appendingPathComponent("sessions", isDirectory: true)
         discovery = DaemonDiscovery()
+        target = args.option("target") ?? "android"
         serial = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
         proxyPort = args.option("proxy-port").map { Int($0) ?? 9090 }
         proxyDevice = args.option("proxy-device") == "true"
@@ -94,11 +96,15 @@ public final class ServeRuntime {
             if options.proxyInstallCa, let certificates {
                 try installCA(certificates)
             }
+            // Attribute captured traffic to the platform target. iOS shares the
+            // host network, so the serial is the booted simulator's udid.
+            let attributedSerial = options.serial
+                ?? (options.target == "ios" ? try? Simctl.resolveUdid(nil) : nil)
             let proxy = try NetworkProxyServer(
                 store: store,
                 configuration: NetworkProxyConfiguration(
                     port: proxyPort,
-                    target: options.serial.map { "android:\($0)" },
+                    target: attributedSerial.map { "\(options.target):\($0)" },
                     mitmEnabled: options.proxyMitm,
                     caDirectory: options.proxyCaDirectory,
                     tlsHostAllowlist: options.proxyTlsHosts
@@ -108,7 +114,14 @@ public final class ServeRuntime {
             try proxy.start()
             proxyServer = proxy
             if options.proxyDevice {
-                proxyRestore = try configureDeviceProxy(port: proxy.port)
+                // iOS routing is manual (a simulator/real device has no per-app
+                // proxy hook — it rides the host network / Wi-Fi settings), so we
+                // print the exact commands instead of mutating the host proxy.
+                if options.target == "ios" {
+                    printIosProxyRoutingHint(port: proxy.port)
+                } else {
+                    proxyRestore = try configureDeviceProxy(port: proxy.port)
+                }
             }
         }
 
@@ -185,6 +198,19 @@ public final class ServeRuntime {
     }
 
     private func installCA(_ certificates: ProxyCertificateStore) throws {
+        // iOS: trust the MITM CA in the booted simulator's keychain — a host-side,
+        // simulator-scoped action (no adb helper, no hook). The real-device
+        // analogue is installing the CA as a trusted configuration profile.
+        if options.target == "ios" {
+            let udid = try Simctl.resolveUdid(options.serial)
+            let r = try Simctl.run(["keychain", udid, "add-root-cert", certificates.caCertificateDER.path])
+            if r.code != 0 {
+                throw HelperError("could not trust the MITM CA in simulator \(udid): "
+                    + (r.err.isEmpty ? r.out : r.err))
+            }
+            print("reticle serve: trusted MITM CA in simulator \(udid)")
+            return
+        }
         guard let helper = options.helper else {
             throw HelperError("could not find reticle-helper for --proxy-install-ca")
         }
@@ -218,6 +244,60 @@ public final class ServeRuntime {
             FileHandle.standardError.write(Data("warning: could not restore device proxy: \(error)\n".utf8))
         }
         client.shutdown()
+    }
+
+    /// Print the exact commands to route the host network (which the booted
+    /// simulator shares) through this proxy, and to restore it afterward. We do
+    /// not mutate the system proxy ourselves: it is a host-wide setting whose
+    /// blast radius (and the risk of leaving it pointing at a dead port if the
+    /// daemon is killed) is the user's to accept, run, and revert explicitly.
+    private func printIosProxyRoutingHint(port: Int) {
+        let svc = activeNetworkService() ?? "Wi-Fi"
+        print("reticle serve: iOS routing is manual — the simulator shares the host network")
+        print("  and has no per-app proxy hook. Route the host through this proxy:")
+        print("    networksetup -setwebproxy \"\(svc)\" 127.0.0.1 \(port)")
+        print("    networksetup -setsecurewebproxy \"\(svc)\" 127.0.0.1 \(port)")
+        print("  Restore when done (or if this daemon exits):")
+        print("    networksetup -setwebproxystate \"\(svc)\" off")
+        print("    networksetup -setsecurewebproxystate \"\(svc)\" off")
+        if !options.proxyInstallCa, let caDER = options.proxyCaDirectory?.appendingPathComponent("reticle-ca.cer") {
+            print("  For HTTPS decryption, trust the CA in the sim (or pass --proxy-install-ca):")
+            print("    xcrun simctl keychain <booted-udid> add-root-cert \(caDER.path)")
+        }
+        print("  (A real device instead needs the proxy set in its Wi-Fi settings + the CA")
+        print("   installed and trusted as a configuration profile.)")
+        fflush(stdout)
+    }
+
+    /// Best-effort name of the network service on the default route (e.g. "Wi-Fi"),
+    /// so the printed `networksetup` commands are copy-paste ready. Falls back to
+    /// nil when it can't be determined.
+    private func activeNetworkService() -> String? {
+        func tool(_ path: String, _ args: [String]) -> String? {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: path)
+            p.arguments = args
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = Pipe()
+            guard (try? p.run()) != nil else { return nil }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            guard p.terminationStatus == 0 else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+        guard let route = tool("/sbin/route", ["get", "default"]),
+              let ifaceLine = route.split(separator: "\n").first(where: { $0.contains("interface:") }),
+              let iface = ifaceLine.split(separator: ":").last?.trimmingCharacters(in: .whitespaces),
+              let order = tool("/usr/sbin/networksetup", ["-listnetworkserviceorder"]) else { return nil }
+        // Each service is a "(N) Name" line followed by a "(Hardware Port: ..., Device: enX)" line.
+        let lines = order.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        for (i, line) in lines.enumerated() where line.contains("Device: \(iface))") && i > 0 {
+            if let sep = lines[i - 1].range(of: ") ") {
+                return String(lines[i - 1][sep.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
     }
 
     private func installSignalHandlers() {

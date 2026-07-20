@@ -580,9 +580,14 @@ Android first and complete; everything else reserved behind the spec + SPI.
   evidence hooks are landed. iOS `act` now also emits **action-trace evidence**
   into the shared `reticle serve` timeline / panel (events targeted `ios:<pkg>`),
   so iOS rides the same evidence pipeline as Android — the "Proposed next"
-  evidence-workflow products (A1/A2/A4) now apply cross-platform. Remaining iOS
-  gaps: host-side proxy/mock parity for the B-lane on iOS, and broader real-device
-  validation.
+  evidence-workflow products (A1/A2/A4) now apply cross-platform. The host-side
+  capture proxy (`network.*`, HTTPS MITM, session mocks) also extends to iOS
+  simulators via `reticle serve --target ios`: CA trust through
+  `simctl keychain`, manual (printed) system-proxy routing since a
+  simulator/device has no per-app hook, and `ios:<udid>` traffic attribution —
+  so the security B-lane (B1/B2) is now reachable on iOS. Remaining iOS gaps:
+  real-device proxy validation (Wi-Fi proxy + CA profile), and broader
+  real-device linked-agent validation.
 
 # Proposed next: evidence workflows + security-evidence lane
 
