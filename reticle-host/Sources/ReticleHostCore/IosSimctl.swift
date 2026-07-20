@@ -37,8 +37,20 @@ struct Simctl {
         process.standardOutput = outPipe
         process.standardError = errPipe
         try process.run()
+        // Drain both pipes concurrently. Reading stdout fully before touching
+        // stderr deadlocks when a chatty subcommand fills stderr's ~64KB pipe
+        // buffer while we're still blocked on stdout (the reason Android's Adb
+        // drains on separate threads). Read stderr off-thread, stdout here.
+        let errHandle = errPipe.fileHandleForReading
+        let errBox = ResultBox<Data>(fallback: .success(Data()))
+        let errDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            errBox.set(.success(errHandle.readDataToEndOfFile()))
+            errDone.signal()
+        }
         let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        errDone.wait()
+        let errData = (try? errBox.value.get()) ?? Data()
         process.waitUntilExit()
         return (
             String(decoding: outData, as: UTF8.self),
