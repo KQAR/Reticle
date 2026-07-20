@@ -29,8 +29,14 @@ int reticle_sim_hid_swipe(const char *udid, double x1, double y1, double x2, dou
                           double widthPoints, double heightPoints, double durationMs,
                           char *err, size_t errlen);
 
-// ASCII text only (non-ASCII goes through the agent clipboard + paste path).
+// Printable-ASCII text only (0x20..0x7E, plus tab/newline). Non-ASCII (CJK,
+// emoji, accented Latin) goes through the agent clipboard + paste path.
 int reticle_sim_hid_type(const char *udid, const char *asciiText, char *err, size_t errlen);
+
+// Press Cmd+V to paste the focused field's contents from the clipboard (which
+// the in-process agent staged via POST /clipboard). The iOS analogue of
+// Android's KEYCODE_PASTE, for text the HID keyboard can't emit.
+int reticle_sim_hid_paste(const char *udid, char *err, size_t errlen);
 
 #ifdef __cplusplus
 }
