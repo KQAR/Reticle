@@ -194,19 +194,17 @@ scripts/e2e-ios.sh                                      # full simulator round t
   accessibility identity are **not** addressable — a documented contract, not a
   bug — exactly like the Android Compose-semantics boundary. The accessibility
   runtime must be engaged for these elements to populate. On the simulator with
-  Simulator.app open it already is; on a **real device it is not, and — verified
-  on an iPhone 13 Pro Max / iOS 26 — plain observation does not engage it**:
-  repeated `ui report`s capture only the raw UIKit view tree, so
-  `.accessibilityIdentifier`s (e.g. `scenario.checkout`) are absent until an
-  accessibility *action* wakes the tree. A single `act activate` (even a
-  no-op activation on a non-`UIControl`, which returns
-  `unsupported_activation_target`) engages it, after which every SwiftUI
-  `axElement` surfaces. `scripts/e2e-ios-device.sh` therefore does a throwaway
-  activation to warm the tree before selector steps. Auto-engaging this from the
-  agent at startup is an open follow-up: setting the private
-  `_AXSSetApplicationAccessibilityEnabled(true)` flag alone did **not** suffice
-  (the tree still only built after an actual accessibility action), so the
-  correct in-process trigger is still to be found.
+  Simulator.app open it already is; on a **real device it is not by default** —
+  SwiftUI builds its accessibility tree lazily, only once an accessibility client
+  is active, so plain observation would capture just the raw UIKit view tree. The
+  agent engages it at startup with `_AXSSetAutomationEnabled(true)` (the private
+  flag XCUITest sets to expose accessibility for automation — no VoiceOver, fires
+  no control), so `.accessibilityIdentifier`s (e.g. `scenario.checkout`) surface
+  on the **first** device observation. Verified on an iPhone 13 Pro Max / iOS 26:
+  first `ui report` after launch lists all four SwiftUI scenario buttons, no
+  warm-up action needed. (Note: the sibling `_AXSSetApplicationAccessibilityEnabled`
+  setter symbol does not exist in `libAccessibility` — only the *automation* pair
+  `_AXSAutomationEnabled` / `_AXSSetAutomationEnabled` does.)
 - **`act` input (HID) is simulator-only and a capability, not a runtime-version
   cutoff.** `CReticleSimHID` synthesizes real touch/keyboard via the private
   SimulatorKit path, reverse-engineered from Xcode 26: build a real `IOHIDEvent`

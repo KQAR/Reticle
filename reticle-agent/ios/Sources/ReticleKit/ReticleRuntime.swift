@@ -53,6 +53,7 @@ final class ReticleRuntime: @unchecked Sendable {
             server = srv
             boundPort = bound
             lock.unlock()
+            engageAccessibilityRuntime()
             NSLog("[Reticle] agent listening on \(bindHost):\(bound) for \(bundleId)")
             return bound
         } catch {
@@ -60,6 +61,31 @@ final class ReticleRuntime: @unchecked Sendable {
             NSLog("[Reticle] failed to start server on \(bindHost):\(chosen): \(error)")
             return -1
         }
+    }
+
+    /// Engage the accessibility runtime once at startup so SwiftUI builds its
+    /// accessibility tree. On a real device SwiftUI populates `axElement`s (which
+    /// carry `.accessibilityIdentifier`) lazily — only once an accessibility
+    /// client is active — so without this the first (often every) device
+    /// observation captures just the raw UIKit view tree and selector targeting
+    /// silently misses. `_AXSSetAutomationEnabled(true)` is exactly the flag
+    /// XCUITest sets to expose accessibility for automation, without VoiceOver
+    /// and without firing any control. Done at startup (not first capture) so the
+    /// tree is built by the time the host observes. Best-effort and guarded: a
+    /// missing symbol is a no-op. (The simulator has it engaged via Simulator.app.)
+    private func engageAccessibilityRuntime() {
+        #if canImport(UIKit)
+        guard let handle = dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW) else { return }
+        typealias BoolGetter = @convention(c) () -> Bool
+        typealias BoolSetter = @convention(c) (Bool) -> Void
+        if let isOn = dlsym(handle, "_AXSAutomationEnabled"),
+           unsafeBitCast(isOn, to: BoolGetter.self)() {
+            return
+        }
+        guard let setter = dlsym(handle, "_AXSSetAutomationEnabled") else { return }
+        unsafeBitCast(setter, to: BoolSetter.self)(true)
+        NSLog("[Reticle] engaged accessibility runtime (automation enabled)")
+        #endif
     }
 
     /// Auto-start gate for the injection path. Allowed when explicitly enabled via
