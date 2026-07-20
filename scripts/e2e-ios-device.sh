@@ -1,29 +1,59 @@
 #!/usr/bin/env bash
 # End-to-end smoke test for the iOS agent on a REAL DEVICE (linked path).
-# Validated on an iPhone 13 Pro Max (iOS 26) with a free developer account.
+# Validated on an iPhone 13 Pro Max (iOS 26) with a personal signing cert.
 #
 # Prereqs (interactive, one-time):
-#   - A valid Apple ID signed into Xcode (Settings > Accounts) for automatic signing.
-#   - Device paired, Developer Mode on, and the developer cert TRUSTED on-device
+#   - An Apple ID signed into Xcode (Settings > Accounts) whose team owns a
+#     signing cert — automatic signing needs the ACCOUNT present, not just a
+#     cert in the keychain. `xcodebuild` errors "No Account for Team <id>" when
+#     the account is missing; pass a team that IS signed in.
+#   - Device paired, Developer Mode on, the developer cert TRUSTED on-device
 #     (Settings > General > VPN & Device Management) after the first install.
-#   - A free account allows only 3 installed dev apps per device — free a slot if full.
+#   - The device UNLOCKED at launch time and ideally Auto-Lock = Never: iOS
+#     refuses `devicectl process launch` on a locked device, and a backgrounded
+#     app is suspended (its loopback socket dies), so keep the app foreground.
+#   - A free account allows only 3 installed dev apps per device — free a slot.
 #   - iproxy (brew install libimobiledevice): a real device's loopback is NOT the
 #     host's, so agent traffic is tunneled over USB.
 #
-# Usage: scripts/e2e-ios-device.sh <device-udid> <team-id> [bundle-id]
+# Usage: scripts/e2e-ios-device.sh <team-id> [device-udid|auto] [bundle-id]
+#   team-id     : DEVELOPMENT_TEAM with a signed-in Xcode account
+#                 (security find-identity -p codesigning -v shows certs;
+#                  the team must additionally be signed into Xcode).
+#   device-udid : defaults to `auto` -> `idevice_id -l`. IMPORTANT: use this
+#                 (the hardware ECID, e.g. 00008110-...). It is the one id that
+#                 works for xcodebuild `-destination id=`, `devicectl --device`,
+#                 AND `iproxy -u`. The `devicectl list devices` "coredevice UUID"
+#                 does NOT match an xcodebuild destination.
 set -euo pipefail
 
-DEV_UDID="${1:?device udid (xcrun devicectl list devices)}"
-TEAM="${2:?team id (security find-identity -p codesigning -v)}"
+TEAM="${1:?team id (see usage — must be signed into Xcode)}"
+DEV_ARG="${2:-auto}"
 BUNDLE="${3:-dev.reticle.sampleios}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="${RETICLE_HOST:-$ROOT/reticle-host/.build/debug/ReticleHost}"
 DD="$HOME/Library/Developer/Xcode/DerivedData/SampleAppIOS-dev"
+
+command -v iproxy >/dev/null || { echo "iproxy not found (brew install libimobiledevice)"; exit 1; }
+command -v idevice_id >/dev/null || { echo "idevice_id not found (brew install libimobiledevice)"; exit 1; }
+[ -x "$HOST" ] || { echo "build the host first: swift build --package-path reticle-host"; exit 1; }
+
+if [ "$DEV_ARG" = "auto" ]; then
+  DEV_UDID="$(idevice_id -l 2>/dev/null | head -1)"
+else
+  DEV_UDID="$DEV_ARG"
+fi
+[ -n "$DEV_UDID" ] || { echo "no device found (idevice_id -l empty); connect + trust a device"; exit 1; }
+echo "device: $DEV_UDID  team: $TEAM  bundle: $BUNDLE"
+
 PORT="$(/usr/bin/python3 -c 'x=0x811C9DC5
 for b in "'"$BUNDLE"'".encode(): x^=b; x=(x*0x01000193)&0xFFFFFFFF
 print(8765+(x%1000))')"
 
-command -v iproxy >/dev/null || { echo "iproxy not found (brew install libimobiledevice)"; exit 1; }
+# A locked device rejects launch — surface it early rather than failing opaquely.
+if xcrun devicectl device info lockState --device "$DEV_UDID" 2>/dev/null | grep -q "passcodeRequired: true"; then
+  echo "device is LOCKED — unlock it (and set Auto-Lock = Never) before running"; exit 1
+fi
 
 echo "== build + sign SampleApp for device (team $TEAM) =="
 ( cd "$ROOT/sample-app-ios/xcode" && xcodegen generate >/dev/null )
@@ -33,25 +63,68 @@ xcodebuild -project "$ROOT/sample-app-ios/xcode/SampleAppIOS.xcodeproj" -scheme 
 APP="$DD/Build/Products/Debug-iphoneos/SampleApp.app"
 
 echo "== install + launch =="
-xcrun devicectl device install app --device "$DEV_UDID" "$APP"
-xcrun devicectl device process launch --device "$DEV_UDID" "$BUNDLE"
-sleep 2
+xcrun devicectl device install app --device "$DEV_UDID" "$APP" >/dev/null
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing "$BUNDLE" >/dev/null
 
 echo "== USB tunnel host:$PORT -> device:$PORT =="
 pkill -f "iproxy .*$PORT" 2>/dev/null || true
 iproxy -u "$DEV_UDID" "$PORT:$PORT" >/dev/null 2>&1 & IPROXY=$!
 trap 'kill $IPROXY 2>/dev/null || true' EXIT
-sleep 2
+
+OUT="$(mktemp -d)"
+
+echo "== wait for the in-process agent (app must stay foreground) =="
+READY=0
+for _ in $(seq 1 12); do
+  sleep 1
+  if "$HOST" --target ios status --package "$BUNDLE" 2>/dev/null | grep -q "runtime: healthy"; then READY=1; break; fi
+done
+[ "$READY" = 1 ] || { echo "FAIL: agent never became reachable over the tunnel (app suspended? device asleep?)"; exit 1; }
+"$HOST" --target ios status --package "$BUNDLE"
 
 echo "== observation over the tunnel =="
-OUT="$(mktemp -d)"
-"$HOST" --target ios status --package "$BUNDLE"
 "$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/report"
 "$HOST" --target ios ui compact "$OUT/report/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$BUNDLE" --output "$OUT/shot.png"
+
+# SwiftUI accessibility elements (axElements carrying .accessibilityIdentifier)
+# materialize LAZILY on a real device: plain snapshots capture only the raw UIKit
+# view tree, so a selector like `scenario.checkout` is absent until the app's
+# accessibility runtime is engaged. Engaging it needs an accessibility ACTION,
+# not just observation — a throwaway `act activate` on a SwiftUI hosting node
+# (harmless: those aren't UIControls, so it no-ops with unsupported_activation_
+# target but still wakes the AX server). We activate a few captured refs until
+# the identifiers surface. (On the simulator the AX runtime is already engaged
+# via Simulator.app, so this is device-only. Auto-engaging from the agent is a
+# known follow-up: the `_AXSSetApplicationAccessibilityEnabled` flag alone did
+# NOT suffice — the tree only builds after an actual accessibility action.)
+echo "== engage the accessibility tree (SwiftUI axElements are lazy on device) =="
+REFS="$(/usr/bin/python3 -c 'import json; d=json.load(open("'"$OUT"'/report/snapshot.json")); print(" ".join(list(d.get("nodes",{}).keys())[:12]))' 2>/dev/null)"
+AX_READY=0
+for ref in $REFS; do
+  "$HOST" --target ios act activate --package "$BUNDLE" --ref "$ref" >/dev/null 2>&1 || true
+  "$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/warm" >/dev/null 2>&1 || true
+  if grep -q "scenario.checkout" "$OUT/warm/snapshot.json" 2>/dev/null; then AX_READY=1; break; fi
+done
+[ "$AX_READY" = 1 ] || { echo "FAIL: SwiftUI axElements never surfaced after AX engage"; exit 1; }
+echo "accessibility tree ready"
+
 # Navigate into the Checkout scenario via in-process activation — the device
-# analogue of a tap (no HID surface on a real phone).
-"$HOST" --target ios act activate --package "$BUNDLE" --test-id scenario.checkout
+# analogue of a tap (no HID surface on a real phone). `--trace-output` also
+# exercises the action-trace evidence package end-to-end on the device.
+echo "== act activate + action-trace over the tunnel =="
+"$HOST" --target ios act activate --package "$BUNDLE" --test-id scenario.checkout --trace-output "$OUT/trace"
 sleep 1
 "$HOST" --target ios mutate --package "$BUNDLE" --test-id checkout.payButton --property alpha --value 0.35
+
+TRACE_JSON="$(find "$OUT/trace" -name trace.json | head -1)"
+[ -n "$TRACE_JSON" ] || { echo "FAIL: no action-trace manifest written on device"; exit 1; }
+grep -q '"platform":"ios"' "$TRACE_JSON" || grep -q '"platform": "ios"' "$TRACE_JSON" \
+  || { echo "FAIL: trace.json missing platform=ios"; exit 1; }
+TDIR="$(dirname "$TRACE_JSON")"
+[ -f "$TDIR/before.snapshot.json" ] && [ -f "$TDIR/after.snapshot.json" ] \
+  && [ -f "$TDIR/before.screenshot.png" ] && [ -f "$TDIR/after.screenshot.png" ] \
+  || { echo "FAIL: trace missing before/after snapshot+screenshot artifacts"; exit 1; }
+echo "action-trace evidence package written on device: $TDIR"
+
 echo "== OK (HID gestures are NOT available on a real device; activation is) — artifacts in $OUT =="
