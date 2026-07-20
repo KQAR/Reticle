@@ -5,14 +5,14 @@ import dev.reticle.core.Rect
 import dev.reticle.core.Snapshot
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.double
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import java.io.File
 import java.security.MessageDigest
@@ -58,7 +58,16 @@ internal object OutlineRenderer {
     fun writeCache(snapshot: Snapshot, entries: List<Entry>, serial: String?, packageName: String) {
         val file = cacheFile(serial, packageName)
         file.parentFile.mkdirs()
-        file.writeText(ReticleJsonString.encode(cachePayload(snapshot, serial, packageName, entries)))
+        val payload = ReticleJsonString.encode(cachePayload(snapshot, serial, packageName, entries))
+        // Write atomically (temp + rename in the same dir) so a crash mid-write
+        // can't leave a truncated cache that breaks the next alias resolution.
+        val tmp = File.createTempFile("outline-", ".json", file.parentFile)
+        try {
+            tmp.writeText(payload)
+            if (!tmp.renameTo(file)) file.writeText(payload) // rename failed (rare): direct write
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
     }
 
     fun resolveAlias(serial: String?, packageName: String, alias: String): Entry {
@@ -66,7 +75,8 @@ internal object OutlineRenderer {
         if (!file.exists()) {
             throw CliError("no outline alias cache for '$packageName'. Run `reticle ui outline --live --package $packageName` first.")
         }
-        val root = ReticleJsonString.parse(file.readText())
+        val root = runCatching { ReticleJsonString.parse(file.readText()) }
+            .getOrElse { throw corruptOutlineCache(packageName, "unreadable JSON") }
         val version = root["version"]?.jsonPrimitive?.int ?: 0
         if (version != CACHE_VERSION) {
             throw CliError("outline alias cache version mismatch. Re-run `reticle ui outline --live --package $packageName`.")
@@ -74,7 +84,7 @@ internal object OutlineRenderer {
         val entries = root["entries"]?.jsonArray ?: JsonArray(emptyList())
         val item = entries.map { it.jsonObject }.firstOrNull { it["alias"]?.jsonPrimitive?.content == alias }
             ?: throw CliError(aliasMiss(alias, entries))
-        return entryFromJson(item)
+        return entryFromJson(item, packageName)
     }
 
     private fun collect(snapshot: Snapshot): List<Entry> {
@@ -175,28 +185,38 @@ internal object OutlineRenderer {
             })
         }
 
-    private fun entryFromJson(item: JsonObject): Entry {
-        val frame = item["frame"]!!.jsonObject
+    /**
+     * Parse one cached entry defensively. The cache is Reticle's own round-trip
+     * and guarded by [CACHE_VERSION], but a truncated/hand-edited file would
+     * otherwise surface a raw NPE / cast exception here; instead throw a clean
+     * CliError that tells the agent to re-run the outline.
+     */
+    private fun entryFromJson(item: JsonObject, packageName: String): Entry {
+        fun str(key: String): String =
+            (item[key] as? JsonPrimitive)?.contentOrNull ?: throw corruptOutlineCache(packageName, "missing '$key'")
+        val frame = (item["frame"] as? JsonObject) ?: throw corruptOutlineCache(packageName, "missing 'frame'")
+        fun num(key: String): Double =
+            (frame[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+                ?: throw corruptOutlineCache(packageName, "frame.$key is not a number")
+        fun opt(key: String): String? = (item[key] as? JsonPrimitive)?.contentOrNull
         return Entry(
-            alias = item["alias"]!!.jsonPrimitive.content,
-            ref = item["ref"]!!.jsonPrimitive.content,
-            role = item["role"]!!.jsonPrimitive.content,
-            label = item["label"]?.jsonPrimitive?.content,
-            frame = Rect(
-                x = frame["x"]!!.jsonPrimitive.double,
-                y = frame["y"]!!.jsonPrimitive.double,
-                width = frame["width"]!!.jsonPrimitive.double,
-                height = frame["height"]!!.jsonPrimitive.double,
-            ),
-            testId = item["testId"]?.jsonPrimitive?.content,
-            resourceId = item["resourceId"]?.jsonPrimitive?.content,
-            css = item["css"]?.jsonPrimitive?.content,
-            enabled = item["enabled"]?.jsonPrimitive?.content == "true",
-            interactive = item["interactive"]?.jsonPrimitive?.content == "true",
-            listIndex = item["listIndex"]?.jsonPrimitive?.int,
-            listSize = item["listSize"]?.jsonPrimitive?.int,
+            alias = str("alias"),
+            ref = str("ref"),
+            role = str("role"),
+            label = opt("label"),
+            frame = Rect(x = num("x"), y = num("y"), width = num("width"), height = num("height")),
+            testId = opt("testId"),
+            resourceId = opt("resourceId"),
+            css = opt("css"),
+            enabled = opt("enabled") == "true",
+            interactive = opt("interactive") == "true",
+            listIndex = opt("listIndex")?.toIntOrNull(),
+            listSize = opt("listSize")?.toIntOrNull(),
         )
     }
+
+    private fun corruptOutlineCache(packageName: String, detail: String): CliError =
+        CliError("outline alias cache for '$packageName' is corrupt ($detail). Re-run `reticle ui outline --live --package $packageName`.")
 
     private fun listKey(entry: Entry): String {
         val frame = entry.frame
