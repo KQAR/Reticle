@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 - 2026-07-20
 
 - iOS: the capture proxy now supports **real devices**, not just simulators. A
   new `--proxy-bind` option (default `127.0.0.1`) lets the proxy bind the LAN
