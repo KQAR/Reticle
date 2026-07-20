@@ -48,4 +48,22 @@ struct IosInputBackend {
         let rc = reticle_sim_hid_type(udid, text, &buf, buf.count)
         if rc != 0 { throw InputError.hid(message(buf)) }
     }
+
+    /// Cmd+V — paste the clipboard (staged by the agent) into the focused field.
+    func paste() throws {
+        var buf = errorBuffer()
+        let rc = reticle_sim_hid_paste(udid, &buf, buf.count)
+        if rc != 0 { throw InputError.hid(message(buf)) }
+    }
+}
+
+enum IosText {
+    /// Whether the HID keyboard can emit every character — printable ASCII,
+    /// 0x20..0x7E. Mirrors Android's `InputBackend.isAsciiTypeable`; anything
+    /// outside (CJK, emoji, accented Latin, and control chars like newline)
+    /// routes through the clipboard + paste path instead of being silently
+    /// dropped by the keyboard.
+    static func isHidTypeable(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { (0x20...0x7E).contains($0.value) }
+    }
 }

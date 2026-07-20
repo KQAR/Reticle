@@ -299,10 +299,30 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             try assertHidAvailable(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             let before = tracer?.capture()
-            try IosInputBackend(udid: udid).type(text)
+            let via: String
+            if IosText.isHidTypeable(text) {
+                try IosInputBackend(udid: udid).type(text)
+                via = "hid"
+            } else {
+                // The HID keyboard can't emit non-ASCII (CJK / emoji / accented).
+                // Stage it on the clipboard via the in-process agent, then Cmd+V —
+                // the iOS analogue of Android's clipboard + KEYCODE_PASTE path.
+                // Like the HID path, this types into the current focus (no field is
+                // tapped first), so the field must already hold focus.
+                do {
+                    try IosAgentHTTP(bundleId: pkg).post(Endpoints.clipboard, body: Data(text.utf8))
+                } catch {
+                    throw HelperError("could not stage non-ASCII text on the clipboard (is the agent running?): \(error)")
+                }
+                // The agent sets UIPasteboard on the main thread asynchronously;
+                // give it a beat to land before pasting.
+                Thread.sleep(forTimeInterval: 0.12)
+                try IosInputBackend(udid: udid).paste()
+                via = "clipboard paste"
+            }
             return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
                                    point: nil, source: nil, ref: nil,
-                                   result: ["gesture": "type", "via": "hid", "text": text])
+                                   result: ["gesture": "type", "via": via, "text": text])
         default:
             throw HelperError("unknown gesture '\(gesture)'")
         }

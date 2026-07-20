@@ -298,6 +298,11 @@ int reticle_sim_hid_type(const char *udid, const char *text, char *err, size_t e
     }
 }
 
+// Map a printable-ASCII char to its US-layout USB HID keyboard usage (page
+// 0x07), setting *shift when the glyph needs Left Shift held. Covers the whole
+// 0x20..0x7E range so the Swift side's "typeable by HID" gate (that exact range)
+// is honest — anything outside it (CJK, emoji, accented Latin) goes through the
+// clipboard + paste path instead. Returns -1 for a glyph with no key.
 static int ascii_to_keycode(char c, int *shift) {
     *shift = 0;
     if (c >= 'a' && c <= 'z') return 4 + (c - 'a');
@@ -306,8 +311,44 @@ static int ascii_to_keycode(char c, int *shift) {
     if (c == '0') return 39;
     switch (c) {
         case ' ': return 44; case '\n': return 40; case '\t': return 43;
-        case '-': return 45; case '=': return 46; case '.': return 55;
-        case ',': return 54; case '/': return 56; case ';': return 51; case '\'': return 52;
+        // Unshifted punctuation.
+        case '-': return 45; case '=': return 46; case '[': return 47;
+        case ']': return 48; case '\\': return 49; case ';': return 51;
+        case '\'': return 52; case '`': return 53; case ',': return 54;
+        case '.': return 55; case '/': return 56;
+        // Shifted digits.
+        case '!': *shift = 1; return 30; case '@': *shift = 1; return 31;
+        case '#': *shift = 1; return 32; case '$': *shift = 1; return 33;
+        case '%': *shift = 1; return 34; case '^': *shift = 1; return 35;
+        case '&': *shift = 1; return 36; case '*': *shift = 1; return 37;
+        case '(': *shift = 1; return 38; case ')': *shift = 1; return 39;
+        // Shifted punctuation.
+        case '_': *shift = 1; return 45; case '+': *shift = 1; return 46;
+        case '{': *shift = 1; return 47; case '}': *shift = 1; return 48;
+        case '|': *shift = 1; return 49; case ':': *shift = 1; return 51;
+        case '"': *shift = 1; return 52; case '~': *shift = 1; return 53;
+        case '<': *shift = 1; return 54; case '>': *shift = 1; return 55;
+        case '?': *shift = 1; return 56;
         default: return -1;
+    }
+}
+
+// Press Cmd+V to paste the (agent-staged) clipboard into the focused field —
+// the iOS analogue of Android's KEYCODE_PASTE, used for text the HID keyboard
+// can't emit (non-ASCII). Left GUI (Command) is usage 0xE3, 'v' is keycode 25.
+int reticle_sim_hid_paste(const char *udid, char *err, size_t errlen) {
+    @autoreleasepool {
+        NSString *reason = nil;
+        id client = hid_client(@(udid), &reason);
+        if (!client) { set_err(err, errlen, reason ?: @"HID client unavailable"); return 2; }
+        if (!gHidArbitrary) { set_err(err, errlen, @"IndigoHIDMessageForHIDArbitrary not found"); return 10; }
+        const uint32_t kbPage = 0x07;   // Keyboard/Keypad usage page.
+        const uint32_t leftGui = 0xE3;  // Left GUI (Command) usage.
+        const uint32_t vKey = 25;       // 'v' = 4 + ('v' - 'a').
+        void *gd = gHidArbitrary(kTouchTarget, kbPage, leftGui, 1); if (gd) hid_send(client, gd);
+        void *vd = gHidArbitrary(kTouchTarget, kbPage, vKey, 1);    if (vd) hid_send(client, vd);
+        void *vu = gHidArbitrary(kTouchTarget, kbPage, vKey, 2);    if (vu) hid_send(client, vu);
+        void *gu = gHidArbitrary(kTouchTarget, kbPage, leftGui, 2); if (gu) hid_send(client, gu);
+        return 0;
     }
 }
