@@ -71,9 +71,19 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
 
     private func status(_ params: [String: Any]) throws -> [String: Any] {
         let pkg = try bundleId(params)
-        let devices = (try? listDevices()["devices"] as? [[String: Any]]) ?? []
+        // Runtime health comes over loopback and doesn't need simctl, so a simctl
+        // failure shouldn't fail the whole status — but it must be reported, not
+        // swallowed into an empty device list that reads like "no simulators".
+        var devices: [[String: Any]] = []
+        var devicesError: String?
+        do {
+            devices = (try listDevices()["devices"] as? [[String: Any]]) ?? []
+        } catch {
+            devicesError = "\(error)"
+        }
         let http = IosAgentHTTP(bundleId: pkg)
         var result: [String: Any] = ["devices": devices as Any, "package": pkg]
+        if let devicesError { result["devicesError"] = devicesError }
         if let info = http.probeRuntime() {
             result["running"] = true
             result["pid"] = info.pid
