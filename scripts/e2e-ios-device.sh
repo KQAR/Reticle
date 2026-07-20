@@ -88,25 +88,19 @@ echo "== observation over the tunnel =="
 "$HOST" --target ios ui screenshot --package "$BUNDLE" --output "$OUT/shot.png"
 
 # SwiftUI accessibility elements (axElements carrying .accessibilityIdentifier)
-# materialize LAZILY on a real device: plain snapshots capture only the raw UIKit
-# view tree, so a selector like `scenario.checkout` is absent until the app's
-# accessibility runtime is engaged. Engaging it needs an accessibility ACTION,
-# not just observation — a throwaway `act activate` on a SwiftUI hosting node
-# (harmless: those aren't UIControls, so it no-ops with unsupported_activation_
-# target but still wakes the AX server). We activate a few captured refs until
-# the identifiers surface. (On the simulator the AX runtime is already engaged
-# via Simulator.app, so this is device-only. Auto-engaging from the agent is a
-# known follow-up: the `_AXSSetApplicationAccessibilityEnabled` flag alone did
-# NOT suffice — the tree only builds after an actual accessibility action.)
-echo "== engage the accessibility tree (SwiftUI axElements are lazy on device) =="
-REFS="$(/usr/bin/python3 -c 'import json; d=json.load(open("'"$OUT"'/report/snapshot.json")); print(" ".join(list(d.get("nodes",{}).keys())[:12]))' 2>/dev/null)"
+# build LAZILY on a real device — only once the app's accessibility runtime is
+# engaged. The agent now engages it at startup (`_AXSSetAutomationEnabled(true)`,
+# the same flag XCUITest sets), so `.accessibilityIdentifier`s surface on the
+# first observation without any warm-up action. Poll briefly as a defensive
+# backstop for the asynchronous tree build.
+echo "== confirm SwiftUI axElements are present (agent engages AX at startup) =="
 AX_READY=0
-for ref in $REFS; do
-  "$HOST" --target ios act activate --package "$BUNDLE" --ref "$ref" >/dev/null 2>&1 || true
+for _ in $(seq 1 10); do
   "$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/warm" >/dev/null 2>&1 || true
   if grep -q "scenario.checkout" "$OUT/warm/snapshot.json" 2>/dev/null; then AX_READY=1; break; fi
+  sleep 1
 done
-[ "$AX_READY" = 1 ] || { echo "FAIL: SwiftUI axElements never surfaced after AX engage"; exit 1; }
+[ "$AX_READY" = 1 ] || { echo "FAIL: SwiftUI axElements never surfaced (agent AX engage failed?)"; exit 1; }
 echo "accessibility tree ready"
 
 # Navigate into the Checkout scenario via in-process activation — the device
