@@ -591,9 +591,13 @@ Android first and complete; everything else reserved behind the spec + SPI.
   action-trace evidence package all work over the USB tunnel. The agent engages
   the accessibility runtime at startup (`_AXSSetAutomationEnabled(true)`), so
   SwiftUI `axElement`s surface on the first device observation with no warm-up
-  action. Remaining iOS gaps: real-device *proxy* validation (Wi-Fi proxy + CA
-  profile), and real-device HID (structurally absent — no host-reachable input
-  surface).
+  action. The capture proxy also works on a real device (`--proxy-bind 0.0.0.0`
+  so the phone reaches the Mac over the LAN; Wi-Fi proxy + CA-as-profile,
+  manual) — verified on an iPhone 13 Pro Max / iOS 26 with a decrypted
+  `https://example.com` event targeted `ios:<ecid>`. The only structural iOS gap
+  left is real-device HID (no host-reachable input surface); `act activate`
+  covers the device tap. iOS is now at effective parity for observe/drive/capture
+  + evidence across simulator and device.
 
 # Proposed next: evidence workflows + security-evidence lane
 

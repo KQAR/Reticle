@@ -127,30 +127,46 @@ Android — `network.*` events, HTTPS MITM, and session mocks — within the sam
 no-hook boundary (whistle's ceiling: no pinning bypass, no in-app trust
 injection). Two host-side actions replace Android's `adb`:
 
-- **CA trust** is automatic with `--proxy-install-ca`: the MITM root is trusted
-  in the booted simulator via `xcrun simctl keychain <udid> add-root-cert` — a
-  simulator-scoped host action. (A real device instead needs the CA installed
-  and trusted as a configuration profile.)
-- **Routing is manual and printed, not auto-applied.** A simulator (and a real
-  device) has no per-app proxy hook — the simulator rides the host network, so
-  routing means the macOS *system* proxy, a host-wide setting. Rather than mutate
-  it (and risk leaving the whole Mac pointing at a dead port if the daemon is
-  killed), `serve` prints the exact `networksetup` set/restore commands for the
-  active network service; you run and revert them explicitly. This mirrors the
-  real-device story (set the proxy in Wi-Fi settings), so the whole iOS family is
-  consistent.
+Routing is never auto-applied — an iOS target has no per-app proxy hook, so it
+means either the macOS *system* proxy (simulator) or the phone's Wi-Fi proxy
+(device), both host/device-wide settings whose blast radius (and the risk of
+stranding on a dead port if the daemon dies) is the user's to accept. `serve
+--proxy-device` prints the exact steps for the target; you run and revert them.
+
+**Simulator** (`--proxy-bind` defaults to `127.0.0.1`; the sim shares the host
+network):
 
 ```
 reticle serve --target ios --serial <udid> \
   --proxy-mitm true --proxy-install-ca true --proxy-ssl-hosts example.com \
-  --proxy-device true            # prints the networksetup routing commands
+  --proxy-device true
 ```
 
-MITM decryption is allowlist-gated (`--proxy-ssl-hosts host,*.host`); hosts not
-listed pass through as opaque CONNECT tunnels. Captured traffic is attributed to
-`ios:<udid>` in the timeline. Verified on iOS 26.3: a Safari fetch of
+- CA trust is automatic with `--proxy-install-ca` — the MITM root is trusted in
+  the booted simulator via `xcrun simctl keychain <udid> add-root-cert`.
+- The hint prints the `networksetup -setwebproxy / -setsecurewebproxy` set +
+  off commands for the active network service.
+
+**Real device** — the phone reaches the Mac over the LAN, so bind the proxy to
+the LAN with `--proxy-bind 0.0.0.0` (an explicit opt-in — it exposes the MITM
+proxy on the network for the run):
+
+```
+reticle serve --target ios --serial <ecid> --proxy-bind 0.0.0.0 \
+  --proxy-mitm true --proxy-ssl-hosts example.com --proxy-device true
+```
+
+The hint then prints device-side steps: set the phone's Wi-Fi proxy to the Mac's
+LAN IP + port, and install + trust the CA as a profile (`--proxy-install-ca` is
+simulator-only — on a device get the `.cer` onto the phone, install it under
+VPN & Device Management, then enable full trust under Certificate Trust
+Settings). Verified on an iPhone 13 Pro Max / iOS 26: a Safari fetch of
 `https://example.com` surfaced a decrypted `GET … 200` event targeted
-`ios:<udid>`.
+`ios:<ecid>`.
+
+MITM decryption is allowlist-gated (`--proxy-ssl-hosts host,*.host`) on both;
+hosts not listed pass through as opaque CONNECT tunnels. Captured traffic is
+attributed to `ios:<udid|ecid>` in the timeline.
 
 ## Building & running
 
