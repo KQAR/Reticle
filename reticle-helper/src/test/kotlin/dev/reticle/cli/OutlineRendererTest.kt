@@ -6,10 +6,12 @@ import dev.reticle.core.Rect
 import dev.reticle.core.ScreenInfo
 import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
+import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 
 class OutlineRendererTest {
@@ -39,6 +41,35 @@ class OutlineRendererTest {
             assertEquals("button", resolved.role)
             assertEquals(60.0, resolved.frame.centerX)
             assertEquals(220.0, resolved.frame.centerY)
+        } finally {
+            System.setProperty("user.home", oldHome)
+            home.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun corruptAliasCacheThrowsCleanError() {
+        val home = Files.createTempDirectory("reticle-alias-home").toFile()
+        val oldHome = System.getProperty("user.home")
+        System.setProperty("user.home", home.absolutePath)
+        try {
+            val dir = File(File(File(home, ".reticle"), "aliases"), "emulator-5554/dev.reticle.sample")
+            dir.mkdirs()
+            val cache = File(dir, "last-outline.json")
+
+            // A truncated write (non-JSON) surfaces a clean error, not a parse crash.
+            cache.writeText("{ this is not valid json")
+            val e1 = assertFailsWith<CliError> {
+                OutlineRenderer.resolveAlias("emulator-5554", "dev.reticle.sample", "@1")
+            }
+            assertContains(e1.message ?: "", "corrupt")
+
+            // Valid JSON at the right version but a malformed entry (missing frame).
+            cache.writeText("""{"version":1,"entries":[{"alias":"@1","ref":"r","role":"button"}]}""")
+            val e2 = assertFailsWith<CliError> {
+                OutlineRenderer.resolveAlias("emulator-5554", "dev.reticle.sample", "@1")
+            }
+            assertContains(e2.message ?: "", "corrupt")
         } finally {
             System.setProperty("user.home", oldHome)
             home.deleteRecursively()
