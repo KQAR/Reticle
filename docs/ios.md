@@ -174,21 +174,39 @@ scripts/e2e-ios.sh                                      # full simulator round t
 - **Injection is simulator-only.** A real device must link `ReticleKit` at build
   time (no DYLD injection).
   The real-device linked path is validated (iPhone 13 Pro Max, iOS 26): build +
-  automatic-sign the app, install/launch via `devicectl`, trust the developer
-  cert on-device, then tunnel the agent port over USB with
+  sign the app, install/launch via `devicectl`, trust the developer cert
+  on-device, then tunnel the agent port over USB with
   `iproxy -u <udid> <port>:<port>` (a device's loopback is not the host's).
-  `reticle --target ios status / ui report / ui screenshot / mutate` all work
-  over that tunnel; screenshots come from the agent's in-process render (never a
-  stray booted simulator). See `scripts/e2e-ios-device.sh`. A free developer
-  account caps installs at 3 apps/device.
+  `status / ui report / ui compact / ui screenshot / act activate / mutate /
+  debug logs` and the **action-trace evidence package** all work over that
+  tunnel; screenshots come from the agent's in-process render. See
+  `scripts/e2e-ios-device.sh`. Two device gotchas the script handles: use the
+  hardware **ECID** as the device id (`idevice_id -l`) — it is the one id that
+  works for `xcodebuild -destination`, `devicectl`, and `iproxy` alike (the
+  `devicectl list devices` coredevice UUID does not match an xcodebuild
+  destination) — and the device must be **unlocked** to launch (a locked or
+  slept device rejects `devicectl process launch` and suspends the app). A free
+  developer account caps installs at 3 apps/device, and automatic signing needs
+  the team's Apple ID actually signed into Xcode (a keychain cert is not enough).
 - **SwiftUI addressability = accessibility.** A SwiftUI element surfaces as an
   `axElement` only when it is exposed through the platform accessibility tree
   (i.e. carries `.accessibilityIdentifier(...)` / a label). Elements with no
   accessibility identity are **not** addressable — a documented contract, not a
-  bug — exactly like the Android Compose-semantics boundary. Note the
-  accessibility runtime must be engaged for these elements to populate; a
-  strictly headless simulator (no Simulator UI, no accessibility) may expose the
-  UIKit tree but not SwiftUI `axElement`s.
+  bug — exactly like the Android Compose-semantics boundary. The accessibility
+  runtime must be engaged for these elements to populate. On the simulator with
+  Simulator.app open it already is; on a **real device it is not, and — verified
+  on an iPhone 13 Pro Max / iOS 26 — plain observation does not engage it**:
+  repeated `ui report`s capture only the raw UIKit view tree, so
+  `.accessibilityIdentifier`s (e.g. `scenario.checkout`) are absent until an
+  accessibility *action* wakes the tree. A single `act activate` (even a
+  no-op activation on a non-`UIControl`, which returns
+  `unsupported_activation_target`) engages it, after which every SwiftUI
+  `axElement` surfaces. `scripts/e2e-ios-device.sh` therefore does a throwaway
+  activation to warm the tree before selector steps. Auto-engaging this from the
+  agent at startup is an open follow-up: setting the private
+  `_AXSSetApplicationAccessibilityEnabled(true)` flag alone did **not** suffice
+  (the tree still only built after an actual accessibility action), so the
+  correct in-process trigger is still to be found.
 - **`act` input (HID) is simulator-only and a capability, not a runtime-version
   cutoff.** `CReticleSimHID` synthesizes real touch/keyboard via the private
   SimulatorKit path, reverse-engineered from Xcode 26: build a real `IOHIDEvent`

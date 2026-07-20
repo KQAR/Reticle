@@ -585,9 +585,15 @@ Android first and complete; everything else reserved behind the spec + SPI.
   simulators via `reticle serve --target ios`: CA trust through
   `simctl keychain`, manual (printed) system-proxy routing since a
   simulator/device has no per-app hook, and `ios:<udid>` traffic attribution —
-  so the security B-lane (B1/B2) is now reachable on iOS. Remaining iOS gaps:
-  real-device proxy validation (Wi-Fi proxy + CA profile), and broader
-  real-device linked-agent validation.
+  so the security B-lane (B1/B2) is now reachable on iOS. The linked-agent
+  real-device path is validated on an iPhone 13 Pro Max (iOS 26) via
+  `scripts/e2e-ios-device.sh`: observation, `act activate`, `mutate`, and the
+  action-trace evidence package all work over the USB tunnel. Remaining iOS gaps:
+  real-device *proxy* validation (Wi-Fi proxy + CA profile); auto-engaging the
+  accessibility runtime from the agent so SwiftUI `axElement`s surface on the
+  first device observation without a warm-up activation (open — the
+  `_AXSSetApplicationAccessibilityEnabled` flag alone was insufficient); and
+  real-device HID (structurally absent — no host-reachable input surface).
 
 # Proposed next: evidence workflows + security-evidence lane
 
