@@ -7,6 +7,31 @@ import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.SemanticTree
 import kotlinx.serialization.json.JsonObject
 
+/**
+ * Session-scoped record of the `adb forward`s the helper set up, so they can be
+ * torn down when the helper exits. Forwards live on the (persistent) adb server,
+ * which outlives the helper process, so without this they leak — one per distinct
+ * package driven — and pile up across sessions. Idempotent per host port (the
+ * port is derived deterministically from the package, so re-driving the same app
+ * reuses one forward). Access is single-threaded: the helper serves RPC lines
+ * sequentially and cleanup runs after that loop.
+ */
+internal object ForwardRegistry {
+    private val forwards = LinkedHashMap<Int, DeviceController>()
+
+    fun record(device: DeviceController, hostPort: Int) {
+        forwards[hostPort] = device
+    }
+
+    /** Best-effort removal of every forward set up this session. */
+    fun cleanup() {
+        for ((hostPort, device) in forwards) {
+            runCatching { device.removeForward(hostPort) }
+        }
+        forwards.clear()
+    }
+}
+
 /** Runtime connection helpers shared by helper RPC command handlers. */
 internal fun runtimeClientFor(
     device: DeviceController,
@@ -15,7 +40,10 @@ internal fun runtimeClientFor(
 ): RuntimeClient {
     val devicePort = params.intOrNull("port") ?: PortMap.derivePort(pkg)
     val hostPort = params.intOrNull("hostPort") ?: devicePort
-    return RuntimeClient(device, hostPort, devicePort).also { it.setUpForward() }
+    return RuntimeClient(device, hostPort, devicePort).also {
+        it.setUpForward()
+        ForwardRegistry.record(device, hostPort)
+    }
 }
 
 internal fun assertHealthy(client: RuntimeClient, pkg: String) {
