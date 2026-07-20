@@ -123,6 +123,7 @@ public final class ServeRuntime {
                 if options.target == "ios" {
                     printIosProxyRoutingHint(port: proxy.port)
                 } else {
+                    reconcileStaleDeviceProxy()
                     proxyRestore = try configureDeviceProxy(port: proxy.port)
                 }
             }
@@ -197,7 +198,35 @@ public final class ServeRuntime {
         try client.start()
         defer { client.shutdown() }
         let result = try client.call("proxySet", ["host": "127.0.0.1", "port": port])
-        return DeviceProxyRestore(previous: result["previous"] as? String, proxyPort: port, helper: helper, serial: options.serial)
+        let previous = result["previous"] as? String
+        // Persist the fact that we set the proxy so a hard-killed/crashed daemon
+        // can be reconciled on the next start (SIGKILL can't run the restore).
+        DeviceProxyState(pid: getpid(), serial: options.serial, proxyPort: port, previous: previous).write()
+        return DeviceProxyRestore(previous: previous, proxyPort: port, helper: helper, serial: options.serial)
+    }
+
+    /// Clears a device proxy left behind by a prior daemon that died without
+    /// restoring (crash / SIGKILL), so this device isn't stranded on a dead port.
+    private func reconcileStaleDeviceProxy() {
+        guard let stale = DeviceProxyState.readStale(serial: options.serial),
+              let helper = options.helper else { return }
+        let client = HelperClient(
+            launcher: helper,
+            javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
+            serial: stale.serial
+        )
+        do {
+            try client.start()
+            _ = try client.call("proxyClear", ["port": stale.proxyPort])
+            if let previous = stale.previous, !previous.isEmpty {
+                _ = try client.call("proxySet", ["value": previous])
+            }
+            print("reticle serve: cleared a stale device proxy left by daemon pid \(stale.pid)")
+        } catch {
+            FileHandle.standardError.write(Data("warning: could not clear stale device proxy: \(error)\n".utf8))
+        }
+        client.shutdown()
+        DeviceProxyState.clear(serial: options.serial)
     }
 
     private func installCA(_ certificates: ProxyCertificateStore) throws {
@@ -253,6 +282,8 @@ public final class ServeRuntime {
             if let previous = restore.previous, !previous.isEmpty {
                 _ = try client.call("proxySet", ["value": previous])
             }
+            // Restored cleanly — drop the crash-recovery marker.
+            DeviceProxyState.clear(serial: restore.serial)
         } catch {
             FileHandle.standardError.write(Data("warning: could not restore device proxy: \(error)\n".utf8))
         }
@@ -352,9 +383,10 @@ public final class ServeRuntime {
     }
 
     private func installSignalHandlers() {
-        signal(SIGINT, SIG_IGN)
-        signal(SIGTERM, SIG_IGN)
-        let signals = [SIGINT, SIGTERM]
+        // SIGHUP catches the common "closed the terminal that ran serve" case,
+        // which otherwise skipped restore and stranded the device on a dead proxy.
+        let signals = [SIGINT, SIGTERM, SIGHUP, SIGQUIT]
+        for sig in signals { signal(sig, SIG_IGN) }
         for sig in signals {
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .global())
             source.setEventHandler { [weak self] in
