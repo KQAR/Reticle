@@ -33,10 +33,16 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
     private var reader: LineReader!
     private var nextId = 1
     private let serial: String?
+    private let callTimeout: TimeInterval
 
     /// Creates a helper client that applies `serial` to every device RPC call.
-    init(launcher: String, javaHome: String?, serial: String? = nil) {
+    /// `callTimeout` bounds how long a single RPC waits for the helper's reply
+    /// before the helper is declared wedged (default 60s — generous enough for
+    /// the slowest legitimate op, JDWP inject ~20s + awaitRuntime ~10s, so it
+    /// only trips on a genuine hang).
+    init(launcher: String, javaHome: String?, serial: String? = nil, callTimeout: TimeInterval = 60) {
         self.serial = serial
+        self.callTimeout = callTimeout
         process.executableURL = URL(fileURLWithPath: launcher)
         process.arguments = ["helper"]
         process.standardInput = stdinPipe
@@ -79,8 +85,19 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
             throw HelperError("failed to send '\(method)' to helper (process exited?): \(error.localizedDescription)")
         }
 
-        guard let line = reader.nextLine() else {
+        let line: String
+        switch readLine(timeout: callTimeout) {
+        case .line(let l):
+            line = l
+        case .eof:
             throw HelperError("helper closed stdout before responding to '\(method)'")
+        case .timedOut:
+            // The helper is wedged (adb stuck past its own timeout, JDWP hang,
+            // …). Terminate it so this call fails fast and every later call
+            // errors on a dead process, rather than blocking forever under
+            // callLock and wedging the whole host.
+            process.terminate()
+            throw HelperError("helper timed out after \(Int(callTimeout))s responding to '\(method)' (helper terminated)")
         }
         guard let obj = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
             throw HelperError("non-object response: \(line)")
@@ -94,6 +111,32 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
         throw HelperError(obj["error"] as? String ?? "<no error message>")
     }
 
+    private enum ReadOutcome {
+        case line(String)
+        case eof
+        case timedOut
+    }
+
+    /// Reads one reply line with a deadline. The underlying `availableData` read
+    /// is blocking and cannot itself be cancelled, so it runs on a background
+    /// queue; on timeout we return `.timedOut` and the caller terminates the
+    /// helper, which sends EOF and lets the orphaned read finish harmlessly.
+    private func readLine(timeout: TimeInterval) -> ReadOutcome {
+        let sem = DispatchSemaphore(value: 0)
+        // .success(line?) — nil line means EOF. Safe to capture: readLine only
+        // runs under callLock, so there is exactly one reader at a time.
+        let box = ResultBox<String?>(fallback: .success(nil))
+        DispatchQueue.global().async { [reader] in
+            box.set(.success(reader?.nextLine() ?? nil))
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + timeout) == .timedOut {
+            return .timedOut
+        }
+        if case let .success(line?) = box.value { return .line(line) }
+        return .eof
+    }
+
     /// Closes stdin so the helper exits its serve loop.
     func shutdown() {
         try? stdinPipe.fileHandleForWriting.close()
@@ -101,8 +144,10 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
     }
 }
 
-/// Minimal blocking buffered line reader over a file handle.
-final class LineReader {
+/// Minimal blocking buffered line reader over a file handle. `@unchecked
+/// Sendable` because `HelperClient` only ever touches it under `callLock`, so the
+/// background read in `readLine(timeout:)` is never concurrent with another read.
+final class LineReader: @unchecked Sendable {
     private let handle: FileHandle
     private var buffer = Data()
 
