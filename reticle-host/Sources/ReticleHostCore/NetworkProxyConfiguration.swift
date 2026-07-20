@@ -3,6 +3,10 @@ import Foundation
 /// Runtime configuration for the host network proxy owned by `reticle serve`.
 struct NetworkProxyConfiguration {
     let port: Int
+    /// Interface to bind. Defaults to loopback; a real device on Wi-Fi must reach
+    /// the Mac over the LAN, so real-device capture binds `0.0.0.0` (or the LAN
+    /// IP) — an explicit opt-in, since it exposes the MITM proxy on the network.
+    let bindHost: String
     let target: String?
     let bodyLimitBytes: Int
     let upstreamTimeoutSeconds: TimeInterval
@@ -13,6 +17,7 @@ struct NetworkProxyConfiguration {
     /// Creates a proxy configuration with conservative defaults.
     init(
         port: Int,
+        bindHost: String = "127.0.0.1",
         target: String? = nil,
         bodyLimitBytes: Int = 1024 * 1024,
         upstreamTimeoutSeconds: TimeInterval = 30,
@@ -21,6 +26,7 @@ struct NetworkProxyConfiguration {
         tlsHostAllowlist: [String] = []
     ) {
         self.port = port
+        self.bindHost = bindHost
         self.target = target
         self.bodyLimitBytes = bodyLimitBytes
         self.upstreamTimeoutSeconds = upstreamTimeoutSeconds

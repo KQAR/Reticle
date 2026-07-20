@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- iOS: the capture proxy now supports **real devices**, not just simulators. A
+  new `--proxy-bind` option (default `127.0.0.1`) lets the proxy bind the LAN
+  (`0.0.0.0`) so a phone on the same Wi-Fi can reach it — previously the proxy
+  was hardcoded to loopback, unreachable from a device. `serve --target ios
+  --proxy-device` now prints device-appropriate routing: for a LAN bind it gives
+  the Mac's LAN IP + port for the phone's Wi-Fi proxy and the CA-as-profile
+  install/trust steps (`--proxy-install-ca` stays simulator-only — a device
+  trusts the CA manually as a profile). Verified end-to-end on an iPhone 13 Pro
+  Max / iOS 26: a Safari `https://example.com` fetch surfaced a decrypted
+  `GET … 200` event targeted `ios:<ecid>`. Binding non-loopback is an explicit
+  opt-in (it exposes the MITM proxy on the LAN for the run).
+
 - iOS: the agent now engages the accessibility runtime at startup
   (`_AXSSetAutomationEnabled(true)` from `libAccessibility` — the flag XCUITest
   sets, no VoiceOver, fires no control), so SwiftUI `axElement`s carrying
