@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- iOS: the agent now engages the accessibility runtime at startup
+  (`_AXSSetAutomationEnabled(true)` from `libAccessibility` — the flag XCUITest
+  sets, no VoiceOver, fires no control), so SwiftUI `axElement`s carrying
+  `.accessibilityIdentifier` surface on the **first** observation on a real
+  device. Previously they built lazily and only after an accessibility action,
+  so selector targeting silently missed on first use (the device e2e worked
+  around it with a throwaway activation; that warm-up is now just a defensive
+  poll). Verified on iPhone 13 Pro Max / iOS 26: the first `ui report` after
+  launch lists all SwiftUI scenario buttons. (An earlier attempt used the
+  non-existent `_AXSSetApplicationAccessibilityEnabled` setter symbol, hence the
+  prior "flag insufficient" note — the working symbol is the automation pair.)
+
 - iOS: hardened `scripts/e2e-ios-device.sh` and validated the full linked-agent
   real-device path on an iPhone 13 Pro Max (iOS 26): `status / ui report /
   ui compact / ui screenshot / act activate / mutate / debug logs` and the

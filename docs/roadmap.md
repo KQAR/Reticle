@@ -588,12 +588,12 @@ Android first and complete; everything else reserved behind the spec + SPI.
   so the security B-lane (B1/B2) is now reachable on iOS. The linked-agent
   real-device path is validated on an iPhone 13 Pro Max (iOS 26) via
   `scripts/e2e-ios-device.sh`: observation, `act activate`, `mutate`, and the
-  action-trace evidence package all work over the USB tunnel. Remaining iOS gaps:
-  real-device *proxy* validation (Wi-Fi proxy + CA profile); auto-engaging the
-  accessibility runtime from the agent so SwiftUI `axElement`s surface on the
-  first device observation without a warm-up activation (open — the
-  `_AXSSetApplicationAccessibilityEnabled` flag alone was insufficient); and
-  real-device HID (structurally absent — no host-reachable input surface).
+  action-trace evidence package all work over the USB tunnel. The agent engages
+  the accessibility runtime at startup (`_AXSSetAutomationEnabled(true)`), so
+  SwiftUI `axElement`s surface on the first device observation with no warm-up
+  action. Remaining iOS gaps: real-device *proxy* validation (Wi-Fi proxy + CA
+  profile), and real-device HID (structurally absent — no host-reachable input
+  surface).
 
 # Proposed next: evidence workflows + security-evidence lane
 
