@@ -99,12 +99,22 @@ object Injector : AppInjector {
                 // fresh attach started now.
                 val deviceDexPath = stageDex(adb, packageName, dex)
                 jdwp.negotiateIdSizes()
+                val (cx, cy) = screenCenter(adb)
                 val reported = jdwp.inject(deviceDexPath) {
-                    // The event fires when the target next runs the instrumented
-                    // method on a live Java frame (the only state ART allows
-                    // InvokeMethod from). A real tap drives the UI through it.
-                    adb.shell("input keyevent 0")
-                    adb.shell("input tap 540 1500")
+                    // Nudge the main looper so Handler.dispatchMessage (the breakpoint)
+                    // fires. The breakpoint fires when the MotionEvent is DELIVERED to
+                    // the app window (posted as a main-looper message), NOT when a view
+                    // acts on it — so a short SWIPE reliably drives the instrumented
+                    // method WITHOUT ever firing a click handler. A tap would: the old
+                    // hardcoded `input tap 540 1500` pressed real UI at a resolution-
+                    // dependent point and could dismiss a dialog or submit a form. A
+                    // swipe's worst case is scrolling a scrollable view slightly; it
+                    // never activates a control. Coordinates are the screen center from
+                    // `wm size` (resolution-agnostic), and a key event isn't usable —
+                    // keys target the input-focused window, which a screen with no
+                    // focusable view may not have, so they aren't delivered; a touch is
+                    // coordinate-targeted and always reaches the window under the point.
+                    adb.shell("input swipe $cx $cy $cx ${cy - 80} 300")
                 }
                 return AppInjector.InjectResult(pid, reported)
             }
@@ -125,6 +135,20 @@ object Injector : AppInjector {
      * attempt re-issues the forward (remove + re-add): a forward bound onto the
      * closed transport stays a dud and won't self-heal.
      */
+    /**
+     * Screen center in pixels, from `wm size`. Prefers an "Override size" line
+     * (the effective size) over "Physical size"; falls back to a 1080x1920 guess
+     * if the output can't be parsed — the swipe only needs a point inside the
+     * window, not an exact center.
+     */
+    private fun screenCenter(adb: DeviceController): Pair<Int, Int> {
+        val out = adb.shell("wm size").stdout
+        val match = Regex("""(?:Override|Physical) size:\s*(\d+)x(\d+)""").findAll(out).lastOrNull()
+        val w = match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1080
+        val h = match?.groupValues?.getOrNull(2)?.toIntOrNull() ?: 1920
+        return (w / 2) to (h / 2)
+    }
+
     private fun connectWithHandshake(adb: DeviceController, hostPort: Int, pid: Int): JdwpClient {
         val debug = System.getenv("RETICLE_JDWP_DEBUG") == "1"
         val deadline = System.currentTimeMillis() + HANDSHAKE_BUDGET_MS
