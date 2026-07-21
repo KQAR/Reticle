@@ -276,6 +276,9 @@ reticle/  (polyglot monorepo — one host binary + one protocol spec)
 ├─ reticle-helper/        # Kotlin Android host layer → no-JDK native reticle-helper (RPC server)
 │   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
 ├─ reticle-host/          # Swift host CLI + `reticle serve` daemon, panel, proxy/MITM, mocks
+│   ├─ ReticleHostShared     # dependency-free JSONValue / event models / HelperError
+│   ├─ ReticleNetworkLane    # capture proxy + MITM + mock engine, behind NetworkEventSink
+│   └─ ReticleHostCore       # daemon, CLI, panel, per-platform host code (+ ReticleHost exe)
 └─ sample-app/            # demo linking :reticle-agent:android
 ```
 
@@ -372,22 +375,26 @@ Matching the hand-rolled-HTTP-server philosophy (no heavy framework):
   sufficient for a live timeline. Reserve WebSocket only if the panel later needs
   rich bidirectional control; start with SSE + REST.
 
-## Proxy backend behind an interface (engine deferred)
+## Proxy backend behind an interface (interface landed, engine deferred)
 
-The engine is one `EventSource` that emits normalized `network.*` events:
+The lane is isolated in its own `ReticleNetworkLane` target and only touches the
+host through one sink that carries normalized `network.*` events:
 
-```
-interface ProxyBackend {
-  fun start(listenPort: Int, ca: CaMaterial): Flow<NetworkEvent>
-  fun stop()
+```swift
+public protocol NetworkEventSink: AnyObject, Sendable {
+    var sessionDirectory: URL { get }
+    func emit(_ request: EventPostRequest)   // best-effort; capture never fails a request
 }
 ```
 
-Any of these can implement it later without touching the bus or the panel: an
-embedded JVM engine (netty/LittleProxy-class), a managed `whistle` sidecar, or an
-external `mitmproxy`. **The decision is deferred precisely because the event bus
-makes it pluggable.** Design the bus and timeline now; pick the engine when the
-proxy phase starts.
+`EventStore` conforms to it in `ReticleHostCore`; the lane never names the daemon.
+The current backend is the in-house SwiftNIO engine, but any of these can replace
+it later without touching the bus or the panel: an embedded engine, a managed
+`whistle` sidecar, or an external `mitmproxy`. **The engine choice stays deferred
+precisely because the interface now makes it pluggable** — swapping it is editing
+one target, verified end-to-end by `scripts/e2e-proxy.sh`. (The original sketch
+imagined a Kotlin `ProxyBackend` returning a `Flow<NetworkEvent>`; the host turned
+out to be Swift, so the realized shape is the `NetworkEventSink` above.)
 
 ## Capture proxy — honest capability boundary
 

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ReticleHostCore
+@testable import ReticleNetworkLane
 
 /// Ties the Swift host — the SOLE producer of proxy `network.*` payloads — to the
 /// typed payload schema in reticle-protocol/. The Kotlin contract test proves the

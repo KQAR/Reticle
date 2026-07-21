@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import NIOCore
 import NIOHTTP1
 
@@ -8,7 +9,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias OutboundOut = HTTPServerResponsePart
 
     private let target: HTTPProxyTarget
-    private let store: EventStore
+    private let store: any NetworkEventSink
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
     private let mockStore: NetworkMockStore?
@@ -20,7 +21,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
 
     init(
         target: HTTPProxyTarget,
-        store: EventStore,
+        store: any NetworkEventSink,
         bodyStore: NetworkBodyStore,
         factory: NetworkEventFactory,
         mockStore: NetworkMockStore?,
@@ -95,7 +96,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             )
             errorPayload.endMillis = currentMillis()
             errorPayload.error = "invalid intercepted request URI"
-            _ = try? store.append(factory.event(.error, payload: errorPayload))
+            store.emit(factory.event(.error, payload: errorPayload))
             writeError(context: context)
             return
         }
@@ -118,7 +119,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             payload.requestBodyBytes = stored.bytes
             payload.requestBodyTruncated = stored.truncated
         }
-        _ = try? store.append(factory.event(.request, payload: payload, refs: refs))
+        store.emit(factory.event(.request, payload: payload, refs: refs))
         do {
             if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: url.absoluteString, path: payload.path, host: target.host)) {
                 writeMock(mock, payload: payload, refs: refs, version: head.version, context: context)
@@ -131,7 +132,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         } catch {
             payload.endMillis = currentMillis()
             payload.error = "\(error)"
-            _ = try? store.append(factory.event(.error, payload: payload, refs: refs))
+            store.emit(factory.event(.error, payload: payload, refs: refs))
             writeError(context: context)
             return
         }
@@ -190,7 +191,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             responsePayload.responseBodyBytes = stored.bytes
             responsePayload.responseBodyTruncated = stored.truncated
         }
-        _ = try? store.append(factory.event(.response, payload: responsePayload, refs: responseRefs))
+        store.emit(factory.event(.response, payload: responsePayload, refs: responseRefs))
         write(status: mock.value.status, headers: mock.value.headers, contentType: mock.value.contentType, data: mock.body, version: version, context: context)
     }
 
@@ -231,6 +232,6 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             errorPayload.mockRuleId = ruleId
             errorPayload.mockValueId = valueId
         }
-        _ = try? store.append(factory.event(.error, payload: errorPayload, refs: refs))
+        store.emit(factory.event(.error, payload: errorPayload, refs: refs))
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 /// Epoch milliseconds. One definition instead of the inline
 /// `Int64(Date().timeIntervalSince1970 * 1000)` that was scattered across the
 /// event store, runtime state, daemon discovery, and both proxy handlers.
-func currentMillis() -> Int64 {
+public func currentMillis() -> Int64 {
     Int64(Date().timeIntervalSince1970 * 1000)
 }
 
@@ -11,22 +11,22 @@ func currentMillis() -> Int64 {
 /// callback back to a synchronous (`DispatchSemaphore`) caller. Reading before
 /// `set` returns the caller-supplied `fallback` — some callers only `set` on
 /// failure and treat "no set" as success.
-final class ResultBox<T>: @unchecked Sendable {
+public final class ResultBox<T>: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Result<T, Error>?
     private let fallback: Result<T, Error>
 
-    init(fallback: Result<T, Error>) {
+    public init(fallback: Result<T, Error>) {
         self.fallback = fallback
     }
 
-    var value: Result<T, Error> {
+    public var value: Result<T, Error> {
         lock.lock()
         defer { lock.unlock() }
         return result ?? fallback
     }
 
-    func set(_ value: Result<T, Error>) {
+    public func set(_ value: Result<T, Error>) {
         lock.lock()
         result = value
         lock.unlock()

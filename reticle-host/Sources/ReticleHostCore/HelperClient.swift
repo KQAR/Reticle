@@ -1,16 +1,5 @@
 import Foundation
 
-/// Error surfaced by the Kotlin helper or by the JSONL process boundary.
-public struct HelperError: Error, CustomStringConvertible {
-    public let message: String
-
-    public init(_ message: String) {
-        self.message = message
-    }
-
-    public var description: String { message }
-}
-
 /// Minimal call surface shared by local helper processes and daemon-forwarded RPC.
 public protocol HelperCalling: AnyObject, Sendable {
     @discardableResult

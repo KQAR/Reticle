@@ -148,3 +148,9 @@ jobs:
           # polymorphic MetadataValue). ping alone never touches deserialization.
           printf '{"id":2,"method":"render","params":{"view":"compact","snapshot":"reticle-protocol/fixtures/snapshot.golden.json"}}\n' \
             | "$HELPER" helper | grep -q '"ok":true'
+
+      # The network lane end-to-end: CLI -> discovery -> daemon -> proxy ->
+      # events.jsonl over real sockets, including a MITM'd HTTPS mock hit.
+      # Host-only (curl + python), so it runs on the same runner unchanged.
+      - name: Proxy + mock e2e (no device needed)
+        run: RETICLE_HOST="$PWD/reticle-host/.build/release/ReticleHost" ./scripts/e2e-proxy.sh
