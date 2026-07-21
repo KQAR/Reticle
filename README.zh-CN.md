@@ -182,6 +182,11 @@ $CLI act tap --package dev.reticle.sample --css '#style-target' \
     --verify 'css=#style-target' \
     --trace-output reticle-traces
 
+# 把录下的 trace 流程拼成带设备边框的动图:before 帧画出手势落点
+# (tap 圆环 / swipe 箭头),after 帧展示结果,字幕取自 gesture + selector。
+# 纯 host 本地,Android / iOS trace 通用。
+$CLI replay gif reticle-traces          # => reticle-traces/replay.gif
+
 # 多区域控件:一个 View、多个点击目标(协议勾选行等)
 $CLI app launch --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --test-id scenario.agreements

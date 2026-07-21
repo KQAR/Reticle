@@ -53,7 +53,7 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   `~/.reticle/sessions/<session>/events.jsonl`, plus best-effort action-trace
   ingestion from one-shot `act --trace-output`.
   Command surface: `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/
-  `debug`/`ui`/`serve`/`version`.
+  `debug`/`ui`/`mock`/`replay`/`serve`/`version`.
   Internally three stacked SwiftPM library targets: `ReticleHostShared`
   (dependency-free `JSONValue`/event models/`HelperError`) ← `ReticleNetworkLane`
   (the capture proxy + MITM + mock engine, reaching the store only through the
