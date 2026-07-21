@@ -5,10 +5,10 @@ import SwiftASN1
 import X509
 
 /// Owns the local Reticle MITM CA and dynamically-issued host certificates.
-final class ProxyCertificateStore: @unchecked Sendable {
+public final class ProxyCertificateStore: @unchecked Sendable {
     let directory: URL
-    let caCertificateDER: URL
-    let caCertificatePEM: URL
+    public let caCertificateDER: URL
+    public let caCertificatePEM: URL
 
     private let caKeyPEM: URL
     private let leafDirectory: URL
@@ -16,7 +16,7 @@ final class ProxyCertificateStore: @unchecked Sendable {
     private var contextCache: [String: NIOSSLContext] = [:]
 
     /// Creates a certificate store rooted at `directory`.
-    init(directory: URL) {
+    public init(directory: URL) {
         self.directory = directory
         caCertificateDER = directory.appendingPathComponent("reticle-ca.cer")
         caCertificatePEM = directory.appendingPathComponent("reticle-ca.pem")
@@ -25,7 +25,7 @@ final class ProxyCertificateStore: @unchecked Sendable {
     }
 
     /// Ensures the Reticle CA exists, generating it on first use.
-    func validate() throws {
+    public func validate() throws {
         try ensureCA()
     }
 

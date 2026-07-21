@@ -100,6 +100,10 @@ public struct EventPostRequest: Codable {
 /// Event history response returned by REST endpoints.
 public struct EventsResponse: Codable {
     public let events: [ReticleEventEnvelope]
+
+    public init(events: [ReticleEventEnvelope]) {
+        self.events = events
+    }
 }
 
 /// Health response for the local daemon.
@@ -108,6 +112,13 @@ public struct HealthResponse: Encodable {
     public let session: String
     public let port: Int
     public let eventCount: Int
+
+    public init(ok: Bool, session: String, port: Int, eventCount: Int) {
+        self.ok = ok
+        self.session = session
+        self.port = port
+        self.eventCount = eventCount
+    }
 }
 
 /// Single-session listing returned by `GET /sessions`.
@@ -118,9 +129,29 @@ public struct SessionInfo: Codable, Equatable {
     public let actionTraceCount: Int
     public let updatedAtMillis: Int64?
     public let isCurrent: Bool
+
+    public init(
+        id: String,
+        path: String,
+        eventCount: Int,
+        actionTraceCount: Int,
+        updatedAtMillis: Int64?,
+        isCurrent: Bool
+    ) {
+        self.id = id
+        self.path = path
+        self.eventCount = eventCount
+        self.actionTraceCount = actionTraceCount
+        self.updatedAtMillis = updatedAtMillis
+        self.isCurrent = isCurrent
+    }
 }
 
 /// Session list response for the daemon's REST API.
 public struct SessionsResponse: Codable {
     public let sessions: [SessionInfo]
+
+    public init(sessions: [SessionInfo]) {
+        self.sessions = sessions
+    }
 }
