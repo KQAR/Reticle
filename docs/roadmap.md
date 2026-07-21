@@ -646,10 +646,15 @@ Each assembles existing primitives into a product a human can consume directly.
   magnitudes, **not a letter grade** — grading is a verdict left to the consumer.
   Reticle only measures the geometric/style delta against a given frame; it does
   not judge whether the design is correct. *Phase 1 evidence; panel Phase 3.*
-- **A4 — flow replay artifact (`reticle replay gif`).** Stitch a flow's per-step
-  screenshots into a device-framed GIF/MP4 for human review and PR communication;
-  step captions come from the trace's gesture/selector. Lowest cost, highest
-  review leverage — do first. *Phase 1.*
+- **A4 — flow replay artifact (`reticle replay gif`) — LANDED.** Stitch a flow's
+  per-step screenshots into a device-framed GIF for human review and PR
+  communication; step captions come from the trace's gesture/selector, and the
+  gesture geometry (resolved tap point, swipe stroke) is drawn on the
+  before-frame. Ships as `reticle replay gif <trace-dir>` — host-local, reads
+  the `act --trace-output` packages already on disk, renders via
+  ImageIO/CoreGraphics with no new dependencies. Steps without screenshots are
+  skipped honestly (reported on stderr), never fabricated. An MP4 variant
+  remains open if a concrete need appears.
 - **A5 — navigation / coverage map (`reticle map`, scoped carefully).** Fold
   `ui outline` + action-trace screen transitions into a "screen → reachable path"
   map, **positioned as a coverage aid** ("which screens/paths are not yet covered

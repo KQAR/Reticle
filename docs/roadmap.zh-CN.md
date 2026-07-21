@@ -525,9 +525,12 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   文案)+ 叠加图。设计数据经现有 Figma 通道取回。**给偏差量,不给字母评级**——评级
   是判定,留给使用方。Reticle 只测「活屏与给定设计框的几何/样式差」,不判断设计
   对不对。*Phase 1 证据;面板 Phase 3。*
-- **A4 —— 流程回放产物(`reticle replay gif`)。** 把一段 flow 的逐步截图拼成带设备
-  边框的 GIF/MP4,供人审与 PR 沟通;步骤字幕取自 trace 的 gesture/selector。成本
-  最低、回报最高,优先做。*Phase 1。*
+- **A4 —— 流程回放产物(`reticle replay gif`)—— 已落地。** 把一段 flow 的逐步截图
+  拼成带设备边框的 GIF,供人审与 PR 沟通;步骤字幕取自 trace 的 gesture/selector,
+  手势几何(解析出的 tap 点、swipe 轨迹)绘制在 before 帧上。以
+  `reticle replay gif <trace-dir>` 交付——纯 host 本地,直接读盘上已有的
+  `act --trace-output` 证据包,用 ImageIO/CoreGraphics 渲染,零新依赖。没有截图的
+  步骤诚实跳过(stderr 提示),绝不伪造。MP4 变体留待出现具体需要再做。
 - **A5 —— 导航/覆盖图(`reticle map`,谨慎定位)。** 由 `ui outline` + action trace
   的界面转移归并出「界面 → 可达路径」图,**定位为覆盖率辅助**(「哪些界面/路径还
   没被 E2E 覆盖」),绝不作自动验证路径。只用于发现,发现后仍走确定性 selector 的
