@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- iOS: fixed in-process screenshots going permanently black after the first
+  keyboard appearance. `ScreenshotCapture` composited every attached window
+  into one opaque context; the keyboard's system window (`UITextEffectsWindow`)
+  attaches to the scene on first text focus, never detaches, and its content is
+  not renderable in-process — `drawHierarchy` black-filled the full-screen rect
+  over the app content on every subsequent capture. Each window now renders
+  into its own transparent layer and only layers whose `drawHierarchy` reports
+  success are composited, so an unrenderable system window is skipped honestly
+  instead of covering the app. Found by replaying a recorded flow that types
+  into a text field — every frame after the keyboard step was black.
+
 - Host: new `reticle replay gif <trace-dir>` — the first evidence-workflow
   product (A4 on the roadmap). It stitches the action-trace packages a flow
   recorded with `act … --trace-output` into a device-framed animated GIF:
