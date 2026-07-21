@@ -121,4 +121,47 @@ TDIR="$(dirname "$TRACE_JSON")"
   || { echo "FAIL: trace missing before/after snapshot+screenshot artifacts"; exit 1; }
 echo "action-trace evidence package written on device: $TDIR"
 
+echo "== TAB BAR scenario (SwiftUI TabView, device) =="
+# Relaunch straight into the tabbar scenario via the env deep-link; a fresh
+# process keeps this section independent of the navigation state left above.
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"tabbar"}' "$BUNDLE" >/dev/null
+READY=0
+for _ in $(seq 1 12); do
+  sleep 1
+  if "$HOST" --target ios status --package "$BUNDLE" 2>/dev/null | grep -q "runtime: healthy"; then READY=1; break; fi
+done
+[ "$READY" = 1 ] || { echo "FAIL: agent not reachable after tabbar relaunch"; exit 1; }
+# Poll until the tab page's SwiftUI content folds in as axElements — the device
+# regression guard for the unlabeled-AX-container flatten (a TabView page host
+# wraps the whole page in ONE unlabeled AX container) compounded with the lazy
+# real-device AX tree build.
+TAB_READY=0
+for _ in $(seq 1 10); do
+  "$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/tabbar" >/dev/null 2>&1 || true
+  if grep -q "tabbar.status" "$OUT/tabbar/snapshot.json" 2>/dev/null; then TAB_READY=1; break; fi
+  sleep 1
+done
+[ "$TAB_READY" = 1 ] || { echo "FAIL: tab page SwiftUI content never folded in (unlabeled AX container regression?)"; exit 1; }
+TABBAR="$("$HOST" --target ios ui compact "$OUT/tabbar/snapshot.json")"
+for item in Home Orders Messages Profile; do
+  echo "$TABBAR" | grep -q "control \"$item\"" \
+    || { echo "FAIL: expected tab bar item \"$item\" (UITabBar view walk)"; exit 1; }
+done
+echo "$TABBAR" | grep -q "Selected: home" \
+  || { echo "FAIL: tabbar.status should read 'Selected: home' before any switch"; exit 1; }
+# Switch tabs via in-process activation (sendActions on the UIControl) — HID
+# does not exist on a real device. Observable side effect: the page swaps and
+# tabbar.status flips to "Selected: orders".
+ORDERS_REF="$(/usr/bin/python3 -c 'import json
+s=json.load(open("'"$OUT"'/tabbar/snapshot.json"))
+print(next(r for r,v in s["nodes"].items()
+  if "Tab" in str(v.get("typeName","")) and "Button" in str(v.get("typeName",""))
+  and v.get("contentDescription")=="Orders"))')"
+"$HOST" --target ios act activate --package "$BUNDLE" --ref "$ORDERS_REF"
+sleep 1
+"$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/tabbar-orders"
+"$HOST" --target ios ui compact "$OUT/tabbar-orders/snapshot.json" | grep -q "Selected: orders" \
+  || { echo "FAIL: activating the Orders tab did not update tabbar.status"; exit 1; }
+
 echo "== OK (HID gestures are NOT available on a real device; activation is) — artifacts in $OUT =="
