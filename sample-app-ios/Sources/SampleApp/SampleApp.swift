@@ -20,7 +20,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -69,10 +69,19 @@ struct HomeView: View {
                     SwiftUIBoundaryView()
                         .navigationTitle("SwiftUI")
                 }
+                scenarioRow(
+                    title: "Tab bar",
+                    subtitle: "Four-item TabView with per-tab pages",
+                    testId: "scenario.tabbar",
+                    tag: "tabbar"
+                ) {
+                    TabBarScenarioView()
+                        .navigationTitle("Tab bar")
+                }
             }
             .navigationTitle("Reticle Sample")
             .onAppear {
-                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(4)])
+                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(5)])
             }
         }
         .navigationViewStyle(.stack)
