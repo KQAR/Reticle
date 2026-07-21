@@ -91,6 +91,10 @@ grep -q "Paid!" "$TRACE_JSON" \
   || { echo "FAIL: trace.json diff did not record the checkout.status change to Paid!"; exit 1; }
 [ -f "$(dirname "$TRACE_JSON")/before.snapshot.json" ] && [ -f "$(dirname "$TRACE_JSON")/after.snapshot.json" ] \
   || { echo "FAIL: trace missing before/after snapshot artifacts"; exit 1; }
+# `replay gif` stitches the recorded trace into the animated evidence artifact
+# (host-local, no device). It must find the screenshots the trace just wrote.
+"$HOST" replay gif "$TMP/trace"
+[ -s "$TMP/trace/replay.gif" ] || { echo "FAIL: replay gif produced no artifact"; exit 1; }
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
 kill "$HOLD" 2>/dev/null || true
 
