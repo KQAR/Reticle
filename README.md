@@ -211,6 +211,11 @@ $CLI act tap --package dev.reticle.sample --css '#style-target' \
     --verify 'css=#style-target' \
     --trace-output reticle-traces
 
+# Stitch the recorded traces into a device-framed animated GIF: before-frames
+# draw the gesture where it landed (tap ring / swipe arrow), after-frames show
+# the result. Host-local; Android and iOS traces alike.
+$CLI replay gif reticle-traces          # => reticle-traces/replay.gif
+
 # Multi-region controls: one View, several click targets (agreement rows etc.)
 $CLI app launch --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --test-id scenario.agreements
@@ -352,6 +357,12 @@ failure:
 ```bash
 reticle act batch --package dev.reticle.sample --file steps.json \
   --trace-output reticle-batch
+
+# Stitch the recorded flow into a device-framed animated GIF: before-frames
+# show the gesture where it landed (tap ring / swipe arrow), after-frames the
+# result, captioned from the trace's gesture + selector. Host-local; works on
+# Android and iOS traces alike.
+reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 ```
 
 Expected: `/panel` shows the current session selected in the picker and a
