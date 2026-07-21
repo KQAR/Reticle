@@ -330,3 +330,13 @@ public final class EventStore: @unchecked Sendable {
         Int64(date.timeIntervalSince1970 * 1000)
     }
 }
+
+/// The session store is the network lane's event sink. `emit` is the best-effort
+/// façade the proxy handlers call — it swallows the append error (capture must
+/// never fail a proxied request), centralizing the `try?` the handlers used to
+/// spell out at every call site.
+extension EventStore: NetworkEventSink {
+    public func emit(_ request: EventPostRequest) {
+        _ = try? append(request)
+    }
+}

@@ -1,43 +1,43 @@
 import Foundation
 
-struct NetworkMockRule: Codable, Equatable {
-    let id: String
-    var enabled: Bool
-    var priority: Int
-    var method: String
-    var url: String
-    var match: NetworkMockMatch
-    var host: String?
-    var query: [String: String]?
-    var valueId: String
+public struct NetworkMockRule: Codable, Equatable {
+    public let id: String
+    public var enabled: Bool
+    public var priority: Int
+    public var method: String
+    public var url: String
+    public var match: NetworkMockMatch
+    public var host: String?
+    public var query: [String: String]?
+    public var valueId: String
 }
 
-enum NetworkMockMatch: String, Codable {
+public enum NetworkMockMatch: String, Codable {
     case exact
     case prefix
     case regex
 }
 
-struct NetworkMockValue: Codable, Equatable {
-    let id: String
-    var status: Int
-    var headers: [String: String]
-    var bodyRef: String
-    var contentType: String
+public struct NetworkMockValue: Codable, Equatable {
+    public let id: String
+    public var status: Int
+    public var headers: [String: String]
+    public var bodyRef: String
+    public var contentType: String
 }
 
-struct NetworkMockRuleRequest: Codable {
-    let id: String
-    let enabled: Bool?
-    let priority: Int?
-    let method: String
-    let url: String
-    let match: NetworkMockMatch?
-    let host: String?
-    let query: [String: String]?
-    let valueId: String
+public struct NetworkMockRuleRequest: Codable {
+    public let id: String
+    public let enabled: Bool?
+    public let priority: Int?
+    public let method: String
+    public let url: String
+    public let match: NetworkMockMatch?
+    public let host: String?
+    public let query: [String: String]?
+    public let valueId: String
 
-    init(
+    public init(
         id: String,
         enabled: Bool?,
         priority: Int?,
@@ -60,15 +60,15 @@ struct NetworkMockRuleRequest: Codable {
     }
 }
 
-struct NetworkMockValueRequest: Codable {
-    let id: String
-    let status: Int?
-    let headers: [String: String]?
-    let body: String?
-    let bodyBase64: String?
-    let contentType: String?
+public struct NetworkMockValueRequest: Codable {
+    public let id: String
+    public let status: Int?
+    public let headers: [String: String]?
+    public let body: String?
+    public let bodyBase64: String?
+    public let contentType: String?
 
-    init(
+    public init(
         id: String,
         status: Int?,
         headers: [String: String]?,
@@ -85,56 +85,75 @@ struct NetworkMockValueRequest: Codable {
     }
 }
 
-struct NetworkMockRulesResponse: Codable {
-    let rules: [NetworkMockRule]
+public struct NetworkMockRulesResponse: Codable {
+    public let rules: [NetworkMockRule]
+
+    public init(rules: [NetworkMockRule]) {
+        self.rules = rules
+    }
 }
 
-struct NetworkMockValuesResponse: Codable {
-    let values: [NetworkMockValue]
+public struct NetworkMockValuesResponse: Codable {
+    public let values: [NetworkMockValue]
+
+    public init(values: [NetworkMockValue]) {
+        self.values = values
+    }
 }
 
-struct NetworkMockSetRequest: Codable {
-    let rule: NetworkMockRuleRequest
-    let value: NetworkMockValueRequest
+public struct NetworkMockSetRequest: Codable {
+    public let rule: NetworkMockRuleRequest
+    public let value: NetworkMockValueRequest
 }
 
-struct NetworkMockSetResponse: Codable {
-    let rule: NetworkMockRule
-    let value: NetworkMockValue
+public struct NetworkMockSetResponse: Codable {
+    public let rule: NetworkMockRule
+    public let value: NetworkMockValue
 }
 
-struct NetworkMockExport: Codable {
-    let rules: [NetworkMockRule]
-    let values: [NetworkMockExportValue]
+public struct NetworkMockExport: Codable {
+    public let rules: [NetworkMockRule]
+    public let values: [NetworkMockExportValue]
 }
 
-struct NetworkMockExportValue: Codable {
-    let id: String
-    let status: Int
-    let headers: [String: String]
-    let contentType: String
-    let bodyBase64: String
+public struct NetworkMockExportValue: Codable {
+    public let id: String
+    public let status: Int
+    public let headers: [String: String]
+    public let contentType: String
+    public let bodyBase64: String
 }
 
-struct NetworkMockResolveRequest: Codable {
-    let method: String
-    let url: String
+public struct NetworkMockResolveRequest: Codable {
+    public let method: String
+    public let url: String
+
+    public init(method: String, url: String) {
+        self.method = method
+        self.url = url
+    }
 }
 
-struct NetworkMockResolveResponse: Codable {
-    let matched: Bool
-    let rule: NetworkMockRule?
-    let value: NetworkMockValue?
+public struct NetworkMockResolveResponse: Codable {
+    public let matched: Bool
+    public let rule: NetworkMockRule?
+    public let value: NetworkMockValue?
+
+    public init(matched: Bool, rule: NetworkMockRule?, value: NetworkMockValue?) {
+        self.matched = matched
+        self.rule = rule
+        self.value = value
+    }
 }
 
-struct NetworkMockRequest {
-    let method: String
-    let url: String
-    let path: String
-    let host: String
-    let query: [String: String]
+public struct NetworkMockRequest {
+    public let method: String
+    public let url: String
+    public let path: String
+    public let host: String
+    public let query: [String: String]
 
-    init(method: String, url: String, path: String, host: String? = nil, query: [String: String]? = nil) {
+    public init(method: String, url: String, path: String, host: String? = nil, query: [String: String]? = nil) {
         self.method = method
         self.url = url
         self.path = Self.pathWithoutQuery(path)
@@ -157,10 +176,10 @@ struct NetworkMockRequest {
     }
 }
 
-struct NetworkMockResult {
-    let rule: NetworkMockRule
-    let value: NetworkMockValue
-    let body: Data
+public struct NetworkMockResult {
+    public let rule: NetworkMockRule
+    public let value: NetworkMockValue
+    public let body: Data
 }
 
 public final class NetworkMockStore: @unchecked Sendable {
@@ -175,7 +194,7 @@ public final class NetworkMockStore: @unchecked Sendable {
     let valuesFile: URL
     let bodiesDirectory: URL
 
-    init(sessionDirectory: URL) throws {
+    public init(sessionDirectory: URL) throws {
         self.sessionDirectory = sessionDirectory
         rulesFile = sessionDirectory.appendingPathComponent("mock-rules.json")
         valuesFile = sessionDirectory.appendingPathComponent("mock-values.json")
@@ -185,16 +204,16 @@ public final class NetworkMockStore: @unchecked Sendable {
         try load()
     }
 
-    func listRules() -> [NetworkMockRule] {
+    public func listRules() -> [NetworkMockRule] {
         lock.withLock { rules }
     }
 
-    func listValues() -> [NetworkMockValue] {
+    public func listValues() -> [NetworkMockValue] {
         lock.withLock { values }
     }
 
     @discardableResult
-    func upsertRule(_ request: NetworkMockRuleRequest) throws -> NetworkMockRule {
+    public func upsertRule(_ request: NetworkMockRuleRequest) throws -> NetworkMockRule {
         try validateID(request.id, field: "rule id")
         try validateID(request.valueId, field: "value id")
         guard !request.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -232,7 +251,7 @@ public final class NetworkMockStore: @unchecked Sendable {
     }
 
     @discardableResult
-    func upsertValue(_ request: NetworkMockValueRequest) throws -> NetworkMockValue {
+    public func upsertValue(_ request: NetworkMockValueRequest) throws -> NetworkMockValue {
         try validateID(request.id, field: "value id")
 
         lock.lock()
@@ -274,14 +293,14 @@ public final class NetworkMockStore: @unchecked Sendable {
     }
 
     @discardableResult
-    func set(_ request: NetworkMockSetRequest) throws -> NetworkMockSetResponse {
+    public func set(_ request: NetworkMockSetRequest) throws -> NetworkMockSetResponse {
         let value = try upsertValue(request.value)
         let rule = try upsertRule(request.rule)
         return NetworkMockSetResponse(rule: rule, value: value)
     }
 
     @discardableResult
-    func setRuleEnabled(id: String, enabled: Bool) throws -> NetworkMockRule {
+    public func setRuleEnabled(id: String, enabled: Bool) throws -> NetworkMockRule {
         lock.lock()
         defer { lock.unlock() }
         guard let index = rules.firstIndex(where: { $0.id == id }) else {
@@ -292,7 +311,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         return rules[index]
     }
 
-    func removeRule(id: String) throws {
+    public func removeRule(id: String) throws {
         lock.lock()
         defer { lock.unlock() }
         guard let index = rules.firstIndex(where: { $0.id == id }) else {
@@ -302,7 +321,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         try saveRulesLocked()
     }
 
-    func removeValue(id: String) throws {
+    public func removeValue(id: String) throws {
         lock.lock()
         defer { lock.unlock() }
         if rules.contains(where: { $0.valueId == id }) {
@@ -316,7 +335,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         try saveValuesLocked()
     }
 
-    func clear() throws {
+    public func clear() throws {
         lock.lock()
         defer { lock.unlock() }
         rules.removeAll()
@@ -327,7 +346,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         try FileManager.default.createDirectory(at: bodiesDirectory, withIntermediateDirectories: true)
     }
 
-    func exportPackage() throws -> NetworkMockExport {
+    public func exportPackage() throws -> NetworkMockExport {
         let snapshot = lock.withLock { (rules, values) }
         let exportedValues = try snapshot.1.map { value in
             NetworkMockExportValue(
@@ -341,7 +360,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         return NetworkMockExport(rules: snapshot.0, values: exportedValues)
     }
 
-    func importPackage(_ package: NetworkMockExport) throws {
+    public func importPackage(_ package: NetworkMockExport) throws {
         for value in package.values {
             _ = try upsertValue(NetworkMockValueRequest(
                 id: value.id,
@@ -367,7 +386,7 @@ public final class NetworkMockStore: @unchecked Sendable {
         }
     }
 
-    func resolve(_ request: NetworkMockRequest) throws -> NetworkMockResult? {
+    public func resolve(_ request: NetworkMockRequest) throws -> NetworkMockResult? {
         let snapshot = lock.withLock { rules.enumerated().map { ($0.offset, $0.element) } }
         let candidates = snapshot
             .filter { _, rule in rule.enabled && matchesMethod(rule.method, actual: request.method) && matches(rule, request: request) }
@@ -486,12 +505,12 @@ public final class NetworkMockStore: @unchecked Sendable {
     }
 }
 
-enum NetworkMockError: Error, CustomStringConvertible {
+public enum NetworkMockError: Error, CustomStringConvertible {
     case invalid(String)
     case notFound(String)
     case missingValue(ruleId: String, valueId: String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .invalid(let message), .notFound(let message):
             return message

@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import NIOCore
 import NIOHTTP1
 
@@ -23,7 +24,7 @@ final class ProxyStreamingExchange: UpstreamResponseSink, @unchecked Sendable {
     }
 
     private let executor: ChannelContextExecutor
-    private let store: EventStore
+    private let store: any NetworkEventSink
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
     private let clientVersion: HTTPVersion
@@ -43,7 +44,7 @@ final class ProxyStreamingExchange: UpstreamResponseSink, @unchecked Sendable {
 
     init(
         executor: ChannelContextExecutor,
-        store: EventStore,
+        store: any NetworkEventSink,
         bodyStore: NetworkBodyStore,
         factory: NetworkEventFactory,
         clientVersion: HTTPVersion,
@@ -153,7 +154,7 @@ final class ProxyStreamingExchange: UpstreamResponseSink, @unchecked Sendable {
             payload.responseBodyBytes = stored.bytes
             payload.responseBodyTruncated = stored.truncated
         }
-        _ = try? store.append(factory.event(type, payload: payload, refs: refs))
+        store.emit(factory.event(type, payload: payload, refs: refs))
     }
 
     /// Computes the client-facing head. Sensitive values in the event payload are

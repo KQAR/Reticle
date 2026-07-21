@@ -15,6 +15,7 @@ let package = Package(
     products: [
         .executable(name: "ReticleHost", targets: ["ReticleHost"]),
         .library(name: "ReticleHostCore", targets: ["ReticleHostCore"]),
+        .library(name: "ReticleNetworkLane", targets: ["ReticleNetworkLane"]),
     ],
     dependencies: [
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", exact: "2.25.0"),
@@ -28,9 +29,37 @@ let package = Package(
         .package(path: "../reticle-swift"),
     ],
     targets: [
+        // Dependency-free foundation shared by the host and the network lane:
+        // the JSON value type, the event envelope/post models, epoch-millis, and
+        // the cross-boundary error. Kept below both so the lane never reaches up
+        // into the daemon for a primitive.
+        .target(
+            name: "ReticleHostShared",
+            path: "Sources/ReticleHostShared"
+        ),
+        // The host-side capture proxy + MITM + mock store, isolated behind the
+        // `NetworkEventSink` protocol so it builds and tests without the daemon
+        // (docs/roadmap.md: "proxy backend behind an interface"). ReticleHostCore
+        // supplies the sink (EventStore) and the Hummingbird/CLI adapters.
+        .target(
+            name: "ReticleNetworkLane",
+            dependencies: [
+                "ReticleHostShared",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+                .product(name: "X509", package: "swift-certificates"),
+            ],
+            path: "Sources/ReticleNetworkLane"
+        ),
         .target(
             name: "ReticleHostCore",
             dependencies: [
+                "ReticleHostShared",
+                "ReticleNetworkLane",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
@@ -60,6 +89,8 @@ let package = Package(
             name: "ReticleHostCoreTests",
             dependencies: [
                 "ReticleHostCore",
+                "ReticleHostShared",
+                "ReticleNetworkLane",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
             ],

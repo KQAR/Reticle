@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Host: the network capture lane — proxy, MITM, certificate store, body store,
+  and `NetworkMockStore` — is now its own `ReticleNetworkLane` SwiftPM target
+  instead of living mixed into `ReticleHostCore`. It depends only on a new
+  dependency-free `ReticleHostShared` layer (`JSONValue` / event models /
+  `HelperError`) plus SwiftNIO, and reaches the session store through a single
+  `NetworkEventSink` protocol (`emit` + `sessionDirectory`) rather than
+  referencing `EventStore` directly — the compiler-enforced realization of the
+  "proxy backend behind an interface" roadmap goal, so the lane builds and tests
+  without the daemon and swapping the engine later means editing one target.
+  `ReticleHostCore` `@_exported`s the two lower targets, so it is an internal
+  boundary with no change to the public API or the CLI. No behavior change.
+- Host: new `scripts/e2e-proxy.sh` end-to-end smoke test (host-only, no device)
+  covering the whole network lane over real sockets — `reticle serve` with the
+  proxy, mock rules set through the `reticle mock` CLI, a plaintext mock hit, an
+  HTTPS mock hit decrypted through MITM (verified against the generated CA), a
+  real upstream forward, a 502 fall-through after `mock clear`, and the
+  `network.*` evidence trail in `events.jsonl`. Runs in CI on the release binary.
+
 - iOS: the SwiftUI accessibility bridge now descends into **unlabeled AX
   container elements** instead of filtering them out. Some hosting surfaces
   (notably a `TabView` page host — `TabHostingController`'s hosting view) wrap

@@ -3,6 +3,7 @@ import Dispatch
 import Foundation
 import Testing
 @testable import ReticleHostCore
+@testable import ReticleNetworkLane
 
 @Suite("Network proxy", .serialized)
 struct NetworkProxyTests {

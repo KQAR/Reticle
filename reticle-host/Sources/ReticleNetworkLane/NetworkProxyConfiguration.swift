@@ -1,7 +1,7 @@
 import Foundation
 
 /// Runtime configuration for the host network proxy owned by `reticle serve`.
-struct NetworkProxyConfiguration {
+public struct NetworkProxyConfiguration {
     let port: Int
     /// Interface to bind. Defaults to loopback; a real device on Wi-Fi must reach
     /// the Mac over the LAN, so real-device capture binds `0.0.0.0` (or the LAN
@@ -15,7 +15,7 @@ struct NetworkProxyConfiguration {
     let tlsHostAllowlist: [String]
 
     /// Creates a proxy configuration with conservative defaults.
-    init(
+    public init(
         port: Int,
         bindHost: String = "127.0.0.1",
         target: String? = nil,
