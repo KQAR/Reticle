@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 - 2026-07-21
 
 - iOS: fixed in-process screenshots going permanently black after the first
   keyboard appearance. `ScreenshotCapture` composited every attached window
