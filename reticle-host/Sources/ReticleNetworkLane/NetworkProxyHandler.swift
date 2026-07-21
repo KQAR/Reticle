@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import NIOCore
 import NIOHTTP1
 import NIOSSL
@@ -9,7 +10,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
-    private let store: EventStore
+    private let store: any NetworkEventSink
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
     private let tlsPolicy: TlsInterceptionPolicy
@@ -23,7 +24,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     private var upstreamPaused = false
 
     init(
-        store: EventStore,
+        store: any NetworkEventSink,
         bodyStore: NetworkBodyStore,
         factory: NetworkEventFactory,
         tlsPolicy: TlsInterceptionPolicy,
@@ -105,7 +106,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
             payload.requestBodyBytes = stored.bytes
             payload.requestBodyTruncated = stored.truncated
         }
-        _ = try? store.append(factory.event(.request, payload: payload, refs: refs))
+        store.emit(factory.event(.request, payload: payload, refs: refs))
         do {
             if let mock = try mockStore?.resolve(NetworkMockRequest(method: head.method.rawValue, url: target.url.absoluteString, path: target.path, host: target.host)) {
                 writeMock(mock, payload: payload, refs: refs, version: head.version, context: context)
@@ -159,12 +160,12 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         let wantsMitm = tlsPolicy.allows(host: target.host)
         let sslContext = wantsMitm ? try? certificates?.serverContext(host: target.host) : nil
         let payload = target.payload(requestId: requestId, method: "CONNECT", start: start, tunnel: true, mitm: sslContext != nil)
-        _ = try? store.append(factory.event(.request, payload: payload))
+        store.emit(factory.event(.request, payload: payload))
         if wantsMitm && sslContext == nil {
             var errorPayload = payload
             errorPayload.error = "MITM policy matched but certificate material was unavailable"
             errorPayload.endMillis = start
-            _ = try? store.append(factory.event(.error, payload: errorPayload))
+            store.emit(factory.event(.error, payload: errorPayload))
         }
         let serverChannel = context.channel
         ClientBootstrap(group: context.eventLoop)
@@ -175,7 +176,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                     var done = payload
                     done.endMillis = currentMillis()
                     done.status = 200
-                    _ = try? self.store.append(self.factory.event(.response, payload: done))
+                    self.store.emit(self.factory.event(.response, payload: done))
                     if let sslContext {
                         self.startMITM(target: target, sslContext: sslContext, channel: serverChannel)
                         _ = peer.close()
@@ -280,7 +281,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
             responsePayload.responseBodyBytes = stored.bytes
             responsePayload.responseBodyTruncated = stored.truncated
         }
-        _ = try? store.append(factory.event(.response, payload: responsePayload, refs: responseRefs))
+        store.emit(factory.event(.response, payload: responsePayload, refs: responseRefs))
         write(status: mock.value.status, headers: mock.value.headers, contentType: mock.value.contentType, data: mock.body, version: version, context: context)
     }
 
@@ -335,7 +336,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         var payload = base
         payload.endMillis = currentMillis()
         payload.error = message
-        _ = try? store.append(factory.event(.error, payload: payload, refs: refs))
+        store.emit(factory.event(.error, payload: payload, refs: refs))
     }
 
     private func emitMockError(_ error: NetworkMockError, payload: NetworkEventPayload, refs: [String: String]) {
@@ -347,7 +348,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
             errorPayload.mockRuleId = ruleId
             errorPayload.mockValueId = valueId
         }
-        _ = try? store.append(factory.event(.error, payload: errorPayload, refs: refs))
+        store.emit(factory.event(.error, payload: errorPayload, refs: refs))
     }
 
 }

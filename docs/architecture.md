@@ -157,6 +157,20 @@ delay that client connection, but it no longer blocks the proxy's event loop.
 Hop-by-hop headers are stripped before forwarding, upstream requests have an
 explicit timeout, and a client disconnect cancels the active upstream task.
 
+The whole lane — proxy, MITM, certificate store, body store, and
+`NetworkMockStore` — lives in its own `ReticleNetworkLane` SwiftPM target, not in
+`ReticleHostCore`. It depends only on `ReticleHostShared` (the dependency-free
+`JSONValue` / event models / `HelperError` layer) and SwiftNIO, and reaches the
+session store through a single `NetworkEventSink` protocol (`emit` +
+`sessionDirectory`) rather than referencing `EventStore` directly. `EventStore`
+conforms to that sink in `ReticleHostCore`, and the Hummingbird mock routes and
+`reticle mock` CLI are thin adapters over the lane's public API. This is the
+compiler-enforced realization of the "proxy backend behind an interface" goal
+(docs/roadmap.md): the lane builds and tests without the daemon, and swapping the
+engine later means editing one target, not untangling it from the host. Its
+end-to-end path (serve → proxy → mock → `events.jsonl`, including a MITM'd HTTPS
+hit) is guarded on real sockets by `scripts/e2e-proxy.sh` in CI.
+
 ## The declarative-UI boundary: Compose
 
 Reticle's rule for Jetpack Compose:
@@ -412,7 +426,7 @@ exposes), while `ui node` always returns the richer view-tree node.
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
 | `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
-| `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`): Android device commands are RPC calls to the native Kotlin helper; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. |
+| `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`): Android device commands are RPC calls to the native Kotlin helper; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. Internally three SwiftPM library targets stacked bottom-up — `ReticleHostShared` (dependency-free `JSONValue` / event models / `HelperError`), `ReticleNetworkLane` (the capture proxy + MITM + mock engine, behind the `NetworkEventSink` interface), and `ReticleHostCore` (daemon, CLI, panel, per-platform host code) — plus the `ReticleHost` executable. `ReticleHostCore` `@_exported`s the lower two, so the split is an internal boundary, not an API change. |
 | `sample-app` | Android app | Demo linking the Android agent, proving the round trip |
 | `sample-app-ios` | iOS app | Demo with a `linked` target (links `ReticleKit`) and a `noagent` target (injection test), proving the iOS round trip |
 

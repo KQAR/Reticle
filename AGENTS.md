@@ -54,6 +54,12 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   ingestion from one-shot `act --trace-output`.
   Command surface: `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/
   `debug`/`ui`/`serve`/`version`.
+  Internally three stacked SwiftPM library targets: `ReticleHostShared`
+  (dependency-free `JSONValue`/event models/`HelperError`) ← `ReticleNetworkLane`
+  (the capture proxy + MITM + mock engine, reaching the store only through the
+  `NetworkEventSink` protocol) ← `ReticleHostCore` (daemon, CLI, panel, host
+  code), plus the `ReticleHost` executable. Put new proxy/mock code in the lane,
+  not Core; its end-to-end path is guarded by `scripts/e2e-proxy.sh`.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.

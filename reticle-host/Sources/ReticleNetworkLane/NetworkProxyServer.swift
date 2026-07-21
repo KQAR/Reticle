@@ -1,12 +1,13 @@
 import Dispatch
 import Foundation
+import ReticleHostShared
 import NIOCore
 import NIOHTTP1
 import NIOPosix
 
 /// SwiftNIO HTTP proxy that publishes `network.*` events into a session store.
-final class NetworkProxyServer: @unchecked Sendable {
-    private let store: EventStore
+public final class NetworkProxyServer: @unchecked Sendable {
+    private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
     private let mockStore: NetworkMockStore?
     private let ready = DispatchSemaphore(value: 0)
@@ -15,10 +16,10 @@ final class NetworkProxyServer: @unchecked Sendable {
     private var channel: (any Channel)?
     private var startupError: Error?
 
-    private(set) var port: Int
+    public private(set) var port: Int
 
     /// Creates a proxy server owned by the supplied session event store.
-    init(store: EventStore, configuration: NetworkProxyConfiguration, mockStore: NetworkMockStore? = nil) throws {
+    public init(store: any NetworkEventSink, configuration: NetworkProxyConfiguration, mockStore: NetworkMockStore? = nil) throws {
         if configuration.mitmEnabled, let caDirectory = configuration.caDirectory {
             try ProxyCertificateStore(directory: caDirectory).validate()
         }
@@ -29,7 +30,7 @@ final class NetworkProxyServer: @unchecked Sendable {
     }
 
     /// Starts accepting proxy connections.
-    func start() throws {
+    public func start() throws {
         let bodyStore = NetworkBodyStore(
             sessionDirectory: store.sessionDirectory,
             limitBytes: configuration.bodyLimitBytes
@@ -83,7 +84,7 @@ final class NetworkProxyServer: @unchecked Sendable {
     }
 
     /// Stops accepting new proxy connections.
-    func stop() {
+    public func stop() {
         lock.lock()
         let channel = channel
         self.channel = nil

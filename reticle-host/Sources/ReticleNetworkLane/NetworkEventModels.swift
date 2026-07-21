@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 
 /// Event kinds emitted by the host proxy into the daemon event bus.
 enum NetworkEventType: String {

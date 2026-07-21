@@ -5,6 +5,7 @@ import NIOSSL
 import Testing
 import X509
 @testable import ReticleHostCore
+@testable import ReticleNetworkLane
 
 /// Coverage for the previously-untested TLS-interception surface: the host
 /// policy gate, the certificate store (CA + leaf issuance/caching), the CONNECT
