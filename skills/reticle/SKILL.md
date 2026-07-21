@@ -299,6 +299,21 @@ Prefer traces for bug reports, demos, and multi-step validation where later tool
 or humans need to inspect the exact evidence. Without `reticle serve`, keep
 default `act` calls trace-free when the inline `--verify` diff is enough.
 
+**`replay gif` — turn a recorded flow into a shareable artifact.** Once a flow
+has trace packages on disk, stitch them into a device-framed animated GIF for
+bug reports and PR comments — each step shows its before-screenshot with the
+gesture drawn on it (tap ring / swipe arrow) and its after-screenshot, captioned
+`2/5 tap testId=checkout.payButton · Δ12`:
+
+```bash
+reticle act batch --package <pkg> --file steps.json --trace-output reticle-flow
+reticle replay gif reticle-flow                      # => reticle-flow/replay.gif
+reticle replay gif reticle-flow --output flow.gif --width 480 --frame-ms 600
+```
+
+It is host-local (no device needed) and works on Android and iOS traces alike.
+Steps recorded without screenshots are skipped with a stderr note.
+
 ## Session event bus
 
 Use `reticle serve` when you need a durable local timeline across multiple
