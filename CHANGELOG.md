@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Host: new `reticle replay gif <trace-dir>` — the first evidence-workflow
+  product (A4 on the roadmap). It stitches the action-trace packages a flow
+  recorded with `act … --trace-output` into a device-framed animated GIF:
+  each step contributes its before-screenshot (with the gesture drawn where the
+  input landed — a ring at the resolved tap point, an arrow for a swipe/drag
+  stroke) and its after-screenshot (captioned with the diff change count), with
+  step captions built from the trace's gesture + selector. Works on Android and
+  iOS traces alike (one manifest reader covers both), is host-local (reads
+  evidence already on disk, never touches a device), and renders with
+  ImageIO/CoreGraphics only — no new dependencies. Marker geometry is scaled
+  through the snapshot's `screen.size.width`, not the screenshot's pixel width
+  — on iOS the gesture coordinates are points while the screenshot is device
+  pixels (caught by replaying a real simulator trace; a pixel-space mapping
+  drew the tap ring at ⅓ of the true position), while on Android the two
+  spaces coincide and nothing changes. Steps without screenshots
+  are skipped with a stderr note, never fabricated. Options: `--output`
+  (default `<trace-dir>/replay.gif`), `--width`, `--frame-ms`. Covered by unit
+  tests over synthetic traces and a step in `scripts/e2e-ios.sh` that replays
+  the real recorded checkout tap.
+
 - Host: the network capture lane — proxy, MITM, certificate store, body store,
   and `NetworkMockStore` — is now its own `ReticleNetworkLane` SwiftPM target
   instead of living mixed into `ReticleHostCore`. It depends only on a new
