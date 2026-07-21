@@ -193,8 +193,40 @@ struct SnapshotCapture {
         return ref
     }
 
+    /// Some hosting surfaces expose content behind unlabeled AX *container*
+    /// elements (`isAccessibilityElement == false`, no label, no identifier)
+    /// instead of a flat array: a `NavigationView`'s `_UIHostingView` returns
+    /// its elements flat, but a `TabView` page host (`TabHostingController`'s
+    /// hosting view) wraps the whole page in one such container. A one-level
+    /// read filtered that container out and silently dropped the entire page —
+    /// the tab looked "empty" while its content was plainly on screen. Descend
+    /// into containers instead; depth cap and a visited set guard against
+    /// cyclic or degenerate AX graphs.
+    private func flattenAXElements(
+        _ objects: [NSObject],
+        depth: Int = 0,
+        visited: inout Set<ObjectIdentifier>
+    ) -> [NSObject] {
+        guard depth < 8 else { return [] }
+        var out: [NSObject] = []
+        for element in objects {
+            guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
+            let isElement = (element.value(forKey: "isAccessibilityElement") as? Bool) ?? false
+            let label = (element.accessibilityLabel ?? "")
+            let identifier = SnapshotCapture.accessibilityIdentifier(of: element)
+            if !isElement && identifier.isEmpty && label.isEmpty {
+                let nested = SwiftUISupport.accessibilityElements(of: element)
+                out.append(contentsOf: flattenAXElements(nested, depth: depth + 1, visited: &visited))
+            } else {
+                out.append(element)
+            }
+        }
+        return out
+    }
+
     private func captureSwiftUIElements(of host: UIView, parentRef: String, builder b: Builder) -> [String] {
-        let elements = SwiftUISupport.accessibilityElements(of: host)
+        var visited = Set<ObjectIdentifier>()
+        let elements = flattenAXElements(SwiftUISupport.accessibilityElements(of: host), visited: &visited)
         var refs: [String] = []
         var seenSignatures = Set<String>()
         for element in elements {

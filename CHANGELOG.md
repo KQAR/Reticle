@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- iOS: the SwiftUI accessibility bridge now descends into **unlabeled AX
+  container elements** instead of filtering them out. Some hosting surfaces
+  (notably a `TabView` page host — `TabHostingController`'s hosting view) wrap
+  the whole page's elements in one container with no label, no identifier, and
+  `isAccessibilityElement == false`; the previous one-level read dropped it —
+  and with it the entire page — so tab-page content was plainly visible on
+  screen yet absent from every snapshot, and `--test-id` selectors inside a tab
+  could never resolve. A `NavigationView`'s `_UIHostingView` returns its
+  elements flat, which is why every existing scenario worked and the gap went
+  unnoticed. The walk is depth-capped and cycle-guarded. Found via a new
+  four-item TabView scenario in `sample-app-ios` ("Tab bar"), which is now part
+  of `scripts/e2e-ios.sh`: it asserts the four `UITabBar` items, that the
+  SwiftUI page folds in as axElements, and that a HID tap on the Orders item
+  flips `tabbar.status` to "Selected: orders". Also observed there (not a
+  Reticle bug, worth knowing): the iOS 26 Liquid Glass `UITabBar` renders two
+  stacked button layers, so each tab item appears twice at the same frame.
+
 ## 0.8.0 - 2026-07-20
 
 - iOS: the capture proxy now supports **real devices**, not just simulators. A
