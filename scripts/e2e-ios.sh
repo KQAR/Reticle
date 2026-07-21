@@ -150,6 +150,40 @@ echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
   || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
+echo "== TAB BAR (SwiftUI TabView) =="
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=tabbar
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/tabbar"
+TABBAR="$("$HOST" --target ios ui compact "$TMP/tabbar/snapshot.json")"
+for item in Home Orders Messages Profile; do
+  echo "$TABBAR" | grep -q "control \"$item\"" \
+    || { echo "FAIL: expected tab bar item \"$item\" (UITabBar view walk)"; exit 1; }
+done
+# The page content must fold in as axElements. Regression guard for the
+# unlabeled-AX-container shape: a TabView page host (TabHostingController's
+# hosting view) wraps its whole page in ONE unlabeled AX container, and a
+# one-level element read used to filter it out and drop the page wholesale —
+# content plainly on screen, invisible in the snapshot.
+echo "$TABBAR" | grep -q "tabbar.status" \
+  || { echo "FAIL: tab page SwiftUI content missing (unlabeled AX container regression)"; exit 1; }
+echo "$TABBAR" | grep -q "Selected: home" \
+  || { echo "FAIL: tabbar.status should read 'Selected: home' before any tap"; exit 1; }
+# Tab buttons carry no testId (SwiftUI .tabItem cannot attach one), so resolve
+# the Orders button's ref from the snapshot and HID-tap it. Observable side
+# effect: the SwiftUI page swaps and tabbar.status flips to "Selected: orders".
+ORDERS_REF="$(/usr/bin/python3 -c 'import json
+s=json.load(open("'"$TMP"'/tabbar/snapshot.json"))
+print(next(r for r,v in s["nodes"].items()
+  if "Tab" in str(v.get("typeName","")) and "Button" in str(v.get("typeName",""))
+  and v.get("contentDescription")=="Orders"))')"
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --ref "$ORDERS_REF"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/tabbar-orders"
+"$HOST" --target ios ui compact "$TMP/tabbar-orders/snapshot.json" | grep -q "Selected: orders" \
+  || { echo "FAIL: tapping the Orders tab did not update tabbar.status"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== INJECTION path (noagent app) =="
 PORT="$(/usr/bin/python3 -c 'x=0x811C9DC5
 for b in "'"$NOAGENT_ID"'".encode(): x^=b; x=(x*0x01000193)&0xFFFFFFFF
