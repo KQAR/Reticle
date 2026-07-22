@@ -256,6 +256,11 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 }
             }
 
+            method == "POST" && path == Endpoints.EDITOR_ACTION -> {
+                val result = EditorActionController(context).perform()
+                writeJson(out, ReticleJson.compact.encodeToString(dev.reticle.core.EditorActionResult.serializer(), result))
+            }
+
             method == "POST" && path == Endpoints.MUTATE -> {
                 val request = ReticleJson.compact.decodeFromString(MutationRequest.serializer(), body)
                 val result = MutationEngine(context).apply(request)

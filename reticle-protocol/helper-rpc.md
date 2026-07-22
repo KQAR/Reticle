@@ -76,6 +76,11 @@ it does not change this helper stdio contract.
 Common optional params on device methods: `serial`, `port`, `hostPort`. Selector
 params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 `ref`, `point` ("x,y"), `region`, `alias` (`@N` from the last outline cache).
+An `alias` is re-resolved against the live tree before use (matched by the
+cached entry's selector, then label+role, nearest-to-cached-frame on ties) so a
+relayout between `ui outline` and `act` does not land on stale coordinates; the
+cached frame is only used when the runtime is unreachable, and the result's
+`source` says which path was taken (`outline:@N->live` vs cached frame).
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -85,7 +90,7 @@ params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 | `inject` | `package` (req), `payloadDex?` | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
-| `act` | `gesture` (tap/swipe/drag/type), `package` (req); tap: selector or `alias`; swipe/drag: `from`,`to`,`duration?`; type: `text`; optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries. Host `act batch --file` expands a JSON array into repeated `act` RPC calls; it is not a separate helper method. |
+| `act` | `gesture` (tap/swipe/drag/type/hide-keyboard), `package` (req); tap: selector or `alias`; swipe/drag: `from`,`to`,`duration?`; type: `text`, `submit?` (perform the focused field's IME editor action after typing — agent `/editor-action` preferred, `KEYCODE_ENTER` fallback); optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries; type with `submit` adds `"submit": { "via", "action?" }`. Host `act batch --file` expands a JSON array into repeated `act` RPC calls; it is not a separate helper method — step keys are these protocol field names (so `resourceId`, `ref`, `point`, `alias`, `region` all work in steps). |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |

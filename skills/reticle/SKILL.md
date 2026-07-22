@@ -164,11 +164,16 @@ disk.
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
 visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
 alias cache for that package. Repeated vertical controls are annotated as
-`item i/n` so list rows can be compared without opening the full snapshot. Use
-`reticle act tap --package <pkg> --alias @N` only immediately after the matching
-outline; re-run outline after navigation, scrolling, or modal changes. The
-`item i/n` text is a hint, not a selector. Stable automation should still prefer
-`--test-id`, `--resource-id`, `--css`, or `--ref`.
+`item i/n` so list rows can be compared without opening the full snapshot.
+`act --alias @N` re-resolves the cached entry against the **live** tree before
+acting (matched by the entry's selector, then label+role; nearest to the cached
+frame on ties), so a keyboard appearing or a relayout between outline and act
+does not land the tap on stale coordinates — the cached frame is only used when
+the runtime is unreachable, and `source` in the result tells you which path ran
+(`outline:@N->live` vs `outline:@N (cached frame)`). Still re-run outline after
+navigation or modal changes: `@N` numbering describes the outlined screen, not
+the new one. The `item i/n` text is a hint, not a selector. Stable automation
+should still prefer `--test-id`, `--resource-id`, `--css`, or `--ref`.
 
 **`--live` — inspect the running app without writing a report.** Any `ui` view
 (`node`/`compact`/`tree`/`regions`) takes `--live --package <pkg>` instead of a
@@ -213,9 +218,14 @@ later. CSS `background-image` itself is still visible as `domStyleBackgroundImag
 
 Selector resolution is semantic-first, then view-tree frames, then a raw
 point — pass `--test-id`, `--resource-id`, `--css`, `--ref`, or `--point x,y`.
-When a selector cannot be resolved, Reticle reports candidates from the current
-snapshot (matching selector kind: test ids, resource ids, CSS selectors, or refs)
-so retry with one of the listed stable handles instead of guessing coordinates.
+On Android, a node's `testId` is filled from the first of: Compose `testTag` /
+classic `view.tag` string (React Native's `testID` writes this), React Native's
+`nativeID` (a keyed view tag), then the resource-id entry name — so RN screens
+with `testID` or `nativeID` props are targetable by `--test-id` without any
+resource ids. When a selector cannot be resolved, Reticle reports candidates
+from the current snapshot (matching selector kind: test ids, resource ids, CSS
+selectors, or refs) so retry with one of the listed stable handles instead of
+guessing coordinates.
 
 ```bash
 reticle act tap   --package <pkg> --test-id checkout.payButton
@@ -235,6 +245,13 @@ than appending. ASCII goes through `adb input text` and works even on apps that
 don't link/inject the agent. Non-ASCII (CJK, accented Latin, emoji — which
 `adb input text` silently drops) is staged on the device clipboard by the
 in-process agent and pasted, so it **requires a reachable runtime**.
+
+Add `--submit` to press the keyboard's action key after the text lands —
+Android performs the focused field's IME editor action in-process (Done / Next
+/ Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens
+for), falling back to `KEYCODE_ENTER` when the agent is unreachable; iOS sends
+a HID Return. For OTP/login flows this replaces the `type` → `hide-keyboard` →
+`tap submit` three-step with one command.
 
 Use `act batch --file steps.json` for short, deterministic multi-step flows.
 
@@ -274,12 +291,16 @@ Simulator caveat: with "Connect Hardware Keyboard" enabled (Simulator.app
 I/O > Keyboard), iOS never shows the software keyboard at all — disable it
 and reboot the sim device if `keyboardVisible` stays false after typing.
 The file is a JSON array; each object is one normal act RPC using helper-style
-keys such as `gesture`, `testId`, `css`, `from`, `to`, `text`, `verify`, and
+keys. **Every selector a single `act` takes works in a step** — `testId`,
+`resourceId`, `css`, `ref`, `point` ("x,y"), `alias`, `region` — plus `text`
+and `submit` for type, `from`/`to`/`duration` for swipe/drag, `verify`, and
 optional `delayMs` after that step:
 
 ```json
 [
   { "gesture": "type", "testId": "checkout.name", "text": "Ada" },
+  { "gesture": "type", "testId": "login.code", "text": "123456", "submit": true },
+  { "gesture": "tap", "resourceId": "btnWithdraw" },
   { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
 ]
 ```

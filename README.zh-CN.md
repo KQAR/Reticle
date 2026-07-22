@@ -205,6 +205,12 @@ $CLI ui compact --live --package dev.reticle.sample   # keyboard: visible … oc
 $CLI act hide-keyboard --package dev.reticle.sample
 $CLI act tap  --package dev.reticle.sample --test-id login.submitButton
 
+# 也可以省掉 hide-keyboard + tap 两步:--submit 在文本落入后按下键盘动作键
+# (Android 走 agent 的 IME editor action,即 React Native onSubmitEditing
+# 监听的那个回调;iOS 模拟器发 HID Return)。
+$CLI act type --package dev.reticle.sample --test-id login.codeField \
+    --text "123456" --submit
+
 # 读取应用自行写入的运行时日志
 $CLI debug logs --package dev.reticle.sample
 
