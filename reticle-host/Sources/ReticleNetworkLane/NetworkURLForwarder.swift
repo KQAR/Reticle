@@ -16,20 +16,41 @@ protocol UpstreamResponseSink: AnyObject, Sendable {
 final class NetworkURLForwarder: @unchecked Sendable {
     static let shared = NetworkURLForwarder()
 
-    private let session: URLSession
+    /// Floor for the total-transfer cap when the configured per-request timeout
+    /// is shorter (the per-request timeout is an *idle* timeout, so a healthy
+    /// long download legitimately outlives it).
+    static let resourceTimeoutFloorSeconds: TimeInterval = 600
 
-    private init() {
+    /// The resource timeout caps a transfer's TOTAL duration and silently
+    /// overrides any longer per-request timeout, so it must never sit below
+    /// what the caller configured — a `--upstream-timeout` above the floor
+    /// used to be clamped to 600s here without any signal.
+    static func resourceTimeout(forRequestTimeout timeout: TimeInterval) -> TimeInterval {
+        max(resourceTimeoutFloorSeconds, timeout)
+    }
+
+    // `timeoutIntervalForResource` is session-level, so sessions are keyed by
+    // the derived resource cap. The configured upstream timeout is constant per
+    // daemon run, so in practice this holds one entry.
+    private var sessions: [TimeInterval: URLSession] = [:]
+    private let lock = NSLock()
+
+    private init() {}
+
+    private func session(forRequestTimeout timeout: TimeInterval) -> URLSession {
+        let resourceCap = Self.resourceTimeout(forRequestTimeout: timeout)
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = sessions[resourceCap] { return existing }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
         configuration.timeoutIntervalForRequest = 30
-        // The resource timeout caps a transfer's TOTAL duration and silently
-        // overrides any longer per-request timeout, so keep it well above what
-        // callers can configure; stalls are still cut by the per-request idle
-        // timeout (request.timeoutInterval set in stream(for:)).
-        configuration.timeoutIntervalForResource = 600
+        configuration.timeoutIntervalForResource = resourceCap
         // Streaming and redirect suppression live on a per-task delegate (macOS
         // 14+), so the session itself needs no delegate.
-        session = URLSession(configuration: configuration)
+        let session = URLSession(configuration: configuration)
+        sessions[resourceCap] = session
+        return session
     }
 
     /// Streams a proxied HTTP request upstream, delivering the response to `sink`
@@ -50,7 +71,7 @@ final class NetworkURLForwarder: @unchecked Sendable {
         }
         request.httpBody = body.isEmpty ? nil : body
         let delegate = StreamingTaskDelegate(sink: sink)
-        let task = session.dataTask(with: request)
+        let task = session(forRequestTimeout: timeout).dataTask(with: request)
         task.delegate = delegate
         task.resume()
         return NetworkForwardingTask(task: task, delegate: delegate)
