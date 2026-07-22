@@ -19,6 +19,7 @@ Steps:
    '<selector>'`.
 2. Dispatch the tap, verifying the result in the same command:
    `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|css=<selector>|ref>]`
+   (the key= spellings `testId=<id>`, `resourceId=<id>`, and `ref=<ref>` work too)
    The resolver prints which path it used (semantic / view frame / region / char
    grid), then `--verify` prints the watched node's before→after diff. Bare
    `--verify` watches the tapped node; pass a selector to watch a different one
