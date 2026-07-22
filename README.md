@@ -224,6 +224,18 @@ $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
 
+# The system keyboard is another process's window — it never appears in the
+# node tree, so a covered submit button still looks tappable. Snapshots carry
+# screen.keyboard, `ui compact` leads with a keyboard header, covered items are
+# marked occluded-by:keyboard (a dialog covering a background page likewise
+# marks items occluded-by:<windowRef>), and hide-keyboard dismisses it
+# in-process. Works the same with --target ios.
+$CLI act tap  --package dev.reticle.sample --test-id scenario.login
+$CLI act type --package dev.reticle.sample --test-id login.codeField --text "123456"
+$CLI ui compact --live --package dev.reticle.sample   # keyboard: visible … occluded-by:keyboard
+$CLI act hide-keyboard --package dev.reticle.sample
+$CLI act tap  --package dev.reticle.sample --test-id login.submitButton
+
 # Read app-authored runtime logs
 $CLI debug logs --package dev.reticle.sample
 

@@ -87,6 +87,10 @@ class ProtocolContractTest {
         // MetadataValue, nested regions, char grid) rather than trusting a blind
         // string compare against hand-authored whitespace.
         assertEquals("r0", decoded.rootRef)
+        assertEquals(
+            KeyboardInfo(visible = true, frame = Rect(0.0, 2000.0, 1080.0, 400.0)),
+            decoded.screen.keyboard,
+        )
         val row = decoded.nodes.getValue("r1")
         assertEquals(MetadataValue.Real(1.0), row.custom["alpha"])
         assertEquals(MetadataValue.Text("#FF202124"), row.custom["textColor"])
@@ -149,7 +153,12 @@ class ProtocolContractTest {
 
     private fun sampleSnapshot(): Snapshot = Snapshot(
         capturedAtMillis = 1719400000000L,
-        screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0, interfaceStyle = "dark"),
+        screen = ScreenInfo(
+            size = Size(1080.0, 2400.0),
+            density = 3.0,
+            interfaceStyle = "dark",
+            keyboard = KeyboardInfo(visible = true, frame = Rect(0.0, 2000.0, 1080.0, 400.0)),
+        ),
         rootRef = "r0",
         nodes = mapOf(
             "r0" to Node(

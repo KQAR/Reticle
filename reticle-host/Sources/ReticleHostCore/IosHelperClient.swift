@@ -259,6 +259,26 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                                    result: result)
         }
 
+        // In-process keyboard dismissal: no HID surface needed, so it works on
+        // devices and simulators alike, and reports the settled before/after
+        // state straight from the agent.
+        if gesture == "hideKeyboard" || gesture == "hide-keyboard" {
+            let before = tracer?.capture()
+            let obj: [String: Any]
+            do {
+                let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.keyboardHide, body: Data())
+                obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            } catch {
+                throw HelperError("hide-keyboard needs the in-process agent (is the runtime up?): \(error)")
+            }
+            let keyboard = obj["keyboard"] as? [String: Any]
+            return try finishTrace(tracer, before, settleMs, gesture: "hideKeyboard", selector: nil,
+                                   point: nil, source: "agent", ref: nil,
+                                   result: ["gesture": "hideKeyboard", "via": "agent resignFirstResponder",
+                                            "wasVisible": obj["wasVisible"] ?? false,
+                                            "keyboardVisible": keyboard?["visible"] ?? false])
+        }
+
         // HID (real touch/keyboard) needs a booted simulator; a real device has no
         // host-reachable HID input surface.
         let simUdid = try? Simctl.resolveUdid(serial)
@@ -330,9 +350,16 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 try IosInputBackend(udid: udid).paste()
                 via = "clipboard paste"
             }
+            // Opportunistic post-type keyboard state (typing almost always
+            // leaves the keyboard covering the bottom of the screen); omitted
+            // when the agent can't answer — typing must not fail over it.
+            var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            if let visible = (try? IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+                result["keyboardVisible"] = visible
+            }
             return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
                                    point: nil, source: nil, ref: nil,
-                                   result: ["gesture": "type", "via": via, "text": text])
+                                   result: result)
         default:
             throw HelperError("unknown gesture '\(gesture)'")
         }

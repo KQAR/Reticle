@@ -18,6 +18,26 @@ public enum Endpoints {
     /// app, so it works on a real device where host-side HID synthesis cannot
     /// reach — the on-device analogue of a tap. Limited to activatable targets.
     public static let activate = "/activate"
+
+    /// Current system-keyboard state, probed from inside the app (GET).
+    public static let keyboard = "/keyboard"
+
+    /// Dismiss the system keyboard from inside the app process (POST, no body):
+    /// resignFirstResponder on iOS, InputMethodManager on Android. Answers with
+    /// the settled post-hide state.
+    public static let keyboardHide = "/keyboard/hide"
+}
+
+/// Answer of `Endpoints.keyboardHide`: what was on screen, and what is now.
+/// Mirrors reticle-core's `KeyboardHideResult`.
+public struct KeyboardHideResult: Codable, Sendable {
+    public var wasVisible: Bool
+    public var keyboard: KeyboardInfo
+
+    public init(wasVisible: Bool, keyboard: KeyboardInfo) {
+        self.wasVisible = wasVisible
+        self.keyboard = keyboard
+    }
 }
 
 /// Request to activate a control in-process (the on-device "tap").

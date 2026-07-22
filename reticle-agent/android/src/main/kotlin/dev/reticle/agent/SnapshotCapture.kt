@@ -255,6 +255,8 @@ class SnapshotCapture(private val context: Context) {
             size = Size(metrics.widthPixels.toDouble(), metrics.heightPixels.toDouble()),
             density = metrics.density.toDouble(),
             interfaceStyle = if (night) "dark" else "light",
+            // captureLocked already runs on the main thread, which the probe needs.
+            keyboard = KeyboardProbe.probe(context),
         )
     }
 

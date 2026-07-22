@@ -93,6 +93,25 @@ final class JSONShapeTests: XCTestCase {
         XCTAssertEqual(decoded.nodes["r3"]?.kind, .axElement)
     }
 
+    func testKeyboardOcclusionMatchesKotlinDerivation() throws {
+        // Mirrors reticle-core's SnapshotDerivationsTest: an item whose tap
+        // point is under the visible keyboard is marked occluded-by:keyboard;
+        // items above it are untouched. Keyboard state round-trips the wire.
+        var snap = sampleSnapshot()
+        snap.screen.keyboard = KeyboardInfo(visible: true, frame: Rect(x: 0, y: 700, width: 393, height: 152))
+        let compact = CompactObservation.from(snap)
+        let pay = compact.items.first { $0.ref == "r2" }! // y-center 745 -> covered
+        XCTAssertEqual(pay.occludedBy, CompactObservation.occluderKeyboard)
+        XCTAssertTrue(pay.line().contains("occluded-by:keyboard"), pay.line())
+        let signIn = compact.items.first { $0.ref == "r3" }! // y-center 662 -> clear
+        XCTAssertNil(signIn.occludedBy)
+
+        let data = try ReticleJSON.encodeWire(snap)
+        let decoded = try ReticleJSON.decode(Snapshot.self, from: data)
+        XCTAssertEqual(decoded.screen.keyboard?.visible, true)
+        XCTAssertEqual(decoded.screen.keyboard?.frame?.y, 700)
+    }
+
     func testMetadataValueDiscriminator() throws {
         let data = try ReticleJSON.encodeWire(MetadataValue.integer(42))
         let json = String(decoding: data, as: UTF8.self)
