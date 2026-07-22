@@ -151,8 +151,15 @@ commands return one envelope shape: `{ "ok": true, "data": ... }` on success and
 `{ "ok": false, "error": ... }` on failure. Keep text output for human-readable
 interactive sessions.
 
-For repeated command loops, start a local session daemon with a helper broker and
-reuse it explicitly:
+Repeated command loops are fast by default: the first helper-backed command
+starts a small per-device resident daemon (Unix socket under
+`~/.reticle/helperd/`) and later commands reuse its warm helper automatically —
+nothing to start or clean up (it exits after 600s idle). `--no-daemon` /
+`RETICLE_NO_DAEMON=1` opts out; bring-up failures fall back to a direct spawn
+on their own, so never treat the daemon as a precondition.
+
+When a `reticle serve` session is already running you can instead route
+commands through its helper broker explicitly:
 
 ```bash
 reticle serve --session <name> --helper-broker
@@ -160,9 +167,6 @@ RETICLE_USE_DAEMON=1 reticle status --package <pkg>
 reticle act tap --use-daemon --package <pkg> --test-id checkout.payButton
 ```
 
-Use this when you will run several `status`/`ui`/`act`/`mutate` commands in a
-row and want to avoid starting a new helper process for each call. Do not assume
-the broker exists: plain one-shot commands still work without `serve`, and
 `--use-daemon` requires a live daemon started with `--helper-broker`.
 
 When `serve` is running, open `/panel` to review action traces, network traffic,
