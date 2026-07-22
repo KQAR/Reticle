@@ -62,4 +62,31 @@ class VerifyTokenTest {
         // A raw --point gesture has no node to watch.
         assertFailsWith<CliError> { parseVerifyToken("true", null, null, null, null) }
     }
+
+    @Test
+    fun testIdEqualsToken_isTestId() {
+        val sel = parseVerifyToken("testId=checkout.status", null, null, null, null)!!
+        assertEquals("checkout.status", sel.testId)
+        assertNull(sel.ref)
+    }
+
+    @Test
+    fun resourceIdEqualsToken_isResourceId() {
+        val sel = parseVerifyToken("resourceId=btnWithdraw", null, null, null, null)!!
+        assertEquals("btnWithdraw", sel.resourceId)
+        assertNull(sel.ref)
+    }
+
+    @Test
+    fun refEqualsToken_isRef() {
+        val sel = parseVerifyToken("ref=r129", null, null, null, null)!!
+        assertEquals("r129", sel.ref)
+    }
+
+    @Test
+    fun unknownKeyEqualsToken_failsLoudly() {
+        // Would otherwise become a never-matching ref and report
+        // "node not present" no matter what the UI does.
+        assertFailsWith<CliError> { parseVerifyToken("testid=checkout.status", null, null, null, null) }
+    }
 }
