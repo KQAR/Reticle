@@ -329,6 +329,24 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             try assertHidAvailable(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             let before = tracer?.capture()
+            // If the caller named a target field, tap it first so the text lands
+            // in THAT field — HID typing and clipboard paste both go to whatever
+            // currently holds focus, so `type --test-id foo` otherwise silently
+            // typed into the wrong (or no) field. Mirrors the Android helper's
+            // focus-tap; with no target, type into the current focus.
+            var focusedVia: String? = nil
+            var focusPoint: Point? = nil
+            if selector != nil {
+                let snapshot = try fetchSnapshot(pkg)
+                let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
+                let point = try resolveTapPoint(params, snapshot: snapshot)
+                try IosInputBackend(udid: udid).tap(x: point.x, y: point.y, screen: screen)
+                focusPoint = point
+                // Give the tapped field a beat to take focus before dispatching
+                // text (the Android helper settles 200ms for the same reason).
+                Thread.sleep(forTimeInterval: 0.2)
+                focusedVia = params["point"] != nil ? "point" : "selector"
+            }
             let via: String
             if IosText.isHidTypeable(text) {
                 try IosInputBackend(udid: udid).type(text)
@@ -337,8 +355,8 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 // The HID keyboard can't emit non-ASCII (CJK / emoji / accented).
                 // Stage it on the clipboard via the in-process agent, then Cmd+V —
                 // the iOS analogue of Android's clipboard + KEYCODE_PASTE path.
-                // Like the HID path, this types into the current focus (no field is
-                // tapped first), so the field must already hold focus.
+                // Pastes into the current focus — the focus-tap above (or the
+                // caller) must have put the caret in the right field.
                 do {
                     try IosAgentHTTP(bundleId: pkg).post(Endpoints.clipboard, body: Data(text.utf8))
                 } catch {
@@ -351,6 +369,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 via = "clipboard paste"
             }
             var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            if let focusedVia { result["focusedVia"] = focusedVia }
             // `type --submit`: press Return after the text lands. The HID
             // bridge maps '\n' to the Return usage, which triggers the focused
             // field's return-key action (textFieldShouldReturn / onSubmitEditing).
@@ -366,7 +385,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 result["keyboardVisible"] = visible
             }
             return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
-                                   point: nil, source: nil, ref: nil,
+                                   point: focusPoint, source: focusedVia, ref: nil,
                                    result: result)
         default:
             throw HelperError("unknown gesture '\(gesture)'")

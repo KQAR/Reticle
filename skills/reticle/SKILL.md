@@ -343,7 +343,8 @@ reticle act tap --package <pkg> --point 292,1273 --verify "@rata"      # tap a t
 #        text: 3414,20 zł -> 6072,49 zł
 ```
 
-A selector token is `#testId`, `@resourceId`, or a bare `ref`. "No change" is an
+A selector token is `#testId`, `@resourceId`, or a bare `ref` (the key=
+spellings `testId=…`, `resourceId=…`, `ref=…` work too). "No change" is an
 honest result, not a failure — it means the node didn't move within the budget
 (raise it with `--verify-timeout <ms>`). For WebView DOM nodes, use
 `css=<selector>` as the verify token:
