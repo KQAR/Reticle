@@ -175,7 +175,7 @@ class SnapshotCapture(private val context: Context) {
         }
 
         val resourceId = ReticleReflect.resourceEntryName(view)
-        val testId = ReticleReflect.testTag(view) ?: resourceId
+        val testId = ReticleReflect.testTag(view) ?: ReticleReflect.nativeId(view) ?: resourceId
         val text = (view as? TextView)?.text?.toString()
         val isInteractive = view.isClickable || view.isLongClickable || view.isFocusable
 

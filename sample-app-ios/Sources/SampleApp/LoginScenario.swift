@@ -8,31 +8,34 @@ import ReticleKit
 /// wiring, so typing leaves the system keyboard sitting on top of the button.
 /// E2E asserts that the snapshot reports the keyboard, marks the button
 /// `occluded-by:keyboard`, and that `act hide-keyboard` clears the way to a
-/// successful submit.
-final class LoginViewController: UIViewController {
+/// successful submit. The code field also submits on the return key (the
+/// common OTP pattern), which is what `act type --submit` (HID Return)
+/// exercises.
+final class LoginViewController: UIViewController, UITextFieldDelegate {
+
+    private let status = UILabel()
+    private let codeField = UITextField()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        let status = UILabel()
         status.text = "Enter the code"
         status.font = .systemFont(ofSize: 20)
         status.accessibilityIdentifier = "login.status"
 
-        let codeField = UITextField()
         codeField.placeholder = "SMS code"
         codeField.borderStyle = .roundedRect
         codeField.keyboardType = .numberPad
         codeField.accessibilityIdentifier = "login.codeField"
+        codeField.delegate = self
 
         let submit = UIButton(type: .system)
         submit.setTitle("Log in", for: .normal)
         submit.titleLabel?.font = .systemFont(ofSize: 18)
         submit.accessibilityIdentifier = "login.submitButton"
-        submit.addAction(UIAction { _ in
-            status.text = "Logged in: \(codeField.text ?? "")"
-            Reticle.log("login_submitted", metadata: ["chars": .integer(Int64(codeField.text?.count ?? 0))])
+        submit.addAction(UIAction { [weak self] _ in
+            self?.submitCode()
         }, for: .touchUpInside)
 
         let top = UIStackView(arrangedSubviews: [status, codeField])
@@ -53,5 +56,18 @@ final class LoginViewController: UIViewController {
         ])
 
         Reticle.log("login_visible")
+    }
+
+    private func submitCode() {
+        status.text = "Logged in: \(codeField.text ?? "")"
+        Reticle.log("login_submitted", metadata: ["chars": .integer(Int64(codeField.text?.count ?? 0))])
+    }
+
+    /// The number pad has no software return key, but a HID (hardware) Return
+    /// still reaches the field — this is the hook `act type --submit` lands on.
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        submitCode()
+        textField.resignFirstResponder()
+        return true
     }
 }

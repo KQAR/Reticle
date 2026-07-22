@@ -246,26 +246,60 @@ internal object HelperDeviceCommands {
             input.tap(focus.point.x.toInt(), focus.point.y.toInt())
             Thread.sleep(FOCUS_SETTLE_MS)
         }
+        val via: String
         if (InputBackend.isAsciiTypeable(text)) {
             input.text(text)
-            return buildJsonObject {
-                put("gesture", "type"); put("chars", text.length); put("via", "input text")
-                focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
-                keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
+            via = "input text"
+        } else {
+            val client = runtimeClientFor(device, pkg, params)
+            assertHealthy(client, pkg)
+            client.setClipboard(text)
+            val pasted = input.paste()
+            if (!pasted.ok) {
+                throw CliError("staged text on clipboard but paste failed: ${pasted.stderr.ifBlank { "no focused input?" }}")
             }
+            via = "clipboard paste"
         }
-        val client = runtimeClientFor(device, pkg, params)
-        assertHealthy(client, pkg)
-        client.setClipboard(text)
-        val pasted = input.paste()
-        if (!pasted.ok) {
-            throw CliError("staged text on clipboard but paste failed: ${pasted.stderr.ifBlank { "no focused input?" }}")
-        }
+        val submit = if (params.bool("submit")) submitAfterType(input, device, pkg, params) else null
         return buildJsonObject {
-            put("gesture", "type"); put("chars", text.length); put("via", "clipboard paste")
+            put("gesture", "type"); put("chars", text.length); put("via", via)
             focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+            submit?.let { put("submit", it) }
             keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
         }
+    }
+
+    /**
+     * Trigger the focused field's submit after `type --submit`. Preferred path
+     * is the in-app agent's editor action (TextView.onEditorAction — the exact
+     * semantic of the keyboard's Done/Go key, and what React Native's
+     * onSubmitEditing listens for); when the agent is unreachable, or answers
+     * without a focused field, fall back to KEYCODE_ENTER, which single-line
+     * fields translate into the same action.
+     */
+    private fun submitAfterType(
+        input: InputDispatcher,
+        device: dev.reticle.cli.platform.DeviceController,
+        pkg: String,
+        params: JsonObject,
+    ): JsonObject {
+        // Let the field commit the just-typed text before dispatching the action.
+        Thread.sleep(FOCUS_SETTLE_MS)
+        val client = runtimeClientFor(device, pkg, params)
+        if (client.probe() is RuntimeHealth.Healthy) {
+            val result = runCatching { client.performEditorAction() }.getOrNull()
+            if (result != null && result.performed) {
+                return buildJsonObject {
+                    put("via", "agent editorAction")
+                    result.action?.let { put("action", it) }
+                }
+            }
+        }
+        val r = input.keyevent("KEYCODE_ENTER")
+        if (!r.ok) {
+            throw CliError("typed but submit failed: ${r.stderr.ifBlank { "adb shell did not complete" }}")
+        }
+        return buildJsonObject { put("via", "keyevent ENTER") }
     }
 
     /**

@@ -34,6 +34,30 @@ object ReticleReflect {
         return null
     }
 
+    /**
+     * React Native's `nativeID` prop. RN stores it as a *keyed* tag —
+     * `view.setTag(R.id.view_tag_native_id, value)` — so it is invisible to the
+     * keyless [testTag] read (RN's `testID` also writes the keyless tag; this
+     * covers the nativeID-only case). The R.id constant lives in RN's resources,
+     * so resolve it by name at runtime; 0 means RN isn't in this app.
+     */
+    fun nativeId(view: View): String? {
+        return try {
+            val context = view.context ?: return null
+            val resId = nativeIdResource.getOrPut(context.packageName) {
+                context.resources.getIdentifier("view_tag_native_id", "id", context.packageName)
+            }
+            if (resId == 0) return null
+            val tag = view.getTag(resId)
+            if (tag is String && tag.isNotBlank()) tag else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** package name -> resolved view_tag_native_id resource (0 = absent). */
+    private val nativeIdResource = HashMap<String, Int>()
+
     fun backgroundColorHex(view: View): String? {
         val bg = view.background
         if (bg is ColorDrawable) return colorHex(bg.color)
