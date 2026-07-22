@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.3 - 2026-07-22
 
 - iOS real-device enablement (docs + tooling, no runtime behavior change):
   - **CocoaPods linked path.** Ship `reticle-swift/ReticleProtocol.podspec` and

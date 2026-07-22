@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'ReticleKit'
-  s.version          = '0.9.2'
+  s.version          = '0.9.3'
   s.summary          = 'Reticle in-process iOS agent — the linked path.'
   s.description      = 'Link this into an app and call `Reticle.start()` to expose the ' \
                        'loopback inspection/drive server (the analogue of the Android AAR). ' \
