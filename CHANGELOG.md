@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.2 - 2026-07-22
 
 - `act type --submit` presses the keyboard's action key after the text lands,
   collapsing the OTP-style `type` → `hide-keyboard` → `tap submit` three-step

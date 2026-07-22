@@ -6,7 +6,7 @@ import ReticleProtocol
 /// calls `startFromInjection()` from the C bootstrap.
 public enum Reticle {
     /// Agent build version reported in `RuntimeInfo.agentVersion`.
-    public static let version = "0.9.1"
+    public static let version = "0.9.2"
 
     /// Start the in-process server (the "linked" path). Explicit, so it always
     /// starts regardless of build configuration — the app opted in by calling it.
