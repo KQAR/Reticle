@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- One-shot commands now take a warm path by default: the first helper-backed
+  command fork-execs a per-device `reticle helper-daemon` (a Unix-domain
+  socket under `~/.reticle/helperd/`, carrying the helper's own JSONL
+  envelope) and waits ≤5s for the socket; every later command reuses the
+  resident helper over the socket instead of spawning a new helper process —
+  measured ~20ms per command against ~90ms for a direct native-helper spawn,
+  with the win growing on JVM helpers and multi-RPC commands. The daemon
+  answers `helperd/info` / `helperd/shutdown` itself, restarts automatically
+  when it is stale (CLI upgrade or helper rebuild, detected via version +
+  helper mtime), exits after 600s idle (`RETICLE_HELPERD_IDLE` overrides),
+  unlinks its socket on exit/SIGTERM, and exits when its helper child dies so
+  the next command starts fresh. `--no-daemon` / `RETICLE_NO_DAEMON=1` opts
+  out; any bring-up failure falls back to the direct per-command spawn, so the
+  hot path is never a reliability regression. The `serve --helper-broker` +
+  `--use-daemon` HTTP route is unchanged and takes precedence when requested.
+
 - `act --verify` no longer false-negatives on `testId=`/`resourceId=` verify
   tokens. The token parser only understood the sigil spellings (`#testId`,
   `@resourceId`, `css=…`); anything else silently became a `ref` lookup that
