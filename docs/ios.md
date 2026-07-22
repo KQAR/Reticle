@@ -175,7 +175,34 @@ swift build --package-path reticle-host                 # the reticle host CLI
 scripts/build-ios-agent.sh                              # the agent + injection dylib
 scripts/build-sample-ios.sh SampleApp dev.reticle.sampleios   # a demo .app
 scripts/e2e-ios.sh                                      # full simulator round trip
+scripts/e2e-ios-device.sh <team-id>                     # full REAL-DEVICE round trip (linked path)
+scripts/inject-ios-device.sh <identity> <bundle> <app>  # inject into a dev-signed device debug build
 ```
+
+### Linking `ReticleKit` (the recommended real-device path)
+
+An app links the agent and calls `Reticle.start()` once at launch — the iOS
+analogue of linking the Android AAR:
+
+- **SwiftPM**: add the `reticle-agent/ios` package and depend on the `ReticleKit`
+  product (this is how `sample-app-ios` does it).
+- **CocoaPods** (e.g. a KMP iOS app): two local podspecs ship for this —
+  `reticle-swift/ReticleProtocol.podspec` and `reticle-agent/ios/ReticleKit.podspec`.
+  Add them Debug-only and gate the start call to your non-production config:
+
+  ```ruby
+  # Podfile (inside your app target)
+  pod 'ReticleProtocol', :path => '<reticle>/reticle-swift',      :configurations => ['Debug']
+  pod 'ReticleKit',      :path => '<reticle>/reticle-agent/ios',  :configurations => ['Debug']
+  ```
+  ```swift
+  // AppDelegate.didFinishLaunching — note some projects define TEST (not DEBUG)
+  // for their debug config; gate on whatever their non-production flag is.
+  #if DEBUG || TEST
+  import ReticleKit
+  _ = Reticle.start()
+  #endif
+  ```
 
 ## Honest boundaries
 
@@ -187,9 +214,27 @@ scripts/e2e-ios.sh                                      # full simulator round t
   Max: activating the sample's UIKit button incremented its counter. This is
   limited to activatable controls (no coordinate taps, gestures, or `type` on a
   real device); use the simulator's HID path for those.
-- **Injection is simulator-only.** A real device must link `ReticleKit` at build
-  time (no DYLD injection).
-  The real-device linked path is validated (iPhone 13 Pro Max, iOS 26): build +
+- **`DYLD_INSERT_LIBRARIES` injection is simulator-only; real-device injection
+  needs a Mach-O rewrite of a dev-signed debug build.** The built-in `app inject`
+  (DYLD via `SIMCTL_CHILD_*`) is a simulator mechanism. A **production / App-Store
+  build cannot be injected on a device at all** — no `get-task-allow`, library
+  validation on, foreign team; that is Apple's security model, not a Reticle
+  limit. But a **debug build you sign yourself** has `get-task-allow=true`, and
+  that build *can* be injected without touching its source (validated on a real
+  device, iPhone 13 Pro Max / iOS 26.0). Two routes that DON'T work on a
+  device: `DYLD_INSERT_LIBRARIES` passed via `devicectl … --environment-variables`
+  (the iOS launch path strips `DYLD_*` even for get-task-allow apps) and lldb
+  `dlopen` (blocked on iOS 26). The route that works — `scripts/inject-ios-device.sh`
+  — builds `ReticleInjection.framework` for device, embeds it in the `.app`, adds
+  an `LC_LOAD_DYLIB` to the main binary (`scripts/macho_add_load.py`, needs
+  `lief`) so dyld loads it as a normal dependency, then re-signs the framework
+  AND the bundle with the **same identity** the app already uses (matching Team ID
+  ⇒ library validation passes), reinstalls, and launches with `RETICLE_PORT` set
+  (satisfies the injection autostart gate). It ends `runtime: healthy` over the
+  same USB tunnel as the linked path. Still, injection re-signs the bundle (same
+  effort as linking) and is more fragile — prefer the linked path; reach for
+  injection only to drive a debug build whose source you can't or won't edit.
+- **The real-device linked path** is validated (iPhone 13 Pro Max, iOS 26): build +
   sign the app, install/launch via `devicectl`, trust the developer cert
   on-device, then tunnel the agent port over USB with
   `iproxy -u <udid> <port>:<port>` (a device's loopback is not the host's).

@@ -69,6 +69,19 @@ build**. If it can't be obtained the launcher stops with actionable guidance.
     to still see the screen). The bundled `sample-app` links the agent (the
     `noagent` flavor is the test target for `app inject`).
 
+On **iOS** (`--target ios`) the same "get the agent in" story has an analogue —
+see `docs/ios.md`:
+  - **Simulator**: `reticle --target ios app inject` (DYLD) or a linked build.
+  - **Real device, linked (recommended)**: link the `ReticleKit` product
+    (SwiftPM, or the shipped CocoaPods podspecs for KMP/CocoaPods apps) and call
+    `Reticle.start()` at launch; drive over `iproxy -u <ecid> <port> <port>`.
+    `scripts/e2e-ios-device.sh` runs the full round trip.
+  - **Real device, injection (no source change)**: only for a **debug build you
+    sign** (production/App-Store apps cannot be injected — Apple's security
+    model). `scripts/inject-ios-device.sh <identity> <bundle> <app>` rewrites the
+    binary with an `LC_LOAD_DYLIB` and re-signs; `DYLD_INSERT_LIBRARIES` and lldb
+    `dlopen` do **not** work on-device. Prefer the linked path.
+
 ## Ports are per-app (no more 8765 collisions)
 
 Device loopback ports are **process-global**, so if every linked app bound one
