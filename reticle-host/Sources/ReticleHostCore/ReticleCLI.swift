@@ -26,6 +26,10 @@ public enum ReticleCLI {
             return 0
         case "serve":
             return runServe(args)
+        case "helper-daemon":
+            // The resident hot-path process; auto-spawned by helper-backed
+            // commands, so it stays out of the usage line.
+            return runHelperDaemon(args)
         case "mock":
             return runMock(args)
         case "replay":
@@ -88,6 +92,26 @@ public enum ReticleCLI {
 
         if shouldUseDaemonHelper(args) {
             let client = DaemonHelperClient(serial: serialArg)
+            do {
+                try dispatch(command: command, args: args, client: client)
+                return 0
+            } catch {
+                if JsonEnvelope.enabled(args) {
+                    JsonEnvelope.error(error)
+                } else {
+                    writeError("error: \(error)\n")
+                }
+                return 1
+            }
+        }
+
+        // Hot path (default): a per-device resident helper behind a Unix
+        // socket. The first command fork-execs the daemon and waits for its
+        // socket (≤5s); later commands reuse the warm helper and skip the
+        // per-command spawn. Opt out with --no-daemon / RETICLE_NO_DAEMON=1;
+        // any bring-up failure falls back to the direct spawn below.
+        if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serialArg) {
+            defer { client.close() }
             do {
                 try dispatch(command: command, args: args, client: client)
                 return 0

@@ -31,10 +31,20 @@ protocol http … not enabled" (the `:reticle-helper:nativeHelper` task does thi
 - **stdout is protocol-only.** All diagnostics go to stderr. The host can parse
   stdout as a clean JSONL stream.
 - Closing the helper's stdin ends its loop (clean shutdown).
-- The Swift daemon can broker the same calls through `POST /helper/rpc` when
-  `reticle serve --helper-broker` is enabled. One-shot commands opt in with
-  `--use-daemon` or `RETICLE_USE_DAEMON=1`; the default path still spawns a
-  command-owned helper process.
+- **Default hot path: the per-device helper daemon.** One-shot commands connect
+  to `~/.reticle/helperd/<serial|default>.sock` (a Unix-domain socket carrying
+  this same JSONL envelope, one frame per line), fork-execing
+  `reticle helper-daemon` on first use and waiting ≤5s for the socket. The
+  daemon keeps one resident helper alive, answers two control methods itself —
+  `helperd/info` (version + helper path/mtime, used to restart a stale daemon
+  after a CLI upgrade or helper rebuild) and `helperd/shutdown` — and exits
+  after 600s idle (override: `RETICLE_HELPERD_IDLE`), unlinking its socket.
+  Opt out with `--no-daemon` / `RETICLE_NO_DAEMON=1`; any bring-up failure
+  falls back to a command-owned helper spawn.
+- The Swift daemon can also broker the same calls through `POST /helper/rpc`
+  when `reticle serve --helper-broker` is enabled; one-shot commands opt in
+  with `--use-daemon` or `RETICLE_USE_DAEMON=1` (this takes precedence over
+  the socket hot path).
 
 ## Envelope
 

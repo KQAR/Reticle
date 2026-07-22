@@ -294,8 +294,15 @@ session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
 `action.trace` event on a best-effort basis. Pass `--trace-output <dir>` when you
 want to copy trace artifacts somewhere outside the session.
 
-For repeated command loops, start the daemon with a helper broker and point
-one-shot commands at it:
+One-shot commands take a warm path by default: the first helper-backed command
+fork-execs a small per-device `reticle helper-daemon` (Unix socket under
+`~/.reticle/helperd/`), and every later command reuses its resident helper —
+no per-command helper spawn. The daemon exits on its own after 600s idle and
+removes its socket; `--no-daemon` / `RETICLE_NO_DAEMON=1` opts out, and any
+daemon bring-up failure silently falls back to a direct helper spawn.
+
+Alternatively, when `reticle serve` is already running you can route commands
+through its helper broker instead:
 
 ```bash
 reticle serve --session demo --helper-broker
