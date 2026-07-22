@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- iOS real-device enablement (docs + tooling, no runtime behavior change):
+  - **CocoaPods linked path.** Ship `reticle-swift/ReticleProtocol.podspec` and
+    `reticle-agent/ios/ReticleKit.podspec` so a CocoaPods app (e.g. a KMP iOS
+    app) can link the agent Debug-only and call `Reticle.start()` — the
+    recommended way to drive a real device, alongside the existing SwiftPM path.
+  - **Debug-build injection.** `scripts/inject-ios-device.sh` (+
+    `scripts/macho_add_load.py`, lief-based) inject the agent into an
+    already-built, dev-signed debug `.app` with no source change: build
+    `ReticleInjection.framework` for device, embed it, add an `LC_LOAD_DYLIB`,
+    re-sign framework + bundle with the app's own identity, reinstall, verify
+    over the USB tunnel. Documents what does NOT work on-device
+    (`DYLD_INSERT_LIBRARIES` is stripped by the launch path; lldb `dlopen` is
+    blocked on iOS 26) and that production/App-Store apps cannot be injected at
+    all. Prefer the linked path; injection is for debug builds you can't edit.
+  - `docs/ios.md` and the plugin skill document both real-device routes.
+
 ## 0.9.2 - 2026-07-22
 
 - `act type --submit` presses the keyboard's action key after the text lands,
