@@ -18,6 +18,9 @@ public struct ServeOptions {
     public let proxyCaDirectory: URL?
     public let proxyInstallCa: Bool
     public let proxyTlsHosts: [String]
+    /// `--proxy-max-request-body-mb`: in-memory buffering cap for one proxied
+    /// request body; oversized uploads get 413 instead of ballooning the daemon.
+    public let proxyMaxRequestBodyBytes: Int?
     public let helper: String?
     public let helperBroker: Bool
 
@@ -43,6 +46,9 @@ public struct ServeOptions {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty } ?? []
+        proxyMaxRequestBodyBytes = args.option("proxy-max-request-body-mb")
+            .flatMap { Int($0) }
+            .map { $0 * 1024 * 1024 }
         helper = resolveHelper(args)
         helperBroker = args.option("helper-broker") == "true"
     }
@@ -108,6 +114,8 @@ public final class ServeRuntime {
                     port: proxyPort,
                     bindHost: options.proxyBind,
                     target: attributedSerial.map { "\(options.target):\($0)" },
+                    maxRequestBodyBytes: options.proxyMaxRequestBodyBytes
+                        ?? NetworkProxyConfiguration.defaultMaxRequestBodyBytes,
                     mitmEnabled: options.proxyMitm,
                     caDirectory: options.proxyCaDirectory,
                     tlsHostAllowlist: options.proxyTlsHosts
