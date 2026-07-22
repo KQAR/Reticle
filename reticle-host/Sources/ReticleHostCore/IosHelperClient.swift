@@ -350,10 +350,18 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 try IosInputBackend(udid: udid).paste()
                 via = "clipboard paste"
             }
+            var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            // `type --submit`: press Return after the text lands. The HID
+            // bridge maps '\n' to the Return usage, which triggers the focused
+            // field's return-key action (textFieldShouldReturn / onSubmitEditing).
+            if isTruthy(params["submit"]) {
+                Thread.sleep(forTimeInterval: 0.15)
+                try IosInputBackend(udid: udid).type("\n")
+                result["submit"] = ["via": "hid return"]
+            }
             // Opportunistic post-type keyboard state (typing almost always
             // leaves the keyboard covering the bottom of the screen); omitted
             // when the agent can't answer — typing must not fail over it.
-            var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
             if let visible = (try? IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
                 result["keyboardVisible"] = visible
             }
@@ -469,6 +477,16 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     }
 
     // MARK: - Selector / value helpers
+
+    /// Interpret a CLI / batch-step boolean (`true`, `"true"`, `1`) as a flag.
+    private func isTruthy(_ value: Any?) -> Bool {
+        switch value {
+        case let b as Bool: return b
+        case let s as String: return s == "true" || s == "1"
+        case let n as NSNumber: return n.boolValue
+        default: return false
+        }
+    }
 
     private func selectorFromParams(_ params: [String: Any]) -> TargetSelector {
         TargetSelector(

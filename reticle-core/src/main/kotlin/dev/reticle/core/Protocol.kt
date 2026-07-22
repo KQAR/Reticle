@@ -18,6 +18,7 @@ import kotlinx.serialization.Serializable
  *   GET  /screenshot      -> image/png bytes
  *   GET  /keyboard        -> KeyboardInfo
  *   POST /keyboard/hide   -> KeyboardHideResult (no body)
+ *   POST /editor-action   -> EditorActionResult (no body)
  *   POST /mutate          -> MutationResult   (body: MutationRequest)
  *   POST /clipboard       -> "ok"             (body: raw UTF-8 text)
  */
@@ -51,6 +52,17 @@ object Endpoints {
      * the settled post-hide state.
      */
     const val KEYBOARD_HIDE = "/keyboard/hide"
+
+    /**
+     * Perform the focused field's IME editor action (the keyboard's Done /
+     * Next / Go / Search / Send key) from inside the app process. This is what
+     * `act type --submit` prefers: TextView.onEditorAction() drives the app's
+     * OnEditorActionListener (React Native's onSubmitEditing included)
+     * deterministically, where a host-side KEYCODE_ENTER inserts a newline
+     * into multiline fields and is dropped by some IMEs. Answers with the
+     * settled post-action keyboard state.
+     */
+    const val EDITOR_ACTION = "/editor-action"
 }
 
 /** Identifies the running app process behind the loopback server. */
@@ -102,6 +114,19 @@ data class UiReport(
 data class KeyboardHideResult(
     val wasVisible: Boolean,
     val keyboard: KeyboardInfo,
+)
+
+/**
+ * Answer of [Endpoints.EDITOR_ACTION]: whether a focused text field performed
+ * its IME action, which action it was ("done"/"next"/"go"/"search"/"send"),
+ * and the settled keyboard state afterwards.
+ */
+@Serializable
+data class EditorActionResult(
+    val performed: Boolean,
+    val action: String? = null,
+    val keyboard: KeyboardInfo? = null,
+    val message: String? = null,
 )
 
 /**

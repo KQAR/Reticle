@@ -236,6 +236,12 @@ $CLI ui compact --live --package dev.reticle.sample   # keyboard: visible … oc
 $CLI act hide-keyboard --package dev.reticle.sample
 $CLI act tap  --package dev.reticle.sample --test-id login.submitButton
 
+# Or skip the hide-keyboard + tap: --submit presses the keyboard's action key
+# after the text lands (agent editor action on Android — what React Native's
+# onSubmitEditing listens for; HID Return on the iOS simulator).
+$CLI act type --package dev.reticle.sample --test-id login.codeField \
+    --text "123456" --submit
+
 # Read app-authored runtime logs
 $CLI debug logs --package dev.reticle.sample
 
@@ -357,11 +363,17 @@ reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
 
 Short deterministic flows can be sequenced from a JSON file. The Swift host
 expands each step into the same single-action helper RPC, stopping on the first
-failure:
+failure. Step keys are the protocol field names, so every selector a single
+`act` takes works here too — `testId`, `resourceId`, `css`, `ref`, `point`,
+`alias`, `region` — plus `text`/`submit` for type and `from`/`to`/`duration`
+for swipe and drag:
 
 ```json
 [
   { "gesture": "tap", "testId": "scenario.checkout" },
+  { "gesture": "tap", "resourceId": "btnWithdraw" },
+  { "gesture": "type", "testId": "login.codeField", "text": "123456", "submit": true },
+  { "gesture": "tap", "point": "540,1600" },
   { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
 ]
 ```

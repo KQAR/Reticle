@@ -1,6 +1,7 @@
 package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
+import dev.reticle.core.Node
 import dev.reticle.core.PortMap
 import dev.reticle.core.Point
 import dev.reticle.core.RuntimeInfo
@@ -82,8 +83,13 @@ internal data class ResolvedInputTarget(
 internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
     params.str("alias")?.let { alias ->
         val entry = OutlineRenderer.resolveAlias(params.str("serial"), pkg, alias)
+        // The cache records where the node WAS when the outline ran; re-resolve
+        // against the live tree so a relayout between `ui outline` and `act`
+        // doesn't land the tap on stale coordinates. The cached frame is the
+        // fallback when the runtime can't answer or the node is gone.
+        aliasLiveTarget(device, pkg, params, alias, entry)?.let { return it }
         val point = Point(entry.frame.centerX, entry.frame.centerY)
-        return ResolvedInputTarget(point, "outline:$alias", entry.ref)
+        return ResolvedInputTarget(point, "outline:$alias (cached frame)", entry.ref)
     }
     params.str("point")?.let {
         val (x, y) = parseXY(it)
@@ -98,4 +104,49 @@ internal fun resolveInputTarget(device: DeviceController, pkg: String, params: J
         ?: throw CliError(SelectorDiagnostics.pointMiss(snapshot, selector))
     System.err.println("reticle-helper: resolved via ${resolved.source} -> ref=${resolved.ref}")
     return ResolvedInputTarget(resolved.point, resolved.source, resolved.ref)
+}
+
+/**
+ * Re-resolve a cached outline entry against the live tree. Match by the
+ * entry's stable selector (testId / resourceId / css) first, then by
+ * label+role; when several nodes match (repeated list items), prefer the one
+ * nearest the cached frame — that is the node the alias pointed at, wherever
+ * the relayout moved it. Null when the runtime is unreachable or nothing
+ * matches anymore (the caller falls back to the cached frame).
+ */
+private fun aliasLiveTarget(
+    device: DeviceController,
+    pkg: String,
+    params: JsonObject,
+    alias: String,
+    entry: OutlineRenderer.Entry,
+): ResolvedInputTarget? = runCatching {
+    val client = runtimeClientFor(device, pkg, params)
+    if (client.probe() !is RuntimeHealth.Healthy) return null
+    val nearest = aliasLiveMatch(client.snapshot().nodes.values, entry) ?: return null
+    val frame = nearest.frame!!
+    ResolvedInputTarget(Point(frame.centerX, frame.centerY), "outline:$alias->live", nearest.ref)
+}.getOrNull()
+
+/**
+ * The live node a cached outline entry points at, or null when it is gone.
+ * Pure matching half of [aliasLiveTarget], separated so it can be tested
+ * without a device.
+ */
+internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: OutlineRenderer.Entry): Node? {
+    val nodes = liveNodes.filter { it.isVisible && it.frame != null }
+    val matched = nodes.filter { node ->
+        (entry.testId != null && node.testId == entry.testId) ||
+            (entry.resourceId != null && node.resourceId == entry.resourceId) ||
+            (entry.css != null && node.domCssSelector() == entry.css)
+    }.ifEmpty {
+        val label = entry.label ?: return null
+        nodes.filter { (it.contentDescription ?: it.text) == label && (it.role ?: it.typeName) == entry.role }
+    }
+    return matched.minByOrNull { node ->
+        val f = node.frame!!
+        val dx = f.centerX - entry.frame.centerX
+        val dy = f.centerY - entry.frame.centerY
+        dx * dx + dy * dy
+    }
 }

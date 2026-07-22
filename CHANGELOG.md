@@ -1,5 +1,57 @@
 # Changelog
 
+## Unreleased
+
+- `act type --submit` presses the keyboard's action key after the text lands,
+  collapsing the OTP-style `type` → `hide-keyboard` → `tap submit` three-step
+  into one command. On Android the agent performs the focused field's IME
+  editor action in-process (`POST /editor-action` → `EditorActionResult`):
+  `TextView.onEditorAction()` drives the app's `OnEditorActionListener` — the
+  exact hook React Native's `onSubmitEditing` listens on — where a host-side
+  `KEYCODE_ENTER` inserts a newline into multiline fields and is dropped by
+  some IMEs; fields that never declared an action are treated as Done. Because
+  a real IME dismisses itself after a terminal action, the agent reproduces
+  that: Done/Go/Search/Send also hide the keyboard, Next/Previous keep it up.
+  Falls back to `KEYCODE_ENTER` when the agent is unreachable. On the iOS
+  simulator `--submit` sends a HID Return (the bridge already mapped `\n` to
+  the Return usage). Works in `act batch` steps as `"submit": true`. Verified
+  end-to-end on a real Android device (ColorOS, API 35) and an iOS 26.3
+  simulator: one command types the code, fires the app's submit listener, and
+  leaves the keyboard dismissed.
+
+- Android: React Native's `nativeID` is now a first-class `testId` source.
+  RN stores `nativeID` as a *keyed* view tag (`setTag(R.id.view_tag_native_id,
+  …)`), invisible to the keyless `view.tag` read that fills `testId` — so an
+  RN screen with `nativeID` props (and no resource-ids) was untargetable by
+  `--test-id` and agents fell back to per-restart dynamic refs. The capture
+  now resolves RN's tag id by name at runtime (no RN dependency) and fills
+  `testId` from: Compose/classic testTag → RN `nativeID` → resource-id entry
+  name. (RN's `testID` already worked — it writes the keyless tag.)
+
+- `act --alias @N` now re-resolves the cached outline entry against the live
+  tree before acting, instead of trusting the coordinates the outline cached.
+  A keyboard appearing or a relayout between `ui outline` and `act` used to
+  land the tap on stale coordinates *silently* — worse than a stale `ref`,
+  which at least fails loudly. Matching is by the entry's stable selector
+  (testId / resourceId / css) first, then label+role, preferring the node
+  nearest the cached frame when several match (repeated list rows); the
+  cached frame remains the fallback when the runtime is unreachable, and the
+  result's `source` says which path ran (`outline:@N->live` vs
+  `outline:@N (cached frame)`).
+
+- Docs: the `act batch` examples now show what was always true — step keys
+  are the protocol field names, so `resourceId`, `ref`, `point`, `alias`, and
+  `region` all work in steps, not just `testId`/`css` (README, skill, and
+  helper-rpc.md all updated; this cost a real user their whole steps.json
+  workflow). `app inject` success output now points out that debug builds
+  linking the agent AAR skip inject entirely, and the skill documents the
+  `serve --helper-broker` daemon path and the alias live-re-resolve semantics.
+
+- Sample apps (both platforms): the login scenario's code field now also
+  submits on the keyboard's Done/Return key (the common OTP pattern), giving
+  `act type --submit` a listener to land on. The bottom submit button stays —
+  it is the occlusion scenario the hide-keyboard E2E drives.
+
 ## 0.9.1 - 2026-07-22
 
 - Android: the system keyboard (IME) is now observable and dismissible. The

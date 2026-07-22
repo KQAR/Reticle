@@ -2,6 +2,7 @@ package dev.reticle.cli
 
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
+import dev.reticle.core.EditorActionResult
 import dev.reticle.core.Endpoints
 import dev.reticle.core.KeyboardHideResult
 import dev.reticle.core.KeyboardInfo
@@ -131,6 +132,15 @@ class RuntimeClient(
      */
     fun hideKeyboard(): KeyboardHideResult =
         ReticleJson.instance.decodeFromString(KeyboardHideResult.serializer(), post(Endpoints.KEYBOARD_HIDE, ""))
+
+    /**
+     * Perform the focused field's IME editor action (the keyboard's Done /
+     * Next / Go key) via the in-app agent and get the settled keyboard state
+     * back. Preferred over a host-side KEYCODE_ENTER, which multiline fields
+     * take as a newline.
+     */
+    fun performEditorAction(): EditorActionResult =
+        ReticleJson.instance.decodeFromString(EditorActionResult.serializer(), post(Endpoints.EDITOR_ACTION, ""))
 
     /**
      * Stage [text] on the device clipboard via the in-app agent (the only
