@@ -28,6 +28,12 @@ enum class SampleScenario(
         subtitle = "Native title bar with a full-screen WebView underneath",
         testId = "scenario.webview",
         activityClass = WebViewScenarioActivity::class.java,
+    ),
+    Login(
+        title = "Login keyboard trap",
+        subtitle = "Bottom submit button that the soft keyboard covers",
+        testId = "scenario.login",
+        activityClass = LoginScenarioActivity::class.java,
     );
 
     fun intent(context: Context): Intent = Intent(context, activityClass)

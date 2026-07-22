@@ -27,6 +27,13 @@ if [ -z "$UDID" ]; then
   UDID="$(xcrun simctl list devices available -j | /usr/bin/python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];print(next((x["udid"] for r in d.values() for x in r if "iPhone" in x["name"]),""))')"
 fi
 [ -n "$UDID" ] || { echo "no iPhone simulator available"; exit 1; }
+# The LOGIN scenario needs the on-screen software keyboard. With "Connect
+# Hardware Keyboard" on (the Simulator.app default), iOS suppresses it and the
+# keyboard-trap assertions can never hold. Turn it off up front; the setting is
+# read when the device boots, so a stale-booted sim may still need a reboot
+# (the login section fails with a pointer here if so).
+defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+defaults write com.apple.iphonesimulator DevicePreferences -dict-add "$UDID" '{ConnectHardwareKeyboard = 0;}' 2>/dev/null || true
 xcrun simctl boot "$UDID" 2>/dev/null || true
 
 echo "== build protocol + agent =="
@@ -186,6 +193,48 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/tabbar-orders"
 "$HOST" --target ios ui compact "$TMP/tabbar-orders/snapshot.json" | grep -q "Selected: orders" \
   || { echo "FAIL: tapping the Orders tab did not update tabbar.status"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== LOGIN keyboard trap =="
+# The stuck-login reproduction: a bottom submit button the keyboard covers.
+# Reticle must (1) report the keyboard in the snapshot, (2) mark the covered
+# button occluded-by:keyboard, (3) dismiss it with hide-keyboard, and (4) the
+# button must then be actionable.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=login
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+# Focus the code field with a HID tap so the system keyboard actually comes up.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id login.codeField
+sleep 1
+# type must report the keyboard it left behind.
+TYPE_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --text "123456")"
+echo "$TYPE_OUT"
+echo "$TYPE_OUT" | grep -Eq "keyboardVisible=(1|true)" \
+  || { echo "FAIL: act type did not report the keyboard. If the software keyboard never appeared, disable Simulator's 'Connect Hardware Keyboard' (I/O > Keyboard) and reboot the sim device."; exit 1; }
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login"
+LOGIN_COMPACT="$("$HOST" --target ios ui compact "$TMP/login/snapshot.json")"
+echo "$LOGIN_COMPACT"
+echo "$LOGIN_COMPACT" | grep -q "keyboard: visible" \
+  || { echo "FAIL: compact must lead with 'keyboard: visible' while the keyboard is up"; exit 1; }
+echo "$LOGIN_COMPACT" | grep "login.submitButton" | grep -q "occluded-by:keyboard" \
+  || { echo "FAIL: the covered submit button must be marked occluded-by:keyboard"; exit 1; }
+# Dismiss in-process and confirm the settled state round-trips.
+HIDE_OUT="$("$HOST" --target ios act hide-keyboard --package "$LINKED_ID")"
+echo "$HIDE_OUT"
+echo "$HIDE_OUT" | grep -Eq "wasVisible=(1|true)" \
+  || { echo "FAIL: hide-keyboard must report wasVisible"; exit 1; }
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-hidden"
+LOGIN_AFTER="$("$HOST" --target ios ui compact "$TMP/login-hidden/snapshot.json")"
+echo "$LOGIN_AFTER" | grep -q "keyboard: hidden" \
+  || { echo "FAIL: compact must report 'keyboard: hidden' after hide-keyboard"; exit 1; }
+echo "$LOGIN_AFTER" | grep "login.submitButton" | grep -q "occluded-by" \
+  && { echo "FAIL: submit button still occluded after hide-keyboard"; exit 1; }
+# The freed button must now actually work: activate it and observe the status flip.
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id login.submitButton
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-done"
+"$HOST" --target ios ui compact "$TMP/login-done/snapshot.json" | grep -q "Logged in: 123456" \
+  || { echo "FAIL: submit after hide-keyboard did not log in"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="

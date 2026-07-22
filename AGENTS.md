@@ -172,6 +172,18 @@ $CLI act tap     --package dev.reticle.sample --css '#style-target' \
 $CLI debug logs  --package dev.reticle.sample
 $CLI mutate      --package dev.reticle.sample --test-id checkout.status \
                  --property text --value "Cart: 3 items"
+
+# The keyboard trap (scenario.login): typing leaves the IME covering the
+# bottom-pinned submit button. Verified 2026-07-21 on a real device (ColorOS,
+# API 35): type reports keyboardVisible=1, compact leads with
+# `keyboard: visible [rect]` and marks `login.submitButton … occluded-by:keyboard`,
+# hide-keyboard reports via=agent imm wasVisible=1, and the follow-up tap flips
+# login.status to "Logged in: 123456".
+$CLI act tap          --package dev.reticle.sample --test-id scenario.login
+$CLI act type         --package dev.reticle.sample --test-id login.codeField --text "123456"
+$CLI ui compact       --live --package dev.reticle.sample
+$CLI act hide-keyboard --package dev.reticle.sample
+$CLI act tap          --package dev.reticle.sample --test-id login.submitButton
 ```
 
 Expected: the home screen lists scenario rows, `scenario.checkout` opens the

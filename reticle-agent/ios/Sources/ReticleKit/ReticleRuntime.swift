@@ -54,6 +54,13 @@ final class ReticleRuntime: @unchecked Sendable {
             boundPort = bound
             lock.unlock()
             engageAccessibilityRuntime()
+            #if canImport(UIKit)
+            // Install the keyboard observer as early as possible: it can only
+            // report exact frames for keyboard events it has seen.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { KeyboardMonitor.shared.install() }
+            }
+            #endif
             NSLog("[Reticle] agent listening on \(bindHost):\(bound) for \(bundleId)")
             return bound
         } catch {

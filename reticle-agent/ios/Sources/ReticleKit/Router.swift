@@ -28,6 +28,18 @@ struct Router {
                 return try json(LogBatch(entries: ReticleRuntime.shared.collectedLogs()))
             case ("GET", Endpoints.screenshot):
                 return screenshot()
+            case ("GET", Endpoints.keyboard):
+                #if canImport(UIKit)
+                return try json(MainThread.sync { KeyboardMonitor.shared.status() })
+                #else
+                return HttpResponse.text(503, "keyboard state unavailable on this platform")
+                #endif
+            case ("POST", Endpoints.keyboardHide):
+                #if canImport(UIKit)
+                return try hideKeyboard()
+                #else
+                return HttpResponse.text(503, "keyboard state unavailable on this platform")
+                #endif
             case ("POST", Endpoints.mutate):
                 return try mutate(request.body)
             case ("POST", Endpoints.activate):
@@ -72,6 +84,20 @@ struct Router {
             return HttpResponse.text(500, "screenshot failed: \(error)")
         }
     }
+
+    #if canImport(UIKit)
+    /// Resign the first responder on main, wait out the keyboard's hide
+    /// animation on THIS (server) thread — the main thread must stay free to
+    /// run it — then re-read the settled state.
+    private func hideKeyboard() throws -> HttpResponse {
+        let before = MainThread.sync { KeyboardMonitor.shared.requestHide() }
+        if before.visible {
+            Thread.sleep(forTimeInterval: 0.35)
+        }
+        let after = MainThread.sync { KeyboardMonitor.shared.status() }
+        return try json(KeyboardHideResult(wasVisible: before.visible, keyboard: after))
+    }
+    #endif
 
     private func mutate(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(MutationRequest.self, from: body)

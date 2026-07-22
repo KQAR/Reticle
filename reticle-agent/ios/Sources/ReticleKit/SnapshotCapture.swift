@@ -123,7 +123,8 @@ struct SnapshotCapture {
         return ScreenInfo(
             size: Size(width: Double(bounds.width), height: Double(bounds.height)),
             density: Double(screen.scale),
-            interfaceStyle: style
+            interfaceStyle: style,
+            keyboard: KeyboardMonitor.shared.status()
         )
     }
 

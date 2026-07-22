@@ -151,6 +151,7 @@ internal object HelperDeviceCommands {
                 buildJsonObject { put("gesture", sub); put("from", "$fx,$fy"); put("to", "$tx,$ty"); put("durationMs", dur) }
             }
             "type" -> typeText(input, device, pkg, params)
+            "hideKeyboard", "hide-keyboard" -> hideKeyboard(input, device, pkg, params)
             else -> throw CliError("unknown act gesture '$sub'")
         }
 
@@ -250,6 +251,7 @@ internal object HelperDeviceCommands {
             return buildJsonObject {
                 put("gesture", "type"); put("chars", text.length); put("via", "input text")
                 focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+                keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
             }
         }
         val client = runtimeClientFor(device, pkg, params)
@@ -262,6 +264,56 @@ internal object HelperDeviceCommands {
         return buildJsonObject {
             put("gesture", "type"); put("chars", text.length); put("via", "clipboard paste")
             focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+            keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
+        }
+    }
+
+    /**
+     * Opportunistic post-type keyboard probe. Typing almost always leaves the
+     * IME up and covering the bottom of the screen — the classic next-step trap
+     * is tapping a submit button that is now under the keyboard — so surface
+     * that in the type result when the agent can tell us. Null (omitted) when
+     * the runtime is unreachable; plain typing must not start failing over an
+     * optional status field.
+     */
+    private fun keyboardVisibleAfterType(
+        device: dev.reticle.cli.platform.DeviceController,
+        pkg: String,
+        params: JsonObject,
+    ): Boolean? = runCatching {
+        val client = runtimeClientFor(device, pkg, params)
+        if (client.probe() is RuntimeHealth.Healthy) client.keyboard().visible else null
+    }.getOrNull()
+
+    /**
+     * Dismiss the system keyboard. Preferred path is the in-app agent's
+     * InputMethodManager (deterministic, reports settled before/after state);
+     * when the agent is unreachable we fall back to KEYCODE_ESCAPE — unlike
+     * KEYCODE_BACK it does not navigate back when the keyboard is already gone.
+     */
+    private fun hideKeyboard(
+        input: InputDispatcher,
+        device: dev.reticle.cli.platform.DeviceController,
+        pkg: String,
+        params: JsonObject,
+    ): JsonObject {
+        val client = runtimeClientFor(device, pkg, params)
+        if (client.probe() is RuntimeHealth.Healthy) {
+            val result = client.hideKeyboard()
+            return buildJsonObject {
+                put("gesture", "hideKeyboard")
+                put("via", "agent imm")
+                put("wasVisible", result.wasVisible)
+                put("keyboardVisible", result.keyboard.visible)
+            }
+        }
+        val r = input.keyevent("KEYCODE_ESCAPE")
+        if (!r.ok) {
+            throw CliError("agent unreachable and keyevent fallback failed: ${r.stderr.ifBlank { "adb shell did not complete" }}")
+        }
+        return buildJsonObject {
+            put("gesture", "hideKeyboard")
+            put("via", "keyevent ESCAPE (agent unreachable; state unknown)")
         }
     }
 

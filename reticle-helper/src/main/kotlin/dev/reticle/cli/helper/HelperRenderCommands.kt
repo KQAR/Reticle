@@ -45,11 +45,30 @@ internal object HelperRenderCommands {
     private fun renderView(view: String, snapshot: Snapshot, params: JsonObject): String = when (view) {
         "tree" -> renderViewTree(snapshot, params.intOrNull("depth") ?: Int.MAX_VALUE)
         "semantics" -> renderSemanticTree(SemanticTree.build(snapshot), params.intOrNull("depth") ?: Int.MAX_VALUE)
-        "compact" -> CompactObservation.from(snapshot).items.joinToString("\n") { it.line() }
+        "compact" -> renderCompact(snapshot)
         "outline" -> OutlineRenderer.render(snapshot).first
         "node" -> renderNode(snapshot, params)
         "regions" -> renderRegions(snapshot)
         else -> throw CliError("unknown render view '$view'")
+    }
+
+    private fun renderCompact(snapshot: Snapshot): String {
+        val compact = CompactObservation.from(snapshot)
+        val lines = compact.items.map { it.line() }
+        // Lead with the IME state when it was probed: the keyboard is invisible
+        // to the node walk, so without this line an agent has no way to know
+        // that "tappable" items near the bottom would actually hit the keys.
+        val kb = snapshot.screen.keyboard ?: return lines.joinToString("\n")
+        val header = if (kb.visible) {
+            val where = kb.frame?.let { " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]" } ?: ""
+            val covered = compact.items.count { it.occludedBy == CompactObservation.OCCLUDER_KEYBOARD }
+            "keyboard: visible$where" +
+                (if (covered > 0) " — $covered item(s) occluded" else "") +
+                " (dismiss with `act hide-keyboard`)"
+        } else {
+            "keyboard: hidden"
+        }
+        return (listOf(header) + lines).joinToString("\n")
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {

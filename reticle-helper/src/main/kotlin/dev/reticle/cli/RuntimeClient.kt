@@ -3,6 +3,8 @@ package dev.reticle.cli
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.Endpoints
+import dev.reticle.core.KeyboardHideResult
+import dev.reticle.core.KeyboardInfo
 import dev.reticle.core.LogBatch
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.MutationResult
@@ -118,6 +120,17 @@ class RuntimeClient(
         val response = post(Endpoints.MUTATE, body)
         return ReticleJson.instance.decodeFromString(MutationResult.serializer(), response)
     }
+
+    /** Current system-keyboard (IME) state, probed inside the app process. */
+    fun keyboard(): KeyboardInfo =
+        ReticleJson.instance.decodeFromString(KeyboardInfo.serializer(), getString(Endpoints.KEYBOARD))
+
+    /**
+     * Dismiss the system keyboard via the in-app InputMethodManager and get the
+     * settled before/after state back.
+     */
+    fun hideKeyboard(): KeyboardHideResult =
+        ReticleJson.instance.decodeFromString(KeyboardHideResult.serializer(), post(Endpoints.KEYBOARD_HIDE, ""))
 
     /**
      * Stage [text] on the device clipboard via the in-app agent (the only

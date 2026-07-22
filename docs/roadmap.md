@@ -533,6 +533,18 @@ Android first and complete; everything else reserved behind the spec + SPI.
   Keep `PortMap` on both ends as a protocol rule. This is the real "make the CLI
   clean" work surfaced by the language question — it makes the CLI language-free
   and tightens single-capture consistency. See "CLI is a thin client" above.
+- **Keyboard state + occlusion marking (landed, 0.9.1)** — the system keyboard
+  (IME) is another process's window and never appears in the node tree, so a
+  covered control still read as tappable — the observed stuck-login failure.
+  Snapshots now carry `screen.keyboard` (visible + frame, probed in-process
+  from window insets on Android / the keyboard notification stream on iOS),
+  the agent answers `GET /keyboard` and `POST /keyboard/hide`, and
+  `act hide-keyboard` dismisses it deterministically on both platforms.
+  Occlusion marking is generic, not keyboard-specific: a compact item whose
+  tap point sits under a higher z-order window is marked
+  `occluded-by:<windowRef>`; under the keyboard, `occluded-by:keyboard`. Both
+  sample apps ship a login keyboard-trap scenario and the iOS e2e drives it
+  end to end.
 - **Agent-facing targeting + batch (landed, 0.6.5–0.7.0)** — `ui outline --live`
   numbers visible targets and caches short-lived `@N` aliases; `act --alias`
   taps them; selector misses report same-kind candidates from the current
