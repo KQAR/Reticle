@@ -50,6 +50,12 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
         reader = LineReader(handle: stdoutPipe.fileHandleForReading)
     }
 
+    /// Whether the helper child is still alive (false after a crash or a
+    /// timeout-triggered terminate).
+    var isRunning: Bool {
+        process.isRunning
+    }
+
     /// Sends one request and returns the successful `result` object.
     @discardableResult
     func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
