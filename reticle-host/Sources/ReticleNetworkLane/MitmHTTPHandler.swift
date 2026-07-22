@@ -14,6 +14,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     private let factory: NetworkEventFactory
     private let mockStore: NetworkMockStore?
     private let upstreamTimeoutSeconds: TimeInterval
+    private let maxRequestBodyBytes: Int
     private var head: HTTPRequestHead?
     private var body = Data()
     private var upstreamTask: NetworkForwardingTask?
@@ -25,7 +26,8 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         bodyStore: NetworkBodyStore,
         factory: NetworkEventFactory,
         mockStore: NetworkMockStore?,
-        upstreamTimeoutSeconds: TimeInterval
+        upstreamTimeoutSeconds: TimeInterval,
+        maxRequestBodyBytes: Int
     ) {
         self.target = target
         self.store = store
@@ -33,6 +35,7 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         self.factory = factory
         self.mockStore = mockStore
         self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
+        self.maxRequestBodyBytes = maxRequestBodyBytes
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -41,7 +44,13 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             self.head = head
             body.removeAll(keepingCapacity: true)
         case .body(var buffer):
+            // `head == nil` after an oversized-body reject: drain silently.
+            guard head != nil else { return }
             if let bytes = buffer.readBytes(length: buffer.readableBytes) {
+                if body.count + bytes.count > maxRequestBodyBytes {
+                    rejectOversizedRequestBody(context: context)
+                    return
+                }
                 body.append(contentsOf: bytes)
             }
         case .end:
@@ -213,10 +222,48 @@ final class MitmHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
     }
 
-    private func writeError(context: ChannelHandlerContext) {
-        let head = HTTPResponseHead(version: .http1_1, status: .badGateway, headers: HTTPHeaders([("Content-Length", "0")]))
+    private func writeError(context: ChannelHandlerContext, status: HTTPResponseStatus = .badGateway, closeAfter: Bool = false) {
+        var headers = HTTPHeaders([("Content-Length", "0")])
+        if closeAfter { headers.replaceOrAdd(name: "Connection", value: "close") }
+        let head = HTTPResponseHead(version: .http1_1, status: status, headers: headers)
         context.write(wrapOutboundOut(.head(head)), promise: nil)
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        if closeAfter {
+            let promise = context.eventLoop.makePromise(of: Void.self)
+            promise.futureResult.whenComplete { [channel = context.channel] _ in
+                channel.close(promise: nil)
+            }
+            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: promise)
+        } else {
+            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+        }
+    }
+
+    /// Same safety valve as the plaintext handler: past the cap, emit a
+    /// `network.error` event, answer 413, and close (mid-body, keep-alive
+    /// framing cannot be resynchronized).
+    private func rejectOversizedRequestBody(context: ChannelHandlerContext) {
+        guard let head else { return }
+        let requestId = UUID().uuidString
+        let start = currentMillis()
+        var payload = NetworkEventPayload(
+            requestId: requestId,
+            scheme: "https",
+            method: head.method.rawValue,
+            url: upstreamURL(for: head)?.absoluteString ?? head.uri,
+            host: target.host,
+            port: target.port,
+            path: upstreamURL(for: head)?.path ?? "/",
+            startMillis: start,
+            tunnel: false,
+            mitm: true
+        )
+        payload.requestHeaders = NetworkHeaders.request(head.headers)
+        payload.endMillis = currentMillis()
+        payload.error = "request body exceeded the \(maxRequestBodyBytes)-byte in-memory buffering limit; rejected with 413"
+        store.emit(factory.event(.error, payload: payload))
+        writeError(context: context, status: .payloadTooLarge, closeAfter: true)
+        self.head = nil
+        body.removeAll(keepingCapacity: false)
     }
 
     private func pauseReads(context: ChannelHandlerContext) {

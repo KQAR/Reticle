@@ -39,6 +39,24 @@
   `max(600s, configured upstream timeout)` instead of a hardcoded 600s that
   silently clamped any longer `--upstream-timeout`.
 
+- Capture proxy: a request body is now capped at 64 MiB of in-memory buffering
+  by default (`--proxy-max-request-body-mb` on `reticle serve`). The upstream
+  forward needs the whole body in memory today, so an unbounded upload could
+  balloon the daemon; past the cap the proxy emits a `network.error` event,
+  answers `413`, and closes the connection. Applies to both the plaintext and
+  MITM paths. This is a safety valve, not a tight bound — the default clears
+  ordinary photo/video uploads.
+
+- Swift host: the `network.*` payload, event-envelope, and snapshot schemas are
+  now validated at the value level against `reticle-protocol/schema/*.json`,
+  matching the Kotlin contract test. The Swift side previously compared only
+  field-name sets, so a type / enum / nesting drift (e.g. a MetadataValue
+  discriminator or a number-vs-integer slip) could pass unnoticed. A small
+  test-only draft-2020-12 validator (no third-party dependency) now checks the
+  Swift-emitted snapshot, the shared iOS golden fixture, and the network/event
+  golden fixtures; its own self-tests prove it rejects the drift it guards
+  against.
+
 ## 0.9.3 - 2026-07-22
 
 - iOS real-device enablement (docs + tooling, no runtime behavior change):

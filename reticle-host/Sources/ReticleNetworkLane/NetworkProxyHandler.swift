@@ -17,6 +17,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
     private let certificates: ProxyCertificateStore?
     private let mockStore: NetworkMockStore?
     private let upstreamTimeoutSeconds: TimeInterval
+    private let maxRequestBodyBytes: Int
     private var head: HTTPRequestHead?
     private var body = Data()
     private var handlingTunnel = false
@@ -30,7 +31,8 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         tlsPolicy: TlsInterceptionPolicy,
         certificates: ProxyCertificateStore?,
         mockStore: NetworkMockStore?,
-        upstreamTimeoutSeconds: TimeInterval
+        upstreamTimeoutSeconds: TimeInterval,
+        maxRequestBodyBytes: Int
     ) {
         self.store = store
         self.bodyStore = bodyStore
@@ -39,6 +41,7 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
         self.certificates = certificates
         self.mockStore = mockStore
         self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
+        self.maxRequestBodyBytes = maxRequestBodyBytes
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -52,8 +55,13 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                 body.removeAll(keepingCapacity: true)
             }
         case .body(var buffer):
-            guard !handlingTunnel else { return }
+            // `head == nil` after an oversized-body reject: drain silently.
+            guard !handlingTunnel, head != nil else { return }
             if let bytes = buffer.readBytes(length: buffer.readableBytes) {
+                if body.count + bytes.count > maxRequestBodyBytes {
+                    rejectOversizedRequestBody(context: context)
+                    return
+                }
                 body.append(contentsOf: bytes)
             }
         case .end:
@@ -240,7 +248,8 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
                     bodyStore: self.bodyStore,
                     factory: self.factory,
                     mockStore: self.mockStore,
-                    upstreamTimeoutSeconds: self.upstreamTimeoutSeconds
+                    upstreamTimeoutSeconds: self.upstreamTimeoutSeconds,
+                    maxRequestBodyBytes: self.maxRequestBodyBytes
                 ))
             }.flatMap {
                 channel.setOption(ChannelOptions.autoRead, value: true)
@@ -322,6 +331,27 @@ final class NetworkProxyHandler: ChannelInboundHandler, RemovableChannelHandler,
 
     private func pauseReads(context: ChannelHandlerContext) {
         _ = context.channel.setOption(ChannelOptions.autoRead, value: false)
+    }
+
+    /// The upstream forward needs the whole request body in memory today, so an
+    /// unbounded upload would balloon the daemon. Past the cap: emit a
+    /// `network.error` event, answer 413, and close (the connection is
+    /// mid-body, so keep-alive framing cannot be resynchronized).
+    private func rejectOversizedRequestBody(context: ChannelHandlerContext) {
+        guard let head else { return }
+        let requestId = UUID().uuidString
+        let start = currentMillis()
+        let message = "request body exceeded the \(maxRequestBodyBytes)-byte in-memory buffering limit; rejected with 413"
+        if let target = HTTPProxyTarget(head: head, defaultScheme: "http") {
+            var payload = target.payload(requestId: requestId, method: head.method.rawValue, start: start, tunnel: false, mitm: false)
+            payload.requestHeaders = NetworkHeaders.request(head.headers)
+            emitError(base: payload, message: message)
+        } else {
+            emitError(requestId: requestId, message: message, start: start)
+        }
+        writeError(.payloadTooLarge, context: context, closeAfter: true)
+        self.head = nil
+        body.removeAll(keepingCapacity: false)
     }
 
     private func emitError(requestId: String, target: HTTPProxyTarget? = nil, message: String, start: Int64) {

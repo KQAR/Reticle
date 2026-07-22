@@ -54,7 +54,8 @@ public final class NetworkProxyServer: @unchecked Sendable {
                         tlsPolicy: policy,
                         certificates: certificates,
                         mockStore: self.mockStore,
-                        upstreamTimeoutSeconds: self.configuration.upstreamTimeoutSeconds
+                        upstreamTimeoutSeconds: self.configuration.upstreamTimeoutSeconds,
+                        maxRequestBodyBytes: self.configuration.maxRequestBodyBytes
                     ))
                 }
             }

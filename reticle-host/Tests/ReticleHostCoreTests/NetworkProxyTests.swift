@@ -146,6 +146,37 @@ struct NetworkProxyTests {
         #expect(store.events().filter { $0.type == "network.response" }.last?.payload["mocked"] == nil)
     }
 
+    @Test func oversizedRequestBodyIsRejectedWith413AndAnErrorEvent() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
+        let upstream = try ReticleHttpServer(store: store, port: 0)
+        try upstream.start()
+        defer { upstream.stop() }
+
+        // Cap at 16 bytes; send 64 so the very first body chunk trips it.
+        let proxy = try NetworkProxyServer(
+            store: store,
+            configuration: NetworkProxyConfiguration(port: 0, target: "android:test", maxRequestBodyBytes: 16)
+        )
+        try proxy.start()
+        defer { proxy.stop() }
+
+        let payload = String(repeating: "x", count: 64)
+        let response = try readSocket(
+            port: proxy.port,
+            request: "POST http://127.0.0.1:\(upstream.port)/echo HTTP/1.1\r\nHost: 127.0.0.1:\(upstream.port)\r\nContent-Length: \(payload.count)\r\n\r\n\(payload)"
+        )
+
+        #expect(response.contains("413"))
+        #expect(waitForEvent(in: store) { $0.type == "network.error" })
+        let error = store.events().first { $0.type == "network.error" }
+        if case .string(let message)? = error?.payload["error"] {
+            #expect(message.contains("413"))
+        } else {
+            Issue.record("missing 413 error message")
+        }
+    }
+
     @Test func slowUpstreamDoesNotBlockMockedRequests() throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "proxy", rootDirectory: root, limit: 20)
