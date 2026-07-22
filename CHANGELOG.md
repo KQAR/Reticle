@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 - 2026-07-22
 
 - Android: the system keyboard (IME) is now observable and dismissible. The
   IME is another process's window — it never appears in the captured node
