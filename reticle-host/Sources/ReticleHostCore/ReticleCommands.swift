@@ -137,7 +137,7 @@ func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
 }
 
 func cmdAct(_ c: HelperCalling, _ args: Args) throws {
-    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/type)") }
+    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/type/hide-keyboard)") }
     if gesture == "batch" {
         try cmdActBatch(c, args)
         return

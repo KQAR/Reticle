@@ -20,7 +20,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar|login`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -78,10 +78,23 @@ struct HomeView: View {
                     TabBarScenarioView()
                         .navigationTitle("Tab bar")
                 }
+                scenarioRow(
+                    title: "Login keyboard trap",
+                    subtitle: "Bottom submit button that the keyboard covers",
+                    testId: "scenario.login",
+                    tag: "login"
+                ) {
+                    ScenarioScreen { LoginViewController() }
+                        .navigationTitle("Login")
+                        // Defeat SwiftUI's automatic keyboard avoidance: the
+                        // trap only reproduces when the button stays put and
+                        // the keyboard genuinely covers it.
+                        .ignoresSafeArea(.keyboard)
+                }
             }
             .navigationTitle("Reticle Sample")
             .onAppear {
-                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(5)])
+                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(6)])
             }
         }
         .navigationViewStyle(.stack)

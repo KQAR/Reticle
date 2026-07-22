@@ -77,6 +77,22 @@
         "interfaceStyle": {
           "type": ["string", "null"],
           "description": "\"light\" | \"dark\" — UI night-mode flag, or null."
+        },
+        "keyboard": {
+          "oneOf": [{ "$ref": "#/$defs/KeyboardInfo" }, { "type": "null" }],
+          "description": "System keyboard (IME) state at capture time, or null when the platform did not probe it. The IME is another process's window, so it never appears in the node tree; this field is the only record that part of the screen is covered."
+        }
+      },
+      "additionalProperties": false
+    },
+    "KeyboardInfo": {
+      "type": "object",
+      "required": ["visible"],
+      "properties": {
+        "visible": { "type": "boolean" },
+        "frame": {
+          "oneOf": [{ "$ref": "#/$defs/Rect" }, { "type": "null" }],
+          "description": "Screen-coordinate rect the IME occupies; null when hidden or unknown."
         }
       },
       "additionalProperties": false

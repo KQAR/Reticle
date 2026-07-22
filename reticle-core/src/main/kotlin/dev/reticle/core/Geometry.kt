@@ -30,4 +30,18 @@ data class ScreenInfo(
     val density: Double,
     /** "light" | "dark" — Ui mode night flag. */
     val interfaceStyle: String? = null,
+    /**
+     * System keyboard (IME) state at capture time, or null when the platform
+     * did not probe it. The IME is a separate window owned by another process,
+     * so it never appears in the node tree — this field is the only place a
+     * snapshot records that part of the screen is covered by the keyboard.
+     */
+    val keyboard: KeyboardInfo? = null,
+)
+
+@Serializable
+data class KeyboardInfo(
+    val visible: Boolean,
+    /** Screen-coordinate rect the IME occupies; null when hidden or unknown. */
+    val frame: Rect? = null,
 )
