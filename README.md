@@ -288,6 +288,11 @@ per-host leaf certificates on demand. Add `--proxy-install-ca` to push
 not trust user CAs, do not opt into user CAs via Network Security Config, or use
 certificate pinning remain opaque.
 
+A proxied request body is buffered in memory before it is forwarded upstream, so
+it is capped at 64 MiB by default; a larger upload is rejected with `413` and a
+`network.error` event rather than growing the daemon's memory. Raise or lower the
+cap with `--proxy-max-request-body-mb <n>`.
+
 Existing one-shot commands still work without the daemon. When `serve` is
 running, `reticle act ...` automatically writes a trace package under the current
 session (`~/.reticle/sessions/<session>/traces`) and publishes it as an

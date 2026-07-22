@@ -2,6 +2,8 @@ import Foundation
 
 /// Runtime configuration for the host network proxy owned by `reticle serve`.
 public struct NetworkProxyConfiguration {
+    public static let defaultMaxRequestBodyBytes = 64 * 1024 * 1024
+
     let port: Int
     /// Interface to bind. Defaults to loopback; a real device on Wi-Fi must reach
     /// the Mac over the LAN, so real-device capture binds `0.0.0.0` (or the LAN
@@ -9,6 +11,12 @@ public struct NetworkProxyConfiguration {
     let bindHost: String
     let target: String?
     let bodyLimitBytes: Int
+    /// Ceiling on how much of one request body the proxy will buffer in memory
+    /// before forwarding (the upstream forward needs the whole body today).
+    /// Oversized uploads are rejected with 413 + a `network.error` event
+    /// instead of ballooning the daemon — a safety valve against multi-GB
+    /// uploads, not a tight bound; the default clears photo/video uploads.
+    let maxRequestBodyBytes: Int
     let upstreamTimeoutSeconds: TimeInterval
     let mitmEnabled: Bool
     let caDirectory: URL?
@@ -20,6 +28,7 @@ public struct NetworkProxyConfiguration {
         bindHost: String = "127.0.0.1",
         target: String? = nil,
         bodyLimitBytes: Int = 1024 * 1024,
+        maxRequestBodyBytes: Int = NetworkProxyConfiguration.defaultMaxRequestBodyBytes,
         upstreamTimeoutSeconds: TimeInterval = 30,
         mitmEnabled: Bool = false,
         caDirectory: URL? = nil,
@@ -29,6 +38,7 @@ public struct NetworkProxyConfiguration {
         self.bindHost = bindHost
         self.target = target
         self.bodyLimitBytes = bodyLimitBytes
+        self.maxRequestBodyBytes = maxRequestBodyBytes
         self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
         self.mitmEnabled = mitmEnabled
         self.caDirectory = caDirectory
