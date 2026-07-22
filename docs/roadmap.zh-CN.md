@@ -455,6 +455,14 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   已经在 app 进程内完成。剩余工作:把 action 的选择器解析也移到 agent,让 CLI 消费成品 target JSON。`PortMap` 作为协议
   规则在两端各留一份。这是语言话题牵出的、真正"让 CLI 干净"的工作——它让 CLI
   语言无关,并收紧单次捕获的一致性。见上文"CLI 是薄客户端"。
+- **键盘状态 + 遮挡标记(已落地,0.9.1)**——系统键盘(IME)是另一个进程的窗口,
+  从不出现在节点树里,被盖住的控件看起来仍然 tappable——这正是实测中登录流卡死
+  的根因。快照现在携带 `screen.keyboard`(visible + frame;Android 用 window
+  insets 进程内探测,iOS 用键盘通知流),agent 提供 `GET /keyboard` 与
+  `POST /keyboard/hide`,`act hide-keyboard` 在两端都能确定性收起键盘。遮挡
+  标记是**通用**的而非键盘专属:compact 条目的落点被更高 z 序窗口盖住标
+  `occluded-by:<窗口ref>`,被键盘盖住标 `occluded-by:keyboard`。两端 sample
+  各带一个登录键盘陷阱场景,iOS e2e 全链路驱动验证。
 - **面向 agent 的定位 + 批处理(已落地,0.6.5–0.7.0)**——`ui outline --live` 给
   可见目标编号并缓存短生命周期 `@N` 别名;`act --alias` 点击它们;选择器未命中时
   从当前快照报同类候选。`act batch` 从 JSON 文件顺序跑确定性 flow,首个失败即停。

@@ -16,6 +16,8 @@ import kotlinx.serialization.Serializable
  *   GET  /compact         -> CompactObservation
  *   GET  /logs            -> LogBatch
  *   GET  /screenshot      -> image/png bytes
+ *   GET  /keyboard        -> KeyboardInfo
+ *   POST /keyboard/hide   -> KeyboardHideResult (no body)
  *   POST /mutate          -> MutationResult   (body: MutationRequest)
  *   POST /clipboard       -> "ok"             (body: raw UTF-8 text)
  */
@@ -38,6 +40,17 @@ object Endpoints {
      * running inside that app, is. The CLI follows this with a KEYCODE_PASTE.
      */
     const val CLIPBOARD = "/clipboard"
+
+    /** Current system-keyboard (IME) state, probed from inside the app. */
+    const val KEYBOARD = "/keyboard"
+
+    /**
+     * Dismiss the system keyboard from inside the app process via
+     * InputMethodManager — deterministic, unlike a host-side KEYCODE_BACK
+     * (which navigates back when the keyboard is already gone). Answers with
+     * the settled post-hide state.
+     */
+    const val KEYBOARD_HIDE = "/keyboard/hide"
 }
 
 /** Identifies the running app process behind the loopback server. */
@@ -83,6 +96,13 @@ data class UiReport(
         )
     }
 }
+
+/** Answer of [Endpoints.KEYBOARD_HIDE]: what was on screen, and what is now. */
+@Serializable
+data class KeyboardHideResult(
+    val wasVisible: Boolean,
+    val keyboard: KeyboardInfo,
+)
 
 /**
  * Runtime property mutation. Allowlisted: only a bounded set of View properties

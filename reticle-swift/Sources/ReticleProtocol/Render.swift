@@ -19,7 +19,7 @@ public enum Render {
         switch view {
         case "tree": return tree(snapshot, maxDepth: depth)
         case "semantics": return semantics(SemanticTree.build(from: snapshot), maxDepth: depth)
-        case "compact": return CompactObservation.from(snapshot).items.map { $0.line() }.joined(separator: "\n")
+        case "compact": return compact(snapshot)
         case "node": return try node(snapshot, selector: selector)
         case "regions": return regions(snapshot)
         default: throw RenderError.unknownView(view)
@@ -44,6 +44,27 @@ public enum Render {
         if let testId { return "#\(testId)" }
         if let resourceId { return "@\(resourceId)" }
         return ref
+    }
+
+    static func compact(_ snapshot: Snapshot) -> String {
+        let observation = CompactObservation.from(snapshot)
+        let lines = observation.items.map { $0.line() }
+        // Lead with the keyboard state when it was probed: the keyboard is
+        // invisible to the node walk, so without this line an agent has no way
+        // to know that "tappable" items near the bottom would actually hit the
+        // keys. Matches the Kotlin helper's rendering.
+        guard let kb = snapshot.screen.keyboard else { return lines.joined(separator: "\n") }
+        let header: String
+        if kb.visible {
+            let whereStr = kb.frame.map { " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? ""
+            let covered = observation.items.filter { $0.occludedBy == CompactObservation.occluderKeyboard }.count
+            header = "keyboard: visible\(whereStr)"
+                + (covered > 0 ? " — \(covered) item(s) occluded" : "")
+                + " (dismiss with `act hide-keyboard`)"
+        } else {
+            header = "keyboard: hidden"
+        }
+        return ([header] + lines).joined(separator: "\n")
     }
 
     static func tree(_ snapshot: Snapshot, maxDepth: Int) -> String {

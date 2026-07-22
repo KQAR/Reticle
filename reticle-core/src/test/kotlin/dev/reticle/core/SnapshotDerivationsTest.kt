@@ -82,6 +82,86 @@ class SnapshotDerivationsTest {
         assertEquals(1, compact.items.size)
     }
 
+    /**
+     * Two stacked windows (base activity + dialog on top) plus a visible IME:
+     *
+     *   app
+     *    ├─ baseWindow                       (full screen)
+     *    │   ├─ login   "Log in"  y=2100     -> under the keyboard
+     *    │   └─ profile "Profile" y=600      -> under the dialog
+     *    └─ dialogWindow          y=400..1000 (stacked above baseWindow)
+     *        └─ confirm "Confirm" y=700      -> topmost, unobstructed
+     */
+    private fun occlusionSnapshot(): Snapshot {
+        val nodes = linkedMapOf(
+            "app" to Node(
+                ref = "app", kind = NodeKind.application, typeName = "Application",
+                children = listOf("baseWindow", "dialogWindow"),
+            ),
+            "baseWindow" to Node(
+                ref = "baseWindow", parentRef = "app", kind = NodeKind.window, typeName = "DecorView",
+                role = "window", frame = Rect(0.0, 0.0, 1080.0, 2400.0), children = listOf("login", "profile"),
+            ),
+            "login" to Node(
+                ref = "login", parentRef = "baseWindow", kind = NodeKind.view, typeName = "android.widget.Button",
+                role = "button", text = "Log in", testId = "login", isInteractive = true,
+                frame = Rect(100.0, 2100.0, 880.0, 120.0),
+            ),
+            "profile" to Node(
+                ref = "profile", parentRef = "baseWindow", kind = NodeKind.view, typeName = "android.widget.Button",
+                role = "button", text = "Profile", testId = "profile", isInteractive = true,
+                frame = Rect(100.0, 600.0, 880.0, 120.0),
+            ),
+            "dialogWindow" to Node(
+                ref = "dialogWindow", parentRef = "app", kind = NodeKind.window, typeName = "DecorView",
+                role = "window", frame = Rect(50.0, 400.0, 980.0, 600.0), children = listOf("confirm"),
+            ),
+            "confirm" to Node(
+                ref = "confirm", parentRef = "dialogWindow", kind = NodeKind.view, typeName = "android.widget.Button",
+                role = "button", text = "Confirm", testId = "confirm", isInteractive = true,
+                frame = Rect(100.0, 700.0, 880.0, 120.0),
+            ),
+        )
+        return Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(
+                size = Size(1080.0, 2400.0),
+                density = 3.0,
+                keyboard = KeyboardInfo(visible = true, frame = Rect(0.0, 2000.0, 1080.0, 400.0)),
+            ),
+            rootRef = "app",
+            nodes = nodes,
+        )
+    }
+
+    @Test
+    fun compact_marksItemsUnderTheKeyboard() {
+        val compact = CompactObservation.from(occlusionSnapshot())
+        val login = compact.items.first { it.ref == "login" }
+        assertEquals(CompactObservation.OCCLUDER_KEYBOARD, login.occludedBy)
+        assertTrue(login.line().contains("occluded-by:keyboard"), login.line())
+    }
+
+    @Test
+    fun compact_marksItemsUnderAHigherWindow() {
+        val compact = CompactObservation.from(occlusionSnapshot())
+        val profile = compact.items.first { it.ref == "profile" }
+        assertEquals("dialogWindow", profile.occludedBy, "background-page item under the dialog must name the covering window")
+        assertTrue(profile.line().contains("occluded-by:dialogWindow"), profile.line())
+    }
+
+    @Test
+    fun compact_topmostWindowItemsAreNotOccluded() {
+        val compact = CompactObservation.from(occlusionSnapshot())
+        assertNull(compact.items.first { it.ref == "confirm" }.occludedBy)
+        // Keyboard hidden -> nothing is occluded anywhere.
+        val noKeyboard = occlusionSnapshot().let {
+            it.copy(screen = it.screen.copy(keyboard = KeyboardInfo(visible = false)))
+        }
+        val items = CompactObservation.from(noKeyboard).items
+        assertNull(items.first { it.ref == "login" }.occludedBy)
+    }
+
     @Test
     fun semanticTree_keepsSignalNodes_findBySelectors() {
         val tree = SemanticTree.build(sampleSnapshot())

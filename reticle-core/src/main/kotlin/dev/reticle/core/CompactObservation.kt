@@ -16,11 +16,43 @@ data class CompactObservation(
     val items: List<CompactItem>,
 ) {
     companion object {
+        /** [CompactItem.occludedBy] value for the system keyboard (IME). */
+        const val OCCLUDER_KEYBOARD = "keyboard"
+
         /** Build from a snapshot, keeping interactive or labelled nodes. */
         fun from(snapshot: Snapshot, maxItems: Int = 200): CompactObservation {
+            // Occlusion is judged at the item's tap point (frame center — where
+            // selector-resolved taps land) against everything stacked above it:
+            // higher z-order in-app windows (application children are the
+            // WindowManagerGlobal roots in stacking order, dialogs/popups last)
+            // and the IME. The keyboard is another process's window — never a
+            // node — so it comes from ScreenInfo.keyboard, not the tree.
+            val windowRefs = snapshot.root()?.children
+                ?.filter { snapshot.nodes[it]?.kind == NodeKind.window }
+                ?: emptyList()
+            val windowOrder = windowRefs.withIndex().associate { (i, ref) -> ref to i }
+            val keyboardFrame = snapshot.screen.keyboard?.takeIf { it.visible }?.frame
+
+            fun occluderOf(node: Node, windowRef: String?): String? {
+                val frame = node.frame ?: return null
+                val cx = frame.centerX
+                val cy = frame.centerY
+                // The IME layer sits above every app window, so it wins when
+                // both it and a dialog cover the point.
+                if (keyboardFrame?.contains(cx, cy) == true) return OCCLUDER_KEYBOARD
+                val index = windowRef?.let { windowOrder[it] } ?: return null
+                for (i in (index + 1) until windowRefs.size) {
+                    val above = snapshot.nodes[windowRefs[i]] ?: continue
+                    if (!above.isVisible) continue
+                    if (above.frame?.contains(cx, cy) == true) return above.ref
+                }
+                return null
+            }
+
             val items = ArrayList<CompactItem>()
-            fun visit(ref: String) {
+            fun visit(ref: String, windowRef: String?) {
                 val node = snapshot.nodes[ref] ?: return
+                val currentWindow = if (node.kind == NodeKind.window) node.ref else windowRef
                 // Same targeting-signal test as the semantic tree, plus a
                 // visibility filter: the compact view is for acting *now*, so a
                 // hidden-but-labelled node is intentionally omitted here even
@@ -36,12 +68,13 @@ data class CompactObservation(
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
+                            occludedBy = occluderOf(node, currentWindow),
                         )
                     )
                 }
-                node.children.forEach(::visit)
+                node.children.forEach { visit(it, currentWindow) }
             }
-            visit(snapshot.rootRef)
+            visit(snapshot.rootRef, null)
             return CompactObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
                 screen = snapshot.screen,
@@ -61,6 +94,13 @@ data class CompactItem(
     val frame: Rect? = null,
     val isEnabled: Boolean = true,
     val isInteractive: Boolean = false,
+    /**
+     * What sits on top of this node's tap point, when anything does: the ref of
+     * a higher z-order window (a dialog/popup covering a background page), or
+     * [CompactObservation.OCCLUDER_KEYBOARD] for the system keyboard. A tap
+     * dispatched at this item would land on the occluder instead.
+     */
+    val occludedBy: String? = null,
 ) {
     /** One-line rendering for agent-facing text output. */
     fun line(): String {
@@ -74,6 +114,7 @@ data class CompactItem(
         val state = buildString {
             if (!isEnabled) append(" disabled")
             if (isInteractive) append(" tappable")
+            occludedBy?.let { append(" occluded-by:$it") }
         }
         return "$selector $role$labelPart$framePart$state"
     }

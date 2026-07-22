@@ -195,6 +195,16 @@ $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
 
+# 系统键盘是另一个进程的窗口——它不在节点树里,被盖住的提交按钮看起来仍然
+# tappable。快照带 screen.keyboard,`ui compact` 首行报键盘状态,被盖条目标
+# occluded-by:keyboard(弹窗盖住底层页面时同理标 occluded-by:<窗口ref>),
+# hide-keyboard 在进程内收起键盘。--target ios 用法完全一致。
+$CLI act tap  --package dev.reticle.sample --test-id scenario.login
+$CLI act type --package dev.reticle.sample --test-id login.codeField --text "123456"
+$CLI ui compact --live --package dev.reticle.sample   # keyboard: visible … occluded-by:keyboard
+$CLI act hide-keyboard --package dev.reticle.sample
+$CLI act tap  --package dev.reticle.sample --test-id login.submitButton
+
 # 读取应用自行写入的运行时日志
 $CLI debug logs --package dev.reticle.sample
 

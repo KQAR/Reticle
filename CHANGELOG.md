@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+- Android: the system keyboard (IME) is now observable and dismissible. The
+  IME is another process's window — it never appears in the captured node
+  tree, so a login button it covered still read as `tappable` and agents
+  tapped straight into the keys (a real stuck login flow: type the SMS code,
+  keyboard stays up, submit button underneath it). Snapshots now carry
+  `screen.keyboard` (`visible` + screen-coordinate `frame`), probed in-process
+  from window insets (`WindowInsets.Type.ime()` on API 30+, visible-frame
+  heuristic before that); the agent answers `GET /keyboard` and
+  `POST /keyboard/hide` (InputMethodManager against every attached window
+  token, then re-probe so the caller gets the settled state); and
+  `reticle act hide-keyboard` drives it from the CLI, falling back to
+  `KEYCODE_ESCAPE` when the agent is unreachable — unlike BACK, ESC doesn't
+  navigate back when the keyboard is already gone. `act type` results now
+  include `keyboardVisible` when the runtime is reachable.
+
+- iOS: the same keyboard surface, implemented in-process in `ReticleKit`. A
+  `KeyboardMonitor` caches the keyboard notification stream (the one exact
+  public signal — the keyboard's own windows attach on first text focus and
+  never detach, so window presence proves nothing) and falls back to scanning
+  for a text-input first responder when injected mid-keyboard. `GET /keyboard`
+  / `POST /keyboard/hide` (resignFirstResponder via the responder chain, then
+  re-probe) mirror Android; `reticle --target ios act hide-keyboard` works on
+  simulators and real devices alike since it needs no HID surface, and iOS
+  `act type` also reports `keyboardVisible`. Verified end-to-end in
+  `scripts/e2e-ios.sh` (see below). Simulator caveat baked into the script:
+  with "Connect Hardware Keyboard" on, iOS never shows the software keyboard —
+  the script now disables it up front.
+
+- Sample apps (both platforms): a new "Login keyboard trap" scenario — code
+  field on top, submit button pinned to the bottom, keyboard avoidance
+  deliberately defeated (`adjustNothing` on Android, `.ignoresSafeArea(
+  .keyboard)` on iOS) — reproducing the real stuck-login layout. The iOS e2e
+  drives it end to end: type → `keyboardVisible=true` → compact marks
+  `login.submitButton occluded-by:keyboard` → `act hide-keyboard` →
+  `keyboard: hidden` → submit succeeds. The same flow was verified by hand on
+  a real Android device (ColorOS, API 35) — including the probe fix it forced:
+  IME insets only dispatch to the focused window, so the agent probes every
+  attached window and lets any that sees the keyboard win.
+
+- Compact view: items whose tap point something else sits on top of are marked
+  `occluded-by:<what>` — generically, not keyboard-specifically: a higher
+  z-order window (dialog/popup over a background page) marks the items it
+  covers with its window ref, and the visible IME marks the items under it
+  with `occluded-by:keyboard`. `ui compact` also leads with a
+  `keyboard: visible/hidden` header line (with a dismiss hint) whenever the
+  platform probed the IME. Protocol: `ScreenInfo.keyboard` (`KeyboardInfo`)
+  and `CompactItem.occludedBy` added to the schema, the Kotlin model, and the
+  Swift `ReticleProtocol` mirror — all optional, wire-compatible both ways.
+
 ## 0.9.0 - 2026-07-21
 
 - iOS: fixed in-process screenshots going permanently black after the first

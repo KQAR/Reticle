@@ -5,7 +5,11 @@
   "screen": {
     "size": { "width": 1080.0, "height": 2400.0 },
     "density": 3.0,
-    "interfaceStyle": "dark"
+    "interfaceStyle": "dark",
+    "keyboard": {
+      "visible": true,
+      "frame": { "x": 0.0, "y": 2000.0, "width": 1080.0, "height": 400.0 }
+    }
   },
   "rootRef": "r0",
   "nodes": {

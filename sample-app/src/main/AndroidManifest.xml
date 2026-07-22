@@ -37,5 +37,9 @@
             android:exported="false"
             android:label="WebView DOM"
             android:theme="@style/Theme.AppCompat.Light.DarkActionBar" />
+        <activity
+            android:name="dev.reticle.sample.LoginScenarioActivity"
+            android:exported="false"
+            android:label="Login Keyboard Trap" />
     </application>
 </manifest>

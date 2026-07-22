@@ -238,6 +238,24 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 }
             }
 
+            method == "GET" && path == Endpoints.KEYBOARD -> {
+                val info = KeyboardController(context).status()
+                if (info == null) {
+                    writeText(out, 503, "keyboard state unavailable (no attached windows)")
+                } else {
+                    writeJson(out, ReticleJson.compact.encodeToString(dev.reticle.core.KeyboardInfo.serializer(), info))
+                }
+            }
+
+            method == "POST" && path == Endpoints.KEYBOARD_HIDE -> {
+                val result = KeyboardController(context).hide()
+                if (result == null) {
+                    writeText(out, 503, "keyboard state unavailable (no attached windows)")
+                } else {
+                    writeJson(out, ReticleJson.compact.encodeToString(dev.reticle.core.KeyboardHideResult.serializer(), result))
+                }
+            }
+
             method == "POST" && path == Endpoints.MUTATE -> {
                 val request = ReticleJson.compact.decodeFromString(MutationRequest.serializer(), body)
                 val result = MutationEngine(context).apply(request)

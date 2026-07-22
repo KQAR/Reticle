@@ -49,10 +49,27 @@ public struct ScreenInfo: Codable, Equatable, Sendable {
     public var density: Double
     /// "light" | "dark".
     public var interfaceStyle: String?
+    /// System keyboard (IME) state at capture time, or nil when the platform
+    /// did not probe it. The keyboard is another process's window, so it never
+    /// appears in the node tree — this is the only record that part of the
+    /// screen is covered. (Currently filled by the Android agent.)
+    public var keyboard: KeyboardInfo?
 
-    public init(size: Size, density: Double, interfaceStyle: String? = nil) {
+    public init(size: Size, density: Double, interfaceStyle: String? = nil, keyboard: KeyboardInfo? = nil) {
         self.size = size
         self.density = density
         self.interfaceStyle = interfaceStyle
+        self.keyboard = keyboard
+    }
+}
+
+public struct KeyboardInfo: Codable, Equatable, Sendable {
+    public var visible: Bool
+    /// Screen-coordinate rect the keyboard occupies; nil when hidden or unknown.
+    public var frame: Rect?
+
+    public init(visible: Bool, frame: Rect? = nil) {
+        self.visible = visible
+        self.frame = frame
     }
 }
