@@ -115,7 +115,7 @@ internal fun parseVerifyToken(
     token == "false" -> null
     token == "true" -> {
         if (actTestId == null && actResourceId == null && actCssSelector == null && actRef == null) {
-            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|@resourceId|css=<selector>|ref>, or act by selector rather than --point")
+            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|ref>, or act by selector rather than --point")
         }
         Selector(
             testId = actTestId,
@@ -127,5 +127,16 @@ internal fun parseVerifyToken(
     token.startsWith("#") -> Selector(testId = token.drop(1))
     token.startsWith("@") -> Selector(resourceId = token.drop(1))
     token.startsWith("css=") -> Selector(cssSelector = token.removePrefix("css="))
+    // key= spellings of the sigil forms. These read naturally in batch JSON
+    // ("verify": "testId=checkout.status") and used to fall through to the
+    // ref branch below, where they could never match a node — every such
+    // verify reported "node not present" regardless of the actual UI.
+    token.startsWith("testId=") -> Selector(testId = token.removePrefix("testId="))
+    token.startsWith("resourceId=") -> Selector(resourceId = token.removePrefix("resourceId="))
+    token.startsWith("ref=") -> Selector(ref = token.removePrefix("ref="))
+    // An unknown key= would silently become a never-matching ref; fail loudly.
+    token.contains('=') -> throw CliError(
+        "unrecognized --verify selector '$token': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, ref=<ref>, or a bare ref"
+    )
     else -> Selector(ref = token)
 }

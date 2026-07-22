@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- `act --verify` no longer false-negatives on `testId=`/`resourceId=` verify
+  tokens. The token parser only understood the sigil spellings (`#testId`,
+  `@resourceId`, `css=…`); anything else silently became a `ref` lookup that
+  could never match, so `--verify 'testId=checkout.status'` reported
+  "node not present after action" regardless of the actual UI — and the README
+  and skill batch examples taught exactly that spelling. The parser now accepts
+  `testId=`, `resourceId=`, and `ref=` alongside the sigils, and an
+  *unrecognized* `key=` token fails loudly instead of degrading into a
+  never-matching ref.
+
+- iOS: `act type` with a targeting selector now taps that field first (then
+  settles 200ms) before typing, matching Android — HID typing and clipboard
+  paste both land in whatever holds focus, so `type --test-id foo` used to
+  silently type into the wrong (or no) field unless the caller tapped first.
+  The result reports `focusedVia`, and the action trace carries the focus
+  point so replay evidence shows where the text went.
+
+- Capture proxy: the upstream forwarder's total-transfer timeout is now
+  `max(600s, configured upstream timeout)` instead of a hardcoded 600s that
+  silently clamped any longer `--upstream-timeout`.
+
 ## 0.9.3 - 2026-07-22
 
 - iOS real-device enablement (docs + tooling, no runtime behavior change):
