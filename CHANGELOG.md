@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Tests: `scripts/e2e-android.sh` — an end-to-end smoke test for the Android
+  agent, the analogue of `scripts/e2e-ios.sh` and the previously-missing
+  coverage for the Android device-side runtime. It builds the agent + both
+  sample flavors, installs them, and drives the full round trip against a
+  device/emulator (linked launch, `ui report`/`compact`, selector tap with
+  `--verify` + `--trace-output` + `replay gif`, ASCII/non-ASCII `type`,
+  runtime `mutate`, agreement-region resolution, WebView DOM tap, the login
+  keyboard-occlusion trap, `type --submit`, and the JDWP inject path on the
+  `noagent` flavor) — every step asserting an observable side effect. It polls
+  `status`/`compact` for readiness instead of fixed sleeps, so it rides out
+  slow cold starts on a software-GPU emulator. Local/manual like the iOS e2e;
+  not wired into CI (which has no attached device).
+
 - One-shot commands now take a warm path by default: the first helper-backed
   command fork-execs a per-device `reticle helper-daemon` (a Unix-domain
   socket under `~/.reticle/helperd/`, carrying the helper's own JSONL

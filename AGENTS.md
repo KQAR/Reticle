@@ -145,6 +145,27 @@ Build everything (the daemon auto-pins to JDK 17 — see Toolchain):
 ./gradlew assemble
 ```
 
+The whole runtime round trip below is also scripted as an automated smoke test —
+the Android analogue of `scripts/e2e-ios.sh`:
+
+```bash
+swift build --package-path reticle-host        # ReticleHost
+./gradlew :reticle-helper:nativeHelper          # native reticle-helper
+scripts/e2e-android.sh [<serial>]               # full device/emulator round trip
+```
+
+It builds the agent + both sample flavors, installs them, and drives every
+scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
+mutation, agreement regions, WebView DOM, the login keyboard trap, and the JDWP
+inject path on `noagent`), asserting an observable side effect at each step. It
+polls `status`/`compact` for readiness rather than fixed sleeps, so it tolerates
+slow cold starts on a software-GPU emulator. On such an emulator, disable the
+Google apps that ANR under load first (their dialogs are a *separate* window that
+steals taps and never appears in the node tree). It is a manual/local check like
+the iOS e2e — not wired into CI, which has no attached device.
+
+The manual steps, for reference:
+
 Prove the runtime round trip on a booted device/emulator:
 
 ```bash
