@@ -74,6 +74,11 @@ func cmdInject(_ c: HelperCalling, _ args: Args) throws {
         return
     }
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
+    if !isIos {
+        // The JDWP handshake dead-zone on a freshly launched debug process is
+        // most of inject's 30s+ wall clock; a linked agent skips all of it.
+        print("tip: debug builds that link the reticle-agent AAR auto-start on launch — no inject needed")
+    }
 }
 
 func cmdUiReport(_ c: HelperCalling, _ args: Args) throws {
@@ -147,6 +152,9 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "region", "from", "to", "duration", "text"] {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
+    // `type --submit`: press the keyboard's action key after typing (agent
+    // editor action on Android, HID Return on the iOS simulator).
+    if let submit = args.option("submit"), submit != "false" { params["submit"] = true }
     if let v = args.option("verify") { params["verify"] = v }
     if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
     if let out = args.option("trace-output") {
