@@ -28,10 +28,8 @@ let package = Package(
         // so the host never re-ports models, PortMap, or the tree renderers.
         .package(path: "../reticle-swift"),
         // Loom's capture engine, consumed as an SPM library so the host network
-        // lane doesn't maintain its own SwiftNIO proxy/MITM. Local path during
-        // co-development (Loom lives beside the Reticle repo, so `../../Loom`
-        // from this nested package); pin to a tag once Loom's API settles.
-        .package(path: "../../Loom"),
+        // lane doesn't maintain its own SwiftNIO proxy/MITM.
+        .package(url: "https://github.com/KQAR/Loom.git", exact: "0.0.1"),
     ],
     targets: [
         // Dependency-free foundation shared by the host and the network lane:
