@@ -18,10 +18,6 @@ DAEMON_PORT="${E2E_DAEMON_PORT:-19876}"
 PROXY_PORT="${E2E_PROXY_PORT:-19090}"
 UPSTREAM_PORT="${E2E_UPSTREAM_PORT:-18080}"
 SESSION="e2e-proxy-$$"
-# Which capture engine to exercise: `loom` (Loom's engine via LoomCaptureLane,
-# the default) or `builtin` (the legacy in-tree NIO proxy). The two emit tunnel
-# events differently, so the CONNECT-tunnel assertions below branch on engine.
-ENGINE="${E2E_PROXY_ENGINE:-loom}"
 
 [ -x "$HOST" ] || { echo "build the host first: swift build --package-path reticle-host"; exit 1; }
 
@@ -52,10 +48,10 @@ printf 'real upstream body' > "$TMP/www/real.txt"
 /usr/bin/python3 -m http.server "$UPSTREAM_PORT" --bind 127.0.0.1 --directory "$TMP/www" >/dev/null 2>&1 &
 UPSTREAM_PID=$!
 
-echo "== serve with proxy + mitm (engine=$ENGINE) =="
+echo "== serve with proxy + mitm =="
 "$HOST" serve --session "$SESSION" --port "$DAEMON_PORT" \
   --proxy-port "$PROXY_PORT" --proxy-mitm true --proxy-ssl-hosts 127.0.0.1 \
-  --proxy-ca-dir "$TMP/ca" --proxy-engine "$ENGINE" >"$TMP/serve.log" 2>&1 &
+  --proxy-ca-dir "$TMP/ca" >"$TMP/serve.log" 2>&1 &
 SERVE_PID=$!
 for _ in $(seq 1 50); do
   grep -q "reticle serve: events " "$TMP/serve.log" 2>/dev/null && break
@@ -110,12 +106,11 @@ CODE="$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' -x "$PROXY" "http:/
 [ "$CODE" = "502" ] || { echo "FAIL: cleared mock should 502 on a dead upstream, got $CODE"; exit 1; }
 
 echo "== evidence trail in events.jsonl =="
-/usr/bin/python3 - "$EVENTS" "$UPSTREAM_PORT" "$ENGINE" <<'PY'
+/usr/bin/python3 - "$EVENTS" "$UPSTREAM_PORT" <<'PY'
 import json, sys
 
 events = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
 port = sys.argv[2]
-engine = sys.argv[3]
 
 def fail(message):
     print(f"FAIL: {message}")
@@ -138,17 +133,11 @@ find("network.request", url="http://reticle-e2e.invalid/hello") or fail("no netw
 https = find("network.response", mocked=True, status=201)
 https or fail("no mocked network.response for the HTTPS hit")
 https["payload"].get("mitm") is True or fail("HTTPS mocked response not flagged mitm")
-# The built-in proxy emits a blind-tunnel event for the CONNECT; Loom only
-# surfaces flows it observed (decrypted), so it has no tunnel event by design.
-if engine == "builtin":
-    find("network.response", tunnel=True, mitm=True) or fail("no MITM CONNECT response event")
-
-# Loom emits a tunnel event only for un-decrypted (blind) CONNECTs — the
-# out-of-scope localhost tunnel above — with its observeTunnels enabled.
-if engine == "loom":
-    tun = find("network.response", tunnel=True, mitm=False)
-    tun or fail("no blind-tunnel event for the out-of-scope CONNECT")
-    tun["payload"].get("method") == "CONNECT" or fail("blind-tunnel event not marked CONNECT")
+# The engine emits a tunnel event only for un-decrypted (blind) CONNECTs — the
+# out-of-scope localhost tunnel above — via its observeTunnels option.
+tun = find("network.response", tunnel=True, mitm=False)
+tun or fail("no blind-tunnel event for the out-of-scope CONNECT")
+tun["payload"].get("method") == "CONNECT" or fail("blind-tunnel event not marked CONNECT")
 
 real = find("network.response", url=f"http://127.0.0.1:{port}/real.txt")
 real or fail("no network.response for the real upstream forward")

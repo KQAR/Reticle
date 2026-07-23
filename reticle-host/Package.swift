@@ -50,16 +50,10 @@ let package = Package(
             name: "ReticleNetworkLane",
             dependencies: [
                 "ReticleHostShared",
-                .product(name: "NIOCore", package: "swift-nio"),
-                .product(name: "NIOHTTP1", package: "swift-nio"),
-                .product(name: "NIOPosix", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl"),
-                .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "SwiftASN1", package: "swift-asn1"),
-                .product(name: "X509", package: "swift-certificates"),
-                // Loom-backed capture lane (LoomCaptureLane), gradually replacing
-                // the in-tree NIO proxy. Both compile side-by-side during migration.
-                // Path-dependency identity is the lowercased directory name ("loom").
+                // Transport (NIO proxy, MITM, CA) is Loom's engine now; this target
+                // only normalizes captured flows into session events, so it needs no
+                // NIO/certificate deps of its own. Path-dependency identity is the
+                // lowercased directory name ("loom").
                 .product(name: "LoomProxyCore", package: "loom"),
                 .product(name: "LoomSharedModels", package: "loom"),
             ],

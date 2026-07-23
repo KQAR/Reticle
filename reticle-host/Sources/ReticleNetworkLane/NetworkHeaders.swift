@@ -1,5 +1,4 @@
 import Foundation
-import NIOHTTP1
 
 /// Produces display-safe HTTP header dictionaries for network events.
 enum NetworkHeaders {
@@ -11,22 +10,9 @@ enum NetworkHeaders {
         "x-api-key"
     ])
 
-    /// Converts NIO headers into a JSON-friendly map with sensitive values redacted.
-    static func request(_ headers: HTTPHeaders) -> [String: String] {
-        sanitize(headers.map { ($0.name, $0.value) })
-    }
-
-    /// Converts URL response headers into a JSON-friendly map with sensitive values redacted.
-    static func response(_ headers: [AnyHashable: Any]) -> [String: String] {
-        sanitize(headers.compactMap { key, value in
-            guard let name = key as? String else { return nil }
-            return (name, "\(value)")
-        })
-    }
-
-    /// Redacts an ordered list of raw `(name, value)` header pairs. Used by capture
-    /// backends (e.g. `LoomCaptureLane`) that surface headers as ordered pairs
-    /// rather than NIO `HTTPHeaders`, so redaction stays defined in one place.
+    /// Redacts an ordered list of raw `(name, value)` header pairs — the capture
+    /// backend (`LoomCaptureLane`) surfaces headers as ordered pairs, so redaction
+    /// stays defined in one place.
     static func redacted(pairs: [(name: String, value: String)]) -> [String: String] {
         sanitize(pairs.map { ($0.name, $0.value) })
     }

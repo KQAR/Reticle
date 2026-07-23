@@ -46,25 +46,6 @@ public struct NetworkProxyConfiguration {
     }
 }
 
-/// Explicit host policy for optional TLS interception.
-struct TlsInterceptionPolicy {
-    let enabled: Bool
-    let allowlist: [String]
-
-    /// Returns true only when TLS interception is explicitly enabled for `host`.
-    func allows(host: String) -> Bool {
-        guard enabled else { return false }
-        let lower = host.lowercased()
-        return allowlist.contains { rule in
-            let rule = rule.lowercased()
-            if rule.hasPrefix("*.") {
-                return lower.hasSuffix(String(rule.dropFirst()))
-            }
-            return lower == rule
-        }
-    }
-}
-
 enum NetworkProxyError: Error, CustomStringConvertible {
     case caMaterialMissing(String)
     case startTimedOut
