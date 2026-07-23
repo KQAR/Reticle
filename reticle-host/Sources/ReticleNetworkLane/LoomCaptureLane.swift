@@ -17,10 +17,10 @@ import SharedModels
 /// not persisted by Loom (`persistFlows: false`) — Reticle owns storage via
 /// `events.jsonl` and `network-bodies/`.
 ///
-/// Difference from the built-in proxy: Loom only emits a flow for traffic it
-/// observed (plain HTTP or decrypted HTTPS), so there is no blind-tunnel
-/// (`tunnel: true`) event. The engine honors `configuration.bindHost`, so
-/// non-loopback (real-device Wi-Fi) capture works too.
+/// Parity with the built-in proxy: decrypted HTTPS and plain HTTP arrive as
+/// normal flows, and un-decrypted CONNECTs surface as `tunnel: true` events
+/// (Loom's `observeTunnels` is enabled here). The engine honors
+/// `configuration.bindHost`, so non-loopback (real-device Wi-Fi) capture works too.
 public final class LoomCaptureLane: @unchecked Sendable {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
@@ -77,7 +77,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
                 if mitm {
                     await engine.setSSLScope(SSLScope(enabled: true, include: hosts))
                 }
-                let bound = try await engine.start(port: requestedPort, host: bindHost)
+                let bound = try await engine.start(port: requestedPort, host: bindHost, observeTunnels: true)
                 if let caDirectory {
                     await LoomCaptureLane.exportCA(engine: engine, to: caDirectory)
                 }
@@ -183,6 +183,10 @@ public final class LoomCaptureLane: @unchecked Sendable {
         let host = components?.host ?? ""
         let port = components?.port ?? (scheme == "https" ? 443 : 80)
         let path = (components?.path).flatMap { $0.isEmpty ? nil : $0 } ?? "/"
+        // Loom marks an un-decrypted blind CONNECT tunnel with the CONNECT method
+        // (only surfaced when the engine's observeTunnels is on); a decrypted
+        // HTTPS exchange arrives as a normal flow, which implies MITM.
+        let isTunnel = flow.request.method == "CONNECT"
 
         var payload = NetworkEventPayload(
             requestId: flow.id.uuidString,
@@ -193,11 +197,8 @@ public final class LoomCaptureLane: @unchecked Sendable {
             port: port,
             path: path,
             startMillis: Self.millis(flow.startedAt),
-            // Loom only emits a flow for traffic it actually observed (plain HTTP,
-            // or HTTPS it decrypted) — blind CONNECT tunnels never surface, so
-            // there is no `tunnel` event and an https flow implies MITM.
-            tunnel: false,
-            mitm: scheme == "https"
+            tunnel: isTunnel,
+            mitm: !isTunnel && scheme == "https"
         )
         payload.requestHeaders = NetworkHeaders.redacted(
             pairs: flow.request.headers.map { (name: $0.name, value: $0.value) }
