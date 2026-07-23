@@ -151,6 +151,8 @@ TRACE_JSON="$(find "$TMP/trace" -name trace.json | head -1)"
 [ -n "$TRACE_JSON" ] || { echo "FAIL: no action-trace manifest under --trace-output"; exit 1; }
 grep -q '"gesture": *"tap"' "$TRACE_JSON" \
   || { echo "FAIL: trace.json missing the tap gesture"; exit 1; }
+grep -q '"platform": *"android"' "$TRACE_JSON" \
+  || { echo "FAIL: trace.json missing platform=android"; exit 1; }
 # The diff must record the observable change (checkout.status -> Paid!).
 grep -q "Paid!" "$TRACE_JSON" \
   || { echo "FAIL: trace.json diff did not record the checkout.status change"; exit 1; }
