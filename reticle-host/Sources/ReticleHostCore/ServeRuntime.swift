@@ -21,6 +21,9 @@ public struct ServeOptions {
     /// `--proxy-max-request-body-mb`: in-memory buffering cap for one proxied
     /// request body; oversized uploads get 413 instead of ballooning the daemon.
     public let proxyMaxRequestBodyBytes: Int?
+    /// `--proxy-engine`: `builtin` (in-tree NIO proxy, default) or `loom`
+    /// (Loom's capture engine via `LoomCaptureLane`).
+    public let proxyEngine: String
     public let helper: String?
     public let helperBroker: Bool
 
@@ -49,6 +52,7 @@ public struct ServeOptions {
         proxyMaxRequestBodyBytes = args.option("proxy-max-request-body-mb")
             .flatMap { Int($0) }
             .map { $0 * 1024 * 1024 }
+        proxyEngine = args.option("proxy-engine") ?? "builtin"
         helper = resolveHelper(args)
         helperBroker = args.option("helper-broker") == "true"
     }
@@ -66,6 +70,7 @@ public final class ServeRuntime {
     private let options: ServeOptions
     private var server: ReticleHttpServer?
     private var proxyServer: NetworkProxyServer?
+    private var loomLane: LoomCaptureLane?
     private var proxyRestore: DeviceProxyRestore?
     private var helperBroker: HelperClient?
     private let stopSemaphore = DispatchSemaphore(value: 0)
@@ -96,43 +101,53 @@ public final class ServeRuntime {
             throw error
         }
         if let proxyPort = effectiveProxyPort {
-            let certificates = try options.proxyCaDirectory.map { store in
-                let certificates = ProxyCertificateStore(directory: store)
-                try certificates.validate()
-                return certificates
-            }
-            if options.proxyInstallCa, let certificates {
-                try installCA(certificates)
-            }
             // Attribute captured traffic to the platform target. iOS shares the
             // host network, so the serial is the booted simulator's udid.
             let attributedSerial = options.serial
                 ?? (options.target == "ios" ? try? Simctl.resolveUdid(nil) : nil)
-            let proxy = try NetworkProxyServer(
-                store: store,
-                configuration: NetworkProxyConfiguration(
-                    port: proxyPort,
-                    bindHost: options.proxyBind,
-                    target: attributedSerial.map { "\(options.target):\($0)" },
-                    maxRequestBodyBytes: options.proxyMaxRequestBodyBytes
-                        ?? NetworkProxyConfiguration.defaultMaxRequestBodyBytes,
-                    mitmEnabled: options.proxyMitm,
-                    caDirectory: options.proxyCaDirectory,
-                    tlsHostAllowlist: options.proxyTlsHosts
-                ),
-                mockStore: mockStore
+            let configuration = NetworkProxyConfiguration(
+                port: proxyPort,
+                bindHost: options.proxyBind,
+                target: attributedSerial.map { "\(options.target):\($0)" },
+                maxRequestBodyBytes: options.proxyMaxRequestBodyBytes
+                    ?? NetworkProxyConfiguration.defaultMaxRequestBodyBytes,
+                mitmEnabled: options.proxyMitm,
+                caDirectory: options.proxyCaDirectory,
+                tlsHostAllowlist: options.proxyTlsHosts
             )
-            try proxy.start()
-            proxyServer = proxy
+            let boundPort: Int
+            if options.proxyEngine == "loom" {
+                // Loom generates + exports its own CA on start (to caDirectory), so
+                // the ProxyCertificateStore path and --proxy-install-ca aren't wired
+                // here yet — trust the exported reticle-ca.pem/.cer directly.
+                let lane = LoomCaptureLane(store: store, configuration: configuration, mockStore: mockStore)
+                mockStore.onChange = { [weak lane] in lane?.syncMocks() }
+                try lane.start()
+                loomLane = lane
+                boundPort = lane.port
+            } else {
+                let certificates = try options.proxyCaDirectory.map { directory in
+                    let certificates = ProxyCertificateStore(directory: directory)
+                    try certificates.validate()
+                    return certificates
+                }
+                if options.proxyInstallCa, let certificates {
+                    try installCA(certificates)
+                }
+                let proxy = try NetworkProxyServer(store: store, configuration: configuration, mockStore: mockStore)
+                try proxy.start()
+                proxyServer = proxy
+                boundPort = proxy.port
+            }
             if options.proxyDevice {
                 // iOS routing is manual (a simulator/real device has no per-app
                 // proxy hook — it rides the host network / Wi-Fi settings), so we
                 // print the exact commands instead of mutating the host proxy.
                 if options.target == "ios" {
-                    printIosProxyRoutingHint(port: proxy.port)
+                    printIosProxyRoutingHint(port: boundPort)
                 } else {
                     reconcileStaleDeviceProxy()
-                    proxyRestore = try configureDeviceProxy(port: proxy.port)
+                    proxyRestore = try configureDeviceProxy(port: boundPort)
                 }
             }
         }
@@ -151,8 +166,8 @@ public final class ServeRuntime {
         if options.helperBroker {
             print("reticle serve: helper broker enabled")
         }
-        if let proxyServer {
-            print("reticle serve: proxy http://127.0.0.1:\(proxyServer.port)")
+        if let boundProxyPort = proxyServer?.port ?? loomLane?.port {
+            print("reticle serve: proxy http://127.0.0.1:\(boundProxyPort)")
         }
         if let ca = options.proxyCaDirectory {
             print("reticle serve: ca \(ca.appendingPathComponent("reticle-ca.cer").path)")
@@ -169,6 +184,7 @@ public final class ServeRuntime {
         helperBroker?.shutdown()
         helperBroker = nil
         proxyServer?.stop()
+        loomLane?.stop()
         server?.stop()
         options.discovery.clearIfOwned(by: getpid())
     }
