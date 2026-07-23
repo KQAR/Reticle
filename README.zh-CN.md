@@ -224,8 +224,10 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
 `reticle serve` 启动本机 daemon:一个由 Hummingbird 承载的 localhost REST/SSE
 事件总线,并把 session 事件追加写入
 `~/.reticle/sessions/<session>/events.jsonl`。它内置只读 Web 面板;传入
-`--proxy-port` 时还会启动 SwiftNIO host proxy,把 `network.request`、
-`network.response`、`network.error` 写入同一个 session。
+`--proxy-port` 时还会启动 host 捕获代理,把 `network.request`、
+`network.response`、`network.error` 写入同一个 session。捕获默认由
+[Loom](https://github.com/KQAR/Loom) 引擎驱动;传 `--proxy-engine builtin`
+可回退到内置的 SwiftNIO 代理。
 
 ```bash
 reticle serve --session demo --port 9876 --proxy-port 9090
