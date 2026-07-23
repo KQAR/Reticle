@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Action traces: the on-disk `trace.json` manifest now carries a `platform`
+  field ("android" / "ios") on both platforms. iOS already emitted it; the
+  Android writer did not, so an Android trace was not self-describing and
+  consumers could not tell the two apart from the manifest alone. The field is
+  copied from the captured snapshot's platform and is optional/defaulted, so
+  older manifests and direct callers stay wire-compatible.
+
 - Tests: `scripts/e2e-android.sh` — an end-to-end smoke test for the Android
   agent, the analogue of `scripts/e2e-ios.sh` and the previously-missing
   coverage for the Android device-side runtime. It builds the agent + both
