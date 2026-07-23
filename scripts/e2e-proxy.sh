@@ -18,10 +18,10 @@ DAEMON_PORT="${E2E_DAEMON_PORT:-19876}"
 PROXY_PORT="${E2E_PROXY_PORT:-19090}"
 UPSTREAM_PORT="${E2E_UPSTREAM_PORT:-18080}"
 SESSION="e2e-proxy-$$"
-# Which capture engine to exercise: `builtin` (in-tree NIO proxy) or `loom`
-# (Loom's engine via LoomCaptureLane). Loom emits no blind-tunnel event, so the
-# CONNECT-tunnel assertion below is builtin-only.
-ENGINE="${E2E_PROXY_ENGINE:-builtin}"
+# Which capture engine to exercise: `loom` (Loom's engine via LoomCaptureLane,
+# the default) or `builtin` (the legacy in-tree NIO proxy). The two emit tunnel
+# events differently, so the CONNECT-tunnel assertions below branch on engine.
+ENGINE="${E2E_PROXY_ENGINE:-loom}"
 
 [ -x "$HOST" ] || { echo "build the host first: swift build --package-path reticle-host"; exit 1; }
 

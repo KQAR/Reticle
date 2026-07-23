@@ -21,8 +21,9 @@ public struct ServeOptions {
     /// `--proxy-max-request-body-mb`: in-memory buffering cap for one proxied
     /// request body; oversized uploads get 413 instead of ballooning the daemon.
     public let proxyMaxRequestBodyBytes: Int?
-    /// `--proxy-engine`: `builtin` (in-tree NIO proxy, default) or `loom`
-    /// (Loom's capture engine via `LoomCaptureLane`).
+    /// `--proxy-engine`: `loom` (Loom's capture engine via `LoomCaptureLane`,
+    /// default) or `builtin` (the legacy in-tree NIO proxy, kept as a fallback
+    /// during the migration).
     public let proxyEngine: String
     public let helper: String?
     public let helperBroker: Bool
@@ -52,7 +53,7 @@ public struct ServeOptions {
         proxyMaxRequestBodyBytes = args.option("proxy-max-request-body-mb")
             .flatMap { Int($0) }
             .map { $0 * 1024 * 1024 }
-        proxyEngine = args.option("proxy-engine") ?? "builtin"
+        proxyEngine = args.option("proxy-engine") ?? "loom"
         helper = resolveHelper(args)
         helperBroker = args.option("helper-broker") == "true"
     }
@@ -125,6 +126,11 @@ public final class ServeRuntime {
                 try lane.start()
                 loomLane = lane
                 boundPort = lane.port
+                // start() exported the CA (reticle-ca.cer/.pem) into caDirectory;
+                // trust it on the target just like the built-in path does.
+                if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {
+                    try installCA(derPath: caDirectory.appendingPathComponent("reticle-ca.cer").path)
+                }
             } else {
                 let certificates = try options.proxyCaDirectory.map { directory in
                     let certificates = ProxyCertificateStore(directory: directory)
@@ -132,7 +138,7 @@ public final class ServeRuntime {
                     return certificates
                 }
                 if options.proxyInstallCa, let certificates {
-                    try installCA(certificates)
+                    try installCA(derPath: certificates.caCertificateDER.path)
                 }
                 let proxy = try NetworkProxyServer(store: store, configuration: configuration, mockStore: mockStore)
                 try proxy.start()
@@ -253,7 +259,7 @@ public final class ServeRuntime {
         DeviceProxyState.clear(serial: options.serial)
     }
 
-    private func installCA(_ certificates: ProxyCertificateStore) throws {
+    private func installCA(derPath: String) throws {
         // iOS: trust the MITM CA in the booted simulator's keychain — a host-side,
         // simulator-scoped action (no adb helper, no hook). The real-device
         // analogue is installing the CA as a trusted configuration profile.
@@ -269,7 +275,7 @@ public final class ServeRuntime {
                 return
             }
             let udid = try Simctl.resolveUdid(options.serial)
-            let r = try Simctl.run(["keychain", udid, "add-root-cert", certificates.caCertificateDER.path])
+            let r = try Simctl.run(["keychain", udid, "add-root-cert", derPath])
             if r.code != 0 {
                 throw HelperError("could not trust the MITM CA in simulator \(udid): "
                     + (r.err.isEmpty ? r.out : r.err))
@@ -288,7 +294,7 @@ public final class ServeRuntime {
         try client.start()
         defer { client.shutdown() }
         _ = try client.call("proxyInstallCa", [
-            "path": certificates.caCertificateDER.path,
+            "path": derPath,
             "name": "Reticle Local Debug CA"
         ])
     }
