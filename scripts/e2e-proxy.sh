@@ -93,6 +93,13 @@ echo "== real upstream forward (no mock) =="
 BODY="$(curl -sS --max-time 10 -x "$PROXY" "http://127.0.0.1:$UPSTREAM_PORT/real.txt")"
 [ "$BODY" = "real upstream body" ] || { echo "FAIL: forwarded body mismatch: $BODY"; exit 1; }
 
+echo "== blind HTTPS tunnel (out-of-scope host) =="
+# `localhost` resolves to the same upstream, but the CONNECT authority host
+# ("localhost") is outside --proxy-ssl-hosts (127.0.0.1), so it's blind-tunneled
+# rather than MITM-decrypted. The TLS handshake fails against the plain-HTTP
+# upstream (|| true); the point is that the CONNECT tunnel itself is observed.
+curl -s --max-time 8 -o /dev/null -x "$PROXY" -k "https://localhost:$UPSTREAM_PORT/" || true
+
 echo "== mock clear falls through to upstream =="
 "$HOST" mock clear
 CODE="$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' -x "$PROXY" "http://reticle-e2e.invalid/hello" || true)"
@@ -126,7 +133,11 @@ find("network.request", url="http://reticle-e2e.invalid/hello") or fail("no netw
 https = find("network.response", mocked=True, status=201)
 https or fail("no mocked network.response for the HTTPS hit")
 https["payload"].get("mitm") is True or fail("HTTPS mocked response not flagged mitm")
-find("network.response", tunnel=True, mitm=True) or fail("no MITM CONNECT response event")
+# The engine emits a tunnel event only for un-decrypted (blind) CONNECTs — the
+# out-of-scope localhost tunnel above — via its observeTunnels option.
+tun = find("network.response", tunnel=True, mitm=False)
+tun or fail("no blind-tunnel event for the out-of-scope CONNECT")
+tun["payload"].get("method") == "CONNECT" or fail("blind-tunnel event not marked CONNECT")
 
 real = find("network.response", url=f"http://127.0.0.1:{port}/real.txt")
 real or fail("no network.response for the real upstream forward")
