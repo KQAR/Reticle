@@ -24,6 +24,13 @@ enum NetworkHeaders {
         })
     }
 
+    /// Redacts an ordered list of raw `(name, value)` header pairs. Used by capture
+    /// backends (e.g. `LoomCaptureLane`) that surface headers as ordered pairs
+    /// rather than NIO `HTTPHeaders`, so redaction stays defined in one place.
+    static func redacted(pairs: [(name: String, value: String)]) -> [String: String] {
+        sanitize(pairs.map { ($0.name, $0.value) })
+    }
+
     private static func sanitize(_ headers: [(String, String)]) -> [String: String] {
         var result: [String: String] = [:]
         for (name, value) in headers {

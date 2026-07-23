@@ -27,6 +27,11 @@ let package = Package(
         // The Swift implementation of reticle-protocol — shared with the iOS agent
         // so the host never re-ports models, PortMap, or the tree renderers.
         .package(path: "../reticle-swift"),
+        // Loom's capture engine, consumed as an SPM library so the host network
+        // lane doesn't maintain its own SwiftNIO proxy/MITM. Local path during
+        // co-development (Loom lives beside the Reticle repo, so `../../Loom`
+        // from this nested package); pin to a tag once Loom's API settles.
+        .package(path: "../../Loom"),
     ],
     targets: [
         // Dependency-free foundation shared by the host and the network lane:
@@ -52,6 +57,11 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
                 .product(name: "X509", package: "swift-certificates"),
+                // Loom-backed capture lane (LoomCaptureLane), gradually replacing
+                // the in-tree NIO proxy. Both compile side-by-side during migration.
+                // Path-dependency identity is the lowercased directory name ("loom").
+                .product(name: "LoomProxyCore", package: "loom"),
+                .product(name: "LoomSharedModels", package: "loom"),
             ],
             path: "Sources/ReticleNetworkLane"
         ),
