@@ -21,10 +21,10 @@ public struct ServeOptions {
     /// `--proxy-max-request-body-mb`: in-memory buffering cap for one proxied
     /// request body; oversized uploads get 413 instead of ballooning the daemon.
     public let proxyMaxRequestBodyBytes: Int?
-    /// `--proxy-engine`: `loom` (Loom's capture engine via `LoomCaptureLane`,
-    /// default) or `builtin` (the legacy in-tree NIO proxy, kept as a fallback
-    /// during the migration).
-    public let proxyEngine: String
+    /// `--proxy-phone-onboard`: rebind the proxy LAN-wide and serve a
+    /// CA profile + QR page so a real device can install + trust the CA by
+    /// scanning — the QR-based path for iOS real devices where `simctl` can't help.
+    public let proxyPhoneOnboard: Bool
     public let helper: String?
     public let helperBroker: Bool
 
@@ -53,7 +53,7 @@ public struct ServeOptions {
         proxyMaxRequestBodyBytes = args.option("proxy-max-request-body-mb")
             .flatMap { Int($0) }
             .map { $0 * 1024 * 1024 }
-        proxyEngine = args.option("proxy-engine") ?? "loom"
+        proxyPhoneOnboard = args.option("proxy-phone-onboard") == "true"
         helper = resolveHelper(args)
         helperBroker = args.option("helper-broker") == "true"
     }
@@ -70,7 +70,6 @@ public struct ServeOptions {
 public final class ServeRuntime {
     private let options: ServeOptions
     private var server: ReticleHttpServer?
-    private var proxyServer: NetworkProxyServer?
     private var loomLane: LoomCaptureLane?
     private var proxyRestore: DeviceProxyRestore?
     private var helperBroker: HelperClient?
@@ -116,34 +115,25 @@ public final class ServeRuntime {
                 caDirectory: options.proxyCaDirectory,
                 tlsHostAllowlist: options.proxyTlsHosts
             )
-            let boundPort: Int
-            if options.proxyEngine == "loom" {
-                // Loom generates + exports its own CA on start (to caDirectory), so
-                // the ProxyCertificateStore path and --proxy-install-ca aren't wired
-                // here yet — trust the exported reticle-ca.pem/.cer directly.
-                let lane = LoomCaptureLane(store: store, configuration: configuration, mockStore: mockStore)
-                mockStore.onChange = { [weak lane] in lane?.syncMocks() }
-                try lane.start()
-                loomLane = lane
-                boundPort = lane.port
-                // start() exported the CA (reticle-ca.cer/.pem) into caDirectory;
-                // trust it on the target just like the built-in path does.
-                if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {
-                    try installCA(derPath: caDirectory.appendingPathComponent("reticle-ca.cer").path)
-                }
-            } else {
-                let certificates = try options.proxyCaDirectory.map { directory in
-                    let certificates = ProxyCertificateStore(directory: directory)
-                    try certificates.validate()
-                    return certificates
-                }
-                if options.proxyInstallCa, let certificates {
-                    try installCA(derPath: certificates.caCertificateDER.path)
-                }
-                let proxy = try NetworkProxyServer(store: store, configuration: configuration, mockStore: mockStore)
-                try proxy.start()
-                proxyServer = proxy
-                boundPort = proxy.port
+            // Capture runs on Loom's engine (LoomCaptureLane). The lane generates
+            // and exports the CA (reticle-ca.cer/.pem) into caDirectory on start.
+            let lane = LoomCaptureLane(store: store, configuration: configuration, mockStore: mockStore)
+            mockStore.onChange = { [weak lane] in lane?.syncMocks() }
+            try lane.start()
+            loomLane = lane
+            let boundPort = lane.port
+            if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {
+                try installCA(derPath: caDirectory.appendingPathComponent("reticle-ca.cer").path)
+            }
+            if options.proxyPhoneOnboard {
+                let info = try lane.startPhoneOnboarding()
+                let qrPath = DaemonDiscovery.reticleHome().appendingPathComponent("phone-onboard-qr.png")
+                try? info.qrPNG.write(to: qrPath)
+                print("reticle serve: phone onboarding — scan the QR (or open the URL) on the device:")
+                print("  url:       \(info.url)")
+                print("  proxy:     \(info.proxyAddress)")
+                print("  ca sha256: \(info.fingerprint)")
+                print("  qr:        \(qrPath.path)")
             }
             if options.proxyDevice {
                 // iOS routing is manual (a simulator/real device has no per-app
@@ -172,7 +162,7 @@ public final class ServeRuntime {
         if options.helperBroker {
             print("reticle serve: helper broker enabled")
         }
-        if let boundProxyPort = proxyServer?.port ?? loomLane?.port {
+        if let boundProxyPort = loomLane?.port {
             print("reticle serve: proxy http://127.0.0.1:\(boundProxyPort)")
         }
         if let ca = options.proxyCaDirectory {
@@ -189,7 +179,6 @@ public final class ServeRuntime {
         restoreDeviceProxy()
         helperBroker?.shutdown()
         helperBroker = nil
-        proxyServer?.stop()
         loomLane?.stop()
         server?.stop()
         options.discovery.clearIfOwned(by: getpid())

@@ -268,8 +268,8 @@ event bus with an append-only session log at
 panel for the current action and network timeline. Passing `--proxy-port` also
 starts a host capture proxy that publishes `network.request`,
 `network.response`, and `network.error` events into the same session. Capture is
-powered by the [Loom](https://github.com/KQAR/Loom) engine by default; pass
-`--proxy-engine builtin` to fall back to the legacy in-tree SwiftNIO proxy.
+powered by the [Loom](https://github.com/KQAR/Loom) engine (consumed as an SPM
+library); Reticle normalizes its flows into the session event stream.
 
 ```bash
 reticle serve --session demo --port 9876 --proxy-port 9090

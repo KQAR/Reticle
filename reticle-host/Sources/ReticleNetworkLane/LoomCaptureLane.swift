@@ -6,10 +6,10 @@ import ReticleHostShared
 import ProxyCore
 import SharedModels
 
-/// Capture lane backed by Loom's `ProxyEngine`, an alternative to the in-tree
-/// `NetworkProxyServer`. It runs the engine, subscribes to its flow stream, and
-/// republishes each exchange as the same `network.*` events the built-in proxy
-/// emits — so the Web panel, SSE stream, and agent see an identical envelope.
+/// The host capture lane, backed by Loom's `ProxyEngine`. It runs the engine,
+/// subscribes to its flow stream, and republishes each exchange as `network.*`
+/// events into the session store — the envelope the Web panel, SSE stream, and
+/// agent consume.
 ///
 /// The division of labor is the point: transport (SwiftNIO proxy, HTTPS MITM,
 /// on-demand CA) is Loom's; normalization, header redaction, body-as-artifact
@@ -21,6 +21,25 @@ import SharedModels
 /// normal flows, and un-decrypted CONNECTs surface as `tunnel: true` events
 /// (Loom's `observeTunnels` is enabled here). The engine honors
 /// `configuration.bindHost`, so non-loopback (real-device Wi-Fi) capture works too.
+/// Reticle-local view of Loom's phone-onboarding info, so the daemon layer never
+/// imports Loom's modules to read it.
+public struct PhoneOnboarding: Sendable {
+    /// Provisioning landing-page URL (also encoded in the QR) to open on the device.
+    public let url: String
+    /// `host:port` the device should point its proxy at.
+    public let proxyAddress: String
+    /// CA SHA-256 fingerprint, to confirm the installed profile.
+    public let fingerprint: String
+    /// PNG bytes of the QR encoding `url`.
+    public let qrPNG: Data
+}
+
+/// One-shot holder to carry an async result out of a bridging `Task` under the
+/// Swift 6 concurrency checker (a captured `var` isn't allowed).
+private final class OnboardingBox: @unchecked Sendable {
+    var value: Result<PhoneOnboardingInfo, Error>?
+}
+
 public final class LoomCaptureLane: @unchecked Sendable {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
@@ -99,6 +118,36 @@ public final class LoomCaptureLane: @unchecked Sendable {
         if let bound { port = bound }
         syncMocks()
         subscribe(engine: engine)
+    }
+
+    /// Rebinds the proxy LAN-wide and serves a phone-onboarding page (CA profile
+    /// + QR) for the engine's CA, so a real device can install + trust it by
+    /// scanning. Bridges the engine's async call to the daemon's sync lifecycle.
+    public func startPhoneOnboarding() throws -> PhoneOnboarding {
+        let engine = self.engine
+        let box = OnboardingBox()
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            do { box.value = .success(try await engine.startPhoneOnboarding()) }
+            catch { box.value = .failure(error) }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 20) == .success else {
+            throw NetworkProxyError.startTimedOut
+        }
+        switch box.value {
+        case .success(let info):
+            // Map Loom's onboarding info to a Reticle-local value so the daemon
+            // layer never has to import Loom's modules.
+            return PhoneOnboarding(
+                url: info.provisioningURL.absoluteString,
+                proxyAddress: info.proxyAddress,
+                fingerprint: info.fingerprint,
+                qrPNG: info.qrPNGData
+            )
+        case .failure(let error): throw error
+        case .none: throw NetworkProxyError.startTimedOut
+        }
     }
 
     /// Stops the engine and the flow subscription.
