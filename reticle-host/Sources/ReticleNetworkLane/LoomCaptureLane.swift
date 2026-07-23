@@ -233,14 +233,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
     /// (`reticle-ca.cer`) and PEM (`reticle-ca.pem`) forms the device-trust flow
     /// and `curl --cacert` expect.
     private static func exportCA(engine: ProxyEngine, to directory: URL) async {
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        if let der = await engine.caCertificateDER() {
-            try? der.write(to: directory.appendingPathComponent("reticle-ca.cer"), options: .atomic)
-        }
-        if let pemURL = try? await engine.exportCACertificate(),
-           let pem = try? Data(contentsOf: pemURL) {
-            try? pem.write(to: directory.appendingPathComponent("reticle-ca.pem"), options: .atomic)
-        }
+        _ = try? await engine.exportCA(toDirectory: directory, pemName: "reticle-ca.pem", derName: "reticle-ca.cer")
     }
 
     // MARK: - Mock translation
