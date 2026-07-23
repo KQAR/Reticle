@@ -13,16 +13,18 @@ import SharedModels
 ///
 /// The division of labor is the point: transport (SwiftNIO proxy, HTTPS MITM,
 /// on-demand CA) is Loom's; normalization, header redaction, body-as-artifact
-/// persistence, and the session event stream stay here. Flows are not persisted
-/// by Loom (`persistFlows: false`) — Reticle owns storage via `events.jsonl` and
-/// `network-bodies/`.
+/// persistence, mock rules, and the session event stream stay here. Flows are
+/// not persisted by Loom (`persistFlows: false`) — Reticle owns storage via
+/// `events.jsonl` and `network-bodies/`.
 ///
-/// Scope (milestone 1): capture only. Traffic rules / mocks are not yet synced
-/// into the engine, and Loom's engine currently binds loopback only, so
+/// Differences from the built-in proxy: Loom only emits a flow for traffic it
+/// observed (plain HTTP or decrypted HTTPS), so there is no blind-tunnel
+/// (`tunnel: true`) event; and Loom currently binds loopback only, so
 /// non-loopback (real-device Wi-Fi) capture still needs the built-in proxy.
 public final class LoomCaptureLane: @unchecked Sendable {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
+    private let mockStore: NetworkMockStore?
     private let engine: ProxyEngine
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
@@ -32,13 +34,23 @@ public final class LoomCaptureLane: @unchecked Sendable {
     private var streamTask: Task<Void, Never>?
     private var startBound: Int?
     private var startError: Error?
+    /// Serializes full-rule-set syncs so two overlapping mock mutations can't
+    /// interleave a delete-all with an add-all.
+    private let syncQueue = DispatchQueue(label: "dev.reticle.loom.mock-sync")
 
     public private(set) var port: Int
 
     /// Creates a Loom-backed capture lane owned by the supplied session store.
-    public init(store: any NetworkEventSink, configuration: NetworkProxyConfiguration) {
+    /// When a mock store is supplied its rules are translated into the engine and
+    /// kept in sync (call `syncMocks()` after any mutation).
+    public init(
+        store: any NetworkEventSink,
+        configuration: NetworkProxyConfiguration,
+        mockStore: NetworkMockStore? = nil
+    ) {
         self.store = store
         self.configuration = configuration
+        self.mockStore = mockStore
         self.engine = ProxyEngine(persistFlows: false)
         self.bodyStore = NetworkBodyStore(
             sessionDirectory: store.sessionDirectory,
@@ -49,9 +61,8 @@ public final class LoomCaptureLane: @unchecked Sendable {
     }
 
     /// Starts the engine (bridging its async API to the synchronous lifecycle the
-    /// daemon expects) and begins republishing flows. When MITM is enabled the
-    /// CA is exported to `caDirectory` so the existing device-trust flow can
-    /// install it.
+    /// daemon expects), exports the CA when MITM is enabled, seeds the mock rules,
+    /// and begins republishing flows.
     public func start() throws {
         let engine = self.engine
         let requestedPort = configuration.port
@@ -66,8 +77,8 @@ public final class LoomCaptureLane: @unchecked Sendable {
                     await engine.setSSLScope(SSLScope(enabled: true, include: hosts))
                 }
                 let bound = try await engine.start(port: requestedPort)
-                if let caDirectory, let der = await engine.caCertificateDER() {
-                    try? LoomCaptureLane.writeCA(der: der, to: caDirectory)
+                if let caDirectory {
+                    await LoomCaptureLane.exportCA(engine: engine, to: caDirectory)
                 }
                 self?.lock.withLock { self?.startBound = bound }
             } catch {
@@ -85,6 +96,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
         let (bound, error) = lock.withLock { (startBound, startError) }
         if let error { throw error }
         if let bound { port = bound }
+        syncMocks()
         subscribe(engine: engine)
     }
 
@@ -99,6 +111,27 @@ public final class LoomCaptureLane: @unchecked Sendable {
             done.signal()
         }
         _ = done.wait(timeout: .now() + 5)
+    }
+
+    /// Re-translates the whole mock rule set into the engine (full replace). Safe
+    /// to call after any mock mutation; a no-op when no mock store is attached.
+    public func syncMocks() {
+        guard let mockStore else { return }
+        let engine = self.engine
+        // Snapshot + apply on the sync queue so a mutation callback fired while the
+        // mock store still holds its lock only enqueues here (exportPackage, which
+        // re-takes that lock, then runs off it).
+        syncQueue.async {
+            let translated = LoomCaptureLane.translate(try? mockStore.exportPackage())
+            let done = DispatchSemaphore(value: 0)
+            Task {
+                let current = await engine.rulesState().rules
+                for rule in current { try? await engine.deleteRule(id: rule.id) }
+                for rule in translated { try? await engine.addRule(rule) }
+                done.signal()
+            }
+            done.wait()
+        }
     }
 
     private func subscribe(engine: ProxyEngine) {
@@ -182,6 +215,13 @@ public final class LoomCaptureLane: @unchecked Sendable {
         if let error = flow.error {
             payload.error = error
         }
+        // A mock/rule that acted is recorded on the flow as the rule name, which we
+        // set to the Reticle mock-rule id (see `translate`), so evidence carries
+        // `mockRuleId` just like the built-in proxy.
+        if let applied = flow.appliedRules?.first {
+            payload.mocked = true
+            payload.mockRuleId = applied.name
+        }
         return payload
     }
 
@@ -189,10 +229,79 @@ public final class LoomCaptureLane: @unchecked Sendable {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
 
-    /// Writes the engine's root CA (DER) into the proxy CA directory as
-    /// `reticle-ca.cer`, matching where the device-trust flow looks for it.
-    private static func writeCA(der: Data, to directory: URL) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try der.write(to: directory.appendingPathComponent("reticle-ca.cer"), options: .atomic)
+    /// Writes the engine's root CA to the proxy CA directory in both the DER
+    /// (`reticle-ca.cer`) and PEM (`reticle-ca.pem`) forms the device-trust flow
+    /// and `curl --cacert` expect.
+    private static func exportCA(engine: ProxyEngine, to directory: URL) async {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if let der = await engine.caCertificateDER() {
+            try? der.write(to: directory.appendingPathComponent("reticle-ca.cer"), options: .atomic)
+        }
+        if let pemURL = try? await engine.exportCACertificate(),
+           let pem = try? Data(contentsOf: pemURL) {
+            try? pem.write(to: directory.appendingPathComponent("reticle-ca.pem"), options: .atomic)
+        }
+    }
+
+    // MARK: - Mock translation
+
+    /// Translates Reticle's mock rules + values into Loom `TrafficRule`s. The Loom
+    /// rule name carries the Reticle rule id so an applied mock is attributable
+    /// back on the captured flow. Rules are ordered by descending priority to
+    /// match Reticle's precedence (Loom applies the first matching mock).
+    private static func translate(_ export: NetworkMockExport?) -> [TrafficRule] {
+        guard let export else { return [] }
+        let valuesById = Dictionary(export.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return export.rules
+            .sorted { $0.priority > $1.priority }
+            .compactMap { rule in
+                guard let value = valuesById[rule.valueId] else { return nil }
+                let mock = MockResponseAction(
+                    statusCode: value.status,
+                    headers: value.headers.map { HeaderPair(name: $0.key, value: $0.value) },
+                    bodyBase64: value.bodyBase64,
+                    contentType: value.contentType
+                )
+                return TrafficRule(
+                    name: rule.id,
+                    isEnabled: rule.enabled,
+                    match: translateMatch(rule),
+                    actions: RuleActions(route: .mock(mock))
+                )
+            }
+    }
+
+    private static func translateMatch(_ rule: NetworkMockRule) -> RuleMatch {
+        let methods = rule.method == "ANY" ? [] : [rule.method]
+        let host = rule.host
+        let query = rule.query
+        // Reticle matches a `/`-leading pattern against the URL path; Loom matches
+        // the full URL, so a path pattern is lifted to a regex that skips the
+        // scheme+authority prefix.
+        let isPath = rule.url.hasPrefix("/")
+        let originPrefix = "^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+"
+
+        switch rule.match {
+        case .regex:
+            let pattern = isPath ? originPrefix + stripLeadingCaret(rule.url) : rule.url
+            return RuleMatch(urlPattern: pattern, isRegex: true, methods: methods, hostPattern: host, query: query)
+        case .exact:
+            if isPath {
+                let pattern = originPrefix + NSRegularExpression.escapedPattern(for: rule.url) + "(\\?.*)?$"
+                return RuleMatch(urlPattern: pattern, isRegex: true, methods: methods, hostPattern: host, query: query)
+            }
+            return RuleMatch(urlPattern: rule.url, methods: methods, isExact: true, hostPattern: host, query: query)
+        case .prefix:
+            if isPath {
+                let pattern = originPrefix + NSRegularExpression.escapedPattern(for: rule.url)
+                return RuleMatch(urlPattern: pattern, isRegex: true, methods: methods, hostPattern: host, query: query)
+            }
+            // Loom's non-regex, non-exact pattern is a prefix match by default.
+            return RuleMatch(urlPattern: rule.url, methods: methods, hostPattern: host, query: query)
+        }
+    }
+
+    private static func stripLeadingCaret(_ pattern: String) -> String {
+        pattern.hasPrefix("^") ? String(pattern.dropFirst()) : pattern
     }
 }

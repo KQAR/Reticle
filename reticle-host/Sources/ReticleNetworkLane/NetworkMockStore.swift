@@ -194,6 +194,12 @@ public final class NetworkMockStore: @unchecked Sendable {
     let valuesFile: URL
     let bodiesDirectory: URL
 
+    /// Invoked after any mutation persists, so an external consumer (e.g. a
+    /// Loom-backed capture lane) can re-sync the rule set. Fired while the store
+    /// lock is held — the handler must not re-enter the store synchronously; it
+    /// should only enqueue work.
+    public var onChange: (() -> Void)?
+
     public init(sessionDirectory: URL) throws {
         self.sessionDirectory = sessionDirectory
         rulesFile = sessionDirectory.appendingPathComponent("mock-rules.json")
@@ -414,10 +420,12 @@ public final class NetworkMockStore: @unchecked Sendable {
 
     private func saveRulesLocked() throws {
         try encoder.encode(rules).write(to: rulesFile, options: [.atomic])
+        onChange?()
     }
 
     private func saveValuesLocked() throws {
         try encoder.encode(values).write(to: valuesFile, options: [.atomic])
+        onChange?()
     }
 
     private func bodyURL(for value: NetworkMockValue) -> URL {
