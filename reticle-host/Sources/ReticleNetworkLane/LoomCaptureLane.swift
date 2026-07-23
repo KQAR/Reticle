@@ -17,10 +17,10 @@ import SharedModels
 /// not persisted by Loom (`persistFlows: false`) — Reticle owns storage via
 /// `events.jsonl` and `network-bodies/`.
 ///
-/// Differences from the built-in proxy: Loom only emits a flow for traffic it
+/// Difference from the built-in proxy: Loom only emits a flow for traffic it
 /// observed (plain HTTP or decrypted HTTPS), so there is no blind-tunnel
-/// (`tunnel: true`) event; and Loom currently binds loopback only, so
-/// non-loopback (real-device Wi-Fi) capture still needs the built-in proxy.
+/// (`tunnel: true`) event. The engine honors `configuration.bindHost`, so
+/// non-loopback (real-device Wi-Fi) capture works too.
 public final class LoomCaptureLane: @unchecked Sendable {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
@@ -66,6 +66,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
     public func start() throws {
         let engine = self.engine
         let requestedPort = configuration.port
+        let bindHost = configuration.bindHost
         let mitm = configuration.mitmEnabled
         let hosts = configuration.tlsHostAllowlist
         let caDirectory = configuration.caDirectory
@@ -76,7 +77,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
                 if mitm {
                     await engine.setSSLScope(SSLScope(enabled: true, include: hosts))
                 }
-                let bound = try await engine.start(port: requestedPort)
+                let bound = try await engine.start(port: requestedPort, host: bindHost)
                 if let caDirectory {
                     await LoomCaptureLane.exportCA(engine: engine, to: caDirectory)
                 }
@@ -125,9 +126,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
             let translated = LoomCaptureLane.translate(try? mockStore.exportPackage())
             let done = DispatchSemaphore(value: 0)
             Task {
-                let current = await engine.rulesState().rules
-                for rule in current { try? await engine.deleteRule(id: rule.id) }
-                for rule in translated { try? await engine.addRule(rule) }
+                try? await engine.setRules(translated)
                 done.signal()
             }
             done.wait()
