@@ -59,6 +59,10 @@ internal class HelperActionTrace private constructor(
         val trace = ActionTrace(
             actionId = actionId,
             packageName = packageName,
+            // Self-describe the source platform, mirroring the iOS trace writer.
+            // The Android agent always stamps snapshot.platform; fall back
+            // defensively so the field is never blank.
+            platform = before.snapshot.platform.ifEmpty { "android" },
             recordedAtMillis = System.currentTimeMillis(),
             gesture = gesture,
             selector = selector,

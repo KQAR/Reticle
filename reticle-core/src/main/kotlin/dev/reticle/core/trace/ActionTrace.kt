@@ -20,6 +20,14 @@ data class ActionTrace(
     val traceVersion: Int = 1,
     val actionId: String,
     val packageName: String,
+    /**
+     * Source platform ("android" / "ios"), copied from the captured snapshot so
+     * a trace manifest is self-describing across platforms — the iOS writer
+     * (`IosActionTrace`) already emits this, and consumers (replay, the panel)
+     * read one shape. Defaulted so older/direct callers stay wire-compatible;
+     * the helper always populates it, so it is emitted in practice.
+     */
+    val platform: String = "",
     val recordedAtMillis: Long,
     val gesture: String,
     val selector: Selector? = null,
