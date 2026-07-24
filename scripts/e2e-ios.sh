@@ -2,7 +2,8 @@
 # End-to-end smoke test for the iOS agent on a simulator. Builds the shared
 # protocol, the in-process agent, the sample apps, installs them, and exercises
 # the full round trip through `reticle --target ios`: linked launch + inject,
-# ui report, compact, screenshot, a mutate, and an `act --verify` node-state diff.
+# ui report, compact, screenshot, a mutate, an `act --verify` node-state diff,
+# and the system dialog (UIAlertController content recognition).
 #
 # Requires: Xcode + an iOS Simulator runtime, and a built ReticleHost binary
 # (swift build --package-path reticle-host). Pass a booted simulator udid as $1,
@@ -242,6 +243,55 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-done"
 "$HOST" --target ios ui compact "$TMP/login-done/snapshot.json" | grep -q "Logged in: 123456" \
   || { echo "FAIL: submit after hide-keyboard did not log in"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== SYSTEM DIALOG (UIAlertController) =="
+# A UIAlertController raised over the scenario. Unlike Android's AlertDialog
+# (a distinct WindowManagerGlobal root), iOS presents the alert *inside* the
+# presenting window's hierarchy, so this asserts the capture surfaces the alert's
+# own content — title / message / actions — rather than window-vs-window
+# occlusion (there is no separate dialog window to occlude the background here,
+# which is why, deliberately, there is no occluded-by assertion on iOS).
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=dialog
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+# Raise the alert. The trigger is a UIButton, so in-process activation works
+# (no HID needed) — the same path that works on a real device.
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id dialog.trigger
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dialog"
+DIALOG_COMPACT="$("$HOST" --target ios ui compact "$TMP/dialog/snapshot.json")"
+echo "$DIALOG_COMPACT"
+echo "$DIALOG_COMPACT" | grep -q "Delete account?" \
+  || { echo "FAIL: alert title 'Delete account?' not captured"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q "This action cannot be undone." \
+  || { echo "FAIL: alert message not captured"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q '"Delete"' \
+  || { echo "FAIL: alert 'Delete' action not captured"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q '"Cancel"' \
+  || { echo "FAIL: alert 'Cancel' action not captured"; exit 1; }
+# Alert actions carry no testId (UIAlertAction cannot attach one), so resolve the
+# interactive "Delete" element's ref from the snapshot and HID-tap it. Observable
+# side effect: the alert dismisses and dialog.status flips to "Deleted".
+DELETE_REF="$(/usr/bin/python3 -c 'import json
+s=json.load(open("'"$TMP"'/dialog/snapshot.json"))
+print(next(r for r,v in s["nodes"].items()
+  if v.get("contentDescription")=="Delete" and v.get("isInteractive")))')"
+[ -n "$DELETE_REF" ] || { echo "FAIL: could not resolve the alert 'Delete' action ref"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --ref "$DELETE_REF"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dialog-done"
+DIALOG_AFTER="$("$HOST" --target ios ui compact "$TMP/dialog-done/snapshot.json")"
+echo "$DIALOG_AFTER" | grep -q "Deleted" \
+  || { echo "FAIL: HID tap on 'Delete' did not land (dialog.status never became Deleted)"; exit 1; }
+echo "$DIALOG_AFTER" | grep -q "Delete account?" \
+  && { echo "FAIL: alert still present after tapping Delete (it should be dismissed)"; exit 1; }
+# App-authored log bridge: the dialog logs must surface through /logs.
+DIALOG_LOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$DIALOG_LOGS" | grep -q "dialog_opened" \
+  || { echo "FAIL: expected dialog_opened in the app log bridge"; exit 1; }
+echo "$DIALOG_LOGS" | grep -q "dialog_confirmed" \
+  || { echo "FAIL: expected dialog_confirmed in the app log bridge"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="

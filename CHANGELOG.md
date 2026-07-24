@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Sample apps + e2e: a new **system dialog** scenario on both platforms exercises
+  the multi-window / presented-content walk that no other scenario covered.
+  Android's `SystemDialogScenarioActivity` raises an `AlertDialog` (a separate
+  `WindowManagerGlobal` root); the e2e asserts the dialog's own content
+  (`alertTitle` / `message` / `button1` / `button2`) is captured AND the
+  background trigger is reported `occluded-by` the dialog window — the
+  window-vs-window occlusion path. iOS's `SystemDialogViewController` presents a
+  `UIAlertController` *inside* the presenting window (not a separate `UIWindow`),
+  so the e2e asserts the alert's title / message / actions are captured but
+  deliberately makes no `occluded-by` assertion (iOS `UIWindow` nodes are captured
+  as `.view`, so the window-occlusion path does not fire there). Both scenarios
+  are app-owned dialogs — a true system-process permission prompt is out of reach
+  for an in-process agent. Verified on an emulator + simulator; element content
+  and frames confirmed pixel-accurate against screenshots.
+
 - Network capture: a bridged engine start that the sync side abandons on timeout
   no longer leaks a bound port. `LoomCaptureLane.start()` and
   `startPhoneOnboarding()` bridge Loom's async engine to the daemon's synchronous
