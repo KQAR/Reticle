@@ -71,6 +71,13 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     private var streamTask: Task<Void, Never>?
     private var startBound: Int?
     private var startError: Error?
+    /// Set (under `lock`) when a bridged async start is abandoned by the sync side on
+    /// timeout. The bridging Task reads it after the engine call returns: if the sync
+    /// side gave up, the Task stops the now-orphaned engine/server rather than leaking
+    /// a bound port. Merely cancelling the Task wouldn't help — Loom's actor calls
+    /// don't check cancellation, so a start already in flight still binds.
+    private var startAbandoned = false
+    private var onboardingAbandoned = false
     /// Serializes full-rule-set syncs so two overlapping rule mutations can't
     /// interleave a delete-all with an add-all.
     private let syncQueue = DispatchQueue(label: "dev.reticle.loom.rule-sync")
@@ -125,7 +132,17 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
                         self?.warn("CA export to \(caDirectory.path) failed; MITM device-trust files will be missing: \(error)")
                     }
                 }
-                self?.lock.withLock { self?.startBound = bound }
+                // Claim the result under the lock. If the sync side already timed out
+                // and abandoned this start, the engine is now bound but unowned — stop
+                // it instead of leaking the port.
+                let claimed: Bool = self?.lock.withLock {
+                    guard let self, !self.startAbandoned else { return false }
+                    self.startBound = bound
+                    return true
+                } ?? false
+                if !claimed {
+                    await engine.stop()
+                }
             } catch {
                 self?.lock.withLock { self?.startError = error }
             }
@@ -136,6 +153,9 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
         case .success:
             break
         case .timedOut:
+            // The Task hasn't signaled yet, so it hasn't claimed a result; mark the
+            // start abandoned so the Task stops the engine if it binds after this.
+            lock.withLock { startAbandoned = true }
             throw NetworkProxyError.startTimedOut
         }
         let (bound, error) = lock.withLock { (startBound, startError) }
@@ -152,12 +172,23 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
         let engine = self.engine
         let box = OnboardingBox()
         let done = DispatchSemaphore(value: 0)
-        Task {
-            do { box.value = .success(try await engine.startPhoneOnboarding()) }
-            catch { box.value = .failure(error) }
+        Task { [weak self] in
+            do {
+                let info = try await engine.startPhoneOnboarding()
+                // Claim, or tear down the provisioning server if the sync side gave up.
+                let claimed: Bool = self?.lock.withLock {
+                    guard let self, !self.onboardingAbandoned else { return false }
+                    return true
+                } ?? false
+                if claimed { box.value = .success(info) }
+                else { await engine.stopPhoneOnboarding() }
+            } catch {
+                box.value = .failure(error)
+            }
             done.signal()
         }
         guard done.wait(timeout: .now() + 20) == .success else {
+            lock.withLock { onboardingAbandoned = true }
             throw NetworkProxyError.startTimedOut
         }
         switch box.value {
