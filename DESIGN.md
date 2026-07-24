@@ -274,7 +274,7 @@ The page rhythm is **dense evidence screenshots** — the panel leads with high-
 
 Semantic hues appear **only** on timeline markers, badge text, and thin signal rules — never as card fills or large areas.
 
-- **Success Green** ({colors.semantic-success}): Evidence-captured markers, MOCK-hit badges. The Linear semantic green.
+- **Success Green** ({colors.semantic-success}): Evidence-captured markers, RULE-hit badges. The Linear semantic green.
 - **Warning Amber** ({colors.semantic-warning}): Diff markers, high-signal diff rules.
 - **Danger Red** ({colors.semantic-danger}): Error badges, runtime advisory markers.
 - **Network Purple** ({colors.semantic-network}): Network-request markers and the network lane identity.
@@ -388,7 +388,7 @@ Cards hold at `{rounded.lg}` 12px — never pill, rarely 16px. Pills are reserve
 
 ### Filter Tabs
 
-**`filter-tab-default`** + **`filter-tab-selected`** — Pill-toggle row: All / MOCK / ERROR / MITM / TUNNEL.
+**`filter-tab-default`** + **`filter-tab-selected`** — Pill-toggle row: All / RULE / ERROR / MITM / TUNNEL.
 - Default: `{colors.canvas}` background, `{colors.ink-subtle}` text, rounded `{rounded.pill}`, padding 6px 14px.
 - Selected: `{colors.surface-2}` background, `{colors.ink}` text — selected = surface lift, with a 1px `{colors.primary}` ring.
 - Hover on default lifts to `{colors.surface-1}`.
@@ -436,8 +436,8 @@ Cards hold at `{rounded.lg}` 12px — never pill, rarely 16px. Pills are reserve
 **`copy-chip`** — Click-to-copy chip for selectors, rule ids, value ids.
 - Background `{colors.surface-2}`, text `{colors.ink-muted}`, type `{typography.mono}`, rounded `{rounded.sm}`, padding 2px 8px, 1px `{colors.hairline-strong}` border. Hover: text lifts to `{colors.ink}`, border to `{colors.primary-hover}`. On copy: a transient "Copied" state in `{colors.semantic-success}` for ~1.2s, then reverts.
 
-**`status-badge`** — Small status pill on network cards: HTTP / HTTPS MITM / CONNECT tunnel / MOCK / ERROR.
-- Background `{colors.surface-2}`, text `{colors.ink-muted}`, type `{typography.caption}`, rounded `{rounded.pill}`, padding 2px 8px. Text color carries the semantics: MOCK → `{colors.semantic-success}`, ERROR → `{colors.semantic-danger}`, MITM/TUNNEL → `{colors.semantic-network}`. Background stays neutral in every case.
+**`status-badge`** — Small status pill on network cards: HTTP / HTTPS MITM / CONNECT tunnel / RULE (the fired route: MOCK/BLOCK/MAPREMOTE) / ERROR.
+- Background `{colors.surface-2}`, text `{colors.ink-muted}`, type `{typography.caption}`, rounded `{rounded.pill}`, padding 2px 8px. Text color carries the semantics: a fired rule → `{colors.semantic-success}`, ERROR → `{colors.semantic-danger}`, MITM/TUNNEL → `{colors.semantic-network}`. Background stays neutral in every case.
 
 ### Overlay
 

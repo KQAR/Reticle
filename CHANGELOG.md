@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+- iOS `act --verify` now works. The iOS path previously accepted `--verify` and
+  silently dropped it, so an agent believed it had checked a post-condition it
+  never checked. `IosHelperClient` now captures the watched node's state before the
+  gesture, polls the snapshot after (up to `--verify-timeout`, default 2s), and
+  emits the same `{selector, changed, note?, changes[]}` shape the host's
+  `printVerify` renders — the iOS analogue of the Android helper's `HelperVerify`.
+  The `--verify` token grammar (`#id`/`testId=`/`@id`/`resourceId=`/`css=`/`ref=`/
+  bare ref/`true`) is shared-by-duplication with Android and now drift-guarded by
+  `IosVerifyTokenTests`. Exercised end-to-end in `scripts/e2e-ios.sh` (login-status
+  flip).
+
+- RN `nativeID` selectors now resolve for `mutate` on Android. `SnapshotCapture`
+  derived a node's `testId` as `testTag ?: nativeId ?: resourceId`, but
+  `MutationEngine.findIn` only compared the keyless `testTag`, so a `testId` that
+  came from an RN `nativeID` (a keyed tag) matched during capture but missed during
+  device-side resolution — `mutate --test-id <nativeID>` silently found nothing.
+  `findIn` now mirrors the capture derivation exactly.
+
+- Network capture hardening (`LoomCaptureLane`): the capture lane no longer fails
+  silently in ways that corrupt the evidence trail. (1) A transient
+  `ruleStore.exportPackage()` error during a rule sync previously fell through to
+  `setRules([])`, silently wiping every active rule in the engine — it now skips the
+  sync and keeps the last-applied rules, logging a warning. (2) The rule-sync bridge
+  gained the 30s timeout every other engine bridge already had, so a stalled engine
+  can't deadlock the serial sync queue. (3) Body-store, CA-export, and `setRules`
+  failures that were swallowed by `try?` now emit `warning: reticle capture: …` to
+  stderr, so missing body/CA evidence is diagnosable instead of looking like a
+  genuinely empty body or a misleading "file not found" downstream. (4) The
+  `seen` flow-id set is now a bounded FIFO (cap 8192) instead of growing without
+  limit over a long-lived daemon. (Session `network-bodies/` file count is still
+  unbounded — it's coupled to event-ring eviction and left for a follow-up.)
+
+- Network capture: **flow replay + diff** closes Loom's capture → modify → replay
+  → diff loop. `POST /sessions/current/flows/{id}/replay` (CLI: `reticle replay
+  flow <request-id>`) re-sends a captured flow through the engine's forwarder with
+  optional overrides — `--method`/`--url`, `--set-headers`/`--remove-headers`, and
+  `--body`/`--body-file`/`--clear-body` — then emits a `network.replay` event and
+  returns the diff of the replayed response vs the original (status, body size, and
+  header add/remove/change **by name only**, so a changed `Authorization` is named
+  without logging the secret). The replayed flow's stream copy is suppressed in the
+  capture lane so it shows once, as the replay event, with both bodies stored as
+  artifacts. The payload schema gains optional `replayedFrom` + `diff` fields. Prior
+  to this, Reticle captured and mocked but never exercised Loom's `replay` write
+  action — the agent can now diff "same request without the auth header" as evidence.
+
+- Network capture: the session mock store is now a general **traffic-rule**
+  store, closing the gap where Reticle consumed only Loom's mock route while the
+  engine's `RuleActions` offered far more. A rule's `actions` now carry one of
+  four routes — `mock` (reply with a stored value, as before), `block` (fail the
+  connection, for network-failure evidence), `mapRemote` (re-target the request
+  at another origin, e.g. staging), or `passthrough` — plus orthogonal modifiers
+  that compose with any route: `delayMs` (latency injection), request/response
+  header rewrites, and request/response find/replace substitutions. These map
+  1:1 onto Loom's `RuleActions` in `LoomCaptureLane.translate`. **Breaking
+  (host-only surface; the agent never consumed it):** the `/sessions/current/mocks/*`
+  routes are now `/sessions/current/rules/*` (values under `/rules/values`), the
+  `reticle mock …` CLI is now `reticle rule …` with `--action`/`--map-to`/
+  `--delay-ms`/`--set-*-headers`/`--remove-*-headers`/`--request-subs`/
+  `--response-subs` flags, and session state persists to `rules.json` /
+  `rule-values.json`. On captured evidence the `mocked`/`mockRuleId` payload
+  fields are generalized to `ruleApplied`/`ruleId`/`ruleAction` (any route that
+  acts is attributed, not just mock); `mockValueId` stays for the mock route. The
+  Web panel's Mock filter/group/badge become the Rule filter/group/action badge,
+  and "copy as mock" is now "copy as rule".
+
 - Action traces: the on-disk `trace.json` manifest now carries a `platform`
   field ("android" / "ios") on both platforms. iOS already emitted it; the
   Android writer did not, so an Android trace was not self-describing and

@@ -47,7 +47,7 @@
       "minimum": 0
     },
     "status": {
-      "description": "HTTP status when a response (or mock) is available.",
+      "description": "HTTP status when a response (or a mock rule's response) is available.",
       "type": "integer"
     },
     "error": {
@@ -94,15 +94,42 @@
       "description": "True when the stored response artifact is capped below the full body size.",
       "type": "boolean"
     },
-    "mocked": {
-      "description": "True when the proxy returned a configured mock instead of contacting upstream.",
+    "ruleApplied": {
+      "description": "True when a traffic rule acted on this exchange (mock, block, mapRemote, or a request/response modifier).",
       "type": "boolean"
     },
-    "mockRuleId": {
+    "ruleId": {
+      "description": "Id of the rule that acted; present alongside ruleApplied.",
+      "type": "string"
+    },
+    "ruleAction": {
+      "description": "Which route fired: mock | block | mapRemote | passthrough.",
       "type": "string"
     },
     "mockValueId": {
+      "description": "Referenced response value id; present only when ruleAction is mock.",
       "type": "string"
+    },
+    "replayedFrom": {
+      "description": "On a network.replay event, the source flow id this exchange was replayed from.",
+      "type": "string"
+    },
+    "diff": {
+      "description": "On a network.replay event, the diff of the replayed response vs the original. Header lists carry names only, never values.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statusChanged", "bodyChanged", "bodyBytesFrom", "bodyBytesTo", "headersAdded", "headersRemoved", "headersChanged"],
+      "properties": {
+        "statusFrom": { "type": "integer" },
+        "statusTo": { "type": "integer" },
+        "statusChanged": { "type": "boolean" },
+        "bodyBytesFrom": { "type": "integer", "minimum": 0 },
+        "bodyBytesTo": { "type": "integer", "minimum": 0 },
+        "bodyChanged": { "type": "boolean" },
+        "headersAdded": { "type": "array", "items": { "type": "string" } },
+        "headersRemoved": { "type": "array", "items": { "type": "string" } },
+        "headersChanged": { "type": "array", "items": { "type": "string" } }
+      }
     }
   }
 }

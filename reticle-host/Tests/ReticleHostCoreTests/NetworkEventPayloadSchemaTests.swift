@@ -39,9 +39,16 @@ struct NetworkEventPayloadSchemaTests {
         payload.responseBodyBytes = 2
         payload.requestBodyTruncated = false
         payload.responseBodyTruncated = true
-        payload.mocked = true
-        payload.mockRuleId = "rule"
+        payload.ruleApplied = true
+        payload.ruleId = "rule"
+        payload.ruleAction = "mock"
         payload.mockValueId = "value"
+        payload.replayedFrom = "source-id"
+        payload.diff = NetworkReplayDiff(
+            statusFrom: 200, statusTo: 500, statusChanged: true,
+            bodyBytesFrom: 1, bodyBytesTo: 2, bodyChanged: true,
+            headersAdded: ["a"], headersRemoved: ["b"], headersChanged: ["c"]
+        )
 
         let emitted = Set(payload.json.keys)
         let undeclared = emitted.subtracting(declared)

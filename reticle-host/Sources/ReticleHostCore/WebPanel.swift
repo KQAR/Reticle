@@ -109,7 +109,7 @@ th{color:var(--muted);font-weight:600}
 </head>
 <body>
 <header>
-<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div><div id="view-toggle" class="filterbar"><button type="button" data-view="timeline" class="active">Timeline</button><button type="button" data-view="mocks">Mock groups</button></div><div id="network-filters" class="filterbar"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="mock">MOCK</button><button type="button" data-filter="error">ERROR</button><button type="button" data-filter="mitm">MITM</button><button type="button" data-filter="tunnel">TUNNEL</button></div><div id="network-status-filters" class="filterbar"><button type="button" data-status="all" class="active">Any status</button><button type="button" data-status="2xx">2xx</button><button type="button" data-status="3xx">3xx</button><button type="button" data-status="4xx">4xx</button><button type="button" data-status="5xx">5xx</button></div><input id="network-search" class="search" type="search" placeholder="Filter network: method, url, host, status, mock id..."></div><label class="session-control">Session<select id="session-picker"></select></label></div>
+<div class="topbar"><div><h1>Reticle Evidence Timeline</h1><div id="status" class="status">Loading session events...</div><div id="view-toggle" class="filterbar"><button type="button" data-view="timeline" class="active">Timeline</button><button type="button" data-view="rules">Rule groups</button></div><div id="network-filters" class="filterbar"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="rule">RULE</button><button type="button" data-filter="error">ERROR</button><button type="button" data-filter="mitm">MITM</button><button type="button" data-filter="tunnel">TUNNEL</button></div><div id="network-status-filters" class="filterbar"><button type="button" data-status="all" class="active">Any status</button><button type="button" data-status="2xx">2xx</button><button type="button" data-status="3xx">3xx</button><button type="button" data-status="4xx">4xx</button><button type="button" data-status="5xx">5xx</button></div><input id="network-search" class="search" type="search" placeholder="Filter network: method, url, host, status, rule id..."></div><label class="session-control">Session<select id="session-picker"></select></label></div>
 </header>
 <main>
 <div id="timeline"></div>
@@ -164,7 +164,7 @@ function statusClassOf(payload){
 function networkFilterMatches(tx){
   const p=tx.payload||{};
   switch(state.networkFilter){
-    case 'mock': if(!p.mocked){return false;} break;
+    case 'rule': if(!p.ruleApplied){return false;} break;
     case 'error': if(!p.error){return false;} break;
     case 'mitm': if(!p.mitm){return false;} break;
     case 'tunnel': if(!p.tunnel){return false;} break;
@@ -172,30 +172,30 @@ function networkFilterMatches(tx){
   if(state.networkStatusClass!=='all'&&statusClassOf(p)!==state.networkStatusClass){return false;}
   if(state.networkSearch){
     const needle=state.networkSearch.toLowerCase();
-    const hay=[p.method,p.url,p.host,p.path,p.status,p.mockRuleId,p.mockValueId].map((v)=>String(v===undefined||v===null?'':v).toLowerCase()).join(' ');
+    const hay=[p.method,p.url,p.host,p.path,p.status,p.ruleId,p.ruleAction,p.mockValueId].map((v)=>String(v===undefined||v===null?'':v).toLowerCase()).join(' ');
     if(!hay.includes(needle)){return false;}
   }
   return true;
 }
-function slugForMock(value){
+function slugForRule(value){
   const slug=String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
-  return /^[a-z0-9]/.test(slug)?slug:`mock-${slug}`;
+  return /^[a-z0-9]/.test(slug)?slug:`rule-${slug}`;
 }
 function shellQuote(value){return `'${String(value===undefined||value===null?'':value).replace(/'/g,"'\\''")}'`;}
-function mockCommandFor(tx){
+function ruleCommandFor(tx){
   const p=tx.payload||{}, refs=tx.refs||{};
   const bodyRef=Object.keys(refs).find((ref)=>ref.startsWith('responseBody.'));
   const bodyPath=bodyRef?refs[bodyRef]:null;
-  const id=slugForMock(`${p.host||'host'}${p.path||'/'}`);
+  const id=slugForRule(`${p.host||'host'}${p.path||'/'}`);
   const status=isPresent(p.status)?p.status:200;
   const headers=p.responseHeaders||{};
   const contentType=headers['Content-Type']||headers['content-type']||'application/json';
-  const parts=['reticle mock set',`--id ${id}`,`--value-id ${id}`,`--method ${p.method||'GET'}`,`--url ${shellQuote(p.path||'/')}`,'--match exact',`--status ${status}`,`--content-type ${shellQuote(contentType)}`];
+  const parts=['reticle rule set',`--id ${id}`,'--action mock',`--value-id ${id}`,`--method ${p.method||'GET'}`,`--url ${shellQuote(p.path||'/')}`,'--match exact',`--status ${status}`,`--content-type ${shellQuote(contentType)}`];
   if(p.host){parts.push(`--host ${shellQuote(p.host)}`);}
   if(bodyPath){parts.push(`--body-file ${shellQuote(bodyPath)}`);}else{parts.push(`--body ${shellQuote('')}`);}
   return parts.join(' ');
 }
-function canCopyAsMock(tx){const p=tx.payload||{};return !(p.tunnel&&!p.mitm);}
+function canCopyAsRule(tx){const p=tx.payload||{};return !(p.tunnel&&!p.mitm);}
 function isPresent(value){return value!==undefined&&value!==null&&value!==''&&value!=='<null>';}
 function eventMillis(event){
   const payload=event.payload||{};
@@ -218,12 +218,12 @@ function mergeEvent(event){
 function updateStatusLine(){
   const actions=actionEvents(), runtimes=runtimeEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   const live=selectedIsCurrent()?'live':'history';
-  const mockCount=allNetworks.filter((tx)=>tx.payload&&tx.payload.mocked).length;
-  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${runtimes.length} runtime advisory(s), ${networks.length}/${allNetworks.length} network request(s), ${mockCount} mock(s)`;
+  const ruleCount=allNetworks.filter((tx)=>tx.payload&&tx.payload.ruleApplied).length;
+  statusEl.textContent=`${state.selectedSession||'session'} · ${live} · ${state.events.length} event(s), ${actions.length} action trace(s), ${runtimes.length} runtime advisory(s), ${networks.length}/${allNetworks.length} network request(s), ${ruleCount} rule hit(s)`;
 }
 function renderTimeline(){
   updateStatusLine();
-  if(state.view==='mocks'){renderNetworkGroups();return;}
+  if(state.view==='rules'){renderNetworkGroups();return;}
   const actions=actionEvents(), runtimes=runtimeEvents(), allNetworks=networkTransactions(), networks=allNetworks.filter(networkFilterMatches);
   if(actions.length===0&&allNetworks.length===0&&runtimes.length===0){
     timeline.className='';
@@ -252,14 +252,14 @@ function renderNetworkGroups(){
   timeline.className='';
   const groups=[];
   const byRule=new Map();
-  for(const tx of networks.filter((tx)=>tx.payload&&tx.payload.mocked)){
-    const key=(tx.payload&&tx.payload.mockRuleId)||'(unknown rule)';
+  for(const tx of networks.filter((tx)=>tx.payload&&tx.payload.ruleApplied)){
+    const key=(tx.payload&&tx.payload.ruleId)||'(unknown rule)';
     if(!byRule.has(key)){byRule.set(key,[]);}
     byRule.get(key).push(tx);
   }
-  for(const [ruleId,txs] of byRule){groups.push(groupSection(`Mock rule: ${ruleId}`,`${txs.length} hit(s)`,txs));}
+  for(const [ruleId,txs] of byRule){groups.push(groupSection(`Rule: ${ruleId}`,`${txs.length} hit(s)`,txs));}
   const byHost=new Map();
-  for(const tx of networks.filter((tx)=>!(tx.payload&&tx.payload.mocked))){
+  for(const tx of networks.filter((tx)=>!(tx.payload&&tx.payload.ruleApplied))){
     const key=(tx.payload&&tx.payload.host)||'(unknown host)';
     if(!byHost.has(key)){byHost.set(key,[]);}
     byHost.get(key).push(tx);
@@ -283,10 +283,13 @@ function node(event,kind,time,title,phase,badge,body){
 }
 function networkCard(tx){
   const p=tx.payload||{}, event=tx.event, status=p.error?'error':(p.status||'pending'), duration=isPresent(p.durationMs)?`${p.durationMs} ms`:'pending';
-  const mode=p.mocked?(p.mitm?'MOCK HTTPS MITM':'MOCK HTTP'):(p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP'));
-  const badge=p.mocked?'MOCK':status;
-  const mockMeta=p.mocked?` <button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockRuleId||'')}">rule ${escapeHtml(p.mockRuleId||'unknown')}</button><button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockValueId||'')}">value ${escapeHtml(p.mockValueId||'unknown')}</button>`:'';
-  const mockAction=canCopyAsMock(tx)?` <button class="copy-chip" type="button" data-copy="${escapeHtml(mockCommandFor(tx))}">copy as mock</button>`:'';
+  const transport=p.tunnel?'CONNECT tunnel':(p.mitm?'HTTPS MITM':'HTTP');
+  const action=(p.ruleAction||'').toUpperCase();
+  const mode=p.ruleApplied?`${action||'RULE'} ${transport}`:transport;
+  const badge=p.ruleApplied?(action||'RULE'):status;
+  const valueChip=p.mockValueId?`<button class="copy-chip" type="button" data-copy="${escapeHtml(p.mockValueId)}">value ${escapeHtml(p.mockValueId)}</button>`:'';
+  const ruleMeta=p.ruleApplied?` <button class="copy-chip" type="button" data-copy="${escapeHtml(p.ruleId||'')}">rule ${escapeHtml(p.ruleId||'unknown')}${p.ruleAction?` · ${escapeHtml(p.ruleAction)}`:''}</button>${valueChip}`:'';
+  const ruleAction=canCopyAsRule(tx)?` <button class="copy-chip" type="button" data-copy="${escapeHtml(ruleCommandFor(tx))}">copy as rule</button>`:'';
   const facts=`<div class="facts"><div class="fact"><span>Host</span><b title="${escapeHtml(p.host||'unknown')}">${escapeHtml(p.host||'unknown')}</b></div><div class="fact"><span>Status</span><b>${escapeHtml(status)}</b></div><div class="fact"><span>Duration</span><b>${escapeHtml(duration)}</b></div></div>`;
   const refs=Object.keys(tx.refs||{}), requestRef=refs.find((ref)=>ref.startsWith('requestBody.')), responseRef=refs.find((ref)=>ref.startsWith('responseBody.'));
   const body=(label,ref,bytes,truncated)=>!ref?'':`<div class="net-section"><h3>${label} body</h3><div class="artifact">${refLink(event,ref,`${bytes||0} bytes${truncated?' · truncated':''}`)}</div><pre class="body-preview" data-event-id="${escapeHtml(event.id)}" data-ref="${escapeHtml(ref)}">Loading preview...</pre></div>`;
@@ -294,7 +297,7 @@ function networkCard(tx){
   const refsBlock=refs.length?`<details class="net-section"><summary>Artifact refs</summary><pre>${pretty(tx.refs)}</pre></details>`:'';
   const request=`<div class="net-section"><h3>Request</h3><div class="meta">${escapeHtml(p.method||'HTTP')} ${escapeHtml(p.path||'/')}</div>${headers('request',p.requestHeaders)}${body('Request',requestRef,p.requestBodyBytes,p.requestBodyTruncated)}</div>`;
   const response=`<div class="net-section"><h3>Response</h3><div class="meta">${escapeHtml(isPresent(p.status)?`HTTP ${p.status}`:'pending')}</div>${headers('response',p.responseHeaders)}${body('Response',responseRef,p.responseBodyBytes,p.responseBodyTruncated)}</div>`;
-  return `<div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${mockMeta}${mockAction}</div></div><div class="badge ${p.mocked?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div>`;
+  return `<div class="net-card"><div class="net-head"><div><div class="phase">${escapeHtml(mode)}</div><div class="net-url">${escapeHtml((p.method||'HTTP')+' '+(p.url||p.host||''))}</div><div class="net-meta">${escapeHtml(tx.id)} · ${tx.events.length} event(s)${ruleMeta}${ruleAction}</div></div><div class="badge ${p.ruleApplied?'mock':''}">${escapeHtml(badge)}</div></div><div class="net-body">${facts}${p.error?`<div class="shot-error">${escapeHtml(p.error)}</div>`:''}<div class="net-grid">${request}${response}</div>${refsBlock}</div></div>`;
 }
 function networkNode(tx){
   const event=tx.event;
