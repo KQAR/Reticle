@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end smoke test for the host-side network lane: `reticle serve` with the
-# capture proxy, mock rules driven through the `reticle mock` CLI (which rides
+# capture proxy, traffic rules driven through the `reticle rule` CLI (which rides
 # the daemon HTTP API), a plaintext mock hit, an HTTPS hit decrypted by MITM, a
 # real upstream forward, and the network.* evidence trail in events.jsonl.
 # This is the wiring the unit tests can't see: CLI -> discovery -> daemon ->
@@ -65,13 +65,13 @@ EVENTS="$(sed -n 's/^reticle serve: events //p' "$TMP/serve.log" | head -1)"
 PROXY="http://127.0.0.1:$PROXY_PORT"
 
 echo "== mock rules via CLI =="
-"$HOST" mock set --id e2e-http --method GET --url "http://reticle-e2e.invalid/hello" \
+"$HOST" rule set --id e2e-http --method GET --url "http://reticle-e2e.invalid/hello" \
   --status 200 --content-type application/json --body '{"mocked":"http"}'
-"$HOST" mock set --id e2e-https --method GET --url "https://127.0.0.1:$UPSTREAM_PORT/api" \
+"$HOST" rule set --id e2e-https --method GET --url "https://127.0.0.1:$UPSTREAM_PORT/api" \
   --match prefix --status 201 --content-type application/json --body '{"mocked":"https"}'
-"$HOST" mock list | grep -q "e2e-http" || { echo "FAIL: mock list missing e2e-http"; exit 1; }
-"$HOST" mock rule test --method GET --url "http://reticle-e2e.invalid/hello" \
-  | grep -q "matched rule=e2e-http" || { echo "FAIL: mock rule test did not match e2e-http"; exit 1; }
+"$HOST" rule list | grep -q "e2e-http" || { echo "FAIL: rule list missing e2e-http"; exit 1; }
+"$HOST" rule test --method GET --url "http://reticle-e2e.invalid/hello" \
+  | grep -q "matched rule=e2e-http" || { echo "FAIL: rule test did not match e2e-http"; exit 1; }
 
 echo "== plaintext HTTP mock hit =="
 # The host is .invalid (never resolves): a mock hit must answer without ever
@@ -93,6 +93,32 @@ echo "== real upstream forward (no mock) =="
 BODY="$(curl -sS --max-time 10 -x "$PROXY" "http://127.0.0.1:$UPSTREAM_PORT/real.txt")"
 [ "$BODY" = "real upstream body" ] || { echo "FAIL: forwarded body mismatch: $BODY"; exit 1; }
 
+echo "== replay a captured flow with a header override =="
+# The response event is flushed asynchronously after curl returns, so poll the
+# evidence log briefly for the real.txt forward's requestId, then replay it.
+RID=""
+for _ in $(seq 1 25); do
+  RID="$(/usr/bin/python3 - "$EVENTS" <<'PY'
+import json, sys
+rid = ""
+for line in open(sys.argv[1]):
+    if not line.strip():
+        continue
+    e = json.loads(line)
+    p = e.get("payload", {})
+    if e.get("type") == "network.response" and p.get("url", "").endswith("/real.txt"):
+        rid = p.get("requestId", "")
+print(rid)
+PY
+)"
+  [ -n "$RID" ] && break
+  sleep 0.2
+done
+[ -n "$RID" ] || { echo "FAIL: no requestId for the real.txt forward to replay"; exit 1; }
+REPLAY_OUT="$("$HOST" replay flow "$RID" --set-headers '{"X-Reticle-Replay":"1"}')"
+echo "$REPLAY_OUT"
+echo "$REPLAY_OUT" | grep -q "replay flow: " || { echo "FAIL: replay flow produced no result"; exit 1; }
+
 echo "== blind HTTPS tunnel (out-of-scope host) =="
 # `localhost` resolves to the same upstream, but the CONNECT authority host
 # ("localhost") is outside --proxy-ssl-hosts (127.0.0.1), so it's blind-tunneled
@@ -101,16 +127,17 @@ echo "== blind HTTPS tunnel (out-of-scope host) =="
 curl -s --max-time 8 -o /dev/null -x "$PROXY" -k "https://localhost:$UPSTREAM_PORT/" || true
 
 echo "== mock clear falls through to upstream =="
-"$HOST" mock clear
+"$HOST" rule clear
 CODE="$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' -x "$PROXY" "http://reticle-e2e.invalid/hello" || true)"
 [ "$CODE" = "502" ] || { echo "FAIL: cleared mock should 502 on a dead upstream, got $CODE"; exit 1; }
 
 echo "== evidence trail in events.jsonl =="
-/usr/bin/python3 - "$EVENTS" "$UPSTREAM_PORT" <<'PY'
+/usr/bin/python3 - "$EVENTS" "$UPSTREAM_PORT" "$RID" <<'PY'
 import json, sys
 
 events = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
 port = sys.argv[2]
+replayed_from = sys.argv[3]
 
 def fail(message):
     print(f"FAIL: {message}")
@@ -125,13 +152,14 @@ def find(event_type, **payload_preds):
             return event
     return None
 
-mocked = find("network.response", url="http://reticle-e2e.invalid/hello", mocked=True)
-mocked or fail("no mocked network.response for the plaintext hit")
-mocked["payload"].get("mockRuleId") == "e2e-http" or fail("plaintext mock response missing mockRuleId=e2e-http")
+mocked = find("network.response", url="http://reticle-e2e.invalid/hello", ruleApplied=True)
+mocked or fail("no rule-applied network.response for the plaintext hit")
+mocked["payload"].get("ruleId") == "e2e-http" or fail("plaintext mock response missing ruleId=e2e-http")
+mocked["payload"].get("ruleAction") == "mock" or fail("plaintext mock response missing ruleAction=mock")
 find("network.request", url="http://reticle-e2e.invalid/hello") or fail("no network.request for the plaintext hit")
 
-https = find("network.response", mocked=True, status=201)
-https or fail("no mocked network.response for the HTTPS hit")
+https = find("network.response", ruleApplied=True, status=201)
+https or fail("no rule-applied network.response for the HTTPS hit")
 https["payload"].get("mitm") is True or fail("HTTPS mocked response not flagged mitm")
 # The engine emits a tunnel event only for un-decrypted (blind) CONNECTs — the
 # out-of-scope localhost tunnel above — via its observeTunnels option.
@@ -141,10 +169,19 @@ tun["payload"].get("method") == "CONNECT" or fail("blind-tunnel event not marked
 
 real = find("network.response", url=f"http://127.0.0.1:{port}/real.txt")
 real or fail("no network.response for the real upstream forward")
-real["payload"].get("mocked") and fail("real forward wrongly flagged as mocked")
+real["payload"].get("ruleApplied") and fail("real forward wrongly flagged as rule-applied")
 real["payload"].get("status") == 200 or fail(f"real forward status {real['payload'].get('status')} != 200")
 
 find("network.error", url="http://reticle-e2e.invalid/hello") or fail("no network.error after mock clear")
+
+# The replayed flow surfaces as one network.replay event carrying the source id
+# and a diff. Replaying real.txt verbatim (only adding a request header) leaves the
+# response identical, so the diff must report no status/body change.
+replay = find("network.replay", replayedFrom=replayed_from)
+replay or fail("no network.replay event referencing the replayed source flow")
+diff = replay["payload"].get("diff") or fail("network.replay event missing diff")
+diff.get("statusChanged") is False or fail("replay of an unchanged endpoint reported a status change")
+diff.get("bodyChanged") is False or fail("replay of an unchanged endpoint reported a body change")
 
 # The mocked body must be persisted as fetchable evidence, not just streamed.
 ref = next((v for k, v in (mocked.get("refs") or {}).items() if k.startswith("responseBody")), None)

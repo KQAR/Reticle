@@ -118,7 +118,7 @@ The one gap is multi-touch `pinch`, which `input` can't express — it would nee
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.
 
-## Host-side daemon, network lane, and mocks
+## Host-side daemon, network lane, and traffic rules
 
 `reticle serve` is the host-owned long-lived surface. It creates an
 `EventStore` under `~/.reticle/sessions/<session>/`, starts a localhost
@@ -130,44 +130,48 @@ The daemon exposes three route groups:
 
 - session routes: health, current/historical events, action trace ingestion, and
   artifact reads through event refs;
-- mock routes: current-session mock rule/value management;
+- rule routes: current-session traffic-rule / mock-value management, plus flow
+  replay (`POST /sessions/current/flows/:id/replay`);
 - stream routes: the read-only panel and SSE event stream.
 
-Network capture is a pure host proxy. Plain HTTP requests are normalized into
-`network.request` / `network.response` / `network.error` events directly. HTTPS
-traffic is visible as CONNECT tunnels unless `--proxy-mitm` and
+Network capture runs on Loom's engine (see the network lane above); Reticle
+normalizes its flows into `network.request` / `network.response` / `network.error`
+events. HTTPS traffic is visible as CONNECT tunnels unless `--proxy-mitm` and
 `--proxy-ssl-hosts` admit the host and the app trusts Reticle's local CA. MITM
 still does not bypass certificate pinning or custom trust managers.
 
-Mocks are also host-side. `NetworkMockStore` persists rule metadata, value
-metadata, and response body files separately inside the session directory.
-`NetworkProxyHandler` and `MitmHTTPHandler` construct a normalized
-`NetworkMockRequest` and ask the store to resolve it before contacting upstream.
-If a rule matches, the proxy writes the configured response and records the
-response event with `mocked`, `mockRuleId`, and `mockValueId`. If a rule points
-at a missing value, Reticle records `network.error` and returns 502 rather than
-silently falling through. Rules can optionally narrow by host wildcard and query
-key/value predicates; value bodies can be imported/exported as base64 while
-remaining stored as separate body files on disk.
+Traffic rules are also host-side. `NetworkRuleStore` persists rule metadata,
+value metadata, and response body files separately inside the session directory.
+A rule's `actions.route` is one of `mock` / `block` / `mapRemote` / `passthrough`,
+with orthogonal modifiers (`delayMs`, header rewrites, find/replace substitutions);
+these translate 1:1 onto Loom's `RuleActions` in `LoomCaptureLane`. When a rule
+acts, the captured response event carries `ruleApplied`, `ruleId`, `ruleAction`,
+and (for a mock route) `mockValueId`. If a mock rule points at a missing value,
+Reticle records `network.error` and returns 502 rather than silently falling
+through. Rules can optionally narrow by host wildcard and query key/value
+predicates; value bodies can be imported/exported as base64 while remaining
+stored as separate body files on disk.
 
-Upstream forwarding is intentionally scheduled outside the NIO event loop:
-`NetworkURLForwarder` uses `URLSession` completion callbacks and the handlers
-hop back onto the channel's event loop to write the response. A slow upstream can
-delay that client connection, but it no longer blocks the proxy's event loop.
-Hop-by-hop headers are stripped before forwarding, upstream requests have an
-explicit timeout, and a client disconnect cancels the active upstream task.
+Transport is Loom's, not Reticle's: the SwiftNIO proxy, HTTPS MITM (per-host leaf
+certs off an on-demand CA), and upstream forwarding all live inside Loom's
+`ProxyEngine`, consumed as the `LoomProxyCore` / `LoomSharedModels` SPM library.
+`LoomCaptureLane` runs the engine with `persistFlows: false` (Reticle owns storage),
+subscribes to `flowStream()`, and normalizes each exchange into a `network.*`
+event — so a slow or failing upstream is Loom's concern, and Reticle only sees
+completed/errored flows.
 
-The whole lane — proxy, MITM, certificate store, body store, and
-`NetworkMockStore` — lives in its own `ReticleNetworkLane` SwiftPM target, not in
-`ReticleHostCore`. It depends only on `ReticleHostShared` (the dependency-free
-`JSONValue` / event models / `HelperError` layer) and SwiftNIO, and reaches the
+The whole lane — `LoomCaptureLane`, `NetworkRuleStore`, `NetworkBodyStore`, the
+event models, and the replay path — lives in its own `ReticleNetworkLane` SwiftPM
+target, not in `ReticleHostCore`. It depends only on `ReticleHostShared` (the
+dependency-free `JSONValue` / event models / `HelperError` layer) and Loom's
+`LoomProxyCore` / `LoomSharedModels` (no SwiftNIO of its own), and reaches the
 session store through a single `NetworkEventSink` protocol (`emit` +
 `sessionDirectory`) rather than referencing `EventStore` directly. `EventStore`
-conforms to that sink in `ReticleHostCore`, and the Hummingbird mock routes and
-`reticle mock` CLI are thin adapters over the lane's public API. This is the
-compiler-enforced realization of the "proxy backend behind an interface" goal
-(docs/roadmap.md): the lane builds and tests without the daemon, and swapping the
-engine later means editing one target, not untangling it from the host. Its
+conforms to that sink in `ReticleHostCore`, and the Hummingbird rule/flow routes and
+the `reticle rule` / `reticle replay flow` CLIs are thin adapters over the lane's
+public API. This is the compiler-enforced realization of the "capture engine behind
+an interface" goal (docs/roadmap.md): the lane builds and tests without the daemon,
+and swapping the engine means editing one target, not untangling it from the host. Its
 end-to-end path (serve → proxy → mock → `events.jsonl`, including a MITM'd HTTPS
 hit) is guarded on real sockets by `scripts/e2e-proxy.sh` in CI.
 

@@ -88,9 +88,16 @@ struct SchemaValidationTests {
         payload.responseBodyBytes = 20
         payload.requestBodyTruncated = false
         payload.responseBodyTruncated = true
-        payload.mocked = true
-        payload.mockRuleId = "rule"
+        payload.ruleApplied = true
+        payload.ruleId = "rule"
+        payload.ruleAction = "mock"
         payload.mockValueId = "value"
+        payload.replayedFrom = "source-id"
+        payload.diff = NetworkReplayDiff(
+            statusFrom: 200, statusTo: 500, statusChanged: true,
+            bodyBytesFrom: 1, bodyBytesTo: 2, bodyChanged: true,
+            headersAdded: ["a"], headersRemoved: ["b"], headersChanged: ["c"]
+        )
 
         let data = try JSONSerialization.data(withJSONObject: payload.json.mapValues(\.anyValue))
         let errors = try JSONSchemaValidator.validate(instanceData: data, schemaURL: schema("network-event-payload.schema.json"))

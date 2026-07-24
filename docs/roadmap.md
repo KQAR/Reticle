@@ -2,8 +2,8 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: roadmap and current-state doc (updated 2026-07-16, tracking 0.7.0 plus
-Phase 2/3 streaming + schema + panel follow-ups). Captures
+Status: roadmap and current-state doc (updated 2026-07-23, tracking 0.9.3 —
+Loom capture engine, traffic rules, and flow replay). Captures
 the agreed direction for evolving Reticle from a single-platform Android CLI into a
 multi-platform runtime harness with an integrated capture proxy and a live web panel.
 `docs/architecture.md` describes the current implementation in more operational
@@ -375,7 +375,7 @@ Matching the hand-rolled-HTTP-server philosophy (no heavy framework):
   sufficient for a live timeline. Reserve WebSocket only if the panel later needs
   rich bidirectional control; start with SSE + REST.
 
-## Proxy backend behind an interface (interface landed, engine deferred)
+## Capture engine behind an interface (interface landed, engine chosen: Loom)
 
 The lane is isolated in its own `ReticleNetworkLane` target and only touches the
 host through one sink that carries normalized `network.*` events:
@@ -388,13 +388,16 @@ public protocol NetworkEventSink: AnyObject, Sendable {
 ```
 
 `EventStore` conforms to it in `ReticleHostCore`; the lane never names the daemon.
-The current backend is the in-house SwiftNIO engine, but any of these can replace
-it later without touching the bus or the panel: an embedded engine, a managed
-`whistle` sidecar, or an external `mitmproxy`. **The engine choice stays deferred
-precisely because the interface now makes it pluggable** — swapping it is editing
-one target, verified end-to-end by `scripts/e2e-proxy.sh`. (The original sketch
-imagined a Kotlin `ProxyBackend` returning a `Flow<NetworkEvent>`; the host turned
-out to be Swift, so the realized shape is the `NetworkEventSink` above.)
+The engine is now settled: the in-tree SwiftNIO proxy was removed and Reticle
+consumes **[Loom](https://github.com/KQAR/Loom)**'s `ProxyEngine` as an SPM library
+(`LoomProxyCore` / `LoomSharedModels`, pinned to a release tag). `LoomCaptureLane`
+runs it loopback with `persistFlows: false`, subscribes to `flowStream()`, and
+republishes exchanges through the sink. The interface still earns its keep — swapping
+the engine (a managed `whistle` sidecar, an external `mitmproxy`) is editing one
+target, verified end-to-end by `scripts/e2e-proxy.sh` — but "which engine" is no
+longer an open question. (The original sketch imagined a Kotlin `ProxyBackend`
+returning a `Flow<NetworkEvent>`; the host turned out to be Swift, so the realized
+shape is the `NetworkEventSink` above.)
 
 ## Capture proxy — honest capability boundary
 
@@ -555,36 +558,44 @@ Android first and complete; everything else reserved behind the spec + SPI.
   backbone while lowering the cost of agent-driven targeting — they are *not* a
   screenshot/NL-exploration path.
 
-### Phase 2 — Proxy + daemon
+### Phase 2 — Capture engine + daemon
 - Done: `reticle serve`, the event store, session model, SSE/REST surface,
-  action-trace ingestion, pure-host HTTP proxy, device auto-proxy config, CA
-  issuance, opt-in HTTPS MITM, and session-scoped network mocks.
-- Done (0.7.x follow-ups): **streaming upstream forwarding** — responses are
-  forwarded chunk-by-chunk (identity under `Content-Length`, decoded/unknown
-  under chunked) with client-driven back-pressure and a bounded stored-artifact
-  prefix, so a large body no longer buffers whole in the daemon; **typed
-  `network.*` schema** (`reticle-protocol/schema/network-event-payload.schema.json`)
-  plus request/response/error golden fixtures, validated by a Kotlin contract
-  test and pinned to the Swift emitter by a Swift field-set test; and **richer
-  mock matching** — `regex` match (validated at upsert, tried against path and
-  full URL), `ANY` method wildcard, and query `"*"` presence predicates, all in
-  `NetworkMockStore` with mock state still decoupled from the event store.
+  action-trace ingestion, device auto-proxy config, CA issuance, opt-in HTTPS
+  MITM, and session-scoped traffic rules.
+- Done (engine): the in-tree SwiftNIO proxy was removed; capture now runs on
+  **Loom**'s `ProxyEngine` consumed as an SPM library (`LoomProxyCore` /
+  `LoomSharedModels`). Transport, MITM, CA, and upstream forwarding are Loom's;
+  Reticle runs it loopback with `persistFlows: false`, owns storage, and
+  normalizes flows into `network.*` events (see the network-lane section of
+  architecture.md).
+- Done (rules): the mock-only store is now a general **traffic-rule** store —
+  routes `mock` / `block` / `mapRemote` / `passthrough` plus modifiers (`delayMs`,
+  request/response header rewrites, find/replace substitutions), matched 1:1 onto
+  Loom's `RuleActions`. Matching supports `regex` (validated at upsert), an `ANY`
+  method wildcard, and query `"*"` presence predicates.
+- Done (replay): **flow replay + diff** (`POST /sessions/current/flows/:id/replay`,
+  `reticle replay flow`) closes Loom's capture → modify → replay → diff loop, emitting
+  a `network.replay` event with the response diff (status/body/header-name deltas).
+- Done (schema): typed `network.*` payload schema
+  (`reticle-protocol/schema/network-event-payload.schema.json`) plus
+  request/response/error golden fixtures, validated by a Kotlin contract test and
+  pinned to the Swift emitter by a Swift field-set test.
 - Next: expand typed schema coverage to the remaining event families (action /
   runtime payloads) and add matcher predicates for headers/body when a concrete
   use case appears.
 
 ### Phase 3 — Web panel
 - Done: a localhost read-only evidence panel showing action traces,
-  screenshots/artifacts, network lane cards, body previews, MITM/tunnel/mock
-  mode, and mock rule/value ids.
-- Done (0.7.x follow-ups): **network filters** — mode (MOCK/ERROR/MITM/TUNNEL),
+  screenshots/artifacts, network lane cards, body previews, MITM/tunnel/rule
+  mode, and rule id / action / value ids.
+- Done (follow-ups): **network filters** — mode (RULE/ERROR/MITM/TUNNEL),
   status class (2xx/3xx/4xx/5xx), and a free-text search over
-  method/url/host/path/status/mock ids, all composable; a **Mock groups** view
-  toggle that groups mocked requests under their rule (with hit counts) and the
-  rest by host; and a **copy as mock** chip on each network card that assembles a
-  ready-to-run `reticle mock set` command (including `--body-file` for the
+  method/url/host/path/status/rule ids, all composable; a **Rule groups** view
+  toggle that groups rule-applied requests under their rule (with hit counts) and
+  the rest by host; and a **copy as rule** chip on each network card that assembles
+  a ready-to-run `reticle rule set` command (including `--body-file` for the
   captured response) to the clipboard. The panel stays display-only — it emits a
-  command for the user to run, it does not POST mock state itself.
+  command for the user to run, it does not POST rule state itself.
 - Next: revisit reverse-drive only if the deferred question below is answered
   (would force a bidirectional transport); otherwise the panel boundary holds.
 

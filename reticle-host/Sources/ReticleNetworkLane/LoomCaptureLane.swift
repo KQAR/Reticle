@@ -40,36 +40,54 @@ private final class OnboardingBox: @unchecked Sendable {
     var value: Result<PhoneOnboardingInfo, Error>?
 }
 
-public final class LoomCaptureLane: @unchecked Sendable {
+/// One-shot holders to carry an async flow/replay result out of a bridging `Task`.
+private final class FlowBox: @unchecked Sendable {
+    var flow: Flow?
+}
+private final class ReplayResultBox: @unchecked Sendable {
+    var result: Result<Flow, Error>?
+}
+private final class ErrorBox: @unchecked Sendable {
+    var error: Error?
+}
+
+public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
-    private let mockStore: NetworkMockStore?
+    private let ruleStore: NetworkRuleStore?
     private let engine: ProxyEngine
     private let bodyStore: NetworkBodyStore
     private let factory: NetworkEventFactory
 
     private let lock = NSLock()
+    /// Flow ids whose `network.request` event has been emitted, so the completion
+    /// pass emits only `network.response`/`network.error`. Bounded FIFO — a
+    /// long-lived daemon would otherwise grow this set without limit. Evicting the
+    /// oldest id at worst re-emits a `network.request` for a flow that completes
+    /// much later; that's a rare cosmetic duplicate, not lost evidence.
     private var seen = Set<UUID>()
+    private var seenOrder: [UUID] = []
+    private let seenCapacity = 8192
     private var streamTask: Task<Void, Never>?
     private var startBound: Int?
     private var startError: Error?
-    /// Serializes full-rule-set syncs so two overlapping mock mutations can't
+    /// Serializes full-rule-set syncs so two overlapping rule mutations can't
     /// interleave a delete-all with an add-all.
-    private let syncQueue = DispatchQueue(label: "dev.reticle.loom.mock-sync")
+    private let syncQueue = DispatchQueue(label: "dev.reticle.loom.rule-sync")
 
     public private(set) var port: Int
 
     /// Creates a Loom-backed capture lane owned by the supplied session store.
-    /// When a mock store is supplied its rules are translated into the engine and
-    /// kept in sync (call `syncMocks()` after any mutation).
+    /// When a rule store is supplied its rules are translated into the engine and
+    /// kept in sync (call `syncRules()` after any mutation).
     public init(
         store: any NetworkEventSink,
         configuration: NetworkProxyConfiguration,
-        mockStore: NetworkMockStore? = nil
+        ruleStore: NetworkRuleStore? = nil
     ) {
         self.store = store
         self.configuration = configuration
-        self.mockStore = mockStore
+        self.ruleStore = ruleStore
         self.engine = ProxyEngine(persistFlows: false)
         self.bodyStore = NetworkBodyStore(
             sessionDirectory: store.sessionDirectory,
@@ -98,7 +116,14 @@ public final class LoomCaptureLane: @unchecked Sendable {
                 }
                 let bound = try await engine.start(port: requestedPort, host: bindHost, observeTunnels: true)
                 if let caDirectory {
-                    await LoomCaptureLane.exportCA(engine: engine, to: caDirectory)
+                    do {
+                        _ = try await engine.exportCA(toDirectory: caDirectory, pemName: "reticle-ca.pem", derName: "reticle-ca.cer")
+                    } catch {
+                        // Don't fail startup, but don't hide it either: a missing CA
+                        // surfaces later as a misleading "file not found" in the
+                        // device-trust / --proxy-install-ca flow.
+                        self?.warn("CA export to \(caDirectory.path) failed; MITM device-trust files will be missing: \(error)")
+                    }
                 }
                 self?.lock.withLock { self?.startBound = bound }
             } catch {
@@ -116,7 +141,7 @@ public final class LoomCaptureLane: @unchecked Sendable {
         let (bound, error) = lock.withLock { (startBound, startError) }
         if let error { throw error }
         if let bound { port = bound }
-        syncMocks()
+        syncRules()
         subscribe(engine: engine)
     }
 
@@ -163,22 +188,41 @@ public final class LoomCaptureLane: @unchecked Sendable {
         _ = done.wait(timeout: .now() + 5)
     }
 
-    /// Re-translates the whole mock rule set into the engine (full replace). Safe
-    /// to call after any mock mutation; a no-op when no mock store is attached.
-    public func syncMocks() {
-        guard let mockStore else { return }
+    /// Re-translates the whole rule set into the engine (full replace). Safe to
+    /// call after any rule mutation; a no-op when no rule store is attached.
+    public func syncRules() {
+        guard let ruleStore else { return }
         let engine = self.engine
         // Snapshot + apply on the sync queue so a mutation callback fired while the
-        // mock store still holds its lock only enqueues here (exportPackage, which
+        // rule store still holds its lock only enqueues here (exportPackage, which
         // re-takes that lock, then runs off it).
-        syncQueue.async {
-            let translated = LoomCaptureLane.translate(try? mockStore.exportPackage())
+        syncQueue.async { [weak self] in
+            let export: NetworkRuleExport
+            do {
+                export = try ruleStore.exportPackage()
+            } catch {
+                // Critical: do NOT fall through to setRules([]) on an export failure —
+                // that would silently wipe every active rule in the engine on a
+                // transient disk/lock error, with no signal that capture behavior
+                // just changed. Skip this sync and keep the last-applied rule set.
+                self?.warn("skipped rule sync; exporting the rule set failed (keeping current rules): \(error)")
+                return
+            }
+            let translated = LoomCaptureLane.translate(export)
             let done = DispatchSemaphore(value: 0)
+            let errorBox = ErrorBox()
             Task {
-                try? await engine.setRules(translated)
+                do { try await engine.setRules(translated) }
+                catch { errorBox.error = error }
                 done.signal()
             }
-            done.wait()
+            if done.wait(timeout: .now() + 30) == .timedOut {
+                self?.warn("rule sync timed out after 30s; the engine may be stalled")
+                return
+            }
+            if let error = errorBox.error {
+                self?.warn("rule sync failed to apply \(translated.count) rule(s): \(error)")
+            }
         }
     }
 
@@ -197,17 +241,20 @@ public final class LoomCaptureLane: @unchecked Sendable {
     /// once the exchange completes. Loom yields the same flow id twice (start, then
     /// completion), which maps cleanly onto the two events.
     private func handle(_ flow: Flow) {
+        // A replayed flow is upserted into Loom's store by `replay(...)`, so it also
+        // arrives here on the stream. Its evidence (request/response + diff) is owned
+        // by the `network.replay` event the replay path emits synchronously, so skip
+        // it to avoid a duplicate capture card.
+        if flow.replayedFrom != nil { return }
         let requestId = flow.id.uuidString
-        let firstSeen = lock.withLock { seen.insert(flow.id).inserted }
+        let firstSeen = lock.withLock { markSeenLocked(flow.id) }
 
         if firstSeen {
             var payload = makePayload(flow)
             var refs: [String: String] = [:]
-            if let body = flow.request.body,
-               let stored = try? bodyStore.store(body, requestId: requestId, role: "request") {
-                refs[stored.refName] = stored.path
-                payload.requestBodyBytes = stored.bytes
-                payload.requestBodyTruncated = stored.truncated
+            if let body = flow.request.body {
+                storeBody(body, requestId: requestId, role: "request",
+                          into: &refs, bytes: &payload.requestBodyBytes, truncated: &payload.requestBodyTruncated)
             }
             store.emit(factory.event(.request, payload: payload, refs: refs))
         }
@@ -216,11 +263,9 @@ public final class LoomCaptureLane: @unchecked Sendable {
 
         var payload = makePayload(flow)
         var refs: [String: String] = [:]
-        if let body = flow.response?.body,
-           let stored = try? bodyStore.store(body, requestId: requestId, role: "response") {
-            refs[stored.refName] = stored.path
-            payload.responseBodyBytes = stored.bytes
-            payload.responseBodyTruncated = stored.truncated
+        if let body = flow.response?.body {
+            storeBody(body, requestId: requestId, role: "response",
+                      into: &refs, bytes: &payload.responseBodyBytes, truncated: &payload.responseBodyTruncated)
         }
         let type: NetworkEventType = flow.error == nil ? .response : .error
         store.emit(factory.event(type, payload: payload, refs: refs))
@@ -264,12 +309,16 @@ public final class LoomCaptureLane: @unchecked Sendable {
         if let error = flow.error {
             payload.error = error
         }
-        // A mock/rule that acted is recorded on the flow as the rule name, which we
-        // set to the Reticle mock-rule id (see `translate`), so evidence carries
-        // `mockRuleId` just like the built-in proxy.
+        // A rule that acted is recorded on the flow as the rule name, which we set to
+        // the Reticle rule id (see `translate`). We look the rule back up to carry the
+        // route that fired (`ruleAction`) and, for a mock route, its value id.
         if let applied = flow.appliedRules?.first {
-            payload.mocked = true
-            payload.mockRuleId = applied.name
+            payload.ruleApplied = true
+            payload.ruleId = applied.name
+            if let rule = ruleStore?.listRules().first(where: { $0.id == applied.name }) {
+                payload.ruleAction = rule.actions.route.label
+                payload.mockValueId = rule.mockValueId
+            }
         }
         return payload
     }
@@ -278,42 +327,281 @@ public final class LoomCaptureLane: @unchecked Sendable {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
 
-    /// Writes the engine's root CA to the proxy CA directory in both the DER
-    /// (`reticle-ca.cer`) and PEM (`reticle-ca.pem`) forms the device-trust flow
-    /// and `curl --cacert` expect.
-    private static func exportCA(engine: ProxyEngine, to directory: URL) async {
-        _ = try? await engine.exportCA(toDirectory: directory, pemName: "reticle-ca.pem", derName: "reticle-ca.cer")
+    // MARK: - Helpers
+
+    /// Records that `id`'s request event was emitted, evicting the oldest id when the
+    /// FIFO is full. Caller must hold `lock`. Returns true on first sighting.
+    private func markSeenLocked(_ id: UUID) -> Bool {
+        guard seen.insert(id).inserted else { return false }
+        seenOrder.append(id)
+        if seenOrder.count > seenCapacity {
+            let evicted = seenOrder.removeFirst()
+            seen.remove(evicted)
+        }
+        return true
     }
 
-    // MARK: - Mock translation
+    /// Persists a captured body as an artifact and records its ref/size on the
+    /// payload. A store failure is logged (not swallowed) so missing body evidence
+    /// is distinguishable from a genuinely empty body.
+    private func storeBody(
+        _ body: Data,
+        requestId: String,
+        role: String,
+        into refs: inout [String: String],
+        bytes: inout Int?,
+        truncated: inout Bool?
+    ) {
+        do {
+            guard let stored = try bodyStore.store(body, requestId: requestId, role: role) else { return }
+            refs[stored.refName] = stored.path
+            bytes = stored.bytes
+            truncated = stored.truncated
+        } catch {
+            warn("failed to store \(role) body for \(requestId); evidence will omit it: \(error)")
+        }
+    }
 
-    /// Translates Reticle's mock rules + values into Loom `TrafficRule`s. The Loom
-    /// rule name carries the Reticle rule id so an applied mock is attributable
-    /// back on the captured flow. Rules are ordered by descending priority to
-    /// match Reticle's precedence (Loom applies the first matching mock).
-    private static func translate(_ export: NetworkMockExport?) -> [TrafficRule] {
+    /// Emits a non-fatal warning to stderr, matching the host's `warning: …` prefix
+    /// convention. Capture never fails a request just because a side effect did.
+    private func warn(_ message: String) {
+        FileHandle.standardError.write(Data("warning: reticle capture: \(message)\n".utf8))
+    }
+
+    // MARK: - Replay
+
+    /// Replays a captured flow by id with overrides, closing Loom's capture → modify
+    /// → replay → diff loop. Bridges the engine's async API to the daemon's sync
+    /// lifecycle. Emits one `network.replay` event (the replayed exchange + its diff
+    /// against the original) and returns the diff to the caller. The replayed flow is
+    /// re-sent host-side by Loom's forwarder, not through the device proxy.
+    public func replay(requestId: String, request: NetworkReplayRequest) throws -> NetworkReplayResult {
+        guard let sourceUUID = UUID(uuidString: requestId) else {
+            throw NetworkReplayError.invalid("requestId is not a valid flow id: \(requestId)")
+        }
+        let overrides = try Self.translateOverrides(request)
+        let engine = self.engine
+
+        // The diff baseline: the original flow, still in the engine's in-memory store.
+        let sourceBox = FlowBox()
+        let sourceReady = DispatchSemaphore(value: 0)
+        Task {
+            sourceBox.flow = await engine.flow(id: sourceUUID)
+            sourceReady.signal()
+        }
+        guard sourceReady.wait(timeout: .now() + 10) == .success else {
+            throw NetworkReplayError.failed("fetching the source flow timed out")
+        }
+        guard let source = sourceBox.flow else {
+            throw NetworkReplayError.notFound(
+                "no captured flow with id \(requestId) (it may have aged out of the in-memory store)")
+        }
+
+        let box = ReplayResultBox()
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            do { box.result = .success(try await engine.replay(id: sourceUUID, overrides: overrides)) }
+            catch { box.result = .failure(error) }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 35) == .success else {
+            throw NetworkReplayError.failed("replay timed out")
+        }
+        switch box.result {
+        case .success(let replayed):
+            return emitReplay(source: source, replayed: replayed)
+        case .failure(let error):
+            // engine.replay upserts a failed flow but doesn't return it (and the stream
+            // copy is skipped by `handle`), so emit a best-effort replay event here.
+            return emitFailedReplay(source: source, error: error, request: request)
+        case .none:
+            throw NetworkReplayError.failed("replay produced no result")
+        }
+    }
+
+    private func emitReplay(source: Flow, replayed: Flow) -> NetworkReplayResult {
+        let newId = replayed.id.uuidString
+        var payload = makePayload(replayed)
+        var refs: [String: String] = [:]
+        if let body = replayed.request.body {
+            storeBody(body, requestId: newId, role: "request",
+                      into: &refs, bytes: &payload.requestBodyBytes, truncated: &payload.requestBodyTruncated)
+        }
+        if let body = replayed.response?.body {
+            storeBody(body, requestId: newId, role: "response",
+                      into: &refs, bytes: &payload.responseBodyBytes, truncated: &payload.responseBodyTruncated)
+        }
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: source.statusCode,
+            sourceHeaders: Self.headerMap(source.response?.headers),
+            sourceBody: source.response?.body,
+            replayStatus: replayed.statusCode,
+            replayHeaders: Self.headerMap(replayed.response?.headers),
+            replayBody: replayed.response?.body
+        )
+        payload.replayedFrom = source.id.uuidString
+        payload.diff = diff
+        store.emit(factory.event(.replay, payload: payload, refs: refs))
+        return NetworkReplayResult(
+            requestId: newId,
+            replayedFrom: source.id.uuidString,
+            status: replayed.statusCode,
+            error: replayed.error,
+            diff: diff
+        )
+    }
+
+    private func emitFailedReplay(source: Flow, error: Error, request: NetworkReplayRequest) -> NetworkReplayResult {
+        let newId = UUID().uuidString
+        let url = request.url ?? source.request.url
+        let method = request.method ?? source.request.method
+        let components = URLComponents(string: url)
+        let scheme = (components?.scheme ?? "http").lowercased()
+        var payload = NetworkEventPayload(
+            requestId: newId,
+            scheme: scheme,
+            method: method,
+            url: url,
+            host: components?.host ?? "",
+            port: components?.port ?? (scheme == "https" ? 443 : 80),
+            path: (components?.path).flatMap { $0.isEmpty ? nil : $0 } ?? "/",
+            startMillis: Self.millis(Date()),
+            tunnel: false,
+            mitm: false
+        )
+        let message = (error as? NetworkReplayError)?.description ?? "\(error)"
+        payload.error = message
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: source.statusCode,
+            sourceHeaders: Self.headerMap(source.response?.headers),
+            sourceBody: source.response?.body,
+            replayStatus: nil,
+            replayHeaders: [:],
+            replayBody: nil
+        )
+        payload.replayedFrom = source.id.uuidString
+        payload.diff = diff
+        store.emit(factory.event(.replay, payload: payload, refs: [:]))
+        return NetworkReplayResult(
+            requestId: newId,
+            replayedFrom: source.id.uuidString,
+            status: nil,
+            error: message,
+            diff: diff
+        )
+    }
+
+    private static func translateOverrides(_ request: NetworkReplayRequest) throws -> ReplayOverrides {
+        let bodyOverride: BodyOverride
+        switch try request.resolvedBody() {
+        case .none: bodyOverride = .keep
+        case .some(.none): bodyOverride = .clear
+        case .some(.some(let data)): bodyOverride = .replace(data)
+        }
+        let setHeaders = request.setHeaders.map { $0.map { HeaderPair(name: $0.key, value: $0.value) } }
+        return ReplayOverrides(
+            method: request.method,
+            url: request.url,
+            setHeaders: setHeaders,
+            removeHeaders: request.removeHeaders,
+            body: bodyOverride
+        )
+    }
+
+    private static func headerMap(_ headers: [HeaderPair]?) -> [String: String] {
+        var result: [String: String] = [:]
+        for header in headers ?? [] { result[header.name] = header.value }
+        return result
+    }
+
+    // MARK: - Rule translation
+
+    /// Translates Reticle's traffic rules + values into Loom `TrafficRule`s. The Loom
+    /// rule name carries the Reticle rule id so an applied rule is attributable back on
+    /// the captured flow. Rules are ordered by descending priority to match Reticle's
+    /// precedence (Loom applies the first matching rule). No-op rules (passthrough with
+    /// no modifiers) are dropped so they can't fail Loom's "rule has no actions"
+    /// validation and poison the whole atomic set. A `mock` route whose referenced
+    /// value is missing is dropped for the same reason.
+    private static func translate(_ export: NetworkRuleExport?) -> [TrafficRule] {
         guard let export else { return [] }
         let valuesById = Dictionary(export.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return export.rules
+            .filter { !$0.actions.isNoOp }
             .sorted { $0.priority > $1.priority }
             .compactMap { rule in
-                guard let value = valuesById[rule.valueId] else { return nil }
-                let mock = MockResponseAction(
-                    statusCode: value.status,
-                    headers: value.headers.map { HeaderPair(name: $0.key, value: $0.value) },
-                    bodyBase64: value.bodyBase64,
-                    contentType: value.contentType
+                guard let route = translateRoute(rule.actions.route, valuesById: valuesById) else { return nil }
+                let actions = RuleActions(
+                    route: route,
+                    rewriteRequest: translateRewriteRequest(rule.actions.rewriteRequest),
+                    rewriteResponse: translateRewriteResponse(rule.actions.rewriteResponse),
+                    requestSubstitutions: rule.actions.requestSubstitutions.map(translateSubstitution),
+                    responseSubstitutions: rule.actions.responseSubstitutions.map(translateSubstitution),
+                    delayMilliseconds: rule.actions.delayMs
                 )
                 return TrafficRule(
                     name: rule.id,
                     isEnabled: rule.enabled,
                     match: translateMatch(rule),
-                    actions: RuleActions(route: .mock(mock))
+                    actions: actions
                 )
             }
     }
 
-    private static func translateMatch(_ rule: NetworkMockRule) -> RuleMatch {
+    /// Maps a Reticle route onto Loom's. Returns nil to drop the rule when a `mock`
+    /// route references a value that isn't in the export.
+    private static func translateRoute(_ route: NetworkRoute, valuesById: [String: NetworkMockExportValue]) -> Route? {
+        switch route {
+        case .passthrough:
+            return .passthrough
+        case .block:
+            return .block
+        case .mock(let valueId):
+            guard let value = valuesById[valueId] else { return nil }
+            return .mock(MockResponseAction(
+                statusCode: value.status,
+                headers: value.headers.map { HeaderPair(name: $0.key, value: $0.value) },
+                bodyBase64: value.bodyBase64,
+                contentType: value.contentType
+            ))
+        case .mapRemote(let action):
+            return .mapRemote(MapRemoteAction(destination: action.destination, keepHostHeader: action.keepHostHeader))
+        }
+    }
+
+    private static func translateRewriteRequest(_ rewrite: NetworkHeaderRewrite?) -> RequestRewriteAction? {
+        guard let rewrite, !rewrite.isEmpty else { return nil }
+        return RequestRewriteAction(
+            setHeaders: rewrite.setHeaders.map { HeaderPair(name: $0.key, value: $0.value) },
+            removeHeaders: rewrite.removeHeaders
+        )
+    }
+
+    private static func translateRewriteResponse(_ rewrite: NetworkHeaderRewrite?) -> ResponseRewriteAction? {
+        guard let rewrite, !rewrite.isEmpty else { return nil }
+        return ResponseRewriteAction(
+            setHeaders: rewrite.setHeaders.map { HeaderPair(name: $0.key, value: $0.value) },
+            removeHeaders: rewrite.removeHeaders
+        )
+    }
+
+    private static func translateSubstitution(_ substitution: NetworkSubstitution) -> SubstitutionRule {
+        let field: SubstitutionRule.Field
+        switch substitution.field {
+        case .url: field = .url
+        case .header: field = .header
+        case .body: field = .body
+        }
+        return SubstitutionRule(
+            field: field,
+            match: substitution.match,
+            replacement: substitution.replacement,
+            isRegex: substitution.isRegex,
+            caseSensitive: substitution.caseSensitive
+        )
+    }
+
+    private static func translateMatch(_ rule: NetworkRule) -> RuleMatch {
         let methods = rule.method == "ANY" ? [] : [rule.method]
         let host = rule.host
         let query = rule.query
