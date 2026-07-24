@@ -452,37 +452,57 @@ the default Reticle workflow. Those are environment-specific escape hatches.
 The normal path is: debug build trusts user CA, user installs/confirms the
 Reticle CA, then Reticle runs `--proxy-mitm --proxy-ssl-hosts <host>`.
 
-Use `reticle mock` only while `reticle serve` is running. Mock configuration is
-stored under the current session as separate rule/value files:
-`mock-rules.json`, `mock-values.json`, and `mock-values/<valueId>.body`. A rule
-chooses traffic (`method`, `url`, `match`, `priority`) and points at a value; a
-value owns the fixed response (`status`, `headers`, body file). Rules can also
-be narrowed with `--host api.example.test` or `--host '*.example.test'`, and
-`--query '{"page":"1"}'` requires those query key/value pairs while allowing
-extra query parameters. The convenience command creates or updates both:
+Use `reticle rule` only while `reticle serve` is running. Rule configuration is
+stored under the current session as separate rule/value files: `rules.json`,
+`rule-values.json`, and `rule-values/<valueId>.body`. A rule chooses traffic
+(`method`, `url`, `match`, `priority`) and applies an **action**; a mock action
+points at a reusable value that owns the fixed response (`status`, `headers`,
+body file). Rules can also be narrowed with `--host api.example.test` or
+`--host '*.example.test'`, and `--query '{"page":"1"}'` requires those query
+key/value pairs while allowing extra query parameters.
+
+Pick the action with `--action` (defaults to `mock`, or `mapRemote` when
+`--map-to` is present):
+
+- `mock` — reply with a stored value (network stub / canned response).
+- `block` — fail the connection (network-failure evidence).
+- `mapRemote --map-to https://staging.example.com [--keep-host-header]` — re-target
+  the request at another origin, keeping path + query.
+- `passthrough` — fetch upstream unchanged (only useful with a modifier below).
+
+Modifiers compose with any action: `--delay-ms 3000` (latency, for loading/timeout
+states), `--set-request-headers '{"X-Debug":"1"}'` / `--remove-request-headers
+'["Authorization"]'` (and the `-response-` variants), and `--request-subs` /
+`--response-subs` (a JSON array of `{field,match,replacement[,isRegex,caseSensitive]}`
+find/replace substitutions).
 
 ```bash
-reticle mock set --id users --value-id users-ok \
+reticle rule set --id users --action mock --value-id users-ok \
   --method GET --url /api/users --match prefix --priority 100 \
   --status 200 --headers '{"Content-Type":"application/json"}' \
   --body '{"users":[]}'
-reticle mock rule disable --id users
-reticle mock value set --id users-ok --status 500 --body '{"error":"down"}'
-reticle mock rule test --method GET --url 'http://api.test/api/users?page=1'
-reticle mock export --output /tmp/reticle-mocks.json
-reticle mock clear
-reticle mock import --input /tmp/reticle-mocks.json
-reticle mock list
+reticle rule set --id kill-analytics --action block --method ANY --url /track --match prefix
+reticle rule set --id to-staging --map-to https://staging.example.test \
+  --method ANY --url /api --match prefix
+reticle rule set --id slow-home --action passthrough --delay-ms 3000 \
+  --method GET --url /api/home --match prefix
+reticle rule disable --id users
+reticle rule value set --id users-ok --status 500 --body '{"error":"down"}'
+reticle rule test --method GET --url 'http://api.test/api/users?page=1'
+reticle rule export --output /tmp/reticle-rules.json
+reticle rule clear
+reticle rule import --input /tmp/reticle-rules.json
+reticle rule list
 ```
 
 Use `--body` for inline UTF-8 text. Use `--body-file <path>` for files; the CLI
 sends file bytes as base64 so binary or non-UTF-8 mock bodies survive
 export/import.
 
-For HTTP traffic, mocks apply directly in the host proxy. For HTTPS, mocks only
+For HTTP traffic, rules apply directly in the host proxy. For HTTPS, they only
 apply after MITM decryption (`--proxy-mitm --proxy-ssl-hosts <host>` plus app CA
 trust, normally via the debug-only `network_security_config` above); opaque
-CONNECT tunnels cannot be path/body-mocked. If a rule matches but
+CONNECT tunnels cannot be path/body-modified. If a mock rule matches but
 its value is missing, Reticle records `network.error` and returns 502 rather
 than silently contacting upstream. `prefix` is a raw string prefix; use `exact`
 for short paths when a broader prefix could match unrelated endpoints.

@@ -2,7 +2,7 @@
 # End-to-end smoke test for the iOS agent on a simulator. Builds the shared
 # protocol, the in-process agent, the sample apps, installs them, and exercises
 # the full round trip through `reticle --target ios`: linked launch + inject,
-# ui report, compact, screenshot, and a mutate verify.
+# ui report, compact, screenshot, a mutate, and an `act --verify` node-state diff.
 #
 # Requires: Xcode + an iOS Simulator runtime, and a built ReticleHost binary
 # (swift build --package-path reticle-host). Pass a booted simulator udid as $1,
@@ -229,8 +229,15 @@ echo "$LOGIN_AFTER" | grep -q "keyboard: hidden" \
   || { echo "FAIL: compact must report 'keyboard: hidden' after hide-keyboard"; exit 1; }
 echo "$LOGIN_AFTER" | grep "login.submitButton" | grep -q "occluded-by" \
   && { echo "FAIL: submit button still occluded after hide-keyboard"; exit 1; }
-# The freed button must now actually work: activate it and observe the status flip.
-"$HOST" --target ios act activate --package "$LINKED_ID" --test-id login.submitButton
+# The freed button must now actually work: activate it with --verify watching the
+# status node, and confirm iOS reports the login-status text flip as a diff (the
+# iOS analogue of the Android helper's --verify; iOS previously dropped it).
+LOGIN_OUT="$("$HOST" --target ios act activate --package "$LINKED_ID" --test-id login.submitButton --verify '#login.status')"
+echo "$LOGIN_OUT"
+echo "$LOGIN_OUT" | grep -Eq "verify #login.status: changed" \
+  || { echo "FAIL: iOS --verify did not report the login.status change"; exit 1; }
+echo "$LOGIN_OUT" | grep -q "Logged in: 123456" \
+  || { echo "FAIL: iOS --verify diff did not capture the 'Logged in: 123456' status text"; exit 1; }
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-done"
 "$HOST" --target ios ui compact "$TMP/login-done/snapshot.json" | grep -q "Logged in: 123456" \

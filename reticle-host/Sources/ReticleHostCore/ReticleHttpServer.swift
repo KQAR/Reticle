@@ -5,7 +5,7 @@ import NIOCore
 /// Localhost REST/SSE server backing `reticle serve`.
 public final class ReticleHttpServer: @unchecked Sendable {
     private let store: EventStore
-    private let mockStore: NetworkMockStore?
+    private let ruleStore: NetworkRuleStore?
     private let helper: HelperCalling?
     private let ready = DispatchSemaphore(value: 0)
     private let traceIngest = ActionTraceIngest()
@@ -13,6 +13,15 @@ public final class ReticleHttpServer: @unchecked Sendable {
     private var runTask: Task<Void, Error>?
     private var serverChannel: (any Channel)?
     private var startupError: Error?
+    private var _flowReplayer: FlowReplaying?
+
+    /// The capture lane that services flow replays, bound after the server starts
+    /// (the lane is created once the proxy port is known). nil until then / when
+    /// capture is disabled, in which case the replay route answers 404.
+    public var flowReplayer: FlowReplaying? {
+        get { lock.withLock { _flowReplayer } }
+        set { lock.withLock { _flowReplayer = newValue } }
+    }
 
     public private(set) var port: Int
 
@@ -20,11 +29,11 @@ public final class ReticleHttpServer: @unchecked Sendable {
     public init(
         store: EventStore,
         port: Int,
-        mockStore: NetworkMockStore? = nil,
+        ruleStore: NetworkRuleStore? = nil,
         helper: HelperCalling? = nil
     ) throws {
         self.store = store
-        self.mockStore = mockStore
+        self.ruleStore = ruleStore
         self.helper = helper
         self.port = port
     }
@@ -95,7 +104,8 @@ public final class ReticleHttpServer: @unchecked Sendable {
     private func buildRouter() -> Router<BasicRequestContext> {
         let router = Router()
         ReticleSessionRoutes(store: store, traceIngest: traceIngest, port: { [weak self] in self?.port ?? 0 }).register(on: router)
-        ReticleMockRoutes(mockStore: mockStore).register(on: router)
+        ReticleRuleRoutes(ruleStore: ruleStore).register(on: router)
+        ReticleFlowRoutes(replayer: { [weak self] in self?.flowReplayer }).register(on: router)
         ReticleHelperRoutes(helper: helper).register(on: router)
         ReticleStreamRoutes(store: store).register(on: router)
         return router

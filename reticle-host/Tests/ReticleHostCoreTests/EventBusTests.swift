@@ -207,8 +207,8 @@ struct EventBusTests {
         #expect(text?.contains("networkTransactions") == true)
         #expect(text?.contains("network-filters") == true)
         #expect(text?.contains("networkFilterMatches") == true)
-        #expect(text?.contains("MOCK HTTP") == true)
-        #expect(text?.contains("mockRuleId") == true)
+        #expect(text?.contains("copy as rule") == true)
+        #expect(text?.contains("ruleApplied") == true)
         #expect(text?.contains("copy-chip") == true)
         #expect(text?.contains("body-preview") == true)
         #expect(text?.contains("Screenshot") == true)
@@ -222,11 +222,11 @@ struct EventBusTests {
         #expect(text?.contains("diff-target") == true)
     }
 
-    @Test func httpServerManagesMockRulesAndValues() async throws {
+    @Test func httpServerManagesRulesAndValues() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
-        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
-        let server = try ReticleHttpServer(store: store, port: 0, mockStore: mockStore)
+        let ruleStore = try NetworkRuleStore(sessionDirectory: store.sessionDirectory)
+        let server = try ReticleHttpServer(store: store, port: 0, ruleStore: ruleStore)
         try server.start()
         defer { server.stop() }
 
@@ -238,73 +238,75 @@ struct EventBusTests {
             contentType: nil
         )
         let valueResponse = try await post(
-            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/values")!,
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/values")!,
             body: value
         )
         #expect(valueResponse.status == 201)
 
-        let rule = NetworkMockRuleRequest(
+        let rule = NetworkRuleRequest(
             id: "rule",
             enabled: true,
             priority: 5,
             method: "GET",
             url: "/api",
             match: .prefix,
-            valueId: "ok"
+            actions: NetworkRuleActions(route: .mock(valueId: "ok"))
         )
         let ruleResponse = try await post(
-            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules")!,
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules")!,
             body: rule
         )
         #expect(ruleResponse.status == 201)
 
-        let listURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules")!
+        let listURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules")!
         let (rulesData, rulesResponse) = try await URLSession.shared.data(from: listURL)
         #expect((rulesResponse as? HTTPURLResponse)?.statusCode == 200)
-        #expect(try JSONDecoder().decode(NetworkMockRulesResponse.self, from: rulesData).rules.map(\.id) == ["rule"])
+        #expect(try JSONDecoder().decode(NetworkRulesResponse.self, from: rulesData).rules.map(\.id) == ["rule"])
 
         let resolveResponse = try await post(
-            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/resolve")!,
-            body: NetworkMockResolveRequest(method: "GET", url: "http://api.test/api/users")
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/resolve")!,
+            body: NetworkRuleResolveRequest(method: "GET", url: "http://api.test/api/users")
         )
         #expect(resolveResponse.status == 200)
-        #expect(try JSONDecoder().decode(NetworkMockResolveResponse.self, from: resolveResponse.data).rule?.id == "rule")
+        let resolved = try JSONDecoder().decode(NetworkRuleResolveResponse.self, from: resolveResponse.data)
+        #expect(resolved.rule?.id == "rule")
+        #expect(resolved.value?.id == "ok")
 
-        let (exportData, exportResponse) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/export")!)
+        let (exportData, exportResponse) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/export")!)
         #expect((exportResponse as? HTTPURLResponse)?.statusCode == 200)
-        let exported = try JSONDecoder().decode(NetworkMockExport.self, from: exportData)
+        let exported = try JSONDecoder().decode(NetworkRuleExport.self, from: exportData)
         #expect(exported.rules.map(\.id) == ["rule"])
         #expect(exported.values.map(\.id) == ["ok"])
 
         let clearResponse = try await post(
-            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/clear")!,
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/clear")!,
             body: EmptyPostBody()
         )
         #expect(clearResponse.status == 200)
-        #expect(mockStore.listRules().isEmpty)
-        #expect(mockStore.listValues().isEmpty)
+        #expect(ruleStore.listRules().isEmpty)
+        #expect(ruleStore.listValues().isEmpty)
 
         let importResponse = try await post(
-            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/import")!,
+            URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/import")!,
             body: exported
         )
         #expect(importResponse.status == 201)
-        #expect(mockStore.listRules().map(\.id) == ["rule"])
-        #expect(mockStore.listValues().map(\.id) == ["ok"])
+        #expect(ruleStore.listRules().map(\.id) == ["rule"])
+        #expect(ruleStore.listValues().map(\.id) == ["ok"])
 
-        let disableURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules/rule/disable")!
+        let disableURL = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/rule/disable")!
         var disableRequest = URLRequest(url: disableURL)
         disableRequest.httpMethod = "POST"
         let (disabledData, disabledResponse) = try await URLSession.shared.data(for: disableRequest)
         #expect((disabledResponse as? HTTPURLResponse)?.statusCode == 200)
-        #expect(try JSONDecoder().decode(NetworkMockRule.self, from: disabledData).enabled == false)
+        #expect(try JSONDecoder().decode(NetworkRule.self, from: disabledData).enabled == false)
 
-        var deleteValue = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/values/ok")!)
+        var deleteValue = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/values/ok")!)
         deleteValue.httpMethod = "DELETE"
         let (_, rejectedDelete) = try await URLSession.shared.data(for: deleteValue)
         #expect((rejectedDelete as? HTTPURLResponse)?.statusCode == 400)
 
-        var deleteRule = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/mocks/rules/rule")!)
+        var deleteRule = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/sessions/current/rules/rule")!)
         deleteRule.httpMethod = "DELETE"
         let (_, removedRule) = try await URLSession.shared.data(for: deleteRule)
         #expect((removedRule as? HTTPURLResponse)?.statusCode == 200)

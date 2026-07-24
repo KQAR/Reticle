@@ -24,9 +24,15 @@ reticle-protocol/
   1. the golden fixture validates against the schema,
   2. JSON emitted by the Kotlin model validates against the schema,
   3. the golden fixture deserializes back through Kotlin losslessly.
-- **Future greenfield platforms (Swift / ArkTS) may codegen** their models from
-  the same schema. "Generate vs hand-write" is each platform's choice; the schema
-  is the contract everyone shares.
+- **Swift (`reticle-swift`) is also a shipped hand-written implementation**, not
+  generated — it backs the Swift host and the iOS agent. It validates the same
+  `schema/*` and shared golden fixtures from the Swift side: `SchemaValidationTests`
+  in `reticle-host` does value-level validation of the emitted payloads, and
+  `ReticleProtocolTests` in `reticle-swift` decodes the shared goldens. So the
+  contract is pinned from both language sides, not one.
+- **Further greenfield platforms (e.g. ArkTS) may codegen** their models from the
+  same schema. "Generate vs hand-write" is each platform's choice; the schema is
+  the contract everyone shares.
 
 ## Serialization conventions encoded in the schema
 
