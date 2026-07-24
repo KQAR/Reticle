@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Android inject: the JDWP forward host port is now probed (`ServerSocket(0)`)
+  instead of derived from the pid (`16000 + pid % 1000`). The derived port could
+  collide with a stale forward left on it, an active runtime forward in the same
+  range, or — for two pids congruent mod 1000 — a concurrent inject. A probed-free
+  port can't already hold an adb forward (adb keeps forwarded ports bound), so all
+  three modes are eliminated.
+
 - iOS `act --verify` now works. The iOS path previously accepted `--verify` and
   silently dropped it, so an agent believed it had checked a post-condition it
   never checked. `IosHelperClient` now captures the watched node's state before the
