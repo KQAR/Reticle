@@ -159,8 +159,9 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, WebView DOM, the login keyboard trap, and the JDWP
-inject path on `noagent`), asserting an observable side effect at each step. It
+mutation, agreement regions, WebView DOM, the login keyboard trap, the system
+dialog (AlertDialog window recognition + occlusion), and the JDWP inject path on
+`noagent`), asserting an observable side effect at each step. It
 polls `status`/`compact` for readiness rather than fixed sleeps, so it tolerates
 slow cold starts on a software-GPU emulator. On such an emulator, disable the
 Google apps that ANR under load first (their dialogs are a *separate* window that
