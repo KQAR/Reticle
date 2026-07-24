@@ -4,7 +4,8 @@
 # exercises the full round trip through the Swift host + native helper: linked
 # launch, ui report, compact, selector taps with --verify and --trace-output,
 # runtime mutation, agreement-region resolution, WebView DOM, the login
-# keyboard trap, and the JDWP injection path on the noagent flavor.
+# keyboard trap, the system dialog (AlertDialog window recognition + occlusion),
+# and the JDWP injection path on the noagent flavor.
 #
 # This is the Android analogue of scripts/e2e-ios.sh. Every action step asserts
 # an OBSERVABLE side effect — a tap that merely "doesn't error" is worthless;
@@ -267,6 +268,56 @@ sleep 1
 R ui report --package "$PKG" --output "$TMP/login-submit"
 R ui compact "$TMP/login-submit/snapshot.json" | grep -q "Logged in: 654321" \
   || { echo "FAIL: type --submit did not fire the field's Done editor action"; exit 1; }
+
+echo "== SYSTEM DIALOG (AlertDialog window) =="
+# An AlertDialog is a *separate* WindowManagerGlobal root over the activity. This
+# is the multi-window recognition case: the capture must surface the dialog's own
+# content (title / message / buttons) AND mark the background control behind it
+# occluded by the dialog window — the window-vs-window occlusion path that no
+# other scenario exercises.
+open_scenario scenario.dialog dialog.trigger
+# Raise the dialog, then wait until its own window has actually drawn.
+R act tap --package "$PKG" --test-id dialog.trigger >/dev/null
+wait_compact "$PKG" "alertTitle"
+R ui report --package "$PKG" --output "$TMP/dialog"
+DIALOG_COMPACT="$(R ui compact "$TMP/dialog/snapshot.json")"
+echo "$DIALOG_COMPACT"
+echo "$DIALOG_COMPACT" | grep -q "Delete account?" \
+  || { echo "FAIL: dialog title 'Delete account?' not captured (multi-window walk)"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q "This action cannot be undone." \
+  || { echo "FAIL: dialog message not captured"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q 'button "Delete"' \
+  || { echo "FAIL: dialog positive button 'Delete' not captured"; exit 1; }
+echo "$DIALOG_COMPACT" | grep -q 'button "Cancel"' \
+  || { echo "FAIL: dialog negative button 'Cancel' not captured"; exit 1; }
+# The distinctive signal: the background trigger is behind the dialog window, so
+# it must be reported occluded-by the dialog root (a tap there would be swallowed).
+echo "$DIALOG_COMPACT" | grep "dialog.trigger" | grep -q "occluded-by" \
+  || { echo "FAIL: background dialog.trigger must be marked occluded-by the dialog window"; exit 1; }
+# Confirm the dialog button lands: tapping Delete flips dialog.status -> "Deleted"
+# and dismisses the dialog. --verify watches the background status node across the
+# dialog dismissal; --trace-output writes the evidence package.
+DIALOG_VERIFY="$(R act tap --package "$PKG" --test-id button1 \
+  --verify 'testId=dialog.status' --trace-output "$TMP/dialog-trace")"
+echo "$DIALOG_VERIFY"
+echo "$DIALOG_VERIFY" | grep -q "Deleted" \
+  || { echo "FAIL: --verify did not record dialog.status changing to Deleted"; exit 1; }
+sleep 1
+R ui report --package "$PKG" --output "$TMP/dialog-done"
+DIALOG_AFTER="$(R ui compact "$TMP/dialog-done/snapshot.json")"
+echo "$DIALOG_AFTER" | grep -q "Deleted" \
+  || { echo "FAIL: tapping Delete did not land (dialog.status never became Deleted)"; exit 1; }
+echo "$DIALOG_AFTER" | grep -q "alertTitle" \
+  && { echo "FAIL: dialog window still present after Delete (it should be dismissed)"; exit 1; }
+DIALOG_TRACE="$(find "$TMP/dialog-trace" -name trace.json | head -1)"
+[ -n "$DIALOG_TRACE" ] && grep -q "Deleted" "$DIALOG_TRACE" \
+  || { echo "FAIL: dialog trace.json diff did not record the dialog.status change"; exit 1; }
+# App-authored log bridge: the dialog logs must surface through /logs.
+DIALOG_LOGS="$(R debug logs --package "$PKG")"
+echo "$DIALOG_LOGS" | grep -q "dialog_opened" \
+  || { echo "FAIL: expected dialog_opened in the app log bridge"; exit 1; }
+echo "$DIALOG_LOGS" | grep -q "dialog_confirmed" \
+  || { echo "FAIL: expected dialog_confirmed in the app log bridge"; exit 1; }
 
 echo "== INJECTION path (noagent app, JDWP) =="
 # The noagent flavor carries none of dev.reticle.agent.* — the injected dex is

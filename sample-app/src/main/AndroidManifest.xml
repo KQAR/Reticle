@@ -41,5 +41,9 @@
             android:name="dev.reticle.sample.LoginScenarioActivity"
             android:exported="false"
             android:label="Login Keyboard Trap" />
+        <activity
+            android:name="dev.reticle.sample.SystemDialogScenarioActivity"
+            android:exported="false"
+            android:label="System Dialog" />
     </application>
 </manifest>
