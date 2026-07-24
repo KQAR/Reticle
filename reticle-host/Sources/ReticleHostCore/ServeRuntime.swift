@@ -88,11 +88,11 @@ public final class ServeRuntime {
             rootDirectory: options.rootDirectory,
             limit: options.eventLimit
         )
-        let mockStore = try NetworkMockStore(sessionDirectory: store.sessionDirectory)
+        let ruleStore = try NetworkRuleStore(sessionDirectory: store.sessionDirectory)
         let broker = try startHelperBrokerIfNeeded()
         let server: ReticleHttpServer
         do {
-            server = try ReticleHttpServer(store: store, port: options.port, mockStore: mockStore, helper: broker)
+            server = try ReticleHttpServer(store: store, port: options.port, ruleStore: ruleStore, helper: broker)
             self.server = server
             try server.start()
         } catch {
@@ -117,9 +117,12 @@ public final class ServeRuntime {
             )
             // Capture runs on Loom's engine (LoomCaptureLane). The lane generates
             // and exports the CA (reticle-ca.cer/.pem) into caDirectory on start.
-            let lane = LoomCaptureLane(store: store, configuration: configuration, mockStore: mockStore)
-            mockStore.onChange = { [weak lane] in lane?.syncMocks() }
+            let lane = LoomCaptureLane(store: store, configuration: configuration, ruleStore: ruleStore)
+            ruleStore.onChange = { [weak lane] in lane?.syncRules() }
             try lane.start()
+            // The lane is created after the server starts, so bind it now to service
+            // `POST /sessions/current/flows/:id/replay`.
+            server.flowReplayer = lane
             loomLane = lane
             let boundPort = lane.port
             if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {

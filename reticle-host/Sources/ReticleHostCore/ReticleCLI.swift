@@ -3,7 +3,7 @@ import Foundation
 /// Reticle host command-line entry point.
 public enum ReticleCLI {
     public static let version = "0.9.3"
-    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|mock|replay|serve|version> [--serial <id>] [options]"
+    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|rule|replay|serve|version> [--serial <id>] [options]"
 
     /// Runs the Reticle CLI and returns a process exit code.
     public static func run(_ argv: [String]) -> Int32 {
@@ -30,8 +30,8 @@ public enum ReticleCLI {
             // The resident hot-path process; auto-spawned by helper-backed
             // commands, so it stays out of the usage line.
             return runHelperDaemon(args)
-        case "mock":
-            return runMock(args)
+        case "rule":
+            return runRule(args)
         case "replay":
             return runReplay(args)
         default:
@@ -50,9 +50,9 @@ public enum ReticleCLI {
         }
     }
 
-    private static func runMock(_ args: Args) -> Int32 {
+    private static func runRule(_ args: Args) -> Int32 {
         do {
-            try cmdMock(args)
+            try cmdRule(args)
             return 0
         } catch {
             writeError("error: \(error)\n")

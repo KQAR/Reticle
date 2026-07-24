@@ -258,6 +258,37 @@ Authorization 等敏感 header 值会在进入事件日志前脱敏。
 
 REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。
 
+## 流量规则与 flow replay
+
+`serve` 运行时,`reticle rule` 可在 host 代理里重塑流量而不碰应用。一条规则匹配
+流量并应用一个**动作**——`mock`(返回存好的固定响应)、`block`(断开连接)、
+`mapRemote`(改路由到另一个 origin)、`passthrough`——外加可叠加的修饰符
+(`--delay-ms`、请求/响应 header rewrite、find/replace substitution)。规则与可复用
+的响应值分开存在当前 session 里:
+
+```bash
+reticle rule set --id users --action mock --value-id users-ok \
+  --method GET --url /api/users --match prefix --priority 100 \
+  --status 200 --headers '{"Content-Type":"application/json"}' \
+  --body '{"users":[]}'
+reticle rule set --id kill-analytics --action block --method ANY --url /track --match prefix
+reticle rule set --id slow-home --action passthrough --delay-ms 3000 --method GET --url /api/home --match prefix
+reticle rule disable --id users
+reticle rule list
+```
+
+明文 HTTP 规则直接生效;HTTPS 规则需 MITM 解密 + 应用信任 Reticle CA;不透明的
+CONNECT tunnel 与启用 pinning / 未信任 HTTPS 的流量无法改写。
+
+`reticle replay flow <request-id>` 重放一条已捕获的流(可带 `--method`/`--url`/
+`--set-headers`/`--remove-headers`/`--body`/`--clear-body` 覆盖),发出
+`network.replay` 事件并返回重放响应 vs 原始的 diff(status、body 大小、header 名字的
+增删改——只报名字不报值,不泄露密钥):
+
+```bash
+reticle replay flow <request-id> --set-headers '{"X-Debug":"1"}' --remove-headers '["Authorization"]'
+```
+
 ## 工具链
 
 *运行*预编译 release:Apple Silicon macOS 14+ + `adb`。无需 JDK。

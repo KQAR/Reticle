@@ -2,8 +2,8 @@
 
 [English](roadmap.md) | **简体中文**
 
-状态:路线图与当前状态文档(2026-07-16 更新,对应 0.7.0 及 Phase 2/3 的流式/schema/
-面板收尾)。记录了将 Reticle 从单
+状态:路线图与当前状态文档(2026-07-23 更新,对应 0.9.3——Loom 抓包引擎、流量规则、
+flow replay)。记录了将 Reticle 从单
 平台 Android CLI 演进为多平台运行时 harness(集成抓包代理与实时 Web 面板)的既定
 方向。`docs/architecture.md` 描述当前实现的操作细节。最后一节**下一步提案:证据
 工作流 + 安全证据线**记录了一组尚未构建、建在 Phase 1–3 已落地原语之上的提案。
@@ -320,21 +320,24 @@ reticle serve [--target android] [--session <name>]
   在现有 socket server 上实现起来很简单,足以支撑实时时间线。仅当面板日后需要丰富的
   双向控制时才保留 WebSocket;起步用 SSE + REST。
 
-## 代理后端藏在接口后面(引擎推迟)
+## 抓包引擎藏在接口后面(接口已落地,引擎已选定:Loom)
 
-引擎就是一个发出规范化 `network.*` 事件的 `EventSource`:
+lane 独立在 `ReticleNetworkLane` target 里,只通过一个发出规范化 `network.*`
+事件的 sink 接触 host(host 最终是 Swift,不是当初设想的 Kotlin):
 
-```
-interface ProxyBackend {
-  fun start(listenPort: Int, ca: CaMaterial): Flow<NetworkEvent>
-  fun stop()
+```swift
+public protocol NetworkEventSink: AnyObject, Sendable {
+    var sessionDirectory: URL { get }
+    func emit(_ request: EventPostRequest)   // 尽力而为;抓包永不让请求失败
 }
 ```
 
-以下任何一种都能在日后实现它,而不触碰总线或面板:内嵌 JVM 引擎
-(netty/LittleProxy 类)、受管的 `whistle` sidecar、或外部 `mitmproxy`。
-**之所以能推迟决定,正是因为事件总线让它可插拔。** 现在设计总线和时间线;代理阶段
-开始时再选引擎。
+引擎已尘埃落定:自研的 in-tree SwiftNIO 代理已删除,Reticle 以 SPM 库形式消费
+**[Loom](https://github.com/KQAR/Loom)** 的 `ProxyEngine`(`LoomProxyCore` /
+`LoomSharedModels`,pin 到 release tag)。`LoomCaptureLane` 以 loopback +
+`persistFlows: false` 跑引擎,订阅 `flowStream()`,把交换经 sink 重新发布。接口依然
+有价值——换引擎(受管的 `whistle` sidecar、外部 `mitmproxy`)只需改这一个 target,
+由 `scripts/e2e-proxy.sh` 端到端守护——但"用哪个引擎"已不再是开放问题。
 
 ## 抓包代理——诚实的能力边界
 
@@ -470,30 +473,36 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   (canvas 区域、离屏状态)注册一个可寻址的合成节点。它们在保住确定性 selector 骨干
   的同时降低 agent 驱动定位的成本——**不是**截图/自然语言探索路径。
 
-### Phase 2 —— 代理 + daemon
+### Phase 2 —— 抓包引擎 + daemon
 - 已完成:`reticle serve`、事件存储、session 模型、SSE/REST 表面、action trace
-  ingestion、纯 host HTTP 代理、设备自动配代理、CA 签发、可选 HTTPS MITM、以及
-  session 级网络 mock。
-- 已完成(0.7.x 收尾):**流式上游转发**——响应按块转发(identity 走
-  `Content-Length`,解码/未知长度走 chunked),带客户端驱动的背压,存档只保留有界
-  前缀,大 body 不再整体驻留在 daemon 内存;**类型化 `network.*` schema**
+  ingestion、设备自动配代理、CA 签发、可选 HTTPS MITM、以及 session 级流量规则。
+- 已完成(引擎):自研的 in-tree SwiftNIO 代理已删除;抓包现以 SPM 库形式跑 **Loom**
+  的 `ProxyEngine`(`LoomProxyCore` / `LoomSharedModels`)。传输、MITM、CA、上游转发
+  都是 Loom 的;Reticle 以 loopback + `persistFlows: false` 跑它、自己存储、把 flow
+  归一化成 `network.*` 事件(见 architecture.md 的 network-lane 段)。
+- 已完成(规则):原本只做 mock 的存储已泛化为通用**流量规则**存储——route
+  `mock` / `block` / `mapRemote` / `passthrough` 加修饰符(`delayMs`、请求/响应 header
+  rewrite、find/replace substitution),1:1 映射到 Loom 的 `RuleActions`。匹配支持
+  `regex`(upsert 校验)、`ANY` method 通配、query `"*"` 存在性谓词。
+- 已完成(replay):**flow replay + diff**(`POST /sessions/current/flows/:id/replay`、
+  `reticle replay flow`)闭合 Loom 的 capture → modify → replay → diff 环,发出携带响应
+  diff(status/body/header 名字增删改)的 `network.replay` 事件。
+- 已完成(schema):类型化 `network.*` payload schema
   (`reticle-protocol/schema/network-event-payload.schema.json`)加 request/response/
   error 三个 golden fixture,由 Kotlin 契约测试校验,并用 Swift 字段集测试把发射端
-  钉死到同一 schema;以及**更丰富的 mock 匹配**——`regex`(upsert 时校验,对 path 与
-  完整 URL 都尝试)、`ANY` method 通配、query `"*"` 存在性谓词,全部在
-  `NetworkMockStore` 内实现,mock 状态仍与 EventStore 解耦。
+  钉死到同一 schema。
 - 下一步:把类型化 schema 覆盖扩展到其余事件族(action / runtime payload),并在出现
   具体用例时为 header/body 增加 matcher 谓词。
 
 ### Phase 3 —— Web 面板
 - 已完成:localhost 只读证据面板,展示 action trace、截图/产物、network lane 卡片、
-  body 预览、MITM/tunnel/mock 模式、以及 mock rule/value id。
-- 已完成(0.7.x 收尾):**网络过滤器**——模式(MOCK/ERROR/MITM/TUNNEL)、状态类
-  (2xx/3xx/4xx/5xx)、以及对 method/url/host/path/status/mock id 的自由文本搜索,三者
-  可组合;一个 **Mock groups** 视图切换,把已 mock 的请求按其规则聚合(含命中次数),其余
-  按 host 聚合;以及每张网络卡片上的 **copy as mock** 按钮,拼装出可直接运行的
-  `reticle mock set` 命令(含指向已捕获响应的 `--body-file`)复制到剪贴板。面板保持
-  display-only——只产出命令供用户运行,自身不 POST mock 状态。
+  body 预览、MITM/tunnel/rule 模式、以及 rule id / action / value id。
+- 已完成(收尾):**网络过滤器**——模式(RULE/ERROR/MITM/TUNNEL)、状态类
+  (2xx/3xx/4xx/5xx)、以及对 method/url/host/path/status/rule id 的自由文本搜索,三者
+  可组合;一个 **Rule groups** 视图切换,把命中规则的请求按其规则聚合(含命中次数),其余
+  按 host 聚合;以及每张网络卡片上的 **copy as rule** 按钮,拼装出可直接运行的
+  `reticle rule set` 命令(含指向已捕获响应的 `--body-file`)复制到剪贴板。面板保持
+  display-only——只产出命令供用户运行,自身不 POST 规则状态。
 - 下一步:仅当下方 deferred 问题被回答(会强制双向传输)时再考虑反向驱动;否则面板边界不变。
 
 ### Phase 4 —— 多平台

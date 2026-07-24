@@ -67,9 +67,15 @@ object Injector : AppInjector {
         // the JDWP channel we're about to open.
         val dex = locatePayloadDex()
 
-        // Reach the process's JDWP channel over a fresh host port. Derive it off
-        // the runtime port range so it won't clash with an active forward.
-        val jdwpHostPort = 16000 + (pid % 1000)
+        // Reach the process's JDWP channel over a fresh host port. Probe for a free
+        // loopback port rather than deriving one from the pid (`16000 + pid % 1000`):
+        // a derived port could collide with a stale forward left on it, with an active
+        // runtime forward in the same range, or — for two pids congruent mod 1000 —
+        // with a concurrent inject. A probed-free port cannot already hold an adb
+        // forward (adb keeps forwarded ports bound, so the probe would never pick one).
+        // The tiny window between closing the probe socket and `adb forward` is covered
+        // by connectWithHandshake, which re-issues the forward on retry.
+        val jdwpHostPort = java.net.ServerSocket(0).use { it.localPort }
 
         // ORDER MATTERS: open the JDWP connection BEFORE staging the dex.
         //

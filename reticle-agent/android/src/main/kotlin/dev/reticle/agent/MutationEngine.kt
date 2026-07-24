@@ -154,8 +154,12 @@ class MutationEngine(private val context: Context) {
 
     private fun findIn(view: View, selector: Selector): View? {
         val resName = ReticleReflect.resourceEntryName(view)
-        val tag = ReticleReflect.testTag(view)
-        if (selector.testId != null && selector.testId == tag) return view
+        // Mirror SnapshotCapture's testId derivation exactly (testTag ?: nativeId ?:
+        // resourceId) so a testId a snapshot exposed — including one that came from an
+        // RN `nativeID` (keyed tag) — resolves back to the same View. Comparing only
+        // the keyless testTag here silently missed nativeID-sourced testIds.
+        val testId = ReticleReflect.testTag(view) ?: ReticleReflect.nativeId(view) ?: resName
+        if (selector.testId != null && selector.testId == testId) return view
         if (selector.resourceId != null && selector.resourceId == resName) return view
         if (view is android.view.ViewGroup) {
             for (i in 0 until view.childCount) {
