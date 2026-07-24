@@ -238,11 +238,11 @@ in Kotlin). All verified on a real device against the linked sample app
 (selector tap resolved to coordinates, mutate applied, logs read, a 1080×2412
 PNG written, `--region "《隐私政策》"` resolved to a precise point).
 
-The daemon, Web panel, proxy, HTTPS MITM lane, and session-scoped network mocks
-now exist in `reticle serve`. Streaming proxy forwarding and a typed `network.*`
-schema have since landed too (see Phase 2 below). **Still ahead for the full
-Swift host:** reverse-drive panel controls if explicitly chosen later, and
-streaming `logs --follow`. JDWP is never rewritten.
+The daemon, Web panel, capture lane (on Loom's engine), HTTPS MITM, session-scoped
+**traffic rules**, and **flow replay + diff** now exist in `reticle serve`, with a
+typed `network.*` schema pinned from both language sides (see Phase 2 below).
+**Still ahead for the full Swift host:** reverse-drive panel controls if explicitly
+chosen later, and streaming `logs --follow`. JDWP is never rewritten.
 
 ## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
 
@@ -253,9 +253,12 @@ the single, language-neutral source of truth for the wire contract.
   comments and the kotlinx-serialization setup for sealed hierarchies like
   `MetadataValue`, which codegen handles poorly) and a **CI contract test**
   validates the JSON they emit against the schema + fixtures.
-- Future greenfield platforms (Swift / ArkTS) may **codegen** their models from
-  the same schema. "Generate vs hand-write" is a per-platform choice; the schema
-  is the contract everyone shares.
+- Swift (`reticle-swift`) is **also a shipped hand-written implementation** — it
+  backs the Swift host and the iOS agent, and validates the same schema/fixtures
+  from the Swift side (`SchemaValidationTests`, `ReticleProtocolTests`), so the
+  contract is pinned from both language sides. Further greenfield platforms (e.g.
+  ArkTS) may **codegen** from the same schema; "generate vs hand-write" is a
+  per-platform choice.
 
 ## Target module layout
 
@@ -337,7 +340,7 @@ lets the engine choice be deferred.
 
 | Source | Types | Payload (schema'd in `reticle-protocol`) |
 | --- | --- | --- |
-| `proxy` | `network.request`, `network.response`, `network.error` | method, url, status, headers, timing, body refs |
+| `proxy` | `network.request`, `network.response`, `network.error`, `network.replay` | method, url, status, headers, timing, body refs, rule attribution (`ruleApplied`/`ruleAction`), and the replay diff |
 | `action` | `action.dispatched` | gesture (tap/swipe/drag/type), selector, resolved point, before/after node refs |
 | `ui` | `ui.snapshot`, `ui.screenshot` | capture metadata + a `ref` to the on-disk artifact |
 | `runtime` | `runtime.lifecycle` | agent started / injected / port bound / health change |
@@ -557,6 +560,12 @@ Android first and complete; everything else reserved behind the spec + SPI.
   view (canvas region, off-screen state). These keep the deterministic-selector
   backbone while lowering the cost of agent-driven targeting — they are *not* a
   screenshot/NL-exploration path.
+- **Input + verify completions (landed, 0.9.2–0.9.3)** — `act type --submit`
+  (Android editor-action; iOS HID Return); RN `nativeID` selectors resolved for both
+  capture and `mutate`; and cross-platform `act --verify` — the Android helper's
+  `HelperVerify` and the iOS analogue both diff a watched node's state before/after a
+  gesture. Evidence-only: verify emits the diff (`{selector, changed, changes[]}`),
+  never a pass/fail.
 
 ### Phase 2 — Capture engine + daemon
 - Done: `reticle serve`, the event store, session model, SSE/REST surface,
@@ -611,7 +620,7 @@ Android first and complete; everything else reserved behind the spec + SPI.
   into the shared `reticle serve` timeline / panel (events targeted `ios:<pkg>`),
   so iOS rides the same evidence pipeline as Android — the "Proposed next"
   evidence-workflow products (A1/A2/A4) now apply cross-platform. The host-side
-  capture proxy (`network.*`, HTTPS MITM, session mocks) also extends to iOS
+  capture proxy (`network.*`, HTTPS MITM, session traffic rules) also extends to iOS
   simulators via `reticle serve --target ios`: CA trust through
   `simctl keychain`, manual (printed) system-proxy routing since a
   simulator/device has no per-app hook, and `ios:<udid>` traffic attribution —
@@ -628,6 +637,61 @@ Android first and complete; everything else reserved behind the spec + SPI.
   left is real-device HID (no host-reachable input surface); `act activate`
   covers the device tap. iOS is now at effective parity for observe/drive/capture
   + evidence across simulator and device.
+
+# Engineering backlog (from the 2026-07 audit)
+
+A tech-debt / reliability / test-coverage audit (2026-07, parallel sweeps over the
+Swift host, the Kotlin agent/helper, and the docs) surfaced the items below. These
+are **not** product phases — they harden and test what already ships. Ordered by
+value. Items fixed since the audit are dropped (the mock→rule generalization's
+silent rule-wipe, the rule-sync deadlock, the unbounded `seen` set, the
+start-timeout orphan engine, the Android verify-token false-negative, iOS `act
+type` focus, iOS `act --verify`, RN `nativeID` resolution, and the JDWP
+forward-port collision are all resolved).
+
+**Reliability**
+- **`network-bodies/` file count is unbounded.** Captured body artifacts accumulate
+  per flow with no eviction; unlike the event ring and the (now-bounded) in-memory
+  `seen` set, the on-disk body dir grows for the life of a long session. Eviction
+  must be coupled to event-ring eviction — a body is evidence a live event still
+  references, so it can't be dropped underneath it. Larger change; parked with rationale.
+- **`awaitRuntime` polls with fixed attempts × sleep, not a wall-clock deadline**
+  (`HelperRuntime.kt`). Inconsistent with the deadline-based timeouts elsewhere
+  (`Injector.connectWithHandshake`, `HelperVerify.pollForChange`); an unresponsive
+  probe can overshoot the intended budget. Switch to a wall-clock deadline.
+
+**Test coverage (the biggest gaps)**
+- **The in-app Android agent (`reticle-agent`) has zero unit tests.** `MutationEngine`
+  (selector resolution), `SnapshotCapture` (the testId chain), `ReticleReflect`, and
+  the WebView/Compose bridges are all untested. The pure logic here (testId
+  derivation, selector matching, color hex) is Robolectric/JVM-testable — and it's
+  exactly where the recent `nativeID` capture-vs-resolve mismatch hid.
+- **Inject orchestration is untested.** `JdwpClientTest` covers only handshake /
+  id-size negotiation; `JdwpClient.inject()`'s breakpoint/InvokeMethod sequence and
+  `Injector.inject`'s ordering + dead-zone retry are proven only on a device.
+- **Swift: the rule→Loom `translate*()` layer and the HTTP route layer are untested.**
+  `LoomCaptureLane.translate*` (path→regex lifting, priority ordering,
+  no-op/missing-value dropping) is the most error-prone single point; the `rules` and
+  `flows/:id/replay` routes have no route-level regression net.
+
+**Docs**
+- **The Chinese README lags the English one** — missing the `act batch` JSON flow,
+  the helper-daemon hot path / `--helper-broker`, `reticle status` advisories, and
+  `--proxy-max-request-body-mb`. (The `rule` + `replay flow` sections were added; the
+  rest is translation debt.)
+- **A misanchored KDoc block in `Injector.kt`** documents `connectWithHandshake` but
+  is detached from it (a following `/**` re-opens for `screenCenter`), so the
+  function reads as undocumented.
+
+**Capability cliffs (verify the cause before building — see "feature parity requires a cause check")**
+- **iOS real-device input.** HID input and DYLD injection are simulator-only; a real
+  device has only in-process `/activate` + web activation. Closing this needs
+  XCUITest/WDA or CoreDevice. First quantify how many real-device actions `/activate`
+  can't cover before committing.
+- **Protocol double-write.** The Kotlin (`reticle-core`) and Swift (`reticle-swift`)
+  models / renderers / selector / trace-diff / WebView scripts are hand-written 1:1,
+  drift-guarded only by tests. A codegen unification is a large project with slow
+  payoff; parked.
 
 # Proposed next: evidence workflows + security-evidence lane
 
@@ -711,7 +775,7 @@ reversing or cracking the binary itself.
   Use deterministic-selector drive as a regression harness for the risk-control
   features themselves: drive liveness / 1:1 face-upload / device-check UI flows,
   capture their calls to external verification/attestation services, and use
-  session-scoped `mock` to simulate different external verdicts (trusted /
+  session-scoped rules (the `mock` action) to simulate different external verdicts (trusted /
   untrusted / degraded) so the client's per-branch UI and follow-up calls can be
   verified deterministically. Reticle only *drives the real flow + mocks the
   external return + records evidence*; it does not fabricate captured content or

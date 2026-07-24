@@ -197,10 +197,11 @@ JDWP/breakpoint 怪癖,不是 host 或边界问题。因此 `ui report` 是用**
 链接版示例 app 在真机上验证(选择器 tap 解析成坐标、mutate 生效、读到日志、写出
 1080×2412 PNG、`--region "《隐私政策》"` 解析到精确坐标)。
 
-`reticle serve` 的 daemon、事件总线、Web 面板、HTTP/HTTPS 代理、MITM lane 与
-session 级网络 mock 已落在 Swift host。流式代理转发与类型化 `network.*` schema 也已
-落地(见下方 Phase 2)。**完整 Swift host 仍待办的:** 如果后续明确选择则加入面板反向
-驱动,以及一个流式 `logs --follow`。JDWP 永不重写。
+`reticle serve` 的 daemon、事件总线、Web 面板、抓包 lane(跑 Loom 引擎)、HTTPS
+MITM、session 级**流量规则**与 **flow replay + diff** 已落在 Swift host;类型化
+`network.*` schema 由 Kotlin+Swift 两端校验(见下方 Phase 2)。**完整 Swift host 仍
+待办的:** 如果后续明确选择则加入面板反向驱动,以及一个流式 `logs --follow`。JDWP
+永不重写。
 
 ## 协议 spec:JSON Schema 是权威,Kotlin 手写 + 校验
 
@@ -210,8 +211,10 @@ wire 契约唯一的、语言中立的事实来源。
 - `reticle-core` 里的 Kotlin 类型保持**手写**(保留其文档注释,以及像
   `MetadataValue` 这类密封层级的 kotlinx-serialization 配置——codegen 处理得很糟),
   并由一个 **CI 契约测试**校验它产出的 JSON 是否符合 schema + fixtures。
-- 未来的绿地平台(Swift / ArkTS)可以从同一份 schema **codegen** 出自己的模型。
-  "生成 vs 手写"是各平台自己的选择;schema 是大家共享的契约。
+- Swift(`reticle-swift`)**也是已落地的手写实现**——支撑 Swift host 与 iOS agent,
+  并从 Swift 侧校验同一份 schema/fixtures(`SchemaValidationTests`、
+  `ReticleProtocolTests`),契约由 Kotlin+Swift 两端共同钉死。更多绿地平台(如 ArkTS)
+  可从同一份 schema **codegen**;"生成 vs 手写"是各平台自己的选择。
 
 ## 目标模块布局
 
@@ -286,7 +289,7 @@ reticle serve [--target android] [--session <name>]
 
 | 源 | 类型 | Payload(在 `reticle-protocol` 里定 schema) |
 | --- | --- | --- |
-| `proxy` | `network.request`、`network.response`、`network.error` | method、url、status、headers、timing、body 引用 |
+| `proxy` | `network.request`、`network.response`、`network.error`、`network.replay` | method、url、status、headers、timing、body 引用、规则归属(`ruleApplied`/`ruleAction`)、replay diff |
 | `action` | `action.dispatched` | 手势(tap/swipe/drag/type)、选择器、解析出的坐标点、操作前/后的节点引用 |
 | `ui` | `ui.snapshot`、`ui.screenshot` | 捕获元数据 + 指向磁盘产物的 `ref` |
 | `runtime` | `runtime.lifecycle` | agent 启动 / 注入 / 端口绑定 / 健康变化 |
@@ -511,6 +514,47 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   不匹配时做成 helper(Android:Kotlin `reticle-android-helper`)。见"方向:
   Swift host + 逐平台 helper"。
 
+# 工程 backlog(源自 2026-07 审计)
+
+一轮技术债 / 可靠性 / 测试覆盖审计(2026-07,对 Swift host、Kotlin agent/helper、
+文档三路并行扫描)暴露出下列项。它们**不是**产品阶段——是给已发布的东西做加固与补
+测。按价值排序。审计后已修的已剔除(mock→rule 的静默清规则、规则同步死锁、`seen`
+无界、start 超时孤儿引擎、Android verify token 假阴性、iOS `act type` 聚焦、iOS
+`act --verify`、RN `nativeID` 解析、JDWP forward 端口碰撞都已解决)。
+
+**可靠性**
+- **`network-bodies/` 文件数无界。** 抓包 body artifact 随流累积、无淘汰;不像事件环
+  和(已有界的)内存 `seen` 集,磁盘 body 目录会随长会话一直涨。淘汰必须与事件环淘汰
+  联动——body 是活事件仍引用的证据,不能在其下抽掉。改动较大,附理由暂缓。
+- **`awaitRuntime` 用固定 attempts×sleep 而非 wall-clock deadline**(`HelperRuntime.kt`),
+  与别处基于 deadline 的超时(`Injector.connectWithHandshake`、`HelperVerify.pollForChange`)
+  不一致,探针无响应时会超出预算。改成 wall-clock deadline。
+
+**测试覆盖(最大缺口)**
+- **in-app Android agent(`reticle-agent`)零单测。** `MutationEngine`(selector 解析)、
+  `SnapshotCapture`(testId 链)、`ReticleReflect`、WebView/Compose bridge 全无测试。这里
+  的纯逻辑(testId 推导、selector 匹配、colorHex)完全可用 Robolectric/JVM 测——最近
+  `nativeID` 采集-vs-解析不一致就藏在这。
+- **注入编排无测试。** `JdwpClientTest` 只覆盖握手/id-size 协商;`JdwpClient.inject()` 的
+  断点/InvokeMethod 序列和 `Injector.inject` 的顺序 + dead-zone 重试只在真机验证。
+- **Swift:规则→Loom 的 `translate*()` 与 HTTP 路由层无测试。** `LoomCaptureLane.translate*`
+  (path→regex 提升、priority 排序、no-op/缺值丢弃)是最易错的单点;`rules` 与
+  `flows/:id/replay` 路由没有路由级回归网。
+
+**文档**
+- **中文 README 落后英文版**——缺 `act batch` JSON flow、helper-daemon 热路径/
+  `--helper-broker`、`reticle status` advisory、`--proxy-max-request-body-mb`。(`rule` +
+  `replay flow` 两节已补,其余是翻译欠账。)
+- **`Injector.kt` 里一段脱锚 KDoc** 本应挂在 `connectWithHandshake` 上,却被随后的
+  `/**`(属 `screenCenter`)截断,导致该函数读起来无文档。
+
+**能力悬崖(补齐前先实证病因)**
+- **iOS 真机输入。** HID 输入与 DYLD 注入仅限模拟器;真机只有 in-process `/activate` +
+  web activation。补齐需 XCUITest/WDA 或 CoreDevice。先量化真机有多少动作 `/activate`
+  覆盖不了再决定。
+- **协议双写。** Kotlin(`reticle-core`)与 Swift(`reticle-swift`)的模型/渲染/selector/
+  trace-diff/WebView 脚本全是手工 1:1,只有测试防漂移。codegen 统一是大工程、收益慢,暂缓。
+
 # 下一步提案:证据工作流 + 安全证据线
 
 尚未构建。下面全部是**建在已存在原语之上的产品化层**(action trace、截图、网络
@@ -571,7 +615,7 @@ Android 优先并做完整;其余一切藏在 spec + SPI 后面预留。
   时如实报「不可观测」,不越线破解。*Phase 2(代理上的 additive 增强)。*
 - **B2 —— 风控流程 E2E 回归 harness(最契合,B 里优先做)。** 用确定性 selector 驱动
   给风控功能本身当回归 harness:驱动活体 / 1:1 人脸上传 / 设备校验 UI 流程,抓取其
-  对外部校验/风控服务的调用,并用 session 级 `mock` 模拟不同外部 verdict(可信/
+  对外部校验/风控服务的调用,并用 session 级规则(`mock` 动作)模拟不同外部 verdict(可信/
   不可信/降级),让客户端在各分支下的 UI 与后续调用可确定性复现验证。Reticle 只
   *驱动真实流程 + mock 外部返回 + 存证*,不伪造采集内容、不攻击活体(那是红队,不在
   此)。*Phase 2(依赖 mock + 代理)。*
