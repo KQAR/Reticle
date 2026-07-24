@@ -34,6 +34,12 @@ enum class SampleScenario(
         subtitle = "Bottom submit button that the soft keyboard covers",
         testId = "scenario.login",
         activityClass = LoginScenarioActivity::class.java,
+    ),
+    SystemDialog(
+        title = "System dialog",
+        subtitle = "AlertDialog window raised over the activity",
+        testId = "scenario.dialog",
+        activityClass = SystemDialogScenarioActivity::class.java,
     );
 
     fun intent(context: Context): Intent = Intent(context, activityClass)

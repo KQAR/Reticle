@@ -20,7 +20,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar|login`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar|login|dialog`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -91,10 +91,19 @@ struct HomeView: View {
                         // the keyboard genuinely covers it.
                         .ignoresSafeArea(.keyboard)
                 }
+                scenarioRow(
+                    title: "System dialog",
+                    subtitle: "UIAlertController raised over the scenario",
+                    testId: "scenario.dialog",
+                    tag: "dialog"
+                ) {
+                    ScenarioScreen { SystemDialogViewController() }
+                        .navigationTitle("System dialog")
+                }
             }
             .navigationTitle("Reticle Sample")
             .onAppear {
-                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(6)])
+                Reticle.log("home_visible", metadata: ["scenarioCount": .integer(7)])
             }
         }
         .navigationViewStyle(.stack)
