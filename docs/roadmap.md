@@ -693,6 +693,77 @@ forward-port collision are all resolved).
   drift-guarded only by tests. A codegen unification is a large project with slow
   payoff; parked.
 
+# E2E-verification readiness (gap analysis, 2026-07-24)
+
+The end-goal scenario is **late-stage E2E verification**: after a feature is built,
+an agent drives it end to end on a device and checks each step, with Reticle
+emitting evidence and the agent asserting. Reviewed against that scenario, the
+capture/drive backbone is complete (observe / act / batch / verify / network /
+rules / replay / trace / panel, cross-platform). The gaps are the *E2E-specific*
+layers — long-session hygiene, cross-signal correlation, and evidence assembly —
+ordered by leverage. Each item stays inside the evidence-not-verdicts line: it
+reports facts (a diff, a delta), never a pass/fail.
+
+1. **Long-session hygiene (E2E runs are long).** `network-bodies/` writes a body
+   artifact per flow with no eviction — a long verification session leaks disk
+   (listed under Reliability above as "parked", but E2E is exactly the case that
+   hits it, so re-prioritize). `awaitRuntime` uses fixed attempts × sleep, not a
+   wall-clock deadline — an unresponsive probe overshoots the budget.
+2. **Cross-signal correlation — observability/analytics are off the timeline.** The
+   session event bus unifies UI action + network + screenshot, but the questions a
+   verify pass asks after a tap — *did the right analytics event fire? did anything
+   crash?* — live in external, separately-queried tools (`sensors-query`,
+   `sentry-query`). They are not folded into the session timeline, so the agent
+   hand-correlates across tools. Fold analytics/error signals in as evidence
+   sources (an orchestration layer is enough to start).
+3. **Evidence assembly / comparison products (A1/A2/A3, not built).** Primitives are
+   scattered; the agent assembles them by hand. A1 (PR evidence bot) packages a
+   whole E2E run's evidence into a consumable report; A2 (visual regression) adds
+   the layout/render drift that structural diff misses; A3 (design-fidelity delta).
+4. **iOS real-device input cliff (strategic).** A real device has only `act
+   activate` (selector-driven); point taps, complex gestures, and keyboard `type`
+   all require a booted simulator's HID surface. Any real-device E2E step without a
+   stable selector is uncovered. Needs XCUITest/WDA or CoreDevice — first quantify
+   how many real-device actions `activate` cannot cover (see the capability-cliff
+   rule above — "feature parity requires a cause check").
+
+## Investigated and dropped: a `wait`-for-condition primitive
+
+An explicit `act wait --for <appears|gone|stable|enabled|network-idle>` was
+proposed as the "async settling" primitive (replace fixed `settleMs` hard-waits
+with an observed condition). It was **dropped on reliability grounds** after a
+code-level audit: a wait that silently returns a wrong answer is worse than no
+wait, and the snapshot ground-truth it would poll cannot support an
+*absolutely* reliable answer without backbone changes. Recorded so the naive
+version is not rebuilt:
+
+- **`isVisible` is a weak, platform-divergent proxy.** Android
+  (`SnapshotCapture.kt`) is `visibility==VISIBLE && w>0 && h>0` — no ancestor
+  chain, no on-screen-bounds test; iOS (`SnapshotCapture.swift`) chains ancestors
+  via `parentVisible && !isHidden && alpha>0.01`. Neither guarantees "actually on
+  screen", and **neither raw node carries occlusion** (occlusion is computed only
+  in the compact layer's `occluderOf`). So `appears`/`gone` could report "visible"
+  for a node a tap would miss — the exact contradiction the occlusion work already
+  fixed for `act tap`.
+- **`ref`/`alias` selectors are not stable across polls.** Refs are minted fresh
+  per capture (`makeRef(): "r${nextRef++}"`), so a ref cannot identify the same
+  node on the next poll.
+- **Selector resolution silently collapses to the first match** (`firstOrNull`),
+  and the first match can be a *different* node across polls — breaking any
+  before/after "stable" comparison.
+- **Unverified empirically:** `stable` cannot see transform/view-animation (only
+  layout-bounds changes), and per-poll full snapshots (`runOnMainSync`) perturb the
+  very animation being observed.
+
+The only reliable definition of `appears` is "a tap dispatched now would land
+here", which requires the predicate to share `act tap`'s resolution + a
+strengthened on-screen/occlusion visibility — i.e. **backbone visibility
+unification**, not a thin poll layer. If async settling is revisited, that
+backbone work is the prerequisite; a screenshot/pixel-stability signal is a
+separate alternative worth weighing. Until then, flows keep using explicit
+`settleMs` and `act --verify`'s before/after diff, and the agent decides when a
+screen has settled.
+
 # Proposed next: evidence workflows + security-evidence lane
 
 Not yet built. Everything below is a **productization layer on top of primitives
