@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Network capture: a bridged engine start that the sync side abandons on timeout
+  no longer leaks a bound port. `LoomCaptureLane.start()` and
+  `startPhoneOnboarding()` bridge Loom's async engine to the daemon's synchronous
+  lifecycle via a semaphore; on timeout they threw but left the `Task` running, so
+  a start that completed *after* the timeout left an engine (or provisioning
+  server) bound to a port with no owner to stop it. The bridging Task now claims
+  its result under the lock and, when the sync side has already given up, stops the
+  orphaned engine / provisioning server instead. (Cancelling the Task alone
+  wouldn't help — Loom's actor calls don't observe cancellation, so an in-flight
+  start still binds.)
+
 - Android inject: the JDWP forward host port is now probed (`ServerSocket(0)`)
   instead of derived from the pid (`16000 + pid % 1000`). The derived port could
   collide with a stale forward left on it, an active runtime forward in the same
