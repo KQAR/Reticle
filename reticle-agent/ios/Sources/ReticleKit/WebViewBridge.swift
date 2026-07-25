@@ -25,6 +25,10 @@ enum WebViewBridge {
         let frame: Rect
     }
 
+    /// Marker for "the DOM could not be read from this WKWebView right now".
+    static let domStatusKey = "domStatus"
+    static let domStatusUnavailable = "unavailable"
+
     static func captureInto(_ snapshot: inout Snapshot, pending: [Pending], nextRef: Int) {
         guard !pending.isEmpty, !Thread.isMainThread else { return }
         var counter = nextRef
@@ -32,13 +36,29 @@ enum WebViewBridge {
             guard let payload = evaluate(p.webView),
                   let data = payload.data(using: .utf8),
                   let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let root = json["root"] as? [String: Any] else { continue }
+                  let root = json["root"] as? [String: Any] else {
+                markDomUnavailable(&snapshot, p.parentRef)
+                continue
+            }
             let fold = CoordinateFold(json: json, webViewFrame: p.frame)
             var domNodes: [String: Node] = [:]
-            guard let rootRef = visit(root, parentRef: p.parentRef, fold: fold, nodes: &domNodes, counter: &counter) else { continue }
+            guard let rootRef = visit(root, parentRef: p.parentRef, fold: fold, nodes: &domNodes, counter: &counter) else {
+                markDomUnavailable(&snapshot, p.parentRef)
+                continue
+            }
             snapshot.nodes.merge(domNodes) { existing, _ in existing }
             snapshot.nodes[p.parentRef]?.children.append(rootRef)
         }
+    }
+
+    /// Record the fact instead of leaving an absence to be interpreted. A DOM read
+    /// fails for reasons an agent must be able to tell apart from "this web view
+    /// has no content": an `alert()`/`confirm()` modal blocks the page's JS thread
+    /// so `evaluateJavaScript` can never call back, JS may be off, or the read may
+    /// have outrun its budget while the page animates. All look identical — an
+    /// opaque node — unless the node carries the fact.
+    private static func markDomUnavailable(_ snapshot: inout Snapshot, _ ref: String) {
+        snapshot.nodes[ref]?.custom[domStatusKey] = .text(domStatusUnavailable)
     }
 
     private static func evaluate(_ webView: WKWebView) -> String? {

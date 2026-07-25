@@ -113,6 +113,14 @@ data class Node(
      * and compact-observation projections so the two can never silently disagree
      * about which nodes are targetable.
      */
+    /**
+     * True when this node hosts a web view whose DOM could not be read at capture
+     * time. The agents set `custom["domStatus"] = "unavailable"` in that case; this
+     * is the single place that spelling is interpreted.
+     */
+    fun domUnavailable(): Boolean =
+        (custom["domStatus"] as? MetadataValue.Text)?.value == "unavailable"
+
     fun hasTargetingSignal(): Boolean =
         testId != null ||
             resourceId != null ||

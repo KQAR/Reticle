@@ -221,11 +221,18 @@ wait_compact "$PKG" "Popup applied"
 # 2. A Spinner dropdown: framework popup, rows addressable only by label.
 R act tap --package "$PKG" --test-id popup.spinner >/dev/null
 wait_compact "$PKG" "Basic"
+sleep 1
 R act tap --package "$PKG" --label "Pro" >/dev/null
 wait_compact "$PKG" "Spinner: Pro"
-# 3. A PopupMenu (the overflow shape), same story.
+# 3. A PopupMenu (the overflow shape), same story — plus a settle. A popup animates
+# in, and `wait_compact` returns the moment its text is first captured, which can be
+# MID-animation: the row's rect is then stale by the time the tap dispatches and the
+# touch lands on its neighbour (measured: `--label "Delete item"` produced
+# "Menu: Rename"). Reticle reports positions faithfully; it cannot make a moving
+# target hold still, so the caller waits for the animation.
 R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
 wait_compact "$PKG" "Delete item"
+sleep 1
 R act tap --package "$PKG" --label "Delete item" >/dev/null
 wait_compact "$PKG" "Menu: Delete item"
 # --label must REFUSE an ambiguous match rather than tap the first candidate: a
@@ -602,6 +609,48 @@ echo "$WEB_LOTTIE" | grep "webLottie.done" | grep -q 'button' \
 R act tap --package "$PKG" --css "#lottie-done" >/dev/null
 wait_compact "$PKG" "Done"
 R ui report --package "$PKG" --output "$TMP/web-lottie-done"
+
+echo "== WEB JS DIALOG (alert() blocks the page's JS thread) =="
+# `alert()` is not one more dialog: it blocks the page's JS thread until the app
+# dismisses it, so while the modal is up the DOM bridge's evaluateJavascript can
+# never call back. Three things must hold — the capture must not hang, the DOM must
+# degrade to the honest L0 (an opaque WebView node) instead of reporting stale
+# nodes as if they were live, and the native modal must still be recognized.
+open_scenario scenario.webJsDialog jsDialog.alertButton
+R ui report --package "$PKG" --output "$TMP/js-dialog"
+R ui compact "$TMP/js-dialog/snapshot.json" | grep -q "jsDialog.status" \
+  || { echo "FAIL: expected the page's DOM nodes before the alert"; exit 1; }
+# Raise the alert from the page.
+R act tap --package "$PKG" --css "#js-alert" >/dev/null
+wait_compact "$PKG" "Message from the page"
+# The capture completes (a hang would blow the 60s wait above) and the native
+# modal's own content is captured.
+START="$(date +%s)"
+R ui report --package "$PKG" --output "$TMP/js-dialog-open"
+ELAPSED=$(( $(date +%s) - START ))
+[ "$ELAPSED" -lt 20 ] \
+  || { echo "FAIL: capture took ${ELAPSED}s with a JS modal up — it should degrade, not block"; exit 1; }
+JS_OPEN="$(R ui compact "$TMP/js-dialog-open/snapshot.json")"
+echo "$JS_OPEN"
+echo "$JS_OPEN" | grep -q "Payment failed" \
+  || { echo "FAIL: the native JS-alert modal's message was not captured"; exit 1; }
+# The DOM is gone rather than stale: the WebView is back to an opaque node.
+echo "$JS_OPEN" | grep -q "jsDialog.status" \
+  && { echo "FAIL: DOM nodes must NOT be reported while the JS thread is blocked"; exit 1; }
+# ...and the absence must be LABELLED. "No DOM nodes" and "this web view is empty"
+# are otherwise the same observation; the host node carries dom:unavailable so an
+# agent can tell a blocked bridge from an empty page.
+echo "$JS_OPEN" | grep -q "dom:unavailable" \
+  || { echo "FAIL: the web view must report dom:unavailable while the DOM is unreadable"; exit 1; }
+# Dismissing releases the JS thread: the page's own onclick continues, and the DOM
+# bridge starts answering again.
+R act tap --package "$PKG" --label "OK" >/dev/null
+wait_compact "$PKG" "Alert dismissed"
+JS_LOGS="$(R debug logs --package "$PKG")"
+echo "$JS_LOGS" | grep -q "web_js_alert_shown" \
+  || { echo "FAIL: expected web_js_alert_shown in the app log bridge"; exit 1; }
+echo "$JS_LOGS" | grep -q "web_js_alert_dismissed" \
+  || { echo "FAIL: expected web_js_alert_dismissed in the app log bridge"; exit 1; }
 
 echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
 # A modal built as a Web Component whose content lives in an OPEN shadow root.
