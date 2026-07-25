@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    Popups(
+        title = "Popup windows",
+        subtitle = "PopupWindow, a Spinner dropdown, and an overflow PopupMenu",
+        testId = "scenario.popups",
+        activityClass = PopupScenarioActivity::class.java,
+    ),
     LongList(
         title = "Long list",
         subtitle = "60 recycled rows; far-down rows are absent until scrolled",

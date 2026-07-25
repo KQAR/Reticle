@@ -155,7 +155,66 @@ public enum Render {
             }) { return n }
         }
         if let ref = selector.ref { return snapshot.nodes[ref] }
+        if let label = selector.label { return try? labelMatch(snapshot, label) }
         return nil
+    }
+
+    /// Raised when a `label` selector matched more than one visible node. Picking
+    /// the first would land a tap on the wrong row while looking successful.
+    public struct AmbiguousLabel: Error, CustomStringConvertible {
+        public let label: String
+        public let matches: [Node]
+        public var description: String {
+            let listed = matches.prefix(6).map { n -> String in
+                let text = n.text ?? n.contentDescription ?? "?"
+                let at = n.frame.map { "\(Int($0.x)),\(Int($0.y))" } ?? "?"
+                return "'\(text)' at \(at) (\(n.ref))"
+            }.joined(separator: ", ")
+            return "label '\(label)' matched \(matches.count) visible nodes: \(listed). "
+                + "Refusing to guess — narrow it with --test-id / --resource-id / --ref, or use --point."
+        }
+    }
+
+    /// The single visible node whose text / a11y label matches, for framework
+    /// controls with no id of their own (alert buttons, menu rows). Exact match
+    /// first, substring second, scoped to the topmost window; ambiguity throws
+    /// rather than silently taking the first match.
+    public static func labelMatch(_ snapshot: Snapshot, _ label: String) throws -> Node? {
+        let topWindow = snapshot.root()?.children
+            .filter { snapshot.nodes[$0]?.kind == .window }
+            .last { snapshot.nodes[$0]?.isVisible == true }
+        func windowRef(of node: Node) -> String? {
+            var current: Node? = node
+            while let n = current {
+                if n.kind == .window { return n.ref }
+                current = n.parentRef.flatMap { snapshot.nodes[$0] }
+            }
+            return nil
+        }
+        let candidates = orderedRefs(snapshot).compactMap { snapshot.nodes[$0] }.filter {
+            $0.isVisible && $0.frame != nil && (topWindow == nil || windowRef(of: $0) == topWindow)
+        }
+        func textOf(_ node: Node) -> String? { node.text ?? node.contentDescription }
+        let exact = candidates.filter { textOf($0)?.trimmingCharacters(in: .whitespacesAndNewlines) == label }
+        let matches = exact.isEmpty
+            ? candidates.filter { textOf($0)?.range(of: label, options: .caseInsensitive) != nil }
+            : exact
+        // Nested duplicates are not an ambiguity: a row container repeats its
+        // child's text, and an alert button wraps a label with the same string at
+        // nearly the same point. Drop any match that is an ANCESTOR of another and
+        // keep the innermost; two matches in DIFFERENT subtrees stay ambiguous.
+        func isAncestor(_ candidate: Node, of node: Node) -> Bool {
+            var current = node.parentRef.flatMap { snapshot.nodes[$0] }
+            while let n = current {
+                if n.ref == candidate.ref { return true }
+                current = n.parentRef.flatMap { snapshot.nodes[$0] }
+            }
+            return false
+        }
+        let leaves = matches.filter { node in !matches.contains { isAncestor(node, of: $0) } }
+        if leaves.isEmpty { return nil }
+        if leaves.count == 1 { return leaves[0] }
+        throw AmbiguousLabel(label: label, matches: leaves)
     }
 
     private static func orderedRefs(_ snapshot: Snapshot) -> [String] {
