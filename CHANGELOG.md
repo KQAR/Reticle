@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **New selector: `--label`.** Framework-built controls carry no id of their own —
+  a `Spinner` dropdown's rows and a `PopupMenu`'s items share one resource id
+  (`text1`, `title`), and a `UIAlertAction` cannot take an identifier at all. They
+  were captured but unaddressable, so flows resorted to scraping a `ref` out of a
+  snapshot (refs are minted per capture, so that was fragile by construction).
+  `--label` matches visible text or the a11y label: exact first, substring second,
+  scoped to the topmost window, with nested duplicates collapsed to the innermost
+  node (an alert button wrapping a same-text label is not an ambiguity). **A
+  genuinely ambiguous label is an error, never a silent first match** — that
+  silent collapse is how a tap lands on the wrong row while looking like it worked.
+  Implemented on both hosts; the iOS e2e's alert step now uses it instead of the
+  python ref hack.
+
+- Sample app + e2e: a **popup windows** scenario (Android) covering the app-owned
+  windows that are not dialogs — `PopupWindow`, a `Spinner` dropdown, and a
+  `PopupMenu` — each attaching its own `WindowManagerGlobal` root through a
+  different framework path. All three were already captured correctly; the e2e
+  pins that, and pins that their rows are reachable only through `--label`.
+
 - **Scroll evidence: `Node.scroll` / `CompactItem.scroll`.** A recycling or lazy
   container binds only its visible window, so a far-down row has no node, no
   frame, and no selector — it is ABSENT, not off-screen. Until now a

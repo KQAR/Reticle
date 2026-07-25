@@ -168,8 +168,9 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, the long list (recycling boundary + scroll
-evidence), the Compose semantics screen, the canvas control
+mutation, agreement regions, the popup windows (PopupWindow / Spinner dropdown /
+PopupMenu + `--label`), the long list (recycling boundary + scroll evidence), the
+Compose semantics screen, the canvas control
 (virtual a11y sub-nodes under both id conventions + a touch-delegate rect),
 WebView DOM, same-origin iframe geometry (chained selector + a coordinate tap into
 the frame), the login keyboard trap, the system

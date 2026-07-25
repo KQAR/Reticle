@@ -162,6 +162,15 @@ data class Selector(
     val ref: String? = null,
     val point: Point? = null,
     /**
+     * Visible text or a11y label, for controls the framework builds without any
+     * stable id: a `Spinner` dropdown's rows, a `PopupMenu`'s items, an alert's
+     * buttons. Those are captured but carry only a SHARED resource id (`text1`,
+     * `title`), so nothing else can single one out. Matching is exact first, then
+     * substring, and AMBIGUITY IS AN ERROR — never a silent first-match, which is
+     * the failure mode that makes a wrong tap look like a working one.
+     */
+    val label: String? = null,
+    /**
      * A substring/region within a node. Combined with a node selector
      * (testId/resourceId/ref) it targets a span/virtual-node/char-range inside
      * that node — e.g. tap just the 《agreement》 link inside a checkbox row.
@@ -175,6 +184,7 @@ data class Selector(
                 ?: cssSelector?.let { "css=$it" }
                 ?: ref?.let { "ref=$it" }
                 ?: point?.let { "point=${it.x},${it.y}" }
+                ?: label?.let { "label=$it" }
                 ?: "<empty>"
         )
         region?.let { append(" region=\"$it\"") }

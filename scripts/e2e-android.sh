@@ -206,6 +206,37 @@ echo "$REGIONS" | grep -q "colorSpan"  || { echo "FAIL: expected a colorSpan reg
 R act tap --package "$PKG" --test-id agreement.markdown --region "Privacy" >/dev/null
 R act tap --package "$PKG" --test-id agreement.plain --region "Privacy Policy" >/dev/null
 
+echo "== POPUP WINDOWS (PopupWindow, Spinner dropdown, PopupMenu) + --label =="
+# `AlertDialog` was already covered, but each of these attaches its own root to
+# WindowManagerGlobal through a different framework path. They are also the case
+# where a captured control has NO id of its own: dropdown rows and menu items share
+# one resource id (`text1`, `title`), so `--label` (exact-then-substring, ambiguity
+# refused) is the only stable way to single one out.
+open_scenario scenario.popups popup.trigger
+# 1. An app-authored PopupWindow: its content is a separate window root.
+R act tap --package "$PKG" --test-id popup.trigger >/dev/null
+wait_compact "$PKG" "popupWindow.title"
+R act tap --package "$PKG" --test-id popupWindow.action >/dev/null
+wait_compact "$PKG" "Popup applied"
+# 2. A Spinner dropdown: framework popup, rows addressable only by label.
+R act tap --package "$PKG" --test-id popup.spinner >/dev/null
+wait_compact "$PKG" "Basic"
+R act tap --package "$PKG" --label "Pro" >/dev/null
+wait_compact "$PKG" "Spinner: Pro"
+# 3. A PopupMenu (the overflow shape), same story.
+R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
+wait_compact "$PKG" "Delete item"
+R act tap --package "$PKG" --label "Delete item" >/dev/null
+wait_compact "$PKG" "Menu: Delete item"
+# --label must REFUSE an ambiguous match rather than tap the first candidate: a
+# silent wrong tap is the failure mode this whole suite exists to catch.
+AMBIG="$(R act tap --package "$PKG" --label "Show" 2>&1 || true)"
+echo "$AMBIG" | grep -q "matched 2 visible nodes" \
+  || { echo "FAIL: an ambiguous --label must be refused, got: $AMBIG"; exit 1; }
+POPUP_LOGS="$(R debug logs --package "$PKG")"
+echo "$POPUP_LOGS" | grep -q "popup_menu_picked" \
+  || { echo "FAIL: expected popup_menu_picked in the app log bridge"; exit 1; }
+
 echo "== LONG LIST (recycling boundary + scroll evidence) =="
 # The commonest E2E dead end: a RecyclerView binds only its visible window, so a
 # far-down row has NO node, frame, or selector — it is absent, not off-screen.
