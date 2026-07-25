@@ -218,23 +218,32 @@ R act tap --package "$PKG" --test-id popup.trigger >/dev/null
 wait_compact "$PKG" "popupWindow.title"
 R act tap --package "$PKG" --test-id popupWindow.action >/dev/null
 wait_compact "$PKG" "Popup applied"
-# 2. A Spinner dropdown: framework popup, rows addressable only by label.
+# 2. A Spinner dropdown: framework popup, rows addressable only by label — and the
+# first user of `--settle` (see the PopupMenu note below for the measured cause).
 R act tap --package "$PKG" --test-id popup.spinner >/dev/null
 wait_compact "$PKG" "Basic"
-sleep 1
-R act tap --package "$PKG" --label "Pro" >/dev/null
+R act tap --package "$PKG" --label "Pro" --settle >/dev/null
 wait_compact "$PKG" "Spinner: Pro"
-# 3. A PopupMenu (the overflow shape), same story — plus a settle. A popup animates
-# in, and `wait_compact` returns the moment its text is first captured, which can be
-# MID-animation: the row's rect is then stale by the time the tap dispatches and the
-# touch lands on its neighbour (measured: `--label "Delete item"` produced
-# "Menu: Rename"). Reticle reports positions faithfully; it cannot make a moving
-# target hold still, so the caller waits for the animation.
+# 3. A PopupMenu (the overflow shape), same story — and the case `tap --settle`
+# exists for. A popup slides in, and `wait_compact` returns the moment its text is
+# first captured, which can be MID-animation: the row's rect is then stale by the
+# time the tap dispatches and the touch lands on its neighbour (measured on an
+# emulator, 1 run in 5: the row was captured at y=1396, the tap resolved y=1474, the
+# menu came to rest at y=1612, and `--label "Delete item"` fired "Menu: Rename").
+# `--settle` re-resolves until the point repeats before dispatching, so the tap is
+# aimed at where the row ENDED UP; `settled=1` is the report that it was confirmed
+# stopped rather than merely resolved once.
 R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
 wait_compact "$PKG" "Delete item"
-sleep 1
-R act tap --package "$PKG" --label "Delete item" >/dev/null
+MENU_TAP="$(R act tap --package "$PKG" --label "Delete item" --settle)"
+echo "$MENU_TAP" | grep -q "settled=1" \
+  || { echo "FAIL: tap --settle must report the settled position, got: $MENU_TAP"; exit 1; }
 wait_compact "$PKG" "Menu: Delete item"
+# --settle has nothing to re-resolve for a raw point, and must say so instead of
+# silently pretending it waited.
+SETTLE_ERR="$(R act tap --package "$PKG" --point 100,100 --settle 2>&1 || true)"
+echo "$SETTLE_ERR" | grep -q "settle needs a selector" \
+  || { echo "FAIL: --settle with --point must be refused, got: $SETTLE_ERR"; exit 1; }
 # --label must REFUSE an ambiguous match rather than tap the first candidate: a
 # silent wrong tap is the failure mode this whole suite exists to catch.
 AMBIG="$(R act tap --package "$PKG" --label "Show" 2>&1 || true)"

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **`act tap --settle`.** Resolution and dispatch are two steps, and a target that is
+  still sliding in moves between them: measured on an emulator (1 run in 5), a
+  `PopupMenu` row was captured at y=1396, the tap resolved y=1474, the menu came to
+  rest at y=1612 — and `--label "Delete item"` fired **"Menu: Rename"**. A silent
+  wrong tap is the worst failure shape this project has, so `tap` can now opt into the
+  stabilize step `act scroll-to` already performs: re-resolve the selector until its
+  point repeats, then dispatch, and report `settled` (false = still moving when the
+  `--settle-timeout`, default 2s, lapsed, so the point may already be stale). It never
+  refuses to tap and it needs a selector — a raw `--point` has nothing to re-resolve,
+  which is an error rather than a silent no-op. Both platforms; the Android suite
+  dropped its two `sleep 1` workarounds for it.
+
+  Its limit, measured and worth knowing: `--settle` watches the resolved POSITION. An
+  iOS `UIAlertController` animates in with a transform/alpha while its accessibility
+  frame is final from the first capture ([205,463 140x48], unchanged across six
+  captures) — so settle honestly reports `settled=true` at once, and a tap dispatched
+  right then still does not land (three runs). "The position stopped moving" is not
+  "the view is hit-testable yet"; there, wait or `--verify` and retry. This is the
+  narrow, resolution-path version of the settle problem, which is why it does not
+  revive the dropped `wait --for appears` proposal.
+
 - **New evidence: `screen.windowFocused`.** A system permission prompt, a biometric
   sheet, an autofill dialog — each belongs to ANOTHER process, so it appears in no
   window of this app and in no node of the tree. Measured during this work: with the

@@ -132,6 +132,24 @@ internal object HelperDeviceCommands {
         val result: JsonObject = when (sub) {
             "tap" -> {
                 target = resolveInputTarget(device, pkg, params)
+                // `--settle`: hold the tap until the resolved point stops moving, so
+                // an animating popup/sheet cannot make it land on the neighbour.
+                var stable: Boolean? = null
+                if (params.bool("settle")) {
+                    if (params.str("point") != null) {
+                        throw CliError(
+                            "--settle needs a selector: a raw --point has nothing to re-resolve, " +
+                                "so there is no way to tell whether it has stopped moving"
+                        )
+                    }
+                    val settled = settleInputTarget(
+                        device, pkg, params,
+                        first = target!!,
+                        budgetMs = (params.intOrNull("settleTimeoutMs") ?: 2_000).toLong(),
+                    )
+                    target = settled.target
+                    stable = settled.stable
+                }
                 val x = target!!.point.x.toInt()
                 val y = target!!.point.y.toInt()
                 input.tap(x, y)
@@ -141,6 +159,10 @@ internal object HelperDeviceCommands {
                     put("y", y)
                     put("source", target!!.source)
                     target!!.ref?.let { put("ref", it) }
+                    // Honest flag, as in scroll-to: false means the target was still
+                    // moving when the budget lapsed, so this tap may have been aimed
+                    // at a point that had already changed.
+                    stable?.let { put("settled", it) }
                 }
             }
             "swipe", "drag" -> {

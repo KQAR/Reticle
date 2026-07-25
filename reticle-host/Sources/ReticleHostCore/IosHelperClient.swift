@@ -308,7 +308,14 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                     throw HelperError("point taps need a simulator HID surface; on a real device use `act activate` with a selector")
                 }
                 let before = tracer?.capture()
-                let result = try activate(pkg, params)
+                var result = try activate(pkg, params)
+                // `--settle` is about a coordinate going stale between resolve and
+                // dispatch; in-process activation does both in one step, so there is
+                // nothing to wait out. Say so rather than reporting a settle that
+                // never ran.
+                if settleRequested(params) {
+                    result["settleSkipped"] = "activation resolves and dispatches in-process"
+                }
                 return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                        point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
                                        result: result)
@@ -316,12 +323,27 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             try assertHidAvailable(simUdid!)
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            let point = try resolveTapPoint(params, snapshot: snapshot)
+            var point = try resolveTapPoint(params, snapshot: snapshot)
+            var stable: Bool? = nil
+            if settleRequested(params) {
+                if params["point"] != nil {
+                    throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
+                        + "so there is no way to tell whether it has stopped moving")
+                }
+                let settled = settleTapPoint(pkg, params, first: point)
+                point = settled.point
+                stable = settled.stable
+            }
             let before = tracer?.capture()
             try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
+            var result: [String: Any] = ["gesture": "tap", "via": "hid", "x": point.x, "y": point.y]
+            // Honest flag, as in scroll-to: false means the target was still moving
+            // when the budget lapsed, so this tap may have been aimed at a point that
+            // had already changed.
+            if let stable { result["settled"] = stable }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: params["point"] != nil ? "point" : "selector", ref: nil,
-                                   result: ["gesture": "tap", "via": "hid", "x": point.x, "y": point.y])
+                                   result: result)
         case "swipe", "drag":
             guard let udid = simUdid else {
                 throw HelperError("\(gesture) needs a booted simulator (real devices have no HID input surface)")
@@ -521,6 +543,40 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             return Point(x: f.centerX, y: f.centerY)
         }
         throw HelperError("could not resolve a tap point from selector \(selector.describe())")
+    }
+
+    private func settleRequested(_ params: [String: Any]) -> Bool { isTruthy(params["settle"]) }
+
+    /// Re-resolve the tap target until it lands on the same point twice in a row —
+    /// it has stopped moving — or the budget runs out.
+    ///
+    /// Resolution and dispatch are two steps, and a sheet or menu animating in moves
+    /// between them: the captured rect is intermediate, so the synthesized touch can
+    /// land on the neighbouring row. This is the same stabilize step `scroll-to`
+    /// already performs, on the tap's own resolution path (no `isVisible` proxy).
+    /// It never refuses to tap — a lapsed budget returns the freshest point flagged
+    /// `stable = false`, which the caller reports as evidence.
+    private func settleTapPoint(
+        _ pkg: String, _ params: [String: Any], first: Point
+    ) -> SettledPoint {
+        let budget = Double((params["settleTimeoutMs"] as? Int) ?? 2_000) / 1000.0
+        let deadline = Date().addingTimeInterval(budget)
+        var previous = first
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.15)
+            // A target that vanishes mid-settle (a menu dismissed under us) is not a
+            // failure of the tap yet: report the freshest point and let the dispatch,
+            // or the caller's own verification, be the judge.
+            guard let snapshot = try? fetchSnapshot(pkg),
+                  let current = try? resolveTapPoint(params, snapshot: snapshot) else {
+                return SettledPoint(point: previous, stable: false)
+            }
+            if abs(current.x - previous.x) < 1, abs(current.y - previous.y) < 1 {
+                return SettledPoint(point: current, stable: true)
+            }
+            previous = current
+        }
+        return SettledPoint(point: previous, stable: false)
     }
 
     // MARK: - scroll-to
