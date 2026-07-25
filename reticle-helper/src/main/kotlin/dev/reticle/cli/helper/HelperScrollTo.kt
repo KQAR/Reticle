@@ -210,22 +210,21 @@ internal object HelperScrollTo {
                 (it.testId == wanted || it.resourceId == wanted || it.ref == wanted)
             } ?: throw CliError("scroll-to: no node matched --container '$wanted'")
         }
-        val topWindow = topWindowRef(snapshot)
-        return snapshot.nodes.values
+        val scrollables = snapshot.nodes.values
             .filter { it.scroll?.isScrollable == true && it.frame != null }
-            .filter { topWindow == null || windowRefOf(snapshot, it) == topWindow }
-            .maxByOrNull { (it.frame!!.width * it.frame!!.height) }
-    }
-
-    /**
-     * The last visible window child of the root. Application children are the
-     * platform's window roots in stacking order (dialogs/popups last), the same
-     * ordering `CompactObservation` uses to compute occlusion.
-     */
-    private fun topWindowRef(snapshot: Snapshot): String? =
-        snapshot.root()?.children
+        // Highest-stacked window that HAS a scroller, not simply the top window:
+        // the system keyboard is itself a window in the scene on iOS, so a strict
+        // "top window only" rule would find nothing whenever it is up.
+        val windowRefs = snapshot.root()?.children
             ?.filter { snapshot.nodes[it]?.kind == dev.reticle.core.NodeKind.window }
-            ?.lastOrNull { snapshot.nodes[it]?.isVisible == true }
+            .orEmpty()
+        val scoped = windowRefs.asReversed()
+            .asSequence()
+            .map { ref -> scrollables.filter { windowRefOf(snapshot, it) == ref } }
+            .firstOrNull { it.isNotEmpty() }
+            ?: scrollables
+        return scoped.maxByOrNull { (it.frame!!.width * it.frame!!.height) }
+    }
 
     /** The window a node belongs to, by walking parents. */
     private fun windowRefOf(snapshot: Snapshot, node: Node): String? {

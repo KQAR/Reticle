@@ -354,13 +354,48 @@ sleep 1
   || { echo "FAIL: submit after hide-keyboard did not log in"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
+echo "== OVERLAY WINDOW (a real second UIWindow occludes what is beneath) =="
+# The window-vs-window occlusion path had never fired on iOS: every UIWindow was
+# captured as kind=.view, and `CompactObservation` walks the application node's
+# WINDOW children to compute occlusion. So an overlay window covering the screen
+# left the controls underneath looking perfectly tappable — the exact silent
+# wrongness this suite exists to catch. Windows are now kind=.window.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=overlayWindow
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/overlay-before"
+"$HOST" --target ios ui compact "$TMP/overlay-before/snapshot.json" | grep "overlay.covered" | grep -q "occluded-by" \
+  && { echo "FAIL: nothing should be occluded before the overlay window exists"; exit 1; }
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id overlay.trigger
+sleep 2
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/overlay-up"
+OVERLAY="$("$HOST" --target ios ui compact "$TMP/overlay-up/snapshot.json")"
+echo "$OVERLAY"
+echo "$OVERLAY" | grep "overlay.covered" | grep -q "occluded-by" \
+  || { echo "FAIL: a control under an overlay UIWindow must be reported occluded-by"; exit 1; }
+echo "$OVERLAY" | grep -q "overlay.label" \
+  || { echo "FAIL: the overlay window's own content must be captured"; exit 1; }
+# The overlay's own button is reachable by label even though window scoping now
+# applies — and dismissing it must clear the occlusion.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Dismiss overlay"
+sleep 2
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/overlay-gone"
+GONE="$("$HOST" --target ios ui compact "$TMP/overlay-gone/snapshot.json")"
+echo "$GONE" | grep -q "Overlay dismissed" \
+  || { echo "FAIL: tapping the overlay's dismiss button did not land"; exit 1; }
+echo "$GONE" | grep "overlay.covered" | grep -q "occluded-by" \
+  && { echo "FAIL: occlusion must clear once the overlay window is gone"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== SYSTEM DIALOG (UIAlertController) =="
 # A UIAlertController raised over the scenario. Unlike Android's AlertDialog
 # (a distinct WindowManagerGlobal root), iOS presents the alert *inside* the
 # presenting window's hierarchy, so this asserts the capture surfaces the alert's
-# own content — title / message / actions — rather than window-vs-window
-# occlusion (there is no separate dialog window to occlude the background here,
-# which is why, deliberately, there is no occluded-by assertion on iOS).
+# own content — title / message / actions — and deliberately makes no occluded-by
+# assertion: there is no second window here to occlude anything. That is a
+# presentation difference, NOT a missing capability — the overlay-window section
+# above proves window-vs-window occlusion does fire on iOS for a real second
+# UIWindow.
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=dialog
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
