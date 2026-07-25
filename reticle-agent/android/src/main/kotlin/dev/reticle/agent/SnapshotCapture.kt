@@ -225,6 +225,22 @@ class SnapshotCapture(private val context: Context) {
      * reporting every truncated label as scrollable content would bury the one
      * container an agent actually needs to move.
      */
+    /**
+     * Whether this app's topmost window still has input focus. `hasWindowFocus`
+     * is the framework's own answer and covers exactly the case the tree cannot:
+     * another process's window (a permission prompt, a biometric sheet) took
+     * focus, so it exists on screen but in none of our windows.
+     */
+    private fun topWindowFocused(): Boolean? {
+        val roots = ReticleWindows.rootViews()
+        if (roots.isEmpty()) return null
+        return try {
+            roots.any { it.hasWindowFocus() }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun scrollInfo(view: View): dev.reticle.core.ScrollInfo? {
         if (view !is android.view.ViewGroup) return null
         return try {
@@ -291,6 +307,7 @@ class SnapshotCapture(private val context: Context) {
             interfaceStyle = if (night) "dark" else "light",
             // captureLocked already runs on the main thread, which the probe needs.
             keyboard = KeyboardProbe.probe(context),
+            windowFocused = topWindowFocused(),
         )
     }
 

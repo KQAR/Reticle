@@ -8,6 +8,11 @@
       easypln) already hold INTERNET — this keeps the test target honest.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      Declared only so the permission scenario can raise a REAL system prompt — the
+      one on-screen thing an in-process agent structurally cannot capture.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -32,6 +37,10 @@
             android:name="dev.reticle.sample.AgreementScenarioActivity"
             android:exported="false"
             android:label="Agreement Regions" />
+        <activity
+            android:name="dev.reticle.sample.PermissionScenarioActivity"
+            android:exported="false"
+            android:label="System Permission Prompt" />
         <activity
             android:name="dev.reticle.sample.WebJsDialogScenarioActivity"
             android:exported="false"
