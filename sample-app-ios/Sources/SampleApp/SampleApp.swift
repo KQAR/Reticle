@@ -36,7 +36,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|webview|swiftui|tabbar|login|dialog|lottieDialog|webLottieDialog|webComponentDialog|lottieOnlyDialog`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|canvasControl|webview|swiftui|tabbar|login|dialog|lottieDialog|webLottieDialog|webComponentDialog|lottieOnlyDialog`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -58,6 +58,8 @@ private let scenarioEntries: [ScenarioEntry] = [
                   subtitle: "Button tap, status mutation, text input, and app logs"),
     ScenarioEntry(tag: "agreements", title: "Agreement regions",
                   subtitle: "Link attribute, text markers, char grid, and color runs"),
+    ScenarioEntry(tag: "canvasControl", title: "Canvas control regions",
+                  subtitle: "Self-drawn segments exposed as accessibility sub-elements"),
     ScenarioEntry(tag: "webview", title: "WebView DOM",
                   subtitle: "Native title bar with a full-screen WKWebView underneath"),
     ScenarioEntry(tag: "swiftui", title: "SwiftUI boundary",
@@ -87,6 +89,8 @@ private func scenarioDestination(_ tag: String) -> some View {
         ScenarioScreen { CheckoutViewController() }.navigationTitle("Checkout")
     case "agreements":
         ScenarioScreen { AgreementViewController() }.navigationTitle("Agreements")
+    case "canvasControl":
+        ScenarioScreen { CanvasControlViewController() }.navigationTitle("Canvas control")
     case "webview":
         ScenarioScreen { WebViewScenarioViewController() }.navigationTitle("WebView DOM")
     case "swiftui":

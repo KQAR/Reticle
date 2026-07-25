@@ -66,7 +66,11 @@ class SelectorResolver(
      * Resolve a sub-region inside the node identified by the selector. Order:
      *   1. a discovered region (span / virtual a11y) whose label contains the
      *      requested substring — most reliable, real hit-rect.
-     *   2. the char grid: locate the substring's character range and compute
+     *   2. a discovered region whose SOURCE is named: `--region touchDelegate`.
+     *      Some channels are rect-only by nature (a touch delegate's forwarded
+     *      rect has no in-process target identity), so a label match can never
+     *      address them.
+     *   3. the char grid: locate the substring's character range and compute
      *      its rect — works even when no region was discoverable (self-drawn).
      */
     private fun resolveRegion(selector: Selector): Resolved? {
@@ -80,7 +84,14 @@ class SelectorResolver(
                 region.tapPoint()?.let { return Resolved(it, "region:${region.source}", node.ref) }
             }
 
-        // 2. Char grid substring.
+        // 2. Region by source name, for channels that carry no label.
+        node.regions
+            .firstOrNull { it.source.name.equals(needle, ignoreCase = true) }
+            ?.let { region ->
+                region.tapPoint()?.let { return Resolved(it, "region:${region.source}", node.ref) }
+            }
+
+        // 3. Char grid substring.
         node.charGrid?.let { grid ->
             val idx = grid.text.indexOf(needle)
             if (idx >= 0) {
