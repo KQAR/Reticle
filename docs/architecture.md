@@ -287,6 +287,19 @@ keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
 
+**Compose text is decomposed through the semantics surface, not `Layout`.** The
+channels above read `Spanned` + `Layout`, neither of which exists in Compose, so a
+`Text` with two `LinkAnnotation`s used to arrive as one node with no regions —
+the same agreement row that decomposes fine as a `TextView`. `ComposeTextRegions`
+closes that asymmetry with the surface Compose already exposes to accessibility:
+`SemanticsProperties.Text` gives the `AnnotatedString` (its `getLinkAnnotations`
+are the authored ranges) and the `SemanticsActions.GetTextLayoutResult` action —
+what TalkBack invokes — returns a `TextLayoutResult`, i.e. the laid-out glyph
+geometry that stands in for `Layout`. One `span` region per link with per-line
+rects and the url/tag as target, plus a char grid for substring targeting. Purely
+reflective, failing closed to zero regions, so the agent keeps no compile-time
+Compose dependency.
+
 **Virtual-node ids are the app's, not the framework's.** A provider hands out the
 ids the app chose in `getVisibleVirtualViews` — dense 0-based indexes for one
 control, stable domain ids (a seat number, a row id) for the next. Probing
