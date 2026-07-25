@@ -774,7 +774,7 @@ order paid for itself — half the points turned out to be real defects that had
 failing *closed* (silently returning nothing), and two "fixes" broke something else
 that the suites caught immediately.
 
-## Landed (PRs #107-#116)
+## Landed (PRs #107-#117)
 
 | Point | Verified cause | Outcome |
 | --- | --- | --- |
