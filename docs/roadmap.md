@@ -787,6 +787,7 @@ that the suites caught immediately.
 | Blocked DOM read | Degrade was correct (~1s, opaque node) but SILENT: "no DOM nodes" was indistinguishable from "empty page" | `dom:unavailable` marker on the host node, both platforms |
 | iOS window occlusion | Every `UIWindow` was `kind = .view`, so window-vs-window occlusion had NEVER fired on iOS — an overlay window left everything beneath it looking tappable | `kind = .window`, minus keyboard host windows (screen-sized, they marked the whole screen occluded); overlay-window scenario |
 | Out-of-process windows | With Android's permission prompt up, `mCurrentFocus` was the permission controller while the capture still listed every control as `tappable`. The in-process **screenshot** is blind to it too (device-level `simctl io screenshot` shows the alert; the agent's does not) | `screen.windowFocused` + `window: UNFOCUSED …` leading the compact; permission scenario on both platforms, each suite asserting loss AND clearing (the iOS half needed the workarounds in the row below) |
+| Tap on a moving target | Resolution and dispatch are two steps: a `PopupMenu` row captured mid-slide was at y=1396, the tap resolved y=1474, the menu came to rest at y=1612 — and `--label "Delete item"` fired "Menu: Rename" (1 run in 5 on an emulator). The iOS shape of the same question is NOT this: a `UIAlertController`'s accessibility frame is final from the first capture (unchanged across six captures) while a tap right after `activate` never lands — an in-place transform animation, invisible to any position signal | `act tap --settle` (+ `--settle-timeout`): re-resolve until the point repeats, then dispatch, and report `settled` honestly (false = the budget lapsed while it was still moving). Needs a selector; a raw `--point` is refused rather than silently unsettled. Both platforms; the Android suite dropped its two `sleep 1` workarounds, and the iOS suite pins the distinction — settle reports `settled=true` for the alert and the delay stays |
 | iOS focus evidence, asserted | The evidence worked on iOS but was unassertable for two measured reasons, both now solved: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright — "Operation not permitted" — so run 2 sees no prompt) and an open alert could not be **answered** from the host, and a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle (that resets the authorization to `notDetermined`); answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow width — no text read, so language-independent) inside an answer→retry→re-check loop. The section runs LAST because the reinstall wipes the app's container. `scripts/e2e-ios.sh` now asserts the same three things Android does: focused before, `window: UNFOCUSED` leading the compact while the app's own controls are still captured as `tappable` (the trap), and the evidence clearing once answered — plus `permission.status = "Prompt dismissed"` as proof the tap reached the alert rather than the alert simply going away |
 
 Self-inflicted bugs the suites caught, worth remembering as failure shapes:
@@ -801,34 +802,26 @@ genuinely untappable — a resolved tap landed on the system navigation bar.
 
 Ordered by value. Each item's cause is already measured unless marked otherwise.
 
-1. **`act tap --settle`.** Measured: tapping a `PopupMenu` item the moment it is first
-   captured landed on the row ABOVE it (`--label "Delete item"` produced
-   `Menu: Rename`) because the popup was still animating in and the rect was stale by
-   dispatch time. `act scroll-to` already solves this class by polling until the
-   resolved point repeats; the e2e currently works around it with a `sleep 1`. An
-   opt-in `--settle` on `tap` would remove the guesswork for callers. (Note the
-   existing decision that a general `wait --for appears` stays dropped: this is
-   narrower — same resolution path as the tap itself, no `isVisible` proxy.)
-2. **SwiftUI `Text` markdown links yield no regions (iOS).** Measured: the sample's
+1. **SwiftUI `Text` markdown links yield no regions (iOS).** Measured: the sample's
    `swiftui.agreement` ("Read the Terms and Privacy", two links in ONE `Text`) reports
    ZERO regions — the same asymmetry that was just fixed for Compose on Android.
    Investigate whether a usable surface exists (link ranges via
    `accessibilityAttributedLabel`, per-range geometry) BEFORE building: SwiftUI-drawn
    text has no accessible layout object, so this may be an honest boundary rather than
    a fix. Follow the "verify the cause before building" rule.
-3. **Screenshot degrade surfaces (`SurfaceView` / `FLAG_SECURE`).** Known degrade
+2. **Screenshot degrade surfaces (`SurfaceView` / `FLAG_SECURE`).** Known degrade
    paths (in-process capture cannot see a `SurfaceView`'s content or a secure window;
    the CLI can fall back to `adb exec-out screencap`) with NO case pinning them.
    Cause not yet measured this round. Add a scenario and assert the degrade is
    REPORTED (the `dom:unavailable` treatment applied to screenshots: an absence must
    be labelled, not inferred).
-4. **Third-party WebView kernels (X5/UC) — document, do not build.** `WebViewBridge`
+3. **Third-party WebView kernels (X5/UC) — document, do not build.** `WebViewBridge`
    is typed on `android.webkit.WebView`, so a third-party kernel loses the whole DOM
    capability silently. Decision taken this round with the maintainer: the target apps
    do not use one, so write it up as an explicit boundary (README/skill/`docs`) and
    make a suspected third-party kernel node say so, rather than adding a reflective
    adapter that cannot be verified without a real X5 sample.
-5. **Structural boundaries, written down as boundaries.** Closed shadow roots,
+4. **Structural boundaries, written down as boundaries.** Closed shadow roots,
    cross-origin iframes, bitmap-baked text, pure-Canvas controls with no accessibility
    surface, out-of-process system UI (permission prompts, biometric sheets, share
    sheets, Custom Tabs / `SFSafariViewController`, the IME itself), DRM video. Each is

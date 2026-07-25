@@ -106,6 +106,62 @@ internal fun resolveInputTarget(device: DeviceController, pkg: String, params: J
     return ResolvedInputTarget(resolved.point, resolved.source, resolved.ref)
 }
 
+/** A target plus whether its position was confirmed to have stopped moving. */
+internal data class SettledInputTarget(val target: ResolvedInputTarget, val stable: Boolean)
+
+/**
+ * Re-resolve [first] until the selector lands on the same point twice in a row —
+ * the target has stopped moving — or the budget runs out.
+ *
+ * Why a tap needs this at all. Resolution and dispatch are two steps, and between
+ * them the screen can move: a popup or a sheet animating in is captured at an
+ * intermediate rect, so the point is stale by the time the touch is synthesized and
+ * the touch lands on the neighbouring row (measured on an emulator: a `PopupMenu`
+ * tap aimed at "Delete item" the moment it was first captured fired "Rename"). This
+ * is `act scroll-to`'s stabilize step, made available to `tap` on request: same
+ * resolution path as the tap itself, no `isVisible` proxy — which is why it does not
+ * revive the dropped `wait --for appears` proposal.
+ *
+ * Never blocks forever and never refuses to tap: on a lapsed budget it returns the
+ * freshest target flagged `stable = false`, and the caller reports that as evidence.
+ */
+internal fun settleInputTarget(
+    device: DeviceController,
+    pkg: String,
+    params: JsonObject,
+    first: ResolvedInputTarget,
+    budgetMs: Long = 2_000L,
+    pollMs: Long = 150L,
+): SettledInputTarget = settleTarget(first, budgetMs, pollMs) {
+    // A target that vanishes mid-settle (a popup dismissed under us) is not a
+    // failure of the tap yet — report the freshest point and let the dispatch, or
+    // the caller's own verification, be the judge.
+    runCatching { resolveInputTarget(device, pkg, params) }.getOrNull()
+}
+
+/** The settle loop itself, with the clock and the resolver injected so it is testable. */
+internal fun settleTarget(
+    first: ResolvedInputTarget,
+    budgetMs: Long,
+    pollMs: Long,
+    nowMs: () -> Long = System::currentTimeMillis,
+    sleep: (Long) -> Unit = { Thread.sleep(it) },
+    resolve: () -> ResolvedInputTarget?,
+): SettledInputTarget {
+    val deadline = nowMs() + budgetMs
+    var previous = first
+    while (nowMs() < deadline) {
+        sleep(pollMs)
+        val current = resolve() ?: return SettledInputTarget(previous, false)
+        if (samePoint(current.point, previous.point)) return SettledInputTarget(current, true)
+        previous = current
+    }
+    return SettledInputTarget(previous, false)
+}
+
+private fun samePoint(a: Point, b: Point): Boolean =
+    kotlin.math.abs(a.x - b.x) < 1.0 && kotlin.math.abs(a.y - b.y) < 1.0
+
 /**
  * Re-resolve a cached outline entry against the live tree. Match by the
  * entry's stable selector (testId / resourceId / css) first, then by
