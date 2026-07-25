@@ -165,6 +165,7 @@ object SampleWebFixtures {
                 background-size: cover;
               }
               #shadow-host { display: block; width: 240px; height: 72px; border: 1px solid #ccc; }
+              #closed-shadow-host { display: block; width: 240px; height: 72px; border: 1px solid #ccc; }
               #hidden-display { display: none; }
               #hidden-visibility { visibility: hidden; }
             </style>
@@ -208,6 +209,14 @@ object SampleWebFixtures {
 
             <section id="boundaries">
               <div id="shadow-host" data-testid="complex.shadowHost">Shadow host</div>
+              <!--
+                The closed twin, for the boundary the open one hides: a `{mode:
+                'closed'}` root gives the page itself no `shadowRoot` handle, so the
+                traversal script cannot reach into it either. Its content must be
+                ABSENT from the tree — asserted, so silence here is never mistaken
+                for capture.
+              -->
+              <div id="closed-shadow-host" data-testid="complex.closedShadowHost">Closed shadow host</div>
               <!--
                 A same-origin (srcdoc) frame. The button carries its own onclick so
                 a COORDINATE tap can be told apart from one that merely dispatched:
@@ -261,6 +270,8 @@ object SampleWebFixtures {
               }, 300);
               var root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
               root.innerHTML = '<button id="shadow-button" data-testid="complex.shadowButton">Shadow action</button>';
+              var closed = document.getElementById('closed-shadow-host').attachShadow({ mode: 'closed' });
+              closed.innerHTML = '<button id="closed-shadow-button">Closed shadow action</button>';
               var canvas = document.getElementById('chart-canvas');
               var ctx = canvas.getContext('2d');
               ctx.fillStyle = '#34A853';
