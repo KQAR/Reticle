@@ -125,6 +125,55 @@ echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan re
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
 kill "$HOLD" 2>/dev/null || true
 
+echo "== LONG LIST (lazy boundary + scroll evidence) =="
+# SwiftUI's List realizes only the rows near the viewport, so a far-down row has
+# no view, no accessibility element, and no frame: the selector is absent, not
+# off-screen. Reticle reports the scroll view's remaining travel so an agent can
+# tell "not realized yet" from "this app has no such element".
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=list
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/list"
+LIST_COMPACT="$("$HOST" --target ios ui compact "$TMP/list/snapshot.json")"
+echo "$LIST_COMPACT"
+echo "$LIST_COMPACT" | grep -q "scrollView.*scroll:down" \
+  || { echo "FAIL: the List's scroll view must report it can still scroll down"; exit 1; }
+/usr/bin/python3 - "$TMP/list/snapshot.json" <<'PY' || exit 1
+import json, re, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+rows = sorted(int(re.sub(r"\D", "", n["testId"]))
+              for n in nodes if (n.get("testId") or "").startswith("list.item"))
+if not rows or rows[0] != 0:
+    print(f"FAIL: expected the first rows to be realized, got {rows}"); sys.exit(1)
+if 40 in rows:
+    print("FAIL: row 40 should NOT be realized yet — the lazy boundary is what this asserts")
+    sys.exit(1)
+PY
+MISS="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id list.item40 2>&1 || true)"
+echo "$MISS" | grep -q "scrollable content" \
+  || { echo "FAIL: a miss on an unrealized row must mention the scrollable container: $MISS"; exit 1; }
+# `act scroll-to` drags the container until the selector resolves INSIDE it, then
+# polls until the position stops moving before reporting it. The settle step is
+# the contract: a flinging list keeps moving after the gesture returns, and a
+# point reported mid-fling is already stale for the next command.
+SCROLLED="$("$HOST" --target ios --serial "$UDID" act scroll-to --package "$LINKED_ID" --test-id list.item40)"
+echo "$SCROLLED"
+echo "$SCROLLED" | grep -q "found=true" \
+  || { echo "FAIL: scroll-to did not bring list.item40 into view"; exit 1; }
+echo "$SCROLLED" | grep -q "settled=true" \
+  || { echo "FAIL: scroll-to reported a position it could not confirm had stopped moving"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id list.item40
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/list-40"
+"$HOST" --target ios ui compact "$TMP/list-40/snapshot.json" | grep -q "Picked row 40" \
+  || { echo "FAIL: the point scroll-to reported was not usable by the next tap"; exit 1; }
+# A selector nothing in the list can satisfy must fail LOUDLY, saying the
+# container ran out of travel rather than implying it might still appear.
+NOPE="$("$HOST" --target ios --serial "$UDID" act scroll-to --package "$LINKED_ID" --test-id list.item999 2>&1 || true)"
+echo "$NOPE" | grep -qE "reached the end|gave up after" \
+  || { echo "FAIL: scroll-to must report exhaustion for an absent row: $NOPE"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== CANVAS CONTROL regions (accessibility sub-elements) =="
 # Two self-drawn controls, one per legal `UIAccessibilityContainer` convention:
 # `accessibilityElements` (the shorthand) and the container METHODS

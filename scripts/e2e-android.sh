@@ -115,6 +115,11 @@ echo "== install sample apps =="
 # per scenario — unlike the iOS scenario env var.
 open_scenario() { # rowTestId readyNeedle
   boot_app "$PKG"
+  # The scenario list is taller than one screen, so a row can be below the fold —
+  # a tap on a clipped row resolves to coordinates that land on the system
+  # navigation bar and silently does nothing. `act scroll-to` brings it in first
+  # (and dogfoods the primitive that exists for exactly this).
+  R act scroll-to --package "$PKG" --test-id "$1" >/dev/null
   R act tap --package "$PKG" --test-id "$1" >/dev/null
   # Wait for the scenario Activity's own content to draw — the transition can
   # take several seconds on a software-GPU emulator, longer than a fixed sleep.
@@ -200,6 +205,55 @@ echo "$REGIONS" | grep -q "colorSpan"  || { echo "FAIL: expected a colorSpan reg
 # they just must not error and must resolve a point.
 R act tap --package "$PKG" --test-id agreement.markdown --region "Privacy" >/dev/null
 R act tap --package "$PKG" --test-id agreement.plain --region "Privacy Policy" >/dev/null
+
+echo "== LONG LIST (recycling boundary + scroll evidence) =="
+# The commonest E2E dead end: a RecyclerView binds only its visible window, so a
+# far-down row has NO node, frame, or selector — it is absent, not off-screen.
+# Reticle can't invent it, but it CAN say the screen has a container that could
+# still move, which is the difference between "not bound yet" and "this app
+# doesn't have that element".
+open_scenario scenario.list list.item0
+R ui report --package "$PKG" --output "$TMP/list"
+LIST_COMPACT="$(R ui compact "$TMP/list/snapshot.json")"
+echo "$LIST_COMPACT"
+echo "$LIST_COMPACT" | grep -q "list.rows.*scroll:down" \
+  || { echo "FAIL: the RecyclerView must report it can still scroll down"; exit 1; }
+/usr/bin/python3 - "$TMP/list/snapshot.json" <<'PY' || exit 1
+import json, re, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+rows = sorted(int(re.sub(r"\D", "", n["testId"]))
+              for n in nodes if (n.get("testId") or "").startswith("list.item"))
+if not rows or rows[0] != 0:
+    print(f"FAIL: expected the first rows to be bound, got {rows}"); sys.exit(1)
+if 40 in rows:
+    print("FAIL: row 40 should NOT be bound yet — the recycling boundary is what this asserts")
+    sys.exit(1)
+PY
+# Scroll evidence must also reach the selector-miss diagnostics, so a failing
+# lookup explains itself instead of reading as "no such element".
+MISS="$(R act tap --package "$PKG" --test-id list.item40 2>&1 || true)"
+echo "$MISS" | grep -q "scrollable content" \
+  || { echo "FAIL: a miss on an unbound row must mention the scrollable container: $MISS"; exit 1; }
+# `act scroll-to` closes the gap: swipe the container until the selector resolves
+# INSIDE it, then confirm the position stopped moving before reporting it. That
+# settle step is the whole contract — a flinging list made the first
+# implementation report a point that was already stale by the next command.
+SCROLLED="$(R act scroll-to --package "$PKG" --test-id list.item40)"
+echo "$SCROLLED"
+echo "$SCROLLED" | grep -q "found=1" \
+  || { echo "FAIL: scroll-to did not bring list.item40 into view"; exit 1; }
+echo "$SCROLLED" | grep -q "settled=1" \
+  || { echo "FAIL: scroll-to reported a position it could not confirm had stopped moving"; exit 1; }
+echo "$SCROLLED" | grep -q "container=list.rows" \
+  || { echo "FAIL: scroll-to should have picked the RecyclerView as the container"; exit 1; }
+# The point it reported must still be usable by the very next command.
+R act tap --package "$PKG" --test-id list.item40 >/dev/null
+wait_compact "$PKG" "Picked row 40"
+# A selector nothing in the list can satisfy must fail LOUDLY, and say the
+# container ran out of travel rather than pretending it might still appear.
+NOPE="$(R act scroll-to --package "$PKG" --test-id list.item999 2>&1 || true)"
+echo "$NOPE" | grep -qE "reached the end|gave up after" \
+  || { echo "FAIL: scroll-to must report exhaustion for an absent row: $NOPE"; exit 1; }
 
 echo "== COMPOSE semantics (testTag, TextField, Dialog window, View interop) =="
 # Reticle synthesizes no view per composable: a composable is addressable only

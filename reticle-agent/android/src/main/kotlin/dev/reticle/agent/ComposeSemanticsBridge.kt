@@ -118,6 +118,7 @@ object ComposeSemanticsBridge {
             isInteractive = SemanticsReflect.hasClickAction(semanticsNode),
             regions = textRegions.regions,
             charGrid = textRegions.charGrid,
+            scroll = SemanticsReflect.scrollInfo(semanticsNode),
             custom = buildMap {
                 testTag?.let { tag ->
                     ReticleRuntime.shared.metadata(tag).forEach { (k, v) -> put(k, v) }

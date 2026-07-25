@@ -83,4 +83,7 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
+    // Long-list scenario: the real recycling container, so an off-screen row is
+    // genuinely absent from the tree rather than merely off-viewport.
+    implementation(libs.androidx.recyclerview)
 }
