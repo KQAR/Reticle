@@ -774,7 +774,7 @@ order paid for itself — half the points turned out to be real defects that had
 failing *closed* (silently returning nothing), and two "fixes" broke something else
 that the suites caught immediately.
 
-## Landed (PRs #107-#119)
+## Landed (PRs #107-#120)
 
 | Point | Verified cause | Outcome |
 | --- | --- | --- |
@@ -790,6 +790,7 @@ that the suites caught immediately.
 | Tap on a moving target | Resolution and dispatch are two steps: a `PopupMenu` row captured mid-slide was at y=1396, the tap resolved y=1474, the menu came to rest at y=1612 — and `--label "Delete item"` fired "Menu: Rename" (1 run in 5 on an emulator). The iOS shape of the same question is NOT this: a `UIAlertController`'s accessibility frame is final from the first capture (unchanged across six captures) while a tap right after `activate` never lands — an in-place transform animation, invisible to any position signal | `act tap --settle` (+ `--settle-timeout`): re-resolve until the point repeats, then dispatch, and report `settled` honestly (false = the budget lapsed while it was still moving). Needs a selector; a raw `--point` is refused rather than silently unsettled. Both platforms; the Android suite dropped its two `sleep 1` workarounds, and the iOS suite pins the distinction — settle reports `settled=true` for the alert and the delay stays |
 | SwiftUI Text links | A markdown `Text` is ONE accessibility element with one label: no `UILabel`, no `NSAttributedString.link` run, no child element (probed: 0), no element count (0), no custom actions, no usable rotor, and no `_accessibility*` link accessor — so every RegionProbe channel came up empty, while the UIKit row beside it decomposed fine. `accessibilityAttributedLabel` DOES carry `UIAccessibilityTokenLink` runs + per-run font tokens (system attributes on a public property) | `SwiftUITextRegions`: re-lay the runs out with their own fonts inside the element's screen frame (`TextLayoutStack` anchored to a screen rect instead of a view) -> per-link `span` regions + char grid. Geometry is reconstructed, so the iOS suite asserts it by CONSEQUENCE — tap each recovered rect, check which URL the app's `openURL` handler received. First e2e coverage the SwiftUI scenario has had |
 | Screenshot degrade | Measured, and the two paths turned out to be exact complements — not the "in-process misses both" the note assumed: a `SurfaceView` is a transparent hole (rgba 0,0,0,0) in the in-process capture but magenta in `adb exec-out screencap`, while `FLAG_SECURE` blanks the DEVICE capture (0,0,0,255) and leaves the in-process one untouched. iOS has a third shape: the keyboard's host window refuses to render into a borrowed context, so the capture already skipped it — silently | `pixels:unavailable` on the node whose pixels the in-process picture lacks (iOS: the keyboard host window), `screencap:blank` on a `FLAG_SECURE` window, and a `degraded:` line on `ui screenshot` naming what THIS picture is missing and which path would show it. `scenario.screenshotDegrade` + both suites asserting the labels AND the pixels behind them |
+| Third-party WebView kernels | Confirmed by construction: the bridge is typed on `android.webkit.WebView`, so a kernel that only calls itself a WebView gets no DOM at any level — and that was indistinguishable from an empty page | Documented as a boundary and REPORTED, not adapted (a reflective adapter cannot be verified without a real kernel sample): `dom:unsupported-kernel` + `custom.domKernel` naming the class, a `--css` miss that explains the wall, and `scenario.foreignKernel` — a self-drawn stand-in beside a real WebView, so the contrast is asserted. Kept distinct from `dom:unavailable`: "nothing to read" vs "could not read it just now" |
 | iOS focus evidence, asserted | The evidence worked on iOS but was unassertable for two measured reasons, both now solved: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright — "Operation not permitted" — so run 2 sees no prompt) and an open alert could not be **answered** from the host, and a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle (that resets the authorization to `notDetermined`); answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow width — no text read, so language-independent) inside an answer→retry→re-check loop. The section runs LAST because the reinstall wipes the app's container. `scripts/e2e-ios.sh` now asserts the same three things Android does: focused before, `window: UNFOCUSED` leading the compact while the app's own controls are still captured as `tappable` (the trap), and the evidence clearing once answered — plus `permission.status = "Prompt dismissed"` as proof the tap reached the alert rather than the alert simply going away |
 
 Self-inflicted bugs the suites caught, worth remembering as failure shapes:
@@ -804,13 +805,7 @@ genuinely untappable — a resolved tap landed on the system navigation bar.
 
 Ordered by value. Each item's cause is already measured unless marked otherwise.
 
-1. **Third-party WebView kernels (X5/UC) — document, do not build.** `WebViewBridge`
-   is typed on `android.webkit.WebView`, so a third-party kernel loses the whole DOM
-   capability silently. Decision taken this round with the maintainer: the target apps
-   do not use one, so write it up as an explicit boundary (README/skill/`docs`) and
-   make a suspected third-party kernel node say so, rather than adding a reflective
-   adapter that cannot be verified without a real X5 sample.
-2. **Structural boundaries, written down as boundaries.** Closed shadow roots,
+1. **Structural boundaries, written down as boundaries.** Closed shadow roots,
    cross-origin iframes, bitmap-baked text, pure-Canvas controls with no accessibility
    surface, out-of-process system UI (permission prompts, biometric sheets, share
    sheets, Custom Tabs / `SFSafariViewController`, the IME itself), DRM video. Each is

@@ -94,5 +94,9 @@
             android:name="dev.reticle.sample.ScreenshotDegradeScenarioActivity"
             android:exported="false"
             android:label="Screenshot Degrade" />
+        <activity
+            android:name="dev.reticle.sample.ForeignKernelScenarioActivity"
+            android:exported="false"
+            android:label="Third-party Kernel" />
     </application>
 </manifest>

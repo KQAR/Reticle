@@ -126,6 +126,16 @@ public struct Node: Codable, Sendable {
         return false
     }
 
+    /// True when this node is a **suspected third-party WebView kernel** (X5/TBS,
+    /// UC, …): a class whose name says WebView but which is not the platform web
+    /// view, so no DOM bridge can attach. Android-only in practice — iOS has one
+    /// web engine — but the spelling lives here so the protocol stays symmetric.
+    /// Unlike `domUnavailable()`, this is structural: retrying never helps.
+    public func domKernelUnsupported() -> Bool {
+        if case .text(let v)? = custom["domStatus"] { return v == "unsupportedKernel" }
+        return false
+    }
+
     /// True when this node's pixels are NOT in an in-process screenshot: an iOS
     /// keyboard host window refuses to render into a borrowed context (measured: the
     /// whole keyboard is absent from the agent's picture while a device capture shows
