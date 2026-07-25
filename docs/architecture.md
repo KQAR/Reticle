@@ -270,7 +270,7 @@ in-process). Results land on `Node.regions`, `Node.suspectedMultiRegion`, and
 | --- | --- | --- | --- |
 | `span` | `Spanned.getSpans(ClickableSpan)` + `Layout` geometry | High | Char range + per-line pixel hit-rects + URL target |
 | `a11yVirtual` | `View.getAccessibilityNodeProvider()` (ExploreByTouchHelper) | High | Virtual sub-node bounds + labels |
-| `touchDelegate` | `View.getTouchDelegate()` (reflect `mBounds`) | High | Extended/forwarded hit-rect |
+| `touchDelegate` | `View.getTouchDelegate()` → `getTouchDelegateInfo()` (API 29+) | High | Extended/forwarded hit-rect (unlabelled) |
 | `textMarker` | in-text paired-bracket / markdown markers + `Layout` geometry | Medium | One region **per link** with its own rect, for self-drawn rows |
 | `colorSpan` | `ForegroundColorSpan` ranges + `Layout` geometry | Medium | A re-colored run (the "highlight = link" pattern) with its rect + actual color |
 | **fallback** | `Layout` → `CharGrid` + `suspectedMultiRegion` flag | Best-effort | Screen-X ↔ character mapping for substring targeting |
@@ -286,6 +286,31 @@ than silently returning a wrong rect. Detection is structural, not lexical: it
 keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
+
+**Virtual-node ids are the app's, not the framework's.** A provider hands out the
+ids the app chose in `getVisibleVirtualViews` — dense 0-based indexes for one
+control, stable domain ids (a seat number, a row id) for the next. Probing
+`0 until childCount` therefore recovers nothing for half of real controls, which
+is how this channel shipped for a while: it failed *closed*, so a self-drawn
+control merely looked unaddressable. Resolution order is now the host node's
+declared child ids → the androidx `ExploreByTouchHelper`'s own
+`getVisibleVirtualViews` (app-side code, so the platform's non-SDK policy doesn't
+apply to reaching it) → the dense probe. The iOS probe has the same shape of
+trap and the same fix: a container may expose sub-elements through the
+`accessibilityElements` array **or** through `accessibilityElementCount()` +
+`accessibilityElement(at:)`, and both are read.
+
+**A touch delegate's rect is public; its target is not.** The bounds used to come
+from a `TouchDelegate.mBounds` reflection, which the platform blocks
+(`api=max-target-o`) for anything targeting O or newer — the channel was dead on
+every modern app, silently. It reads the public
+`TouchDelegate.getTouchDelegateInfo()` (API 29+) instead, and reports nothing
+below API 29 rather than guessing the view frame. The forwarded region carries no
+label, because `getTargetForRegion` resolves its target only through an
+accessibility connection that an in-process observer doesn't have; the rect is
+honest geometry with an unknown target, addressable as
+`act tap --region touchDelegate` (a `--region` needle also matches a region
+source, not just a label).
 
 **Wrap-boundary correctness.** `Layout.getPrimaryHorizontal(offset)` returns the
 *next* line's left edge when `offset` sits exactly on a soft line break, which

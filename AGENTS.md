@@ -159,7 +159,8 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, WebView DOM, the login keyboard trap, the system
+mutation, agreement regions, the canvas control (virtual a11y sub-nodes under
+both id conventions + a touch-delegate rect), WebView DOM, the login keyboard trap, the system
 dialog (AlertDialog window recognition + occlusion), the native Lottie dialog,
 the web Lottie modal, the web-component (shadow DOM) modal, the Lottie-only
 dialog (recovering title/message/buttons baked into one Lottie via the Lottie

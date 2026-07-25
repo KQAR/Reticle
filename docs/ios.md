@@ -45,8 +45,13 @@ handling, so real agreement rows ship as YYText-style self-drawn labels or
 - **`span`** — real `.link` attribute runs, with per-line rects (a `UITextView`
   lends its own TextKit stack — exact; a `UILabel` gets an equivalent stack
   rebuilt from its attributed text and `textRect(forBounds:)`).
-- **`a11yVirtual`** — child `accessibilityElements` a view exposes (the YYText
-  pattern). The view's own whole-text proxy element is filtered out.
+- **`a11yVirtual`** — the sub-elements a view exposes as an accessibility
+  container (the YYText pattern, self-drawn charts/seat maps). Read from BOTH
+  legal conventions: the `accessibilityElements` array and the container methods
+  (`accessibilityElementCount()` + `accessibilityElement(at:)`, elements built on
+  demand). The view's own whole-text proxy element is filtered out. There is no
+  `touchDelegate` analogue: UIKit expands a hit area by overriding
+  `point(inside:with:)` — app code with no introspectable rect.
 - **`colorSpan`** — a minority-colored `.foregroundColor` run that is not a real
   link ("highlight = tappable"), surfaced with its actual color.
 - **`textMarker`** — script-agnostic bracketed (`«…»`, `《…》`, …) / markdown
