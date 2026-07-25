@@ -59,15 +59,20 @@ func cmdScreenshot(_ c: HelperCalling, _ args: Args) throws {
         throw HelperError("screenshot returned no image data")
     }
     try data.write(to: URL(fileURLWithPath: out))
+    let degraded = (r["degraded"] as? [Any])?.compactMap { $0 as? String } ?? []
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success([
             "output": out,
             "bytes": data.count,
             "via": r["via"] ?? NSNull(),
+            "degraded": degraded,
         ])
         return
     }
     print("wrote \(out) (\(data.count) bytes) via \(r["via"] ?? "?")")
+    // An absence must be labelled, not inferred: a blank rect in the image is
+    // otherwise indistinguishable from the app having drawn nothing there.
+    for line in degraded { print("degraded: \(line)") }
 }
 
 func cmdUiRender(_ c: HelperCalling, _ args: Args, view: String) throws {

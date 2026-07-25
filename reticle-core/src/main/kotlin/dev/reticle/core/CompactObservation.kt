@@ -71,6 +71,8 @@ data class CompactObservation(
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
                             domUnavailable = node.domUnavailable(),
+                            pixelsUnavailable = node.pixelsUnavailable(),
+                            screencapBlank = node.screencapBlank(),
                         )
                     )
                 }
@@ -116,6 +118,17 @@ data class CompactItem(
      * are the same observation.
      */
     val domUnavailable: Boolean = false,
+    /**
+     * True when this node's pixels are missing from an IN-PROCESS screenshot (an
+     * Android `SurfaceView`, an iOS keyboard host window). The picture is not a
+     * second opinion for these — it silently omits them.
+     */
+    val pixelsUnavailable: Boolean = false,
+    /**
+     * True when this window is `FLAG_SECURE`: the DEVICE-level capture is blanked,
+     * the in-process one is not. The complement of [pixelsUnavailable].
+     */
+    val screencapBlank: Boolean = false,
 ) {
     /** One-line rendering for agent-facing text output. */
     fun line(): String {
@@ -132,6 +145,8 @@ data class CompactItem(
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
             if (domUnavailable) append(" dom:unavailable")
+            if (pixelsUnavailable) append(" pixels:unavailable")
+            if (screencapBlank) append(" screencap:blank")
         }
         return "$selector $role$labelPart$framePart$state"
     }

@@ -100,6 +100,12 @@ enum class SampleScenario(
         subtitle = "Whole dialog (text + buttons) baked into one Lottie",
         testId = "scenario.lottieOnlyDialog",
         activityClass = LottieOnlyDialogScenarioActivity::class.java,
+    ),
+    ScreenshotDegrade(
+        title = "Screenshot degrade",
+        subtitle = "A SurfaceView the in-process capture cannot see, and FLAG_SECURE",
+        testId = "scenario.screenshotDegrade",
+        activityClass = ScreenshotDegradeScenarioActivity::class.java,
     );
 
     fun intent(context: Context): Intent = Intent(context, activityClass)
