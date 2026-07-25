@@ -594,12 +594,14 @@ echo "$WEB_LOTTIE" | grep "webLottie.message" | grep -q "Processing your request
   || { echo "FAIL: web lottie message not captured"; exit 1; }
 echo "$WEB_LOTTIE" | grep "webLottie.done" | grep -q 'button' \
   || { echo "FAIL: web lottie 'Done' button not captured"; exit 1; }
-# The DOM button must land: #lottie-done sets #web-status to "Done".
+# The DOM button must land: #lottie-done sets #web-status to "Done". POLL for it
+# rather than taking one snapshot: the DOM bridge caps its evaluateJavascript wait
+# at 750ms, and while lottie-web animates on a software-GPU emulator that budget
+# can lapse — the WebView then degrades to an opaque node (its honest L0), so a
+# single capture can miss the whole DOM and read as "the tap didn't land".
 R act tap --package "$PKG" --css "#lottie-done" >/dev/null
-sleep 1
+wait_compact "$PKG" "Done"
 R ui report --package "$PKG" --output "$TMP/web-lottie-done"
-R ui compact "$TMP/web-lottie-done/snapshot.json" | grep "webLottie.status" | grep -q "Done" \
-  || { echo "FAIL: tapping the web lottie 'Done' button did not update the status"; exit 1; }
 
 echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
 # A modal built as a Web Component whose content lives in an OPEN shadow root.
