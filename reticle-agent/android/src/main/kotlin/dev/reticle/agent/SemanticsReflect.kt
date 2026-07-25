@@ -66,6 +66,41 @@ object SemanticsReflect {
 
     fun role(node: Any): String? = configValue(node, "Role")?.toString()
 
+    /**
+     * The node's first `AnnotatedString` (SemanticsProperties.Text is a
+     * `List<AnnotatedString>`), kept as the object rather than flattened to a
+     * String so its link annotations survive — [text] is the flattened view.
+     */
+    fun annotatedText(node: Any): Any? {
+        val raw = configValue(node, "Text") ?: return null
+        return when (raw) {
+            is List<*> -> raw.firstOrNull()
+            else -> raw
+        }
+    }
+
+    /**
+     * Run the node's `GetTextLayoutResult` semantics action and return the
+     * resulting `TextLayoutResult` — the laid-out glyph geometry, and the same
+     * action an accessibility service invokes to read text bounds. The action
+     * takes a `MutableList` to fill and returns whether it succeeded.
+     */
+    fun textLayoutResult(node: Any): Any? {
+        return try {
+            val action = configValue(node, "GetTextLayoutResult") ?: return null
+            // AccessibilityAction(label, action: (MutableList<TextLayoutResult>) -> Boolean)
+            val fn = getter(action, "getAction")?.invoke(action) ?: return null
+            val invoke = fn.javaClass.methods.firstOrNull {
+                it.name == "invoke" && it.parameterTypes.size == 1
+            } ?: return null
+            val sink = ArrayList<Any?>()
+            invoke.invoke(fn, sink)
+            sink.filterNotNull().firstOrNull()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun hasClickAction(node: Any): Boolean = configValue(node, "OnClick") != null
 
     /**

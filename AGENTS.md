@@ -119,9 +119,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   Compose internals. The `scenario.compose` sample screen is the end-to-end
   coverage for this path (tagged tap, `type` into a composable `TextField`, a
   `Dialog`'s own window/semantics owner, and an `AndroidView` interop child).
-  Known limitation, measured: a `LinkAnnotation` inside a Compose `Text` is
-  captured as ONE node with no sub-regions — `RegionProbe` runs on Views, so the
-  span/char-grid channels don't reach Compose text yet.
+  Links inside a Compose `Text` are sub-regions of that one node, recovered by
+  `ComposeTextRegions` from the semantics config (`Text`'s link annotations +
+  the `GetTextLayoutResult` action's geometry) — reflectively, like the rest of
+  the Compose path.
 - The CLI exposes `tap`, `swipe`, `drag`, and `type`. `pinch` keeps the API
   shape but is not implemented (needs `sendevent` multi-touch).
 - Keep full snapshots on disk. Send compact observations to agents by default,

@@ -98,6 +98,12 @@ object ComposeSemanticsBridge {
             visit(child, ref, nodes, offsetX, offsetY, makeRef)?.let(childRefs::add)
         }
 
+        // Sub-regions inside one text node: a Compose Text carries its links as
+        // AnnotatedString ranges, not as child nodes, so without this a link in
+        // Compose text is unaddressable while the same ClickableSpan row on a View
+        // is not.
+        val textRegions = ComposeTextRegions.probe(semanticsNode, frame)
+
         nodes[ref] = Node(
             ref = ref,
             parentRef = parentRef,
@@ -110,6 +116,8 @@ object ComposeSemanticsBridge {
             frame = frame,
             isVisible = frame == null || (frame.width > 0 && frame.height > 0),
             isInteractive = SemanticsReflect.hasClickAction(semanticsNode),
+            regions = textRegions.regions,
+            charGrid = textRegions.charGrid,
             custom = buildMap {
                 testTag?.let { tag ->
                     ReticleRuntime.shared.metadata(tag).forEach { (k, v) -> put(k, v) }
