@@ -561,6 +561,14 @@ link color) and flags `suspectedMultiRegion` self-drawn controls that are still
 targetable by substring via the char grid. A `colorSpan` is a *candidate* link
 (colored text) — weigh it, don't assert it.
 
+Links that live inside ONE declarative text node work the same way on both
+platforms: a Compose `Text` with `LinkAnnotation`s (Android) and a SwiftUI
+markdown `Text` (iOS) each capture as a single node, and their links come back as
+`span` sub-regions with a char grid — so `--region "Privacy"` is the way in, not
+a separate selector. On iOS that geometry is **reconstructed** from the element's
+accessibility attributed label (fonts + link runs), so treat the rects as
+accurate-enough-to-tap rather than exact.
+
 Region matching is plain substring matching and is **script-agnostic** — pass
 whatever text appears on screen, in any language (e.g. `--region "Política"`).
 The `textMarker` channel splits self-drawn rows on paired bracket delimiters
