@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    Compose(
+        title = "Compose semantics",
+        subtitle = "testTag targets, a text link, a Compose dialog, and View interop",
+        testId = "scenario.compose",
+        activityClass = ComposeScenarioActivity::class.java,
+    ),
     CanvasControl(
         title = "Canvas control regions",
         subtitle = "Virtual a11y sub-nodes and a touch-delegate hit rect",

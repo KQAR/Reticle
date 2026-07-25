@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Sample app + e2e: a **Compose semantics** scenario, the first end-to-end
+  coverage of `ComposeSemanticsBridge` (it shipped with no scenario, so nothing
+  proved the reflective SemanticsNode walk still worked against a current Compose
+  runtime). It asserts a `Modifier.testTag` tap lands, `act type` reaches a
+  composable `TextField`, a Compose `Dialog` is found as its own window with its
+  own semantics owner, an `AndroidView` interop child is captured as a real View,
+  and every tagged composable carries a usable frame. Adds Compose to
+  `sample-app` (the repo's only Compose surface, existing for this purpose).
+  Measured limitation, now recorded: a `LinkAnnotation` inside a Compose `Text`
+  is captured as ONE node with no sub-regions, because the region channels run on
+  Views — so a link inside Compose text is not yet addressable.
+
 - **Fixed: two region channels that shipped but never worked.** Both were
   discovered by finally giving them a sample scenario (a self-drawn canvas
   control), and both failed silently — they returned zero regions rather than an
