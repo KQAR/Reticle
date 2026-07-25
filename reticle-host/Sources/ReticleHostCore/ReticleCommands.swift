@@ -156,6 +156,11 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     if let submit = args.option("submit"), submit != "false" { params["submit"] = true }
+    // `tap --settle`: re-resolve the selector until its point stops moving before
+    // dispatching, so a still-animating popup cannot make the touch land on its
+    // neighbour. Opt-in, because it costs a poll loop on every tap.
+    if let settle = args.option("settle"), settle != "false" { params["settle"] = true }
+    if let t = args.option("settle-timeout") { params["settleTimeoutMs"] = Int(t) ?? 2000 }
     if let v = args.option("verify") { params["verify"] = v }
     if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
     if let out = args.option("trace-output") {

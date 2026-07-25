@@ -126,8 +126,11 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 - The CLI exposes `tap`, `swipe`, `drag`, `scroll-to`, and `type`. `scroll-to`
   drags a scrollable container until a selector resolves inside it and confirms
   the position settled before reporting it — the only way to reach a row a
-  recycling list has not bound. `pinch` keeps the API
-  shape but is not implemented (needs `sendevent` multi-touch).
+  recycling list has not bound. `tap --settle` opts into that same stabilize step
+  for a tap, for a target still sliding in (a popup row's rect goes stale between
+  resolve and dispatch); it watches the resolved POSITION only, so a view animating
+  in place with a transform reports settled while not yet hit-testable. `pinch`
+  keeps the API shape but is not implemented (needs `sendevent` multi-touch).
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
 - Runtime mutation is allowlisted (`alpha`, `visibility`, `text`,

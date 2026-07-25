@@ -237,6 +237,15 @@ $CLI act tap       --package dev.reticle.sample --test-id scenario.list
 $CLI act scroll-to --package dev.reticle.sample --test-id list.item40
 $CLI act tap       --package dev.reticle.sample --test-id list.item40
 
+# A target that is still MOVING has the same problem one step earlier: a popup row
+# captured while the popup slides in has a rect that is stale by the time the touch
+# is synthesized, and the tap lands on its neighbour (measured). `tap --settle`
+# re-resolves until the point repeats, then dispatches, and reports `settled=1`. It
+# watches the position only — a view animating in place with a transform (an iOS
+# UIAlertController) reports settled at once while not yet hit-testable.
+$CLI act tap --package dev.reticle.sample --test-id popup.menuTrigger
+$CLI act tap --package dev.reticle.sample --label "Delete item" --settle
+
 # The system keyboard is another process's window — it never appears in the
 # node tree, so a covered submit button still looks tappable. Snapshots carry
 # screen.keyboard, `ui compact` leads with a keyboard header, covered items are

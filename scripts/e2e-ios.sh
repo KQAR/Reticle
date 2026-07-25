@@ -424,7 +424,26 @@ echo "$DIALOG_COMPACT" | grep -q '"Cancel"' \
 # what `--label` is for: match the visible text, refuse ambiguity, and never fall
 # back to guessing. This replaced a snapshot-scraping hack that dug the ref out
 # with python — refs are minted per capture, so that was fragile by construction.
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Delete"
+#
+# `--settle` rides along here, and the settling delay above it (the `sleep 1` after
+# `activate`, plus the captures in between) STAYS on purpose. Measured
+# on iOS 26.3: the alert's accessibility frame is FINAL from the first capture
+# ([205,463 140x48], unchanged across six back-to-back captures) because
+# UIAlertController animates in with a transform/alpha, not a layout change — yet a
+# tap dispatched immediately after `activate` never lands (three runs, dialog.status
+# stayed "No choice yet"), while the same tap ~1s later does. So settle honestly
+# reports `settled=true` at once and cannot help: "the position stopped moving" is
+# not "the view is hit-testable yet". Android's popup case is the one it fixes (see
+# the PopupMenu note in scripts/e2e-android.sh). Asserted here so the flag's iOS path
+# has coverage, and so this distinction is not quietly forgotten.
+DIALOG_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Delete" --settle)"
+echo "$DIALOG_TAP"
+echo "$DIALOG_TAP" | grep -q "settled=true" \
+  || { echo "FAIL: tap --settle must report the settled position on iOS, got: $DIALOG_TAP"; exit 1; }
+# ...and it must refuse a raw point rather than pretend it waited for one.
+SETTLE_ERR="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --point 100,100 --settle 2>&1 || true)"
+echo "$SETTLE_ERR" | grep -q "settle needs a selector" \
+  || { echo "FAIL: --settle with --point must be refused, got: $SETTLE_ERR"; exit 1; }
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dialog-done"
 DIALOG_AFTER="$("$HOST" --target ios ui compact "$TMP/dialog-done/snapshot.json")"

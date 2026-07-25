@@ -251,6 +251,7 @@ reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
 reticle act scroll-to --package <pkg> --test-id list.item40   # then tap it
 reticle act tap   --package <pkg> --label "Delete item"       # framework rows/menu items
+reticle act tap   --package <pkg> --label "Delete item" --settle  # popup still sliding in
 reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
@@ -265,6 +266,17 @@ and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take on
 all. It matches visible text / the a11y label (exact, then substring) in the topmost
 window and **refuses an ambiguous match** rather than tapping the first candidate.
 Prefer `--test-id` whenever the app owns the control.
+
+`--settle` (opt-in, on `tap`) re-resolves the selector until its point repeats
+before dispatching, and reports `settled=1`/`settled=true`. Use it when the target
+may still be MOVING: a `PopupWindow` / `Spinner` / `PopupMenu` slides in, and a row
+captured mid-animation has a rect that is stale by the time the touch is
+synthesized — measured, that tap landed on the neighbouring row. It needs a
+selector (a raw `--point` has nothing to re-resolve, and is refused). Know its
+limit: it watches the resolved POSITION, so a view that animates in place with a
+transform/alpha — an iOS `UIAlertController`, whose accessibility frame is final
+immediately — reports `settled` at once while still not being hit-testable. There,
+wait (or `--verify` and retry); no position signal can tell you.
 
 A recycling / lazy list binds only its visible window, so a far-down row has **no
 node at all** — `tap` can never reach it and a "not found" there does not mean the
