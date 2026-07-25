@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- e2e: **same-origin iframe geometry** is now asserted on both platforms. The DOM
+  walk already pierced same-origin frames and accumulated the frame's page offset
+  (frame content coordinates are viewport-relative), but nothing checked the
+  offset: Android asserted no iframe at all, and iOS only resolved the chained
+  selector through DOM *activation*, which passes even when the rect is wrong.
+  The frame's button now carries its own `onclick`, and both suites assert the
+  inner rect sits inside the frame's rect and that a COORDINATE tap (adb / HID)
+  at that rect fires it. Verified correct as shipped — this is a regression net,
+  not a fix.
+
 - Sample app + e2e: a **Compose semantics** scenario, the first end-to-end
   coverage of `ComposeSemanticsBridge` (it shipped with no scenario, so nothing
   proved the reflective SemanticsNode walk still worked against a current Compose

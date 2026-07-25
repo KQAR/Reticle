@@ -183,6 +183,28 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
   || { echo "FAIL: expected shadow DOM content (complex.shadowButton) folded in"; exit 1; }
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#shadow-host >>> #shadow-button"
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#fixture-frame >>> #iframe-button"
+# Same-origin iframe GEOMETRY, not just chain resolution: frame content
+# coordinates are relative to the frame viewport, so the walk accumulates the
+# frame's page offset. Dropping it is silent — the rect lands near the top of the
+# page. Assert the inner rect is inside the frame's, then prove it with a HID tap
+# (activation above would pass even with a wrong rect).
+/usr/bin/python3 - "$TMP/webview/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "complex.iframe")
+button = next(n["frame"] for n in nodes if n.get("testId") == "complex.iframeButton")
+inside = (button["x"] >= frame["x"] - 1 and button["y"] >= frame["y"] - 1
+          and button["x"] + button["width"] <= frame["x"] + frame["width"] + 1
+          and button["y"] + button["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: iframe content rect {button} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#fixture-frame >>> #iframe-button"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-frame"
+"$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json" | grep -q "Frame clicked" \
+  || { echo "FAIL: coordinate tap at the iframe content rect did not fire its onclick"; exit 1; }
 # In-process dom activation with an observable side effect.
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
 sleep 1
