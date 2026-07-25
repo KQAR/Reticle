@@ -33,6 +33,10 @@
             android:exported="false"
             android:label="Agreement Regions" />
         <activity
+            android:name="dev.reticle.sample.ComposeScenarioActivity"
+            android:exported="false"
+            android:label="Compose Semantics" />
+        <activity
             android:name="dev.reticle.sample.CanvasControlScenarioActivity"
             android:exported="false"
             android:label="Canvas Control Regions" />
