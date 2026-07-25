@@ -51,6 +51,18 @@ enum class RegionSource {
      * geometry + the actual color; the "is a link" inference is a guess.
      */
     colorSpan,
+
+    /**
+     * A layer inside a Lottie animation. A Lottie renders its whole UI — text
+     * and shapes — into one opaque canvas, so the plain view tree sees a single
+     * node with no children. This surfaces the animation's named layers (text
+     * content + shape/button layers) as sub-regions, with rects computed from
+     * each layer's transform mapped through the composition→view scale. The
+     * geometry is derived from the parsed composition (the same model Lottie
+     * draws from); the "this layer is a button" inference is a guess — the label
+     * is the layer's text (text layers) or its author-given name.
+     */
+    lottie,
 }
 
 @Serializable

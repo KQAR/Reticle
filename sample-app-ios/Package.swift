@@ -19,6 +19,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../reticle-agent/ios"),
+        // Real Lottie animation view for the native-lottie-dialog scenario.
+        .package(url: "https://github.com/airbnb/lottie-ios.git", from: "4.5.0"),
     ],
     targets: [
         .executableTarget(
@@ -26,8 +28,16 @@ let package = Package(
             dependencies: [
                 // Path-dependency identity is the directory basename ("ios").
                 .product(name: "ReticleKit", package: "ios"),
+                .product(name: "Lottie", package: "lottie-ios"),
             ],
-            path: "Sources/SampleApp"
+            path: "Sources/SampleApp",
+            // lottie_anim.json (native + web) and lottie_light.min.js (web,
+            // inlined offline) — read at runtime via Bundle.module. The custom
+            // .app assembly in build-sample-ios.sh copies the generated resource
+            // bundle in alongside the binary.
+            resources: [
+                .process("Resources"),
+            ]
         ),
         .executableTarget(
             name: "SampleAppNoAgent",
