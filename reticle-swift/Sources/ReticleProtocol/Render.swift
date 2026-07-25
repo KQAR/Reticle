@@ -180,9 +180,11 @@ public enum Render {
     /// first, substring second, scoped to the topmost window; ambiguity throws
     /// rather than silently taking the first match.
     public static func labelMatch(_ snapshot: Snapshot, _ label: String) throws -> Node? {
-        let topWindow = snapshot.root()?.children
-            .filter { snapshot.nodes[$0]?.kind == .window }
-            .last { snapshot.nodes[$0]?.isVisible == true }
+        // Scope to the HIGHEST-stacked window that contains any candidate, not
+        // simply the top window: on iOS the system keyboard is itself a window in
+        // the scene, so a strict "top window only" rule would empty the candidate
+        // set whenever it is up. This gives a popup precedence without that risk.
+        let windowRefs = (snapshot.root()?.children ?? []).filter { snapshot.nodes[$0]?.kind == .window }
         func windowRef(of node: Node) -> String? {
             var current: Node? = node
             while let n = current {
@@ -191,8 +193,13 @@ public enum Render {
             }
             return nil
         }
-        let candidates = orderedRefs(snapshot).compactMap { snapshot.nodes[$0] }.filter {
-            $0.isVisible && $0.frame != nil && (topWindow == nil || windowRef(of: $0) == topWindow)
+        let visible = orderedRefs(snapshot).compactMap { snapshot.nodes[$0] }.filter {
+            $0.isVisible && $0.frame != nil
+        }
+        var candidates = visible
+        for ref in windowRefs.reversed() {
+            let scoped = visible.filter { windowRef(of: $0) == ref }
+            if !scoped.isEmpty { candidates = scoped; break }
         }
         func textOf(_ node: Node) -> String? { node.text ?? node.contentDescription }
         let exact = candidates.filter { textOf($0)?.trimmingCharacters(in: .whitespacesAndNewlines) == label }
