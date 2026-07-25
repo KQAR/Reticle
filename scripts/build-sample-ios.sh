@@ -37,6 +37,15 @@ APP="$ROOT/sample-app-ios/.build/bundles/$PRODUCT.app"
 rm -rf "$APP"; mkdir -p "$APP"
 cp "$BIN" "$APP/$PRODUCT"
 
+# SwiftPM emits target resources as a `<pkg>_<target>.bundle` next to the binary
+# but does not assemble a .app. Copy any such bundle in alongside the executable
+# so `Bundle.module` resolves at runtime (the native-lottie + web-lottie
+# scenarios read lottie_anim.json / lottie_light.min.js from it).
+for b in "$BIN_DIR"/*.bundle; do
+  [ -e "$b" ] || continue
+  cp -R "$b" "$APP/"
+done
+
 cat > "$APP/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

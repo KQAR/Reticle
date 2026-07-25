@@ -8,6 +8,9 @@ public enum RegionSource: String, Codable, Sendable {
     case touchDelegate
     case textMarker
     case colorSpan
+    /// A layer inside a Lottie animation, recovered from the parsed composition.
+    /// Mirrors reticle-core's `RegionSource.lottie`.
+    case lottie
 }
 
 /// Sub-node interaction evidence: the answer to "a single view carries more than

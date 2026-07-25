@@ -40,6 +40,30 @@ enum class SampleScenario(
         subtitle = "AlertDialog window raised over the activity",
         testId = "scenario.dialog",
         activityClass = SystemDialogScenarioActivity::class.java,
+    ),
+    LottieDialog(
+        title = "Lottie dialog",
+        subtitle = "Native dialog with a real Lottie animation view",
+        testId = "scenario.lottieDialog",
+        activityClass = LottieDialogScenarioActivity::class.java,
+    ),
+    WebLottieDialog(
+        title = "Web Lottie dialog",
+        subtitle = "lottie-web modal rendered inside a WebView",
+        testId = "scenario.webLottieDialog",
+        activityClass = WebLottieDialogScenarioActivity::class.java,
+    ),
+    WebComponentDialog(
+        title = "Web component dialog",
+        subtitle = "Custom-element modal with open shadow-root content",
+        testId = "scenario.webComponentDialog",
+        activityClass = WebComponentDialogScenarioActivity::class.java,
+    ),
+    LottieOnlyDialog(
+        title = "Lottie-only dialog",
+        subtitle = "Whole dialog (text + buttons) baked into one Lottie",
+        testId = "scenario.lottieOnlyDialog",
+        activityClass = LottieOnlyDialogScenarioActivity::class.java,
     );
 
     fun intent(context: Context): Intent = Intent(context, activityClass)

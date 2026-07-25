@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Lottie internal-element recognition. When an app bakes a whole dialog (title,
+  message, buttons) into a single Lottie animation, the plain tree sees one
+  opaque node and nothing downstream can act on it. A new **Lottie bridge**
+  recovers those elements from the parsed composition Lottie already holds in
+  memory: it enumerates the text layers, reads their strings, and maps each
+  layer's transform through the composition→view scale to a screen rect —
+  surfaced as `RegionSource.lottie` sub-regions so the existing region pipeline
+  (`ui regions`, `act tap --region`, `--point`) can target them. Android
+  (`LottieBridge.kt`) reflects `LottieComposition`; iOS (`LottieBridge.swift`)
+  `Mirror`-reflects the model (walking the superclass chain for the inherited
+  `transform`). Both are pure reflection — the agent never links Lottie — and
+  fail closed to zero regions on any shape mismatch. Rects use the authored text
+  box (`boxPosition`/`boxSize`, iOS `textFramePosition`/`textFrameSize`) plus
+  measured glyph metrics, so a rect hugs its text and its center is a reliable
+  tap point. e2e on both platforms asserts the elements are recovered and that a
+  tap at a recovered position fires the app's in-canvas hit-test callback.
+
+- Sample apps + e2e: three more dialog scenarios on both platforms — a **native
+  Lottie dialog** (a dialog hosting a real Lottie view), a **web Lottie modal**
+  (a `lottie-web` modal inside the WebView, bundled offline), and a
+  **web-component dialog** (a custom element whose content lives in an open
+  shadow root, folded in via shadow piercing). Adds the `lottie-android` /
+  `lottie-ios` dependencies and a bundled Lottie asset + `lottie-web` runtime.
+
 - Sample apps + e2e: a new **system dialog** scenario on both platforms exercises
   the multi-window / presented-content walk that no other scenario covered.
   Android's `SystemDialogScenarioActivity` raises an `AlertDialog` (a separate

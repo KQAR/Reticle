@@ -182,6 +182,9 @@ class SnapshotCapture(private val context: Context) {
         // Discover sub-regions within this single View (span links, virtual
         // a11y nodes, touch-delegate), plus a char grid for substring targeting.
         val region = RegionProbe.probe(view)
+        // A Lottie bakes its whole UI into one opaque canvas; recover its named
+        // text layers as sub-regions so they stay targetable.
+        val lottieRegions = LottieBridge.regionsFor(view, frame)
 
         nodes[ref] = Node(
             ref = ref,
@@ -199,7 +202,7 @@ class SnapshotCapture(private val context: Context) {
             isInteractive = isInteractive,
             custom = scalarProperties(view),
             children = childRefs,
-            regions = region.regions,
+            regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
             charGrid = region.charGrid,
         )

@@ -3,7 +3,9 @@
 # protocol, the in-process agent, the sample apps, installs them, and exercises
 # the full round trip through `reticle --target ios`: linked launch + inject,
 # ui report, compact, screenshot, a mutate, an `act --verify` node-state diff,
-# and the system dialog (UIAlertController content recognition).
+# the system dialog (UIAlertController content recognition), the native Lottie
+# dialog, the web Lottie modal, the web-component (shadow DOM) modal, and the
+# Lottie-only dialog (recovering elements baked into one Lottie).
 #
 # Requires: Xcode + an iOS Simulator runtime, and a built ReticleHost binary
 # (swift build --package-path reticle-host). Pass a booted simulator udid as $1,
@@ -292,6 +294,135 @@ echo "$DIALOG_LOGS" | grep -q "dialog_opened" \
   || { echo "FAIL: expected dialog_opened in the app log bridge"; exit 1; }
 echo "$DIALOG_LOGS" | grep -q "dialog_confirmed" \
   || { echo "FAIL: expected dialog_confirmed in the app log bridge"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== LOTTIE DIALOG (native, with a real Lottie animation view) =="
+# A custom modal card whose content includes a real Lottie animation view. The
+# animation is opaque (no text); this asserts the recognizable elements around it
+# — title, message, button — are captured with correct content, and that the
+# Lottie view itself is located as a node with a frame.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=lottieDialog
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id lottieDialog.trigger
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/lottie"
+LOTTIE_COMPACT="$("$HOST" --target ios ui compact "$TMP/lottie/snapshot.json")"
+echo "$LOTTIE_COMPACT"
+echo "$LOTTIE_COMPACT" | grep -q "Please wait" \
+  || { echo "FAIL: lottie dialog title 'Please wait' not captured"; exit 1; }
+echo "$LOTTIE_COMPACT" | grep -q "Processing your request." \
+  || { echo "FAIL: lottie dialog message not captured"; exit 1; }
+echo "$LOTTIE_COMPACT" | grep -q "lottieDialog.animation" \
+  || { echo "FAIL: the Lottie animation view must be located as a node with a frame"; exit 1; }
+echo "$LOTTIE_COMPACT" | grep "lottieDialog.done" | grep -q 'button' \
+  || { echo "FAIL: lottie dialog 'Done' button not captured"; exit 1; }
+# The button must land: Done dismisses and flips lottieDialog.status to "Done".
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id lottieDialog.done
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/lottie-done"
+"$HOST" --target ios ui compact "$TMP/lottie-done/snapshot.json" | grep "lottieDialog.status" | grep -q "Done" \
+  || { echo "FAIL: tapping Done did not flip lottieDialog.status to Done"; exit 1; }
+"$HOST" --target ios debug logs --package "$LINKED_ID" | grep -q "lottie_dialog_confirmed" \
+  || { echo "FAIL: expected lottie_dialog_confirmed in the app log bridge"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== WEB LOTTIE DIALOG (lottie-web modal inside a WKWebView) =="
+# A modal rendered in the WKWebView by lottie-web. Asserts the DOM bridge folds
+# the modal's elements (dialog role, animation container, title, message, button)
+# into the unified tree with content + frames while an animated <svg> plays.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webLottieDialog
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#open-lottie"
+sleep 2
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-lottie"
+WEB_LOTTIE="$("$HOST" --target ios ui compact "$TMP/web-lottie/snapshot.json")"
+echo "$WEB_LOTTIE"
+echo "$WEB_LOTTIE" | grep "webLottie.dialog" | grep -q "dialog" \
+  || { echo "FAIL: web lottie modal (role=dialog) not folded in"; exit 1; }
+echo "$WEB_LOTTIE" | grep -q "webLottie.animation" \
+  || { echo "FAIL: lottie-web animation container not captured"; exit 1; }
+echo "$WEB_LOTTIE" | grep "webLottie.title" | grep -q "Please wait" \
+  || { echo "FAIL: web lottie title not captured"; exit 1; }
+echo "$WEB_LOTTIE" | grep "webLottie.message" | grep -q "Processing your request." \
+  || { echo "FAIL: web lottie message not captured"; exit 1; }
+echo "$WEB_LOTTIE" | grep "webLottie.done" | grep -q 'button' \
+  || { echo "FAIL: web lottie 'Done' button not captured"; exit 1; }
+# The DOM button must land: #lottie-done sets #web-status to "Done".
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#lottie-done"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-lottie-done"
+"$HOST" --target ios ui compact "$TMP/web-lottie-done/snapshot.json" | grep "webLottie.status" | grep -q "Done" \
+  || { echo "FAIL: tapping the web lottie 'Done' button did not update the status"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
+# A modal built as a Web Component whose content lives in an OPEN shadow root.
+# Asserts Reticle pierces the shadow boundary and folds the modal's elements into
+# the unified tree with content + frames, and that a shadow-piercing activate lands.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webComponentDialog
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#open-wc"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-comp"
+WEB_COMP="$("$HOST" --target ios ui compact "$TMP/web-comp/snapshot.json")"
+echo "$WEB_COMP"
+echo "$WEB_COMP" | grep "webComponent.title" | grep -q "Delete item?" \
+  || { echo "FAIL: shadow-DOM title not folded in (shadow piercing)"; exit 1; }
+echo "$WEB_COMP" | grep "webComponent.message" | grep -q "remove it permanently." \
+  || { echo "FAIL: shadow-DOM message not folded in"; exit 1; }
+echo "$WEB_COMP" | grep "webComponent.cancel" | grep -q 'button "Cancel"' \
+  || { echo "FAIL: shadow-DOM Cancel button not folded in"; exit 1; }
+echo "$WEB_COMP" | grep "webComponent.confirm" | grep -q 'button "Delete"' \
+  || { echo "FAIL: shadow-DOM Delete button not folded in"; exit 1; }
+# A shadow-piercing activate must land: #wc-confirm sets #wc-status to "Deleted".
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "confirm-dialog >>> #wc-confirm"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-comp-done"
+"$HOST" --target ios ui compact "$TMP/web-comp-done/snapshot.json" | grep "webComponent.status" | grep -q "Deleted" \
+  || { echo "FAIL: shadow-piercing activate on Delete did not update the status"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== LOTTIE-ONLY DIALOG (whole dialog baked into one Lottie) =="
+# The title / message / both buttons are Lottie layers, not views. The Lottie
+# bridge (Mirror-reflects the parsed model) surfaces each text layer as a
+# `lottie` region (content + screen rect). Asserts those elements are recovered
+# and that an HID tap at a recovered position fires the app's in-canvas hit-test
+# callback (there are no child views to activate).
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=lottieOnlyDialog
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios act activate --package "$LINKED_ID" --test-id lottieOnly.trigger
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/lottie-only"
+LOTTIE_REGIONS="$("$HOST" --target ios ui regions "$TMP/lottie-only/snapshot.json")"
+echo "$LOTTIE_REGIONS"
+echo "$LOTTIE_REGIONS" | grep -q 'lottie "Delete item?"' \
+  || { echo "FAIL: Lottie title not recovered from the model"; exit 1; }
+echo "$LOTTIE_REGIONS" | grep -q 'lottie "This will remove it permanently."' \
+  || { echo "FAIL: Lottie message not recovered"; exit 1; }
+echo "$LOTTIE_REGIONS" | grep -q 'lottie "Cancel"' \
+  || { echo "FAIL: Lottie Cancel button not recovered"; exit 1; }
+echo "$LOTTIE_REGIONS" | grep -q 'lottie "Delete"' \
+  || { echo "FAIL: Lottie Delete button not recovered"; exit 1; }
+# Tap the *recovered* Delete position and confirm the in-canvas callback fires.
+DELETE_PT="$(/usr/bin/python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+for v in s["nodes"].values():
+    for g in (v.get("regions") or []):
+        if g.get("source")=="lottie" and g.get("label")=="Delete":
+            r=g["rects"][0]; print("%d,%d" % (int(r["x"]+r["width"]/2), int(r["y"]+r["height"]/2))); sys.exit(0)' \
+  "$TMP/lottie-only/snapshot.json")"
+[ -n "$DELETE_PT" ] || { echo "FAIL: could not resolve the recovered Delete region point"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --point "$DELETE_PT"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/lottie-only-done"
+"$HOST" --target ios ui compact "$TMP/lottie-only-done/snapshot.json" | grep "lottieOnly.status" | grep -q "Deleted" \
+  || { echo "FAIL: tapping the recovered Lottie 'Delete' position did not fire the in-canvas callback"; exit 1; }
+"$HOST" --target ios debug logs --package "$LINKED_ID" | grep -q "lottie_only_choice" \
+  || { echo "FAIL: expected lottie_only_choice in the app log bridge"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== INJECTION path (noagent app) =="
