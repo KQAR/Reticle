@@ -44,8 +44,8 @@ object RegionProbe {
         // Channel 2: virtual a11y sub-nodes (ExploreByTouchHelper et al).
         regions.addAll(virtualA11yRegions(view))
 
-        // Channel 3: a forwarded/extended touch-delegate rect.
-        touchDelegateRegion(view)?.let { regions.add(it) }
+        // Channel 3: forwarded/extended touch-delegate rects.
+        regions.addAll(touchDelegateRegions(view))
 
         // Channel 3b: re-colored runs (ForegroundColorSpan) that aren't already
         // covered by a real ClickableSpan — the "highlighted phrase = link"
@@ -314,14 +314,12 @@ object RegionProbe {
             val hostId = android.view.accessibility.AccessibilityNodeProvider.HOST_VIEW_ID
             val root = provider.createAccessibilityNodeInfo(hostId) ?: return emptyList()
             val childCount = root.childCount
+            val declaredIds = declaredChildVirtualIds(root)
             recycleQuietly(root)
             val loc = IntArray(2)
             view.getLocationOnScreen(loc)
-            for (i in 0 until childCount) {
-                // Child virtual ids aren't directly enumerable across all impls;
-                // probe a bounded range of plausible ids via the provider.
-                // ExploreByTouchHelper assigns small sequential ids.
-                val childInfo = provider.createAccessibilityNodeInfo(i) ?: continue
+            for (id in virtualChildIds(view, childCount, declaredIds)) {
+                val childInfo = provider.createAccessibilityNodeInfo(id) ?: continue
                 val bounds = AndroidRect()
                 childInfo.getBoundsInScreen(bounds)
                 val label = childInfo.text?.toString() ?: childInfo.contentDescription?.toString()
@@ -348,6 +346,125 @@ object RegionProbe {
         return out
     }
 
+    /**
+     * The virtual ids to ask the provider for, most reliable channel first.
+     *
+     * A provider's child ids are chosen by the app, NOT by the framework:
+     * `ExploreByTouchHelper.getVisibleVirtualViews` may hand out dense 0-based
+     * indexes (a chart's data points) or stable domain ids (a seat number, a row
+     * id). Both are legal, so probing `0 until childCount` — what this did
+     * originally — silently recovered ZERO regions for every app that used the
+     * second style. Order:
+     *
+     *   1. the host node's declared child ids ([declaredChildVirtualIds]) — the
+     *      only channel that generalises to a non-androidx provider (Flutter,
+     *      WebView, hand-written), but it needs a non-SDK method that the
+     *      platform blocks for a modern `targetSdk` (measured on API 36:
+     *      `getChildId ... api=max-target-o ... denied`), so in practice it only
+     *      fires for a legacy-target app;
+     *   2. the androidx helper's own `getVisibleVirtualViews`
+     *      ([exploreByTouchVirtualIds]) — app/androidx code, so no non-SDK
+     *      interface policy applies to it. This is the channel that carries
+     *      real-world `ExploreByTouchHelper` controls;
+     *   3. the dense `0 until childCount` probe, as a last resort.
+     *
+     * Consequence worth stating: a NON-androidx provider that also assigns
+     * non-dense ids stays unrecoverable on a modern target. That is a platform
+     * boundary, not a missing branch.
+     */
+    private fun virtualChildIds(view: View, childCount: Int, declaredIds: List<Int>): List<Int> {
+        if (declaredIds.isNotEmpty()) return declaredIds
+        exploreByTouchVirtualIds(view)?.let { if (it.isNotEmpty()) return it }
+        return (0 until childCount).toList()
+    }
+
+    // AccessibilityNodeInfo.getChildId(int) is @hide; it may or may not be
+    // reachable depending on the platform's non-SDK policy, so resolve it once
+    // and treat "not there" as just another closed door.
+    private val getChildIdMethod: java.lang.reflect.Method? by lazy {
+        try {
+            android.view.accessibility.AccessibilityNodeInfo::class.java
+                .getDeclaredMethod("getChildId", Int::class.javaPrimitiveType)
+                .apply { isAccessible = true }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * The virtual ids the host node actually declared, read off its packed child
+     * node ids. A node id packs `(virtualDescendantId shl 32) or accessibilityViewId`,
+     * so the high word is the virtual id; real view children pack
+     * [UNDEFINED_VIRTUAL_ID] there and are skipped (they are already tree nodes).
+     */
+    private fun declaredChildVirtualIds(
+        root: android.view.accessibility.AccessibilityNodeInfo,
+    ): List<Int> {
+        val method = getChildIdMethod ?: return emptyList()
+        val out = ArrayList<Int>(root.childCount)
+        for (i in 0 until root.childCount) {
+            val packed = try {
+                method.invoke(root, i) as? Long ?: continue
+            } catch (_: Throwable) {
+                return emptyList()
+            }
+            val virtualId = (packed shr 32).toInt()
+            if (virtualId == UNDEFINED_VIRTUAL_ID) continue
+            out.add(virtualId)
+        }
+        return out
+    }
+
+    /**
+     * Ask an `androidx.customview.widget.ExploreByTouchHelper` behind this view
+     * for its visible virtual ids. Everything reflected here is app/androidx
+     * code — `View.getAccessibilityDelegate()` (API 29+) hands back androidx's
+     * adapter, whose `mCompat` field is the helper — so the platform's non-SDK
+     * restrictions don't apply. Returns null when the view isn't backed by one
+     * (a custom provider, or a minified build that renamed the field).
+     */
+    private fun exploreByTouchVirtualIds(view: View): List<Int>? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        return try {
+            val delegate = view.accessibilityDelegate ?: return null
+            val compat = delegate.javaClass.declaredFields
+                .firstOrNull { it.type.name == ACCESSIBILITY_DELEGATE_COMPAT }
+                ?.apply { isAccessible = true }
+                ?.get(delegate) ?: return null
+            if (!isExploreByTouchHelper(compat.javaClass)) return null
+            val method = findMethod(compat.javaClass, "getVisibleVirtualViews") ?: return null
+            val ids = ArrayList<Int>()
+            method.invoke(compat, ids)
+            ids.filterNotNull()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun isExploreByTouchHelper(type: Class<*>): Boolean {
+        var c: Class<*>? = type
+        while (c != null) {
+            if (c.name == EXPLORE_BY_TOUCH_HELPER) return true
+            c = c.superclass
+        }
+        return false
+    }
+
+    private fun findMethod(type: Class<*>, name: String): java.lang.reflect.Method? {
+        var c: Class<*>? = type
+        while (c != null) {
+            c.declaredMethods.firstOrNull { it.name == name && it.parameterTypes.size == 1 }
+                ?.let { return it.apply { isAccessible = true } }
+            c = c.superclass
+        }
+        return null
+    }
+
+    /** `AccessibilityNodeInfo.UNDEFINED_ITEM_ID`'s virtual-id word. */
+    private const val UNDEFINED_VIRTUAL_ID = -1
+    private const val ACCESSIBILITY_DELEGATE_COMPAT = "androidx.core.view.AccessibilityDelegateCompat"
+    private const val EXPLORE_BY_TOUCH_HELPER = "androidx.customview.widget.ExploreByTouchHelper"
+
     // AccessibilityNodeInfo instances are pooled below API 33; not recycling
     // them churns the pool for every virtual node on every snapshot.
     @Suppress("DEPRECATION")
@@ -362,45 +479,66 @@ object RegionProbe {
 
     // --- Channel 3: touch delegate ----------------------------------------
 
-    // TouchDelegate stores its bounds privately; resolve the Field ONCE — the
-    // getDeclaredField + isAccessible toggle ran per delegated view per
-    // snapshot, on the main thread inside runOnMainSync.
-    private val touchDelegateBoundsField: java.lang.reflect.Field? by lazy {
-        try {
-            android.view.TouchDelegate::class.java.getDeclaredField("mBounds")
-                .apply { isAccessible = true }
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    private fun touchDelegateRegion(view: View): InteractionRegion? {
+    /**
+     * The delegate's forwarded hit rects, labelled with the target view they
+     * forward to.
+     *
+     * Read through the PUBLIC `TouchDelegate.getTouchDelegateInfo()` (API 29+).
+     * This channel previously reflected `TouchDelegate.mBounds`, which the
+     * platform blocks (`api=max-target-o`) for anything targeting O or newer —
+     * i.e. it was dead on every modern app, silently, since the field access
+     * fails closed. Below API 29 there is no accessor at all, so the channel
+     * honestly reports nothing rather than guessing the view frame.
+     */
+    private fun touchDelegateRegions(view: View): List<InteractionRegion> {
         val delegate = try {
             view.touchDelegate
         } catch (_: Throwable) {
             null
-        } ?: return null
+        } ?: return emptyList()
+        if (android.os.Build.VERSION.SDK_INT < 29) return emptyList()
         return try {
-            val field = touchDelegateBoundsField ?: return null
-            val b = field.get(delegate) as? AndroidRect ?: return null
+            val info = delegate.touchDelegateInfo
             val loc = IntArray(2)
             view.getLocationOnScreen(loc)
-            // mBounds is in the delegate-host's local coords; offset to screen.
-            InteractionRegion(
-                source = RegionSource.touchDelegate,
-                rects = listOf(
-                    Rect(
-                        x = (loc[0] + b.left).toDouble(),
-                        y = (loc[1] + b.top).toDouble(),
-                        width = b.width().toDouble(),
-                        height = b.height().toDouble(),
+            val out = ArrayList<InteractionRegion>(info.regionCount)
+            for (i in 0 until info.regionCount) {
+                val region = info.getRegionAt(i) ?: continue
+                val b: AndroidRect = region.bounds
+                if (b.width() <= 0 || b.height() <= 0) continue
+                out.add(
+                    InteractionRegion(
+                        source = RegionSource.touchDelegate,
+                        // No label: the delegate's target is only resolvable
+                        // through an accessibility connection (see [targetLabel]),
+                        // so this channel is rect-only evidence. It stays
+                        // addressable because `--region` also matches a source
+                        // name (`--region touchDelegate`).
+                        label = null,
+                        rects = listOf(
+                            // The region is in the delegate host's local coords.
+                            Rect(
+                                x = (loc[0] + b.left).toDouble(),
+                                y = (loc[1] + b.top).toDouble(),
+                                width = b.width().toDouble(),
+                                height = b.height().toDouble(),
+                            )
+                        ),
                     )
-                ),
-            )
+                )
+            }
+            out
         } catch (_: Throwable) {
-            null
+            emptyList()
         }
     }
+
+    // Why the touch-delegate region carries no label: TouchDelegateInfo maps its
+    // regions to accessibility node IDs, and `getTargetForRegion` resolves one
+    // only through an AccessibilityInteractionClient connection — which an
+    // in-process observer does not have (verified: it returns null in-app). So
+    // the forwarded rect is honest geometry with an unknown target, rather than
+    // a guessed one.
 
     // --- Char grid --------------------------------------------------------
 

@@ -180,7 +180,8 @@ enum RegionProbe {
     /// YYText-style rich labels, custom multi-target rows, etc. Each element
     /// becomes one region with its on-screen frame.
     private static func a11yVirtualRegions(_ view: UIView) -> [InteractionRegion] {
-        guard let elements = view.accessibilityElements, !elements.isEmpty else { return [] }
+        let elements = containerElements(view)
+        guard !elements.isEmpty else { return [] }
         let viewFrame = view.accessibilityFrame
         var out: [InteractionRegion] = []
         for case let element as NSObject in elements {
@@ -209,6 +210,27 @@ enum RegionProbe {
             ))
         }
         return out
+    }
+
+    /// A container's sub-elements, from EITHER convention `UIAccessibilityContainer`
+    /// allows:
+    ///
+    ///  - the `accessibilityElements` array (the shorthand);
+    ///  - `accessibilityElementCount()` + `accessibilityElement(at:)`, the
+    ///    original documented approach — elements built on demand, with the array
+    ///    property left nil.
+    ///
+    /// Reading only the array (what this did originally) silently recovered ZERO
+    /// regions from every control written the second way, which is exactly the
+    /// large dynamic control — a seat map, a chart — whose sub-elements matter
+    /// most. `accessibilityElementCount()` returns `NSNotFound` for a view that
+    /// isn't a container, so a non-container still costs one call and yields
+    /// nothing.
+    private static func containerElements(_ view: UIView) -> [Any] {
+        if let elements = view.accessibilityElements, !elements.isEmpty { return elements }
+        let count = view.accessibilityElementCount()
+        guard count != NSNotFound, count > 0 else { return [] }
+        return (0..<count).compactMap { view.accessibilityElement(at: $0) }
     }
 
     // MARK: - Channel 4: text markers (fallback)

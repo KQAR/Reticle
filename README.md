@@ -55,8 +55,10 @@ several channels:
 
 - **`span`** — real `ClickableSpan` / `URLSpan` ranges, with per-line pixel
   hit-rects and the link's color.
-- **`a11yVirtual`** — virtual accessibility sub-nodes (`ExploreByTouchHelper`).
-- **`touchDelegate`** — extended/forwarded hit-rects.
+- **`a11yVirtual`** — virtual accessibility sub-nodes (`ExploreByTouchHelper`),
+  under whichever virtual-id convention the app chose.
+- **`touchDelegate`** — extended/forwarded hit-rects (API 29+), unlabelled, so
+  they are addressed as `--region touchDelegate`.
 - **`textMarker`** — one region per in-text bracketed / markdown link on
   self-drawn rows, each with its own rect. Bracket detection is script-agnostic
   (markdown `[text](url)`, plus paired delimiters like `«…»` and `《…》`).
