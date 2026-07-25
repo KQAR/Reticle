@@ -1,977 +1,378 @@
-# Reticle Roadmap & Multi-Platform Architecture
+# Reticle Roadmap
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: roadmap and current-state doc (updated 2026-07-25, tracking 0.9.3 — Loom
-capture engine, traffic rules, flow replay, and the **Boundary-case sweep**, now
-complete: fifteen points, each proved on a device before it was fixed, and the
-`docs/architecture.md` **Honest boundaries** table that came out of it). Captures
-the agreed direction for evolving Reticle from a single-platform Android CLI into a
-multi-platform runtime harness with an integrated capture proxy and a live web panel.
-`docs/architecture.md` describes the current implementation in more operational
-detail. The final section, **Proposed next: evidence workflows + security-evidence
-lane**, records the next set of not-yet-built proposals that ride on the primitives
-already landed through Phase 1–3.
+Three docs, three jobs. `README.md` is how to use Reticle; `docs/architecture.md`
+is how it works today — including the **Honest boundaries** table, the canonical
+list of what is structurally unreachable; **this file is where it is going**: what
+is left, in priority order, and which decisions are already settled so they are not
+re-litigated.
 
-## Vision
-
-The end goal: **post-development E2E and verification** — let an AI agent run a
-finished feature end-to-end on a real device and check each step. Crucial scope
-decision: **Reticle provides evidence, not verdicts.** The product verb is
-*observe / drive / capture*, never *assert*. Reticle faithfully emits state,
-trees, network events, screenshots, and action traces; the **agent** (or an
-external test framework) decides whether a step passed. So the protocol and
-command surface get **no** `assert`/`expect`/`verify` primitives — they get
-richer, more comparable *evidence* instead. This keeps the tool honest and
-composable, and makes evidence quality (structured, diffable traces and network
-events) the thing to optimize.
-
-Reticle today inspects and drives a running Android app from its live runtime
-(in-process agent + host CLI over a loopback HTTP/JSON protocol). The roadmap
-extends this along three axes without abandoning the project's defining
-constraint — **no root, no repackage, no byte-code hooking**:
-
-1. **Multi-platform** — Android first and complete; iOS and HarmonyOS as a
-   *thin* reservation (protocol spec + platform interfaces), not built yet.
-2. **A whistle-style capture proxy** — a pure host-side MITM proxy subsystem,
-   integrated into the same CLI/daemon, for inspecting app network traffic.
-3. **A live web panel** — a unified UI showing proxy traffic, app action paths
-   (tap/swipe/type sequences), and status screenshots, fed by a long-lived
-   daemon.
-
-### The hard capabilities have a real ceiling — on every platform
-
-Prior art in this space (runtime harnesses for other platforms, built on the
-same in-process-server + host-CLI shape) confirms that the "deep" capabilities
-have a real ceiling, and that the honest boundaries below are not Android
-limitations but structural ones:
-
-- Object inspection is **class-metadata reflection**, not heap instance
-  enumeration.
-- Network capture is **app-cooperative or host-side MITM**, not passive
-  interception of arbitrary in-process traffic.
-- Arbitrary real-device injection is **out of scope** — a real-device build must
-  link the agent at build time.
-
-The cross-platform asset is therefore **the protocol**, not shared source. A
-future iOS or HarmonyOS agent interoperates only by speaking the same loopback
-contract, in whatever language fits the platform.
-
-## Principle: the protocol is the spine, not the code
-
-The agent and CLI already communicate over loopback HTTP + JSON (9 endpoints in
-`reticle-core/Protocol.kt`: `/report` `/snapshot` `/semantics` `/compact`
-`/screenshot` `/mutate` `/clipboard` `/runtime` `/logs`). A future iOS (Swift) or HarmonyOS (ArkTS/C++) agent
-**does not need to share Kotlin code** — it only needs to produce the same JSON.
-The Kotlin types in `reticle-core` are one implementation of the spec; each
-platform brings its own.
-
-Therefore the first reservation work is to promote `reticle-core` from "a set of
-Kotlin types" to **a language-neutral, versioned protocol spec** (JSON schema +
-golden fixtures + contract tests). The Kotlin types become *one implementation*
-of that spec. This is the true backbone of multi-platform support and is nearly
-free to do now.
-
-**Polyglot monorepo ≠ single build system.** The repo stays a monorepo, but each
-platform keeps its native build (Gradle for JVM/Android, SwiftPM for a future
-iOS agent, hvigor for HarmonyOS). What is unified is the **host CLI binary** and
-the **protocol spec** — not the build. This must be stated explicitly so nobody
-tries to drive a Swift build from Gradle.
-
-## Platform seams (only three) — thin reservation
-
-"Abstracting for platforms that don't exist yet" normally risks abstracting
-*wrong* (with one implementation you can't see the right interface). But the
-seams are evidenced by how comparable harnesses split their platform layers, not
-imagined. Only three pieces of the host CLI are platform-specific:
-
-| Seam | Android (today) | iOS (est.) | HarmonyOS (est.) |
-| --- | --- | --- | --- |
-| **Device control / transport** | `Adb.kt` (forward / push / run-as / pidof / screencap / proxy config) | `xcrun simctl` + CoreSimulator | `hdc` |
-| **Injection** | JDWP + payload dex (`Injector`) | DYLD constructor (sim) / linked framework (device) | TBD |
-| **Input synthesis** | `adb input` (`InputBackend`) | private CoreSimulator HID | `hdc input` |
-
-The HTTP transport layer (`RuntimeClient`) is **already platform-neutral** — any
-platform agent that speaks the protocol works with it unchanged; it needs no
-abstraction.
-
-**Reservation = interfaces only, no empty stubs (YAGNI).** Introduce a `Platform`
-SPI bundling `DeviceController`, `Injector`, and `InputBackend`; move the current
-Android code behind `AndroidPlatform`; have the CLI select platform by
-`--target` (default `android`). Do **not** create iOS/HarmonyOS placeholder
-modules or "unsupported" stubs — interfaces, not stubs.
-
-Note the asymmetry: only the **agent** (in-process code) is genuinely
-platform-specific and gets its own per-platform build (AAR / framework / HAP).
-The **CLI** is host-side and stays one module; its three platform seams live as
-*source packages* (`dev.reticle.cli.platform.android`), not separate modules.
-
-## CLI is a thin client: derivation lives in the agent
-
-A clarified boundary (it was muddy before). The host CLI must NOT own UI-shaped
-algorithms. Capture-derived views are computed **in the agent, on-device**, and
-returned as finished JSON; the CLI receives products and does only protocol I/O
-(HTTP, JSON, arg parsing, forking `adb`/`simctl`/`hdc`).
-
-| Algorithm | Home | Why |
-| --- | --- | --- |
-| `SemanticTree.build`, `CompactObservation.from`, selector resolution | **agent** (on-device) | Pure functions over a snapshot; current agents capture once and derive report views in one pass. `ui report` consumes this bundle; selector resolution is the remaining sink-down work. |
-| `PortMap.derivePort` | **both ends, by spec** | Chicken-and-egg: the CLI needs the device port *before* it can reach the agent, so it can't ask the agent for it. It is a protocol rule (a stable hash of `applicationId`) that each end implements identically. Belongs in `reticle-protocol`, not in shared code. |
-
-Consequence for language choice: once derivation lives in the agent, the CLI's
-dependency on `reticle-core` shrinks to **data models only** — and models are not
-shared across platforms anyway (each language has its own, aligned by the schema;
-see below). So a thin-client CLI is **language-free**: Kotlin/JVM, Swift, Go, or
-Rust are all viable, because the CLI just speaks the protocol and shells out to
-device tools. The cross-platform contract is the protocol, never shared code.
-
-This means: **the thing that makes the CLI clean is the derivation sink-down and
-thin-client shape — not the implementation language.** Rewriting the CLI in
-another language is therefore an optional preference, not an architectural
-necessity. JVM is a fine default for a host tool: mature cross-OS distribution,
-no macOS required to build (CI is Linux), and it shares `reticle-core` with the
-Android agent for free today. The direction below (Swift host + Kotlin Android
-helper) is the chosen long-term shape; until it is executed, the host stays
-Kotlin/JVM.
-
-## Direction: Swift host + per-platform helpers (chosen, not yet built)
-
-Decided direction: unify the **host program** (CLI + daemon + Web panel — they
-are one process, `reticle serve`, not separate components) onto **Swift**, with
-each platform's device dirty-work kept in whatever language fits that platform,
-invoked across a process boundary.
-
-Why this shape, and not a full Swift rewrite of everything:
-
-- **JDWP injection cannot sink into the agent.** The whole point of JDWP
-  injection is to get the agent into a process that *doesn't have it yet* — the
-  agent is the *result* of injection, not a precondition. So the ~680-line JDWP
-  codec is irreducibly host-side, and irreducibly Android-specific.
-- **Android's dirty-work is most natural in the JVM** (JDWP, dex, `d8`). Rewriting
-  it in Swift is the single highest-risk part of any rewrite (every fix in its
-  git history is a hard-won ART/dexopt/GC edge case).
-- So: keep the **entire current `AndroidPlatform`** (adb + injector + JDWP +
-  input) as a **Kotlin `reticle-android-helper`**, and have the Swift host invoke
-  it. The existing `Platform` SPI moves out to a *process boundary* intact rather
-  than being rewritten.
-
-```
-Swift host (CLI + daemon + Web)
-├─ generic core: args / HTTP / JSON / event bus / proxy / Web panel
-└─ PlatformClient (Swift interface)
-   ├─ AndroidHelperClient → talks to `reticle-android-helper` (Kotlin: today's AndroidPlatform)
-   ├─ (future) iOS      → native in the Swift host (simctl / DYLD — same ecosystem, no helper)
-   └─ (future) harmony  → hdc / helper TBD
-```
-
-Note the asymmetry: a helper exists **only when a platform's dirty-work lives in
-a non-host ecosystem**. Android (JVM) warrants one; iOS does not (simctl/DYLD are
-already native to a Swift/macOS host). Do not over-generalize "helper" to every
-platform.
-
-Honest costs (this is not free, it trades rewrite risk for IPC complexity):
-
-- **A full Kotlin/JVM helper remains.** "Whole-Android-via-helper" means the
-  helper is the entire current Android host layer (~1137 lines), needing a JVM or
-  its own native-image. The JVM dependency is not eliminated — it is collapsed
-  into one isolated, language-justified executable.
-- **Every Android call becomes cross-process.** `forward`/`screencap`/`input`/
-  `logcat` are high-frequency; the helper therefore must be a **long-lived RPC
-  service**, not fork-per-call. Its request/response contract belongs in
-  `reticle-protocol` alongside the wire protocol.
-- **Two long-lived processes.** The Swift daemon and the Kotlin Android helper
-  are both resident; the host orchestrates both. The roadmap must keep these
-  distinct (a Swift daemon is not the Kotlin helper) to avoid a "two daemons"
-  muddle.
-
-Risk posture: this **eliminates the JDWP-rewrite risk entirely** (the Android
-code is kept verbatim) and converts "rewrite the hardest code" into "design a
-good host↔helper IPC contract + manage two resident processes" — real work, but
-low-risk, standard-pattern work. Execution is **spike-first**: prove the
-host↔helper RPC before porting the generic core to Swift.
-
-### Status (2026-06-26): a working Swift host CLI exists
-
-The direction is past spike — there is a **real Swift host CLI** driving Android
-through the Kotlin helper end-to-end on a real device. What exists today:
-
-- **Kotlin helper** — a `reticle helper` subcommand (`reticle-helper/.../Helper.kt`):
-  a long-lived JSONL stdio RPC loop (one request per stdin line, one response per
-  stdout line; stdout protocol-only, diagnostics to stderr). Methods (as of 0.7.0):
-  `ping`, `listDevices`, `status`, `inject`, `launch`, `uiReport`, `act`, `mutate`,
-  `logs`, `logcat`, `screenshot`, `render` (helper-side tree/compact/node/regions/
-  outline rendering), and `proxyStatus` / `proxySet` / `proxyClear` /
-  `proxyInstallCa` — reusing the existing `Platform` SPI and `RuntimeClient`
-  verbatim (the helper *is* today's Android host layer behind an RPC seam). Resident loop, not fork-per-call; a bad/unknown request
-  returns a structured error without taking the loop down. `inject` accepts an
-  explicit `payloadDex`; `uiReport` fetches the agent-derived `/report` bundle
-  and returns the finished `snapshot`/`semantics`/`compact` JSON.
-- **RPC contract** — formalized in `reticle-protocol/helper-rpc.md` (envelope,
-  methods, the explicit-payload rule, the inject-waits-for-liveness rule).
-- **Swift host CLI** — `reticle-host/` (SwiftPM; outside the Gradle build). A
-  real CLI at command parity with the Kotlin CLI: `HelperClient` (resident JSONL
-  RPC with id correlation) + `doctor` / `devices` / `status` / `app launch|inject`
-  / `act` / `mutate` / `debug` / `ui report|screenshot|tree|compact|node|regions`
-  / `version`. It owns no device code — every command is an RPC call. `ui report`
-  writes the helper-returned trees straight to `snapshot.json` / `semantics.json`
-  / `compact.json` (the thin-client boundary in practice — the host never
-  re-derives). (The original throwaway spike has been removed now that the real
-  host exists.)
-
-Verified on a real device: `doctor`/`devices`/`status` return real device data;
-**`ui report` against the linked sample app produced a healthy runtime and wrote
-a real 24KB `snapshot.json` + semantics + compact** (nodes=15, compact=8,
-semantic=10). So the full value path works through Swift → helper → Android.
-
-One device-side caveat (orthogonal to the host): on the OEM test ROM, `inject`
-completes but the runtime does not come up afterward — *identically to the CLI's
-own `app inject`*, so it is a ROM JDWP/breakpoint quirk, not a host or boundary
-problem. `ui report` was therefore proven via the **linked** sample app (agent
-AAR, no JDWP needed); a successful end-to-end *inject* is best confirmed on an
-emulator.
-
-**What "Swift host" means at this stage:** the host *CLI* is done and now at
-**functional parity** with the Kotlin CLI's one-shot surface. Beyond
-doctor/devices/status/inject/ui report, the Swift host also drives `launch`,
-`act` (tap/swipe/drag/type, incl. selector and `--region` resolution), `mutate`,
-`debug logs`/`logcat`, `ui screenshot` (PNG over base64), and local
-`ui tree`/`compact`/`node`/`regions` (rendered by the helper — derivation stays
-in Kotlin). All verified on a real device against the linked sample app
-(selector tap resolved to coordinates, mutate applied, logs read, a 1080×2412
-PNG written, `--region "《隐私政策》"` resolved to a precise point).
-
-The daemon, Web panel, capture lane (on Loom's engine), HTTPS MITM, session-scoped
-**traffic rules**, and **flow replay + diff** now exist in `reticle serve`, with a
-typed `network.*` schema pinned from both language sides (see Phase 2 below).
-**Still ahead for the full Swift host:** reverse-drive panel controls if explicitly
-chosen later, and streaming `logs --follow`. JDWP is never rewritten.
-
-## Protocol spec: JSON Schema is authoritative; Kotlin is hand-written + verified
-
-`reticle-protocol/` holds **JSON Schema (2020-12)** files plus golden fixtures as
-the single, language-neutral source of truth for the wire contract.
-
-- The Kotlin types in `reticle-core` stay **hand-written** (keeping their doc
-  comments and the kotlinx-serialization setup for sealed hierarchies like
-  `MetadataValue`, which codegen handles poorly) and a **CI contract test**
-  validates the JSON they emit against the schema + fixtures.
-- Swift (`reticle-swift`) is **also a shipped hand-written implementation** — it
-  backs the Swift host and the iOS agent, and validates the same schema/fixtures
-  from the Swift side (`SchemaValidationTests`, `ReticleProtocolTests`), so the
-  contract is pinned from both language sides. Further greenfield platforms (e.g.
-  ArkTS) may **codegen** from the same schema; "generate vs hand-write" is a
-  per-platform choice.
-
-## Target module layout
-
-`reticle-agent/` is a **grouping directory, not a build unit** — it must never
-contain its own `build.gradle`. Only `:reticle-agent:android` is `include`d in
-Gradle; future `ios/` (SwiftPM) and `harmony/` (hvigor) siblings are invisible to
-Gradle by design. (Nesting makes the Gradle leaf project name `android`, so the
-module must set `archivesName` explicitly or its AAR would be named `android-…`.)
-
-```
-reticle/  (polyglot monorepo — one host binary + one protocol spec)
-├─ reticle-protocol/      # JSON Schema (authoritative) + golden fixtures + contract tests  ← spine
-├─ reticle-core/          # Kotlin types: hand-written, verified against the schema in CI
-├─ reticle-agent/         # GROUPING DIR ONLY (no build.gradle here)
-│   ├─ android/           # Gradle module :reticle-agent:android → reticle-agent-android.aar
-│   ├─ (future) ios/      # SwiftPM package — invisible to Gradle
-│   └─ (future) harmony/  # hvigor module — invisible to Gradle
-├─ reticle-helper/        # Kotlin Android host layer → no-JDK native reticle-helper (RPC server)
-│   └─ src/.../platform/android/  # AndroidPlatform: Adb / JDWP / InputBackend
-├─ reticle-host/          # Swift host CLI + `reticle serve` daemon, panel, proxy/MITM, mocks
-│   ├─ ReticleHostShared     # dependency-free JSONValue / event models / HelperError
-│   ├─ ReticleNetworkLane    # capture proxy + MITM + mock engine, behind NetworkEventSink
-│   └─ ReticleHostCore       # daemon, CLI, panel, per-platform host code (+ ReticleHost exe)
-└─ sample-app/            # demo linking :reticle-agent:android
-```
+Status: 2026-07-25, tracking 0.9.3. The capture/drive/evidence backbone is complete
+and cross-platform; the **boundary-case sweep** (fifteen points) closed on
+2026-07-25. What remains is listed under [What's left](#whats-left) — no section of
+this document is a to-do list except that one.
 
 ---
 
-# The daemon and event bus (priority design)
+## The goal, and the one scope decision
 
-Decision: **design the daemon and event bus first; the proxy engine is a
-pluggable backend chosen later.** Everything in this section is deliberately
-engine-agnostic.
+The end goal is **post-development E2E verification**: an agent drives a finished
+feature on a real device and checks each step.
 
-## Why a daemon at all
+**Reticle provides evidence, not verdicts.** The product verbs are *observe / drive
+/ capture*, never *assert*. It emits state, trees, network events, screenshots and
+action traces; the agent (or a human, or a test framework) decides whether a step
+passed. Consequence, binding on every item below: no `assert`/`expect` primitive
+ever enters the protocol or the CLI. What gets optimized instead is evidence
+quality — structured, diffable, comparable.
 
-Reticle today is a **one-shot CLI**: each command does forward → probe → act →
-exit. But three of the new requirements are inherently *long-lived and
-streaming*:
+The defining line: **no root, no repackage, no byte-code hooking.** And three
+ceilings that are structural rather than Android-specific, so no platform will
+"fix" them:
 
-- the capture proxy is a persistent MITM listener;
-- the action path is a time-ordered sequence accumulated across many commands;
-- the web panel needs something to push live updates to a browser.
+- object inspection is class-metadata reflection + the reachable graph, never heap
+  enumeration (for a real heap: `am dumpheap`, offline);
+- network capture is host-side MITM, never passive interception of in-process
+  traffic, and pinning is reported rather than bypassed;
+- injection reaches **debuggable** apps (JDWP) or apps that link the agent —
+  arbitrary release builds are Frida/root territory, which this project does not
+  enter.
 
-So we introduce one new run mode that owns all long-lived state:
+One more constraint binds every future item, because it is the difference between a
+verification tool and a plausible one: **deterministic selectors stay the backbone.**
+No natural-language target, no guess-from-a-screenshot mechanism is promoted to the
+primary targeting path. `ui outline --live` + `@N` aliases are the acceptable
+convenience layer; exploration is a coverage aid, never the verification path.
 
-```
-reticle serve [--target android] [--session <name>]
-   # long-lived daemon: runs the proxy, aggregates an event timeline,
-   # serves the web panel on localhost, exposes a control + event API
-```
-
-The existing one-shot commands keep working standalone. When a daemon is
-running, they additionally **publish their results as events** to it, so the web
-timeline captures taps, snapshots, and screenshots alongside network traffic.
-
-## The event bus — the core abstraction (engine-decoupled)
-
-Everything observable becomes a typed event on a single in-process bus. Sources
-publish; sinks consume. The proxy is merely *one source* — which is exactly what
-lets the engine choice be deferred.
-
-### Event envelope (uniform for every source)
-
-```jsonc
-{
-  "id": "evt_01J...",          // monotonic, sortable
-  "ts": 1719400000000,         // epoch millis (stamped by the daemon, not the script)
-  "session": "sess_abc",       // ties device + app + time window together
-  "target": "android:emulator-5554",
-  "source": "proxy | action | ui | runtime | log",
-  "type": "network.response",  // see taxonomy below
-  "payload": { ... },          // type-specific, schema'd in reticle-protocol
-  "refs": { "screenshot": "sess_abc/0007-after.png" }  // large blobs by path, not inlined
-}
-```
-
-### Event taxonomy
-
-| Source | Types | Payload (schema'd in `reticle-protocol`) |
-| --- | --- | --- |
-| `proxy` | `network.request`, `network.response`, `network.error`, `network.replay` | method, url, status, headers, timing, body refs, rule attribution (`ruleApplied`/`ruleAction`), and the replay diff |
-| `action` | `action.dispatched` | gesture (tap/swipe/drag/type), selector, resolved point, before/after node refs |
-| `ui` | `ui.snapshot`, `ui.screenshot` | capture metadata + a `ref` to the on-disk artifact |
-| `runtime` | `runtime.lifecycle` | agent started / injected / port bound / health change |
-| `log` | `log` | app-authored bridge entries (existing `/logs`) |
-
-The **normalized `NetworkEvent`** is the key decoupling point: whatever engine
-produces it (see below), it adapts to this one type. The bus never sees engine
-internals.
-
-### Buffering, persistence, retention
-
-- In-memory **bounded ring buffer** per session (default ~500 events,
-  configurable). Large bodies/screenshots spill to a session dir, referenced by
-  `refs`, never inlined into the event.
-- Optional **JSONL persistence** to `~/.reticle/sessions/<session>/events.jsonl`
-  so a run can be replayed into the panel after the fact — a persisted session
-  dir generalizes a per-action trace dir into a full timeline.
-
-### Sessions
-
-A **session** ties a device + app + time window into one timeline, so the panel
-can show "this run: these network calls + these taps + these screenshots" as a
-single coherent view. One-shot commands attach to the active session if a daemon
-is up (discovered via a pidfile + port under `~/.reticle/`), else they run
-stateless as today.
-
-## Web push transport (dependency-light)
-
-Matching the hand-rolled-HTTP-server philosophy (no heavy framework):
-
-- **Control + history**: plain HTTP REST on the daemon's localhost port
-  (`GET /sessions`, `GET /sessions/{id}/events?since=`, `POST /act`, ...).
-- **Live feed**: **Server-Sent Events** (`GET /events/stream`) — one-way
-  server→browser, trivial to implement over the existing socket server, and
-  sufficient for a live timeline. Reserve WebSocket only if the panel later needs
-  rich bidirectional control; start with SSE + REST.
-
-## Capture engine behind an interface (interface landed, engine chosen: Loom)
-
-The lane is isolated in its own `ReticleNetworkLane` target and only touches the
-host through one sink that carries normalized `network.*` events:
-
-```swift
-public protocol NetworkEventSink: AnyObject, Sendable {
-    var sessionDirectory: URL { get }
-    func emit(_ request: EventPostRequest)   // best-effort; capture never fails a request
-}
-```
-
-`EventStore` conforms to it in `ReticleHostCore`; the lane never names the daemon.
-The engine is now settled: the in-tree SwiftNIO proxy was removed and Reticle
-consumes **[Loom](https://github.com/KQAR/Loom)**'s `ProxyEngine` as an SPM library
-(`LoomProxyCore` / `LoomSharedModels`, pinned to a release tag). `LoomCaptureLane`
-runs it loopback with `persistFlows: false`, subscribes to `flowStream()`, and
-republishes exchanges through the sink. The interface still earns its keep — swapping
-the engine (a managed `whistle` sidecar, an external `mitmproxy`) is editing one
-target, verified end-to-end by `scripts/e2e-proxy.sh` — but "which engine" is no
-longer an open question. (The original sketch imagined a Kotlin `ProxyBackend`
-returning a `Flow<NetworkEvent>`; the host turned out to be Swift, so the realized
-shape is the `NetworkEventSink` above.)
-
-## Capture proxy — honest capability boundary
-
-Decision: **pure host proxy only (L1). The agent does NOT touch the app's trust
-chain or pinning — the no-hook line holds.** This deliberately equals whistle's
-ceiling and must be documented as such:
-
-- **HTTP plaintext** — captured freely.
-- **HTTPS** — requires the device/app to trust our proxy CA. On Android 7+ apps
-  do **not** trust user CAs by default: works for a **debuggable** app (via its
-  `network_security_config`, or an app that explicitly opts in); system-wide CA
-  trust needs **root** (out of scope). Configuring the device proxy itself via
-  `adb settings put global http_proxy` is a **host** action (not a hook) and is
-  in scope.
-- **Certificate pinning** — defeats the proxy. whistle can't beat it either; we
-  report the limit rather than crossing the no-hook line to bypass it.
-
-(An "L2 agent-assisted" mode — injecting CA trust / neutralizing pinning at
-runtime in a debuggable app — was considered and **rejected** to preserve the
-no-hook guarantee. Recorded here so the trade-off isn't silently re-litigated.)
+The cross-platform asset is therefore **the protocol**, not shared source: an agent
+on any platform interoperates by speaking the same loopback contract, in whatever
+language fits.
 
 ---
 
-# WebView / DOM support
+## Where things stand
 
-Decision: **mirror the Compose bridge — a default-on, read-only DOM bridge whose
-nodes merge into the one unified tree.**
+| Area | State |
+| --- | --- |
+| **Observe** (Android) | View tree + Compose semantics + WebView DOM in one flat `ref → Node` map; semantic tree and compact observation derived in-process; regions/char grid for multi-target controls |
+| **Observe** (iOS) | UIKit tree + SwiftUI `axElement` bridge (including links inside one `Text`) + `WKWebView` DOM; same protocol JSON |
+| **Drive** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`, selector-first with `--region`, `--label`, `@N` aliases, `--settle`, `--verify`, `act batch`. Real HID on Android and the iOS simulator; in-process activation on iOS devices |
+| **Evidence** | Action traces (before/after snapshots + screenshots + diff), `replay gif`, session timeline, the absence vocabulary (`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`, `pixels:unavailable`, `screencap:blank`, `occluded-by:*`, `scroll:*`) |
+| **Network** | `reticle serve` capture lane on Loom's `ProxyEngine`, HTTPS MITM with CA issuance, session-scoped traffic rules (`mock`/`block`/`mapRemote`/`passthrough` + modifiers), flow replay + diff. Android and iOS (simulator and device) |
+| **Panel** | Localhost read-only evidence panel: traces, artifacts, network cards with filters and rule grouping, "copy as rule". Display-only by design |
+| **Protocol** | JSON Schema (2020-12) authoritative in `reticle-protocol/`, with golden fixtures; Kotlin and Swift are hand-written implementations pinned to it from both sides |
+| **Distribution** | Swift host + native (GraalVM) Kotlin helper, shipped as a prebuilt release; Claude Code / Cursor plugin manifests in lockstep |
+| **Coverage** | `scripts/e2e-android.sh` and `scripts/e2e-ios.sh` drive every scenario against a real device/emulator, each step asserting an observable side effect; `scripts/e2e-proxy.sh` guards the capture lane in CI |
 
-## It is structurally the same problem as Compose
+`docs/architecture.md` carries the operational detail for all of the above.
 
-The capture already handles a foreign tree hidden inside a native `View`:
-`SnapshotCapture.captureView()` walks the native children, then calls
-`ComposeSemanticsBridge.captureInto()` to merge the Compose **semantics** tree
-into the same `nodes` map, tagged `NodeKind.composeSemantics`.
-
-A `android.webkit.WebView` is the same shape: today it is an opaque leaf `view`
-node; inside it hangs a **DOM tree** Reticle can't see. The fix is a second
-bridge with the identical contract, not a new mechanism:
-
-```kotlin
-// in captureView(), right after the Compose merge:
-val webChildren = WebViewBridge.captureInto(view, parentRef = ref, nodes = nodes) { makeRef() }
-childRefs.addAll(webChildren)
-```
-
-A new `NodeKind.domNode` is added; DOM elements merge in as children of the
-WebView node. Because `ui compact` / `ui tree` / `SelectorResolver` / `act tap`
-all operate on `Node` and don't care whether a node came from a View, Compose, or
-the DOM, **they reuse unchanged** — the dividend of the flat ref→Node model.
-
-## Two things Compose doesn't have
-
-1. **Async + cross-boundary read.** Compose semantics read synchronously by
-   reflection on the main thread. The DOM is only reachable via
-   `WebView.evaluateJavascript(js) { result -> ... }`, whose result is
-   **asynchronous**. `captureLocked()` is synchronous (a `CountDownLatch` via
-   `runOnMainSync`), so the bridge injects a read-only DOM-walk script and
-   latches the JSON result back with a bounded timeout. Cost is real but bounded.
-2. **Coordinate conversion.** The DOM reports **CSS pixels relative to the
-   WebView viewport**; the whole tree is in **screen physical pixels**. Each DOM
-   rect must be folded to screen space:
-   `screen = webview.locationOnScreen + domRect × density − scrollOffset`. This
-   is the most error-prone part (a wrong fold makes `act tap` miss), so the
-   protocol contract pins it: **a `domNode.frame` is already in the screen
-   coordinate system**, exactly like Compose `boundsInScreen`.
-
-## Capability tiers (honest degrade, like `ui screenshot`)
-
-| Tier | Mechanism | Yields | Precondition |
-| --- | --- | --- | --- |
-| **L0** (always) | current behavior | WebView as an opaque leaf node: frame, tappable as a whole | none |
-| **L1** (DOM structure) | inject read-only DOM-walk JS, fold coordinates | DOM element tree: tag / id / class / text / screen rect; target by CSS selector or text; tap | WebView has JS enabled |
-| **L2** (semantic) | JS reads ARIA role / accessible name | role + accessible name, aligned with the semantic tree | JS enabled |
-
-L0 needs no work. L1 is the bulk. L2 is additive. The DOM bridge is **default-on
-but read-only** — it injects a traversal script that does not mutate page state.
-When JS is disabled or injection fails, Reticle does **not** fabricate a DOM: it
-honestly leaves the WebView as an opaque L0 leaf, the same honesty rule the
-Compose bridge follows for non-`AndroidComposeView` hosts.
-
-## Scope
-
-- **In scope:** app-embedded `android.webkit.WebView` (the hybrid-app case).
-- **Out of scope:** Chrome Custom Tabs / Trusted Web Activity — they run in a
-  *separate* (Chrome) process the in-process agent can't reach. Stated so it
-  isn't mistaken for a gap.
-- **Cross-platform reuse:** the `domNode` node kind and the "DOM rect folded to
-  screen space" contract go into `reticle-protocol` as another platform-neutral
-  node type — the same "inject JS, read DOM" approach maps directly to iOS
-  `WKWebView` and the HarmonyOS Web component. This rides the protocol-is-the-
-  spine principle above.
+**Platform parity.** Android and iOS are at effective parity for
+observe / drive / capture + evidence, across simulator and device: the iOS agent,
+host platform, WebView bridge, action traces and the capture proxy all ship, and
+the linked-agent real-device path is validated on an iPhone 13 Pro Max / iOS 26
+(`scripts/e2e-ios-device.sh` — observation, `activate`, `mutate`, trace evidence
+over the USB tunnel, plus a decrypted HTTPS event with the proxy bound to the LAN).
+The one structural gap left is **real-device HID input** (item 5). HarmonyOS is
+unstarted and unvalidated — see Deferred.
 
 ---
 
-# Roadmap phases
+## What's left
 
-Android first and complete; everything else reserved behind the spec + SPI.
+Ordered by leverage. Sizes are rough: **S** ≈ a day, **M** ≈ a few days, **L** ≈ a
+project. Each item also carries how well its problem is established: *measured*
+(reproduced on a device), *by construction* (the code cannot do otherwise), or
+nothing at all — and an item with nothing needs that step before it is built
+(see [the cause-check rule](#decisions-of-record)).
 
-### Phase 0 — Thin reservation (now, near-zero cost)
-- **Rename now**: move `:reticle-agent` → `:reticle-agent:android` (grouping dir,
-  no root `build.gradle`; set `archivesName` so the AAR stays `reticle-agent-
-  android.aar`). Update the couplings this touches — `settings.gradle.kts`,
-  `ci.yml`, `release.yml` (incl. the `reticle-agent.aar` / `…-payload.jar` asset
-  names + launcher), `bin/reticle`, `validate_plugin.py`, `sample-app` dependency.
-- Add `reticle-protocol/` with **authoritative JSON Schema (2020-12)** + golden
-  fixtures; wire a CI contract test that validates `reticle-core`'s emitted JSON
-  against it. Kotlin types stay hand-written.
-- Introduce the `Platform` SPI; move `Adb` / `Injector` / `InputBackend` into
-  `dev.reticle.cli.platform.android` behind it. **No iOS/HarmonyOS stubs.**
-- **Design the daemon + event bus** (this document) — model, envelope, session,
-  SSE/REST surface — decoupled from any proxy engine.
+### 1. Long-session hygiene — S, by construction
 
-### Phase 1 — Android feature completion (pure additive, no new arch)
-- **Live object inspection** + **layout diagnostics**, generalizing the existing
-  reflection used by `mutate` — runtime class metadata, an `ui audit`, and
-  constraint inspection via Java/Kotlin reflection.
-- **Honest ceiling, documented:** class/field/property metadata + the
-  *reachable* object graph (from view tree, singletons, static roots). **Not**
-  heap instance enumeration, **not** arbitrary address reads — this is a
-  structural limit, not an Android one. For a full heap, the honest path is
-  host-side `adb shell am dumpheap` (debuggable app, no root) analyzed offline.
-- **Action traces** — the first evidence package is in place via
-  `act --trace-output`: `trace.json` records gesture, selector, resolved
-  point/source/ref, and a compact snapshot diff, with before/after snapshots and
-  screenshots stored beside it. `reticle serve` ingests these traces into the
-  session event bus and renders them in the panel timeline.
-- **WebView / DOM support** — `WebViewBridge` mirroring the Compose bridge,
-  L0→L1→L2 tiers, DOM nodes merged into the unified tree (`NodeKind.domNode`).
-  See the WebView section above. L1 read-only DOM walk + coordinate fold is
-  landed for app-embedded `android.webkit.WebView`; remaining work is L2
-  semantic enrichment and deeper fixture coverage for edge cases.
-- **Thin-client sink-down** — `ui report` now consumes the agent's single-capture
-  `/report` bundle, so `SemanticTree.build` / `CompactObservation.from` for
-  report artifacts happen inside the app process. Remaining work: move selector
-  resolution for actions to the agent so the CLI consumes finished targeting JSON.
-  Keep `PortMap` on both ends as a protocol rule. This is the real "make the CLI
-  clean" work surfaced by the language question — it makes the CLI language-free
-  and tightens single-capture consistency. See "CLI is a thin client" above.
-- **Keyboard state + occlusion marking (landed, 0.9.1)** — the system keyboard
-  (IME) is another process's window and never appears in the node tree, so a
-  covered control still read as tappable — the observed stuck-login failure.
-  Snapshots now carry `screen.keyboard` (visible + frame, probed in-process
-  from window insets on Android / the keyboard notification stream on iOS),
-  the agent answers `GET /keyboard` and `POST /keyboard/hide`, and
-  `act hide-keyboard` dismisses it deterministically on both platforms.
-  Occlusion marking is generic, not keyboard-specific: a compact item whose
-  tap point sits under a higher z-order window is marked
-  `occluded-by:<windowRef>`; under the keyboard, `occluded-by:keyboard`. Both
-  sample apps ship a login keyboard-trap scenario and the iOS e2e drives it
-  end to end.
-- **Agent-facing targeting + batch (landed, 0.6.5–0.7.0)** — `ui outline --live`
-  numbers visible targets and caches short-lived `@N` aliases; `act --alias`
-  taps them; selector misses report same-kind candidates from the current
-  snapshot. `act batch` sequences a deterministic flow from a JSON file, stopping
-  on first failure. `Reticle.registerProbe(testId, metadata)` lets a linked app
-  register a synthetic addressable node for a spot with no convenient concrete
-  view (canvas region, off-screen state). These keep the deterministic-selector
-  backbone while lowering the cost of agent-driven targeting — they are *not* a
-  screenshot/NL-exploration path.
-- **Input + verify completions (landed, 0.9.2–0.9.3)** — `act type --submit`
-  (Android editor-action; iOS HID Return); RN `nativeID` selectors resolved for both
-  capture and `mutate`; and cross-platform `act --verify` — the Android helper's
-  `HelperVerify` and the iOS analogue both diff a watched node's state before/after a
-  gesture. Evidence-only: verify emits the diff (`{selector, changed, changes[]}`),
-  never a pass/fail.
+E2E runs are long, and two known leaks bite exactly there.
 
-### Phase 2 — Capture engine + daemon
-- Done: `reticle serve`, the event store, session model, SSE/REST surface,
-  action-trace ingestion, device auto-proxy config, CA issuance, opt-in HTTPS
-  MITM, and session-scoped traffic rules.
-- Done (engine): the in-tree SwiftNIO proxy was removed; capture now runs on
-  **Loom**'s `ProxyEngine` consumed as an SPM library (`LoomProxyCore` /
-  `LoomSharedModels`). Transport, MITM, CA, and upstream forwarding are Loom's;
-  Reticle runs it loopback with `persistFlows: false`, owns storage, and
-  normalizes flows into `network.*` events (see the network-lane section of
-  architecture.md).
-- Done (rules): the mock-only store is now a general **traffic-rule** store —
-  routes `mock` / `block` / `mapRemote` / `passthrough` plus modifiers (`delayMs`,
-  request/response header rewrites, find/replace substitutions), matched 1:1 onto
-  Loom's `RuleActions`. Matching supports `regex` (validated at upsert), an `ANY`
-  method wildcard, and query `"*"` presence predicates.
-- Done (replay): **flow replay + diff** (`POST /sessions/current/flows/:id/replay`,
-  `reticle replay flow`) closes Loom's capture → modify → replay → diff loop, emitting
-  a `network.replay` event with the response diff (status/body/header-name deltas).
-- Done (schema): typed `network.*` payload schema
-  (`reticle-protocol/schema/network-event-payload.schema.json`) plus
-  request/response/error golden fixtures, validated by a Kotlin contract test and
-  pinned to the Swift emitter by a Swift field-set test.
-- Next: expand typed schema coverage to the remaining event families (action /
-  runtime payloads) and add matcher predicates for headers/body when a concrete
-  use case appears.
+- **`network-bodies/` grows without eviction.** A body artifact is written per flow
+  and never dropped, so a long verification session leaks disk. Eviction must be
+  coupled to event-ring eviction: a body is evidence a live event still references,
+  so it cannot be dropped underneath it.
+- **`awaitRuntime` polls with fixed attempts × sleep**, not a wall-clock deadline
+  (`HelperRuntime.kt`) — inconsistent with `Injector.connectWithHandshake` and
+  `HelperVerify.pollForChange`, and an unresponsive probe overshoots its budget.
 
-### Phase 3 — Web panel
-- Done: a localhost read-only evidence panel showing action traces,
-  screenshots/artifacts, network lane cards, body previews, MITM/tunnel/rule
-  mode, and rule id / action / value ids.
-- Done (follow-ups): **network filters** — mode (RULE/ERROR/MITM/TUNNEL),
-  status class (2xx/3xx/4xx/5xx), and a free-text search over
-  method/url/host/path/status/rule ids, all composable; a **Rule groups** view
-  toggle that groups rule-applied requests under their rule (with hit counts) and
-  the rest by host; and a **copy as rule** chip on each network card that assembles
-  a ready-to-run `reticle rule set` command (including `--body-file` for the
-  captured response) to the clipboard. The panel stays display-only — it emits a
-  command for the user to run, it does not POST rule state itself.
-- Next: revisit reverse-drive only if the deferred question below is answered
-  (would force a bidirectional transport); otherwise the panel boundary holds.
+### 2. Test coverage where a bug has already hidden — M
 
-### Phase 4 — Multi-platform
-- iOS / HarmonyOS agents in their own build systems, conforming to the protocol
-  spec. The host and panel are reused; each new platform supplies its three seams
-  — natively in the host where the ecosystem matches (iOS: simctl/DYLD in a Swift
-  host) or as a helper where it doesn't (Android: the Kotlin `reticle-android-
-  helper`). See "Direction: Swift host + per-platform helpers".
-- iOS status: agent + host platform, `act` (HID tap/swipe/drag/type verified to
-  land on iOS 26.2/26.3, plus in-process `activate`), WebView/DOM, and web
-  evidence hooks are landed. iOS `act` now also emits **action-trace evidence**
-  into the shared `reticle serve` timeline / panel (events targeted `ios:<pkg>`),
-  so iOS rides the same evidence pipeline as Android — the "Proposed next"
-  evidence-workflow products (A1/A2/A4) now apply cross-platform. The host-side
-  capture proxy (`network.*`, HTTPS MITM, session traffic rules) also extends to iOS
-  simulators via `reticle serve --target ios`: CA trust through
-  `simctl keychain`, manual (printed) system-proxy routing since a
-  simulator/device has no per-app hook, and `ios:<udid>` traffic attribution —
-  so the security B-lane (B1/B2) is now reachable on iOS. The linked-agent
-  real-device path is validated on an iPhone 13 Pro Max (iOS 26) via
-  `scripts/e2e-ios-device.sh`: observation, `act activate`, `mutate`, and the
-  action-trace evidence package all work over the USB tunnel. The agent engages
-  the accessibility runtime at startup (`_AXSSetAutomationEnabled(true)`), so
-  SwiftUI `axElement`s surface on the first device observation with no warm-up
-  action. The capture proxy also works on a real device (`--proxy-bind 0.0.0.0`
-  so the phone reaches the Mac over the LAN; Wi-Fi proxy + CA-as-profile,
-  manual) — verified on an iPhone 13 Pro Max / iOS 26 with a decrypted
-  `https://example.com` event targeted `ios:<ecid>`. The only structural iOS gap
-  left is real-device HID (no host-reachable input surface); `act activate`
-  covers the device tap. iOS is now at effective parity for observe/drive/capture
-  + evidence across simulator and device.
+The audit's biggest gap, and not theoretical: the `nativeID` capture-vs-resolve
+mismatch hid in exactly this blind spot.
 
-# Engineering backlog (from the 2026-07 audit)
-
-A tech-debt / reliability / test-coverage audit (2026-07, parallel sweeps over the
-Swift host, the Kotlin agent/helper, and the docs) surfaced the items below. These
-are **not** product phases — they harden and test what already ships. Ordered by
-value. Items fixed since the audit are dropped (the mock→rule generalization's
-silent rule-wipe, the rule-sync deadlock, the unbounded `seen` set, the
-start-timeout orphan engine, the Android verify-token false-negative, iOS `act
-type` focus, iOS `act --verify`, RN `nativeID` resolution, and the JDWP
-forward-port collision are all resolved).
-
-**Reliability**
-- **`network-bodies/` file count is unbounded.** Captured body artifacts accumulate
-  per flow with no eviction; unlike the event ring and the (now-bounded) in-memory
-  `seen` set, the on-disk body dir grows for the life of a long session. Eviction
-  must be coupled to event-ring eviction — a body is evidence a live event still
-  references, so it can't be dropped underneath it. Larger change; parked with rationale.
-- **`awaitRuntime` polls with fixed attempts × sleep, not a wall-clock deadline**
-  (`HelperRuntime.kt`). Inconsistent with the deadline-based timeouts elsewhere
-  (`Injector.connectWithHandshake`, `HelperVerify.pollForChange`); an unresponsive
-  probe can overshoot the intended budget. Switch to a wall-clock deadline.
-
-**Test coverage (the biggest gaps)**
-- **The in-app Android agent (`reticle-agent`) has zero unit tests.** `MutationEngine`
-  (selector resolution), `SnapshotCapture` (the testId chain), `ReticleReflect`, and
-  the WebView/Compose bridges are all untested. The pure logic here (testId
-  derivation, selector matching, color hex) is Robolectric/JVM-testable — and it's
-  exactly where the recent `nativeID` capture-vs-resolve mismatch hid.
-- **Inject orchestration is untested.** `JdwpClientTest` covers only handshake /
+- **The in-app Android agent has zero unit tests.** `MutationEngine` (selector
+  resolution), `SnapshotCapture` (the testId chain), `ReticleReflect`, and the
+  WebView/Compose bridges are all untested, and the pure logic among them is
+  JVM/Robolectric-testable.
+- **Inject orchestration is untested.** `JdwpClientTest` covers only handshake and
   id-size negotiation; `JdwpClient.inject()`'s breakpoint/InvokeMethod sequence and
   `Injector.inject`'s ordering + dead-zone retry are proven only on a device.
-- **Swift: the rule→Loom `translate*()` layer and the HTTP route layer are untested.**
-  `LoomCaptureLane.translate*` (path→regex lifting, priority ordering,
-  no-op/missing-value dropping) is the most error-prone single point; the `rules` and
-  `flows/:id/replay` routes have no route-level regression net.
+- **Swift: the rule → Loom `translate*()` layer and the HTTP routes.** The
+  translation layer (path→regex lifting, priority ordering, no-op dropping) is the
+  most error-prone single point in the lane; `rules` and `flows/:id/replay` have no
+  route-level regression net.
 
-**Docs**
-- **The Chinese README lags the English one** — missing the `act batch` JSON flow,
+### 3. Evidence assembly products — M each, nothing built
+
+The primitives exist and the agent assembles them by hand. Each of these packages
+them into something a human consumes directly; all three emit magnitudes, never
+grades. Do **A1 → A2 → A3** (A4 already landed as `replay gif`).
+
+- **A1 — PR evidence bot (`reticle review`).** Read a diff → drive a deterministic
+  flow to the affected screens → assemble trace + compact diff + network events +
+  screenshots into a PR comment. Reuses `act batch`, `--trace-output`, the session
+  timeline.
+- **A2 — visual regression (`reticle diff visual`).** Pixel-diff screenshots
+  between builds with a change-region overlay. Complements structural diff:
+  structural says "text/state changed", pixel says "layout/render drifted". The
+  threshold is a hint, not a verdict.
+- **A3 — design-fidelity evidence (`reticle diff design`).** Align a design frame's
+  boxes with live node rects and emit per-region deltas (position / size / color /
+  text) plus an overlay. Design data comes through the existing Figma channel. No
+  letter grade — grading is the consumer's call.
+- **A5 — navigation / coverage map (`reticle map`).** Fold `ui outline` + trace
+  transitions into "screen → reachable path", positioned strictly as a coverage aid
+  ("what no flow touches yet"), never a verification path. Lowest priority.
+
+### 4. Cross-signal correlation — M, the gap a verify pass actually feels
+
+The session timeline unifies UI action + network + screenshot, but the two
+questions a verification step asks right after a tap — *did the right analytics
+event fire?* and *did anything crash?* — live in separately-queried tools
+(`sensors-query`, `sentry-query`). The agent hand-correlates across them today.
+Folding analytics/error signals in as evidence sources needs an orchestration
+layer, not a new capture mechanism.
+
+### 5. iOS real-device input cliff — L, quantify before building
+
+A real device has only `act activate` (selector-driven); point taps, complex
+gestures and keyboard `type` need a booted simulator's HID surface, so any
+real-device step without a stable selector is uncovered. Closing it means
+XCUITest/WDA or CoreDevice — a real project. **First measure how many real-device
+actions `activate` genuinely cannot cover**; the cause-check rule applies.
+
+### 6. Phase remainders — S–L, additive
+
+- **Live object inspection + layout diagnostics (`ui audit`)** — L. Generalize the
+  reflection behind `mutate` into runtime class metadata and constraint inspection.
+  Honest ceiling as above: reflectable metadata + reachable graph only.
+- **WebView L2 (semantic enrichment)** — S. ARIA role + accessible name from the
+  existing traversal script, aligned with the semantic tree. L0/L1 are landed.
+- **Selector-resolution sink-down** — M. Selector resolution is the last derivation
+  still host-side; moving it into the agent completes the thin-client boundary and
+  tightens single-capture consistency.
+- **Typed schema for the remaining event families** — S. `network.*` payloads are
+  schema'd and pinned from both languages; action/runtime payloads are not.
+- **Rule matcher predicates for headers/body** — S, *on demand only*. Add when a
+  concrete case appears, not before.
+
+### 7. Security-evidence lane — M each, nothing built
+
+Reticle is a **defensive evidence engine** here: observe, drive, capture. Out of
+scope permanently, because it crosses the no-hook line: pinning bypass, runtime
+CA-trust injection, capture-pipeline hooking / virtual-camera injection, binary
+reversing. Do **B2** first — it fits the deterministic-drive + mock shape best.
+
+- **B2 — risk-control flow regression harness.** Drive liveness / face-upload /
+  device-check flows, capture their calls to external verification services, and
+  use session rules to mock different external verdicts (trusted / untrusted /
+  degraded) so each client branch can be exercised deterministically.
+- **B1 — sensitive-data-in-transit evidence.** On the existing MITM lane: plaintext
+  flags, annotated positions of suspected sensitive fields (configurable patterns),
+  and an honest "opaque, not decrypted" annotation when a tunnel cannot be read.
+- **B3 — client security-posture snapshot (observe-only).** Debuggable flag,
+  user-CA/network-security-config annotations, WebView JS + mixed content, and the
+  component-exposure surface visible through reflection. Needs the `ui audit`
+  capability from item 6.
+
+### 8. Docs debt — S
+
+- The **Chinese README** lags the English one: missing the `act batch` JSON flow,
   the helper-daemon hot path / `--helper-broker`, `reticle status` advisories, and
-  `--proxy-max-request-body-mb`. (The `rule` + `replay flow` sections were added; the
-  rest is translation debt.)
-- **A misanchored KDoc block in `Injector.kt`** documents `connectWithHandshake` but
-  is detached from it (a following `/**` re-opens for `screenCenter`), so the
-  function reads as undocumented.
+  `--proxy-max-request-body-mb`.
+- A **misanchored KDoc block in `Injector.kt`** documents `connectWithHandshake`
+  but is detached from it, so the function reads as undocumented.
 
-**Capability cliffs (verify the cause before building — see "feature parity requires a cause check")**
-- **iOS real-device input.** HID input and DYLD injection are simulator-only; a real
-  device has only in-process `/activate` + web activation. Closing this needs
-  XCUITest/WDA or CoreDevice. First quantify how many real-device actions `/activate`
-  can't cover before committing.
-- **Protocol double-write.** The Kotlin (`reticle-core`) and Swift (`reticle-swift`)
-  models / renderers / selector / trace-diff / WebView scripts are hand-written 1:1,
-  drift-guarded only by tests. A codegen unification is a large project with slow
-  payoff; parked.
+### Open flakes (software-GPU emulator)
 
-# E2E-verification readiness (gap analysis, 2026-07-24)
+- A DOM assertion taken from a single snapshot while `lottie-web` animates: the
+  750ms `evaluateJavascript` budget lapses and the whole DOM folds away. Mitigated
+  by polling; the underlying budget question is open.
+- The native-Lottie dialog occasionally not appearing within the 60s `wait_compact`
+  budget — seen twice on 2026-07-25 and **not reproducible in isolation** (4/4 green
+  by hand, with the trigger's rect stable from the first capture, so it is not the
+  `tap --settle` class). Rather than guess, `wait_compact` now prints its last
+  observation on timeout, so the next occurrence says whether the tap never landed
+  or the capture degraded under animation load.
 
-The end-goal scenario is **late-stage E2E verification**: after a feature is built,
-an agent drives it end to end on a device and checks each step, with Reticle
-emitting evidence and the agent asserting. Reviewed against that scenario, the
-capture/drive backbone is complete (observe / act / batch / verify / network /
-rules / replay / trace / panel, cross-platform). The gaps are the *E2E-specific*
-layers — long-session hygiene, cross-signal correlation, and evidence assembly —
-ordered by leverage. Each item stays inside the evidence-not-verdicts line: it
-reports facts (a diff, a delta), never a pass/fail.
+### Deferred — parked until a trigger arrives
 
-1. **Long-session hygiene (E2E runs are long).** `network-bodies/` writes a body
-   artifact per flow with no eviction — a long verification session leaks disk
-   (listed under Reliability above as "parked", but E2E is exactly the case that
-   hits it, so re-prioritize). `awaitRuntime` uses fixed attempts × sleep, not a
-   wall-clock deadline — an unresponsive probe overshoots the budget.
-2. **Cross-signal correlation — observability/analytics are off the timeline.** The
-   session event bus unifies UI action + network + screenshot, but the questions a
-   verify pass asks after a tap — *did the right analytics event fire? did anything
-   crash?* — live in external, separately-queried tools (`sensors-query`,
-   `sentry-query`). They are not folded into the session timeline, so the agent
-   hand-correlates across tools. Fold analytics/error signals in as evidence
-   sources (an orchestration layer is enough to start).
-3. **Evidence assembly / comparison products (A1/A2/A3, not built).** Primitives are
-   scattered; the agent assembles them by hand. A1 (PR evidence bot) packages a
-   whole E2E run's evidence into a consumable report; A2 (visual regression) adds
-   the layout/render drift that structural diff misses; A3 (design-fidelity delta).
-4. **iOS real-device input cliff (strategic).** A real device has only `act
-   activate` (selector-driven); point taps, complex gestures, and keyboard `type`
-   all require a booted simulator's HID surface. Any real-device E2E step without a
-   stable selector is uncovered. Needs XCUITest/WDA or CoreDevice — first quantify
-   how many real-device actions `activate` cannot cover (see the capability-cliff
-   rule above — "feature parity requires a cause check").
+- **HarmonyOS feasibility probe.** The HarmonyOS seams (`hdc` forward/input, a
+  debug-injection channel) are paper placeholders with **zero validation**.
+  *Trigger:* before HarmonyOS enters any committed plan, spend a short spike to
+  confirm the seams exist. Until then it stays marked `est.`/`TBD`, not promised.
+- **Web panel reverse-drive.** The panel is display-only over one-way SSE. Letting
+  the browser drive the app forces a bidirectional transport (WebSocket) plus real
+  front-end work. *Trigger:* decide before any change to the panel transport, so
+  SSE-vs-WebSocket is not reworked twice.
+- **Protocol codegen unification.** Kotlin and Swift models / renderers / selector /
+  trace-diff / WebView scripts are hand-written 1:1, drift-guarded by tests against
+  the shared schema. Codegen is a large project with slow payoff. *Trigger:* a drift
+  bug that the schema tests fail to catch.
 
-## Investigated and dropped: a `wait`-for-condition primitive
+---
 
-An explicit `act wait --for <appears|gone|stable|enabled|network-idle>` was
-proposed as the "async settling" primitive (replace fixed `settleMs` hard-waits
-with an observed condition). It was **dropped on reliability grounds** after a
-code-level audit: a wait that silently returns a wrong answer is worse than no
-wait, and the snapshot ground-truth it would poll cannot support an
-*absolutely* reliable answer without backbone changes. Recorded so the naive
-version is not rebuilt:
+## Decisions of record
 
-- **`isVisible` is a weak, platform-divergent proxy.** Android
-  (`SnapshotCapture.kt`) is `visibility==VISIBLE && w>0 && h>0` — no ancestor
-  chain, no on-screen-bounds test; iOS (`SnapshotCapture.swift`) chains ancestors
-  via `parentVisible && !isHidden && alpha>0.01`. Neither guarantees "actually on
-  screen", and **neither raw node carries occlusion** (occlusion is computed only
-  in the compact layer's `occluderOf`). So `appears`/`gone` could report "visible"
-  for a node a tap would miss — the exact contradiction the occlusion work already
-  fixed for `act tap`.
-- **`ref`/`alias` selectors are not stable across polls.** Refs are minted fresh
-  per capture (`makeRef(): "r${nextRef++}"`), so a ref cannot identify the same
-  node on the next poll.
-- **Selector resolution silently collapses to the first match** (`firstOrNull`),
-  and the first match can be a *different* node across polls — breaking any
-  before/after "stable" comparison.
-- **Unverified empirically:** `stable` cannot see transform/view-animation (only
-  layout-bounds changes), and per-poll full snapshots (`runOnMainSync`) perturb the
-  very animation being observed.
+Settled. Recorded with the reasoning so they are not silently re-litigated.
 
-The only reliable definition of `appears` is "a tap dispatched now would land
-here", which requires the predicate to share `act tap`'s resolution + a
-strengthened on-screen/occlusion visibility — i.e. **backbone visibility
-unification**, not a thin poll layer. If async settling is revisited, that
-backbone work is the prerequisite; a screenshot/pixel-stability signal is a
-separate alternative worth weighing. Until then, flows keep using explicit
-`settleMs` and `act --verify`'s before/after diff, and the agent decides when a
-screen has settled.
+**The protocol is the spine, not the code.** Agent and host speak loopback
+HTTP + JSON. `reticle-protocol/` holds authoritative JSON Schema (2020-12) +
+golden fixtures + `events.md` (the daemon event envelope and taxonomy) +
+`helper-rpc.md`. Kotlin (`reticle-core`) and Swift (`reticle-swift`) are
+**hand-written implementations verified against the schema from both sides** —
+kept hand-written for their doc comments and sealed-hierarchy serialization, which
+codegen handles poorly. A future greenfield platform may codegen from the same
+schema; generate-vs-hand-write is a per-platform choice.
 
-# Boundary-case sweep (2026-07-25): what landed, what is left
+**Only three seams are platform-specific**, and the HTTP transport is already
+platform-neutral:
 
-A prioritised sweep of "cases the tool cannot yet cover", run as one PR per point
-with the same discipline each time: **prove the cause on a device first**, fix only
-what the evidence justifies, then pin it with an assertion in both e2e suites. That
-order paid for itself — half the points turned out to be real defects that had been
-failing *closed* (silently returning nothing), and two "fixes" broke something else
-that the suites caught immediately.
+| Seam | Android | iOS | HarmonyOS (est., unvalidated) |
+| --- | --- | --- | --- |
+| Device control / transport | `Adb` | `xcrun simctl` + CoreSimulator | `hdc` |
+| Injection | JDWP + payload dex | DYLD constructor (sim) / linked framework (device) | TBD |
+| Input synthesis | `adb input` | private CoreSimulator HID | `hdc input` |
 
-## Landed (PRs #107-#121)
+Reservation means **interfaces, not stubs** — no empty per-platform modules. Only
+the agent is genuinely platform-specific and gets its own build (AAR / SwiftPM /
+HAP); `reticle-agent/` is a grouping directory that must never own a
+`build.gradle`.
+
+**The host is a thin client; derivation lives in the agent.** Capture-derived views
+(`SemanticTree.build`, `CompactObservation.from`) are computed in-process and
+returned as finished JSON. `PortMap.derivePort` is the deliberate exception — the
+host needs the port *before* it can reach the agent, so it is a protocol rule
+implemented identically on both ends. Selector resolution is the last piece still
+host-side (item 6).
+
+**Swift host + per-platform helpers — shipped.** The host program (CLI + daemon +
+panel, one process) is Swift; Android's device dirty-work stays Kotlin behind an
+RPC seam, shipped as a no-JDK GraalVM native `reticle-helper`. Why not a full
+rewrite: JDWP injection is irreducibly host-side (the agent is the *result* of
+injection, not a precondition) and irreducibly JVM-natural, and every fix in its
+history is a hard-won ART/dexopt edge case. A helper exists **only** where a
+platform's dirty-work lives outside the host's ecosystem — Android warrants one,
+iOS does not (simctl/DYLD are native to a Swift host). The trade accepted: two
+resident processes and a cross-process boundary on hot Android calls, in exchange
+for eliminating the JDWP-rewrite risk entirely.
+
+**The daemon owns all long-lived state.** One-shot commands still work standalone;
+when `reticle serve` is up they additionally publish events to it. Sessions tie
+device + app + time window into one timeline. Bounded in-memory ring + JSONL
+persistence; large bodies and screenshots spill to the session dir and are
+referenced by `refs`, never inlined. Live feed is SSE + REST — WebSocket is
+reserved for reverse-drive, which is deferred.
+
+**The capture engine sits behind one sink.** `NetworkEventSink` (emit +
+sessionDirectory) is the lane's only view of the host, so the engine is swappable
+by editing one target. The engine question is settled: Loom's `ProxyEngine`,
+consumed as an SPM library, run loopback with `persistFlows: false` — transport,
+MITM and CA are Loom's; storage and normalization are Reticle's.
+
+**Capture proxy stops at the host (L1).** HTTP plaintext freely; HTTPS only where
+the app trusts the local CA; pinning defeats it and is *reported*, not bypassed. An
+"L2 agent-assisted" mode (injecting CA trust or neutralizing pinning at runtime)
+was considered and **rejected** to keep the no-hook guarantee.
+
+**WebView DOM is the Compose bridge again, not a new mechanism.** DOM elements
+merge into the same flat node map as `NodeKind.domNode`, so compact / tree /
+selector / tap reuse unchanged. Two things Compose does not have: the read is
+async and cross-boundary (`evaluateJavascript`, latched with a bounded timeout),
+and coordinates must be folded from CSS px to screen px — the protocol pins that a
+`domNode.frame` is *already* in screen space. Tiers degrade honestly: L0 opaque
+leaf → L1 DOM structure (landed) → L2 semantic (item 6). Chrome Custom Tabs / TWA
+are a separate process and out of scope.
+
+**Feature parity requires a cause check.** Before building a capability on platform
+B because platform A has it, prove the *cause* exists on B. This rule is what kept
+the boundary sweep honest — several "gaps" turned out to be different problems, and
+one turned out not to exist.
+
+---
+
+## Investigated and dropped
+
+**`act wait --for <appears|gone|stable|enabled|network-idle>`** — dropped on
+reliability grounds after a code-level audit. A wait that silently returns a wrong
+answer is worse than no wait, and the ground truth it would poll cannot support a
+reliable one:
+
+- `isVisible` is a weak, platform-divergent proxy (Android: `visibility==VISIBLE &&
+  w>0 && h>0`, no ancestor chain, no on-screen test; iOS: chained
+  `parentVisible && !isHidden && alpha>0.01`), and **neither raw node carries
+  occlusion** — occlusion is computed only in the compact layer. So `appears` could
+  report visible for a node a tap would miss;
+- refs are minted per capture, so `ref`/`alias` cannot identify the same node across
+  polls;
+- selector resolution collapses to the first match, which can be a *different* node
+  across polls, breaking any before/after comparison;
+- `stable` cannot see transform/alpha animation (only layout bounds), and per-poll
+  full snapshots perturb the animation being observed.
+
+The only reliable definition of `appears` is "a tap dispatched now would land here",
+which needs backbone visibility unification, not a poll layer. `tap --settle`
+(landed) is the narrow, honest slice of this: same resolution path as the tap
+itself, position only, and it says so — see the sweep record below for the measured
+case where position-stability is *not* enough.
+
+**L2 agent-assisted CA trust / pinning neutralization** — rejected; see the capture
+proxy decision above.
+
+**Heap instance enumeration** — out of scope by construction; `am dumpheap`
+analyzed offline is the honest path.
+
+---
+
+## Completed programme: the boundary-case sweep (2026-07-25)
+
+A prioritised sweep of "cases the tool cannot yet cover", one PR per point, with the
+same discipline each time: **prove the cause on a device first**, fix only what the
+evidence justifies, then pin it with an assertion in both e2e suites. That order
+paid for itself — half the points were real defects failing *closed* (silently
+returning nothing), and two "fixes" broke something else that the suites caught
+immediately.
+
+Fifteen points, PRs #107–#121, all merged. The durable output beyond the individual
+fixes: the **absence vocabulary** every capture now speaks, and the **Honest
+boundaries** table in `docs/architecture.md` — which is where the next such case
+gets recorded.
 
 | Point | Verified cause | Outcome |
 | --- | --- | --- |
-| Region channels | `a11yVirtual` probed virtual ids `0 until childCount`, but the ids are the APP's (`ExploreByTouchHelper` may use stable domain ids) -> zero regions; `touchDelegate` read `TouchDelegate.mBounds`, which the platform blocks (`api=max-target-o`) for any modern target -> channel dead on every real app | Both fixed (androidx helper route + public `getTouchDelegateInfo()`); iOS learned the second `UIAccessibilityContainer` convention; `--region <source>` addresses label-less channels. Canvas-control scenario, both platforms |
+| Region channels | `a11yVirtual` probed virtual ids `0 until childCount`, but the ids are the APP's (`ExploreByTouchHelper` may use stable domain ids) -> zero regions; `touchDelegate` read `TouchDelegate.mBounds`, which the platform blocks (`api=max-target-o`) for any modern target -> channel dead on every real app | Both fixed (androidx helper route + public `getTouchDelegateInfo()`); iOS learned the second `UIAccessibilityContainer` convention; `--region <source>` addresses label-less channels |
 | Compose semantics | Bridge worked but had **zero** coverage (no Compose anywhere in the repo) | Compose scenario + e2e: testTag tap, `type` into a composable field, Compose `Dialog` as its own window, `AndroidView` interop |
-| Compose text links | A `Text` with two `LinkAnnotation`s = ONE node, no regions, no char grid (a `ClickableSpan` row decomposes fine) | `ComposeTextRegions`: link ranges from the semantics config + geometry from the `GetTextLayoutResult` action; per-link rects + char grid |
+| Compose text links | A `Text` with two `LinkAnnotation`s = ONE node, no regions, no char grid (a `ClickableSpan` row decomposes fine) | `ComposeTextRegions`: link ranges from the semantics config + geometry from the `GetTextLayoutResult` action |
 | Same-origin iframe | Piercing and page-offset were CORRECT; nothing asserted them (iOS only checked JS activation, which passes with a wrong rect) | Coordinate-tap assertions on both platforms |
-| Off-screen list rows | A recycling/lazy list binds only its visible window: rows 0-14 of 60 (Android), 0-12 (iOS). Row 40 has no node, frame or selector | `Node.scroll` evidence (+ `scroll:up,down` in compact, + scroll hints in selector-miss diagnostics) and `act scroll-to`, both platforms |
-| Popup windows | `PopupWindow` / `Spinner` dropdown / `PopupMenu` were all captured correctly — but their rows share one resource id, so nothing could single one out | `--label` selector (exact -> substring, topmost window that has a match, **ambiguity is an error**), replacing a python ref-scraping hack in the iOS suite |
+| Off-screen list rows | A recycling/lazy list binds only its visible window: rows 0-14 of 60 (Android), 0-12 (iOS). Row 40 has no node, frame or selector | `Node.scroll` evidence (+ `scroll:up,down` in compact, + scroll hints in selector-miss diagnostics) and `act scroll-to` |
+| Popup windows | `PopupWindow` / `Spinner` dropdown / `PopupMenu` captured correctly — but their rows share one resource id, so nothing could single one out | `--label` selector (exact -> substring, topmost window that has a match, **ambiguity is an error**) |
 | Blocked DOM read | Degrade was correct (~1s, opaque node) but SILENT: "no DOM nodes" was indistinguishable from "empty page" | `dom:unavailable` marker on the host node, both platforms |
-| iOS window occlusion | Every `UIWindow` was `kind = .view`, so window-vs-window occlusion had NEVER fired on iOS — an overlay window left everything beneath it looking tappable | `kind = .window`, minus keyboard host windows (screen-sized, they marked the whole screen occluded); overlay-window scenario |
-| Out-of-process windows | With Android's permission prompt up, `mCurrentFocus` was the permission controller while the capture still listed every control as `tappable`. The in-process **screenshot** is blind to it too (device-level `simctl io screenshot` shows the alert; the agent's does not) | `screen.windowFocused` + `window: UNFOCUSED …` leading the compact; permission scenario on both platforms, each suite asserting loss AND clearing (the iOS half needed the workarounds in the row below) |
-| Tap on a moving target | Resolution and dispatch are two steps: a `PopupMenu` row captured mid-slide was at y=1396, the tap resolved y=1474, the menu came to rest at y=1612 — and `--label "Delete item"` fired "Menu: Rename" (1 run in 5 on an emulator). The iOS shape of the same question is NOT this: a `UIAlertController`'s accessibility frame is final from the first capture (unchanged across six captures) while a tap right after `activate` never lands — an in-place transform animation, invisible to any position signal | `act tap --settle` (+ `--settle-timeout`): re-resolve until the point repeats, then dispatch, and report `settled` honestly (false = the budget lapsed while it was still moving). Needs a selector; a raw `--point` is refused rather than silently unsettled. Both platforms; the Android suite dropped its two `sleep 1` workarounds, and the iOS suite pins the distinction — settle reports `settled=true` for the alert and the delay stays |
-| SwiftUI Text links | A markdown `Text` is ONE accessibility element with one label: no `UILabel`, no `NSAttributedString.link` run, no child element (probed: 0), no element count (0), no custom actions, no usable rotor, and no `_accessibility*` link accessor — so every RegionProbe channel came up empty, while the UIKit row beside it decomposed fine. `accessibilityAttributedLabel` DOES carry `UIAccessibilityTokenLink` runs + per-run font tokens (system attributes on a public property) | `SwiftUITextRegions`: re-lay the runs out with their own fonts inside the element's screen frame (`TextLayoutStack` anchored to a screen rect instead of a view) -> per-link `span` regions + char grid. Geometry is reconstructed, so the iOS suite asserts it by CONSEQUENCE — tap each recovered rect, check which URL the app's `openURL` handler received. First e2e coverage the SwiftUI scenario has had |
-| Screenshot degrade | Measured, and the two paths turned out to be exact complements — not the "in-process misses both" the note assumed: a `SurfaceView` is a transparent hole (rgba 0,0,0,0) in the in-process capture but magenta in `adb exec-out screencap`, while `FLAG_SECURE` blanks the DEVICE capture (0,0,0,255) and leaves the in-process one untouched. iOS has a third shape: the keyboard's host window refuses to render into a borrowed context, so the capture already skipped it — silently | `pixels:unavailable` on the node whose pixels the in-process picture lacks (iOS: the keyboard host window), `screencap:blank` on a `FLAG_SECURE` window, and a `degraded:` line on `ui screenshot` naming what THIS picture is missing and which path would show it. `scenario.screenshotDegrade` + both suites asserting the labels AND the pixels behind them |
-| Third-party WebView kernels | Confirmed by construction: the bridge is typed on `android.webkit.WebView`, so a kernel that only calls itself a WebView gets no DOM at any level — and that was indistinguishable from an empty page | Documented as a boundary and REPORTED, not adapted (a reflective adapter cannot be verified without a real kernel sample): `dom:unsupported-kernel` + `custom.domKernel` naming the class, a `--css` miss that explains the wall, and `scenario.foreignKernel` — a self-drawn stand-in beside a real WebView, so the contrast is asserted. Kept distinct from `dom:unavailable`: "nothing to read" vs "could not read it just now" |
-| Structural boundaries | Several were assumed rather than measured. Writing them down forced two checks: a CLOSED shadow root drops only its content (the host element is captured at its own rect — measured after giving it a box, since a zero-height host is dropped by the viewport filter for an unrelated reason), and the cross-origin case genuinely cannot be exercised offline | One **Honest boundaries** table in `docs/architecture.md`: each unreachable case next to the evidence emitted for it and the scenario that pins it, with "not exercised" written down where it is true. Agent-facing half in the skill (what each marker means, what to do instead of retrying). Closed-vs-open shadow roots now asserted side by side in the complex fixture |
-| iOS focus evidence, asserted | The evidence worked on iOS but was unassertable for two measured reasons, both now solved: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright — "Operation not permitted" — so run 2 sees no prompt) and an open alert could not be **answered** from the host, and a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle (that resets the authorization to `notDetermined`); answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow width — no text read, so language-independent) inside an answer→retry→re-check loop. The section runs LAST because the reinstall wipes the app's container. `scripts/e2e-ios.sh` now asserts the same three things Android does: focused before, `window: UNFOCUSED` leading the compact while the app's own controls are still captured as `tappable` (the trap), and the evidence clearing once answered — plus `permission.status = "Prompt dismissed"` as proof the tap reached the alert rather than the alert simply going away |
+| iOS window occlusion | Every `UIWindow` was `kind = .view`, so window-vs-window occlusion had NEVER fired on iOS — an overlay window left everything beneath it looking tappable | `kind = .window`, minus keyboard host windows (screen-sized, they marked the whole screen occluded) |
+| Out-of-process windows | With Android's permission prompt up, `mCurrentFocus` was the permission controller while the capture still listed every control as `tappable`. The in-process **screenshot** is blind to it too | `screen.windowFocused` + `window: UNFOCUSED …` leading the compact; permission scenario on both platforms |
+| Tap on a moving target | Resolution and dispatch are two steps: a `PopupMenu` row captured mid-slide was at y=1396, the tap resolved y=1474, the menu rested at y=1612 — `--label "Delete item"` fired "Menu: Rename" (1 run in 5). The iOS shape is NOT this: a `UIAlertController`'s AX frame is final from the first capture while a tap right after `activate` never lands — an in-place transform animation, invisible to any position signal | `act tap --settle` (+ `--settle-timeout`): re-resolve until the point repeats, then dispatch, reporting `settled` honestly. Needs a selector; a raw `--point` is refused. The iOS suite pins the distinction — settle reports `settled=true` for the alert and the delay stays |
+| SwiftUI Text links | A markdown `Text` is ONE accessibility element with one label: no `UILabel`, no `.link` run, no child element (probed: 0), no element count, no custom actions, no usable rotor, no `_accessibility*` accessor. `accessibilityAttributedLabel` DOES carry `UIAccessibilityTokenLink` runs + per-run font tokens | `SwiftUITextRegions`: re-lay the runs out with their own fonts inside the element's screen frame -> per-link `span` regions + char grid. Geometry is reconstructed, so the suite asserts by CONSEQUENCE — tap each rect, check which URL `openURL` received |
+| Screenshot degrade | The two paths are exact complements, not "in-process misses both": a `SurfaceView` is a transparent hole (rgba 0,0,0,0) in-process but magenta in `screencap`, while `FLAG_SECURE` blanks the DEVICE capture and leaves the in-process one untouched. iOS has a third shape: the keyboard host window refuses to render into a borrowed context, and the capture already skipped it — silently | `pixels:unavailable` / `screencap:blank` + a `degraded:` line on `ui screenshot` naming what THIS picture is missing and which path would show it. Both suites assert the labels AND the pixels behind them |
+| Third-party WebView kernels | Confirmed by construction: the bridge is typed on `android.webkit.WebView`, so a kernel that only calls itself a WebView gets no DOM at any level — indistinguishable from an empty page | Reported, not adapted (a reflective adapter cannot be verified without a real kernel sample): `dom:unsupported-kernel` + `custom.domKernel`, a `--css` miss that explains the wall, and a stand-in beside a real WebView so the contrast is asserted |
+| Structural boundaries | Several were assumed rather than measured. Writing them down forced two checks: a CLOSED shadow root drops only its content (the host element is captured at its own rect), and the cross-origin case genuinely cannot be exercised offline | The **Honest boundaries** table in `docs/architecture.md`, each case beside the evidence emitted for it and the scenario that pins it, with "not exercised" written where true. Agent-facing half in the skill |
+| iOS focus evidence, asserted | Unassertable for two measured reasons: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright) and an open alert could not be **answered** from the host, while a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle; answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow — no text read) inside an answer→retry→re-check loop, in a section that runs LAST |
 
 Self-inflicted bugs the suites caught, worth remembering as failure shapes:
 `act scroll-to` first flicked (a flinging list left the reported point stale by the
-next command -> now it drags slowly and confirms `settled`); it picked the largest
+next command — now it drags slowly and confirms `settled`); it picked the largest
 scrollable *anywhere*, which was a background window's page scroller; it re-chose
 direction every iteration, so an absent selector ping-ponged at the list's end. And
-the sample's own home list had outgrown one screen, so its last rows were clipped and
-genuinely untappable — a resolved tap landed on the system navigation bar.
-
-## Left to do
-
-**Nothing — the sweep is complete.** All fifteen points landed, each one proved on a
-device first and pinned by an assertion in both suites. What the sweep produced
-beyond the individual fixes: a shared vocabulary for stating an absence
-(`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`,
-`pixels:unavailable`, `screencap:blank`), and the **Honest boundaries** table in
-`docs/architecture.md`, which is where the next such case should be recorded.
-
-Two flakes on the software-GPU emulator, both still open. A DOM assertion taken from
-a single snapshot while `lottie-web` animates (the 750ms `evaluateJavascript` budget
-lapses and the whole DOM folds away — now polled). And the native-Lottie dialog not
-appearing within the 60s `wait_compact` budget: seen twice more on 2026-07-25, and
-NOT reproducible in isolation (4/4 green by hand, with the trigger's rect stable from
-the first capture — so it is not the `tap --settle` class). Rather than guess at a
-fix, `wait_compact` now prints the last observation when it times out, so the next
-occurrence says whether the tap never landed or the dialog was up and the capture
-degraded under animation load.
-
-# Proposed next: evidence workflows + security-evidence lane
-
-Not yet built. Everything below is a **productization layer on top of primitives
-that already exist** (action traces, screenshots, network events, node rects, the
-session timeline) — it adds no new capture mechanism and does not move the
-defining line. Three constraints hold verbatim across every item here:
-
-1. **Evidence, not verdicts.** These workflows emit richer, more comparable
-   evidence and difference magnitudes only. No `assert`/`verify` primitive; no
-   pass/fail or risk grade is produced by Reticle — the agent or a human decides.
-2. **Deterministic selectors stay the backbone.** No natural-language-target /
-   guess-from-screenshot mechanism is promoted to the primary targeting path. The
-   landed `ui outline --live` + `@N` aliases are the acceptable convenience layer;
-   exploration is a coverage aid, never the verification path.
-3. **No root / no repackage / no hook / no pinning bypass.** The security lane is
-   a *defensive evidence engine*, not an attack or bypass tool.
-
-## Workstream A — evidence-workflow products
-
-Each assembles existing primitives into a product a human can consume directly.
-
-- **A1 — PR evidence bot (`reticle review`).** A CI/PR wrapper: read the diff →
-  drive a deterministic flow to the affected screens → assemble action trace +
-  before/after compact diff + network events + screenshots into a PR comment.
-  Reuses `act batch`, `act --trace-output`, the session timeline, and the panel's
-  evidence-ranking logic. Posts evidence only; the human makes the call. *Builds
-  on Phase 1 traces; CI/GitHub integration lands with Phase 3.*
-- **A2 — visual regression (`reticle diff visual`).** Pixel-diff screenshots
-  between two builds (or before/after one build) with a configurable threshold and
-  a change-region overlay report. Complements the existing structural diff:
-  structural diff answers "text/state changed", pixel diff answers "layout/render
-  drifted". The threshold is a hint, not a verdict. *Report first (Phase 1),
-  panel card later (Phase 3).*
-- **A3 — design-fidelity evidence (`reticle diff design`).** Align a design
-  frame's component boxes with the live node rects (`ui report` / `ui regions` /
-  `ui node`) and emit per-region deltas (position / size / color / text) plus an
-  overlay. Design data comes through the existing Figma channel. Emit the delta
-  magnitudes, **not a letter grade** — grading is a verdict left to the consumer.
-  Reticle only measures the geometric/style delta against a given frame; it does
-  not judge whether the design is correct. *Phase 1 evidence; panel Phase 3.*
-- **A4 — flow replay artifact (`reticle replay gif`) — LANDED.** Stitch a flow's
-  per-step screenshots into a device-framed GIF for human review and PR
-  communication; step captions come from the trace's gesture/selector, and the
-  gesture geometry (resolved tap point, swipe stroke) is drawn on the
-  before-frame. Ships as `reticle replay gif <trace-dir>` — host-local, reads
-  the `act --trace-output` packages already on disk, renders via
-  ImageIO/CoreGraphics with no new dependencies. Steps without screenshots are
-  skipped honestly (reported on stderr), never fabricated. An MP4 variant
-  remains open if a concrete need appears.
-- **A5 — navigation / coverage map (`reticle map`, scoped carefully).** Fold
-  `ui outline` + action-trace screen transitions into a "screen → reachable path"
-  map, **positioned as a coverage aid** ("which screens/paths are not yet covered
-  by an E2E flow"), never an auto-verification path. Discovery only; verify with
-  deterministic-selector flows afterward. *After Phase 1; lower priority.*
-
-## Workstream B — security-evidence lane (Reticle's own scope)
-
-Security is a first-class direction, but its scope must be drawn precisely.
-In a security context Reticle is a **defensive evidence engine**: it observes,
-drives, and captures security-relevant evidence for review — it does not hook,
-bypass pinning, or inject.
-
-**Out of scope (crosses the no-hook line — Frida/root territory):** certificate
-pinning *bypass* / runtime CA-trust injection / pinning neutralization; hooking
-the capture pipeline or virtual-camera / deepfake injection (PAD/IAD red-team);
-reversing or cracking the binary itself.
-
-**In scope (all within observe/drive/capture + reflectable metadata + host proxy):**
-
-- **B1 — sensitive-data-in-transit evidence.** On the existing host proxy/MITM
-  lane, observe and annotate how sensitive data moves and emit evidence (not a
-  "vulnerable" verdict): plaintext-HTTP transmission flags; annotated positions of
-  suspected sensitive fields (configurable patterns) in request/response bodies;
-  and an honest "opaque, not decrypted" annotation when an HTTPS CONNECT tunnel
-  can't be decrypted. Reuses `network.*` events and the panel's existing
-  cookie/authorization redaction. When pinning blocks capture, it reports
-  "not observable" rather than crossing the line to defeat it. *Phase 2 (additive
-  on the proxy).*
-- **B2 — risk-control flow E2E regression harness (highest fit, do first in B).**
-  Use deterministic-selector drive as a regression harness for the risk-control
-  features themselves: drive liveness / 1:1 face-upload / device-check UI flows,
-  capture their calls to external verification/attestation services, and use
-  session-scoped rules (the `mock` action) to simulate different external verdicts (trusted /
-  untrusted / degraded) so the client's per-branch UI and follow-up calls can be
-  verified deterministically. Reticle only *drives the real flow + mocks the
-  external return + records evidence*; it does not fabricate captured content or
-  attack the liveness check (that is red-team, not here). *Phase 2 (needs mock +
-  proxy).*
-- **B3 — client security-posture evidence (observe-only).** Emit a read-only
-  snapshot of security-relevant client configuration, entirely within the
-  reflectable-metadata and host-observable boundary: whether the app is
-  debuggable; user-CA-trust / network-security-config annotations; whether the
-  WebView has JS enabled and whether mixed content is present (from the existing
-  WebView/DOM bridge); and the component-exposure surface visible through
-  class/field metadata reflection (built on the Phase 1 live-object-inspection /
-  `ui audit` capability, viewed through a security lens). Lists observable facts
-  only — no heap enumeration, no arbitrary reads, no "insecure" verdict. *After
-  the Phase 1 object/layout diagnostics land.*
-
-## Suggested sequencing
-
-Do **A4 + A1 + A2** first — they reuse existing traces/screenshots with near-zero
-new mechanism and directly raise human-review and PR-evidence quality. On the
-security lane, do **B2** first — it fits Reticle's deterministic-drive + mock
-shape best and carries the most value. A3 / B1 / B3 follow; A5 is lowest priority.
-
-## Honest boundaries (carry into every doc and the skill)
-
-- **No root, no repackage, no byte-code hooking** remains the defining line.
-- **Object/heap inspection**: reflectable metadata + reachable graph only; heap
-  enumeration is out (use `am dumpheap` offline).
-- **Network capture**: host MITM equal to whistle; HTTPS needs CA trust; pinning
-  is not bypassed.
-- **WebView / DOM**: read-only DOM via injected traversal JS; needs JS enabled in
-  the WebView; falls back honestly to an opaque leaf when unavailable. Custom
-  Tabs / TWA (separate process) are out of scope.
-- **Injection**: linked agent or JDWP into *debuggable* apps; non-debuggable
-  release builds and arbitrary real-device apps are out of scope (Frida/root
-  territory we don't enter). iOS real-device, when it comes, will require the app
-  to link the framework at build time.
-
-## Deferred / open questions
-
-Explicitly parked — not yet decided, recorded so they aren't forgotten or
-mistaken for settled. Revisit when the trigger arrives.
-
-- **HarmonyOS feasibility probe.** The HarmonyOS rows in the platform-seams table
-  (`hdc`, injection, input) are paper placeholders with **zero validation** —
-  whether `hdc` has equivalents for `forward` / `input` / a debug-injection
-  channel is unverified. Deferred. *Trigger:* before HarmonyOS appears in any
-  committed plan (i.e. before Phase 4 touches it), spend a short spike to confirm
-  the seams exist; until then it stays marked `est.`/`TBD`, not promised.
-- **Web panel reverse-drive.** The Phase 3 panel is **display-only** for now
-  (traffic + action path + screenshots over one-way SSE). Whether the browser can
-  *drive* the app (click in the panel → trigger `act tap`) is open. *Trigger:* if
-  reverse-drive is wanted, it forces a bidirectional transport (WebSocket over
-  the current SSE) plus a meaningful chunk of front-end interaction work — decide
-  before committing the Phase 3 transport so SSE-vs-WebSocket isn't reworked.
-- **Host language: Swift host + Kotlin Android helper — DONE (shipped, no longer
-  deferred).** The chosen shape has been executed and ships today: the host
-  program (CLI + daemon + Web) is Swift (`reticle-host`, SwiftPM), the entire
-  current Android layer stays Kotlin as the long-lived `reticle-helper` invoked
-  over an RPC contract, and JDWP is *not* rewritten. `bin/reticle` runs the Swift
-  host + native helper as the default; there is no user-facing Kotlin/JVM CLI
-  anymore. The three open sub-questions are all resolved: the helper RPC contract
-  is in `reticle-protocol/helper-rpc.md`; the Kotlin helper ships as its own
-  **GraalVM native-image** (no-JDK single-file `reticle-helper`), not a JVM jar;
-  and the two resident processes are supervised via the `reticle serve`
-  helper-broker (0.6.5), which keeps one helper alive behind the daemon and routes
-  `--use-daemon` / `RETICLE_USE_DAEMON=1` command RPC through it. See "Direction:
-  Swift host + per-platform helpers" and "Status (2026-06-26): a working Swift host
-  CLI exists" above — this item is retained here only as a pointer; it is no longer
-  an open question.
+the sample's own home list had outgrown one screen, so its last rows were clipped
+and genuinely untappable — a resolved tap landed on the system navigation bar.
