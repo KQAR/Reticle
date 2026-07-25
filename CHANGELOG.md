@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **SwiftUI `Text` links are addressable (iOS).** A markdown `Text` ("Read the
+  [Terms](…) and [Privacy](…)") is ONE accessibility element with one label — no
+  `UILabel`, no `NSAttributedString.link` run, no child element, no view to measure —
+  so every `RegionProbe` channel came up empty and the two links were unreachable,
+  while the UIKit agreement row beside it decomposed fine. (Android's Compose twin was
+  fixed earlier in the same sweep.)
+
+  Before building, the alternatives were measured and ruled out: child accessibility
+  elements (0), `accessibilityElementCount` (0), custom actions (none), a usable
+  custom rotor (none), and every `_accessibility*` link accessor probed (unresponsive).
+  What DOES exist is `accessibilityAttributedLabel`: the label split into runs
+  carrying `UIAccessibilityTokenLink` on the link ranges plus per-run font tokens —
+  system-emitted attributes on a public property, not SwiftUI internals.
+  `SwiftUITextRegions` re-lays those runs out with their own fonts inside the
+  element's screen frame and emits per-link `span` regions plus a char grid, so
+  `act tap --region "Privacy"` works — and a non-link substring is targetable too.
+
+  The geometry is **reconstructed, not read**, which is why the iOS suite asserts it
+  by consequence: it taps each recovered rect and checks which URL the app's `openURL`
+  handler actually received ("opened terms" vs "opened privacy"), so a plausible-but-
+  wrong rect fails. The SwiftUI scenario had no e2e coverage at all before this.
+
 - **`act tap --settle`.** Resolution and dispatch are two steps, and a target that is
   still sliding in moves between them: measured on an emulator (1 run in 5), a
   `PopupMenu` row was captured at y=1396, the tap resolved y=1474, the menu came to

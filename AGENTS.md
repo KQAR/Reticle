@@ -27,7 +27,10 @@ Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
   `ReticleInjectionBootstrap`): SwiftPM package — the in-process iOS agent. Same
   shape as the Android agent: loopback HTTP server, UIKit view-tree capture, a
   SwiftUI bridge that emits `axElement` nodes only from natively-exposed
-  accessibility elements (never private SwiftUI internals), allowlist mutation,
+  accessibility elements (never private SwiftUI internals) — including
+  `SwiftUITextRegions`, which recovers the links inside ONE markdown `Text` as
+  `span` sub-regions from its `accessibilityAttributedLabel` (the Compose-links
+  twin) — allowlist mutation,
   in-process screenshot, `Reticle` facade, and dual auto-start (a DYLD-constructor
   bootstrap for injection, plus a linked `Reticle.start()`). Emits `platform="ios"`
   protocol JSON. Built by SwiftPM, invisible to Gradle.
