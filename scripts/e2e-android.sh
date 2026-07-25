@@ -201,6 +201,53 @@ echo "$REGIONS" | grep -q "colorSpan"  || { echo "FAIL: expected a colorSpan reg
 R act tap --package "$PKG" --test-id agreement.markdown --region "Privacy" >/dev/null
 R act tap --package "$PKG" --test-id agreement.plain --region "Privacy Policy" >/dev/null
 
+echo "== COMPOSE semantics (testTag, TextField, Dialog window, View interop) =="
+# Reticle synthesizes no view per composable: a composable is addressable only
+# through the SemanticsNode tree that also backs platform accessibility, read
+# reflectively by ComposeSemanticsBridge. That bridge shipped with no scenario at
+# all — this is its first end-to-end coverage.
+open_scenario scenario.compose compose.payButton
+R ui report --package "$PKG" --output "$TMP/compose"
+COMPOSE_COMPACT="$(R ui compact "$TMP/compose/snapshot.json")"
+echo "$COMPOSE_COMPACT"
+echo "$COMPOSE_COMPACT" | grep -q "compose.status" \
+  || { echo "FAIL: expected composeSemantics nodes (compose.status) in the tree"; exit 1; }
+# Every captured composable must carry a usable frame; a semantics node with no
+# geometry is not a movement target.
+/usr/bin/python3 - "$TMP/compose/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+tagged = [n for n in nodes if n.get("kind") == "composeSemantics" and n.get("testId")]
+if not tagged:
+    print("FAIL: no tagged composeSemantics nodes captured"); sys.exit(1)
+for n in tagged:
+    f = n.get("frame")
+    if not f or f["width"] <= 0 or f["height"] <= 0:
+        print(f"FAIL: composeSemantics node {n['testId']} has no usable frame: {f}"); sys.exit(1)
+PY
+# A testTag must resolve to a tap that lands (state flips Idle -> Paid!).
+R act tap --package "$PKG" --test-id compose.payButton >/dev/null
+wait_compact "$PKG" "Paid!"
+# `act type` into a composable TextField, not a View.
+R act type --package "$PKG" --test-id compose.codeField --text "246813" >/dev/null
+wait_compact "$PKG" "Code: 246813"
+R act hide-keyboard --package "$PKG" >/dev/null
+# An AndroidView interop child is a classic View inside the Compose tree; its
+# identity comes from the View tag, not from a semantics tag.
+R act tap --package "$PKG" --test-id compose.interopButton >/dev/null
+wait_compact "$PKG" "Interop tapped"
+# A Compose Dialog is its OWN window with its own Compose host — the multi-window
+# walk has to find a second semantics owner, not just the activity's.
+R act tap --package "$PKG" --test-id compose.dialogTrigger >/dev/null
+wait_compact "$PKG" "composeDialog.title"
+R act tap --package "$PKG" --test-id composeDialog.confirm >/dev/null
+wait_compact "$PKG" "Confirmed"
+COMPOSE_LOGS="$(R debug logs --package "$PKG")"
+echo "$COMPOSE_LOGS" | grep -q "compose_paid" \
+  || { echo "FAIL: expected compose_paid in the app log bridge"; exit 1; }
+echo "$COMPOSE_LOGS" | grep -q "compose_dialog_confirmed" \
+  || { echo "FAIL: expected compose_dialog_confirmed in the app log bridge"; exit 1; }
+
 echo "== CANVAS CONTROL regions (virtual a11y nodes + touch delegate) =="
 # A self-drawn control has no child views, so its segments exist only as virtual
 # accessibility nodes; a touch delegate's forwarded rect exists only in the

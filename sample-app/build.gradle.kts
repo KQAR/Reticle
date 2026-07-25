@@ -4,6 +4,9 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    // The Compose scenario is the only Compose surface in the repo; it exists so
+    // the agent's ComposeSemanticsBridge is exercised end to end.
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -57,6 +60,10 @@ android {
         checkReleaseBuilds = false
     }
 
+    buildFeatures {
+        compose = true
+    }
+
     kotlinOptions {
         jvmTarget = "1.8"
     }
@@ -71,4 +78,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     // Real Lottie animation view for the native-lottie-dialog scenario.
     implementation(libs.lottie)
+    // Compose scenario: the SemanticsNode tree the agent reads reflectively.
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
 }
