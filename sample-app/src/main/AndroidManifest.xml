@@ -45,5 +45,21 @@
             android:name="dev.reticle.sample.SystemDialogScenarioActivity"
             android:exported="false"
             android:label="System Dialog" />
+        <activity
+            android:name="dev.reticle.sample.LottieDialogScenarioActivity"
+            android:exported="false"
+            android:label="Lottie Dialog" />
+        <activity
+            android:name="dev.reticle.sample.WebLottieDialogScenarioActivity"
+            android:exported="false"
+            android:label="Web Lottie Dialog" />
+        <activity
+            android:name="dev.reticle.sample.WebComponentDialogScenarioActivity"
+            android:exported="false"
+            android:label="Web Component Dialog" />
+        <activity
+            android:name="dev.reticle.sample.LottieOnlyDialogScenarioActivity"
+            android:exported="false"
+            android:label="Lottie-only Dialog" />
     </application>
 </manifest>

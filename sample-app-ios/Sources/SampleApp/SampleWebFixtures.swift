@@ -13,6 +13,32 @@ enum SampleWebFixtures {
         return webView
     }
 
+    /// A modal built with `lottie-web` playing a real Lottie animation.
+    static func makeLottieDialogWebView() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let js = bundledResource("lottie_light.min", "js")
+        let anim = bundledResource("lottie_anim", "json")
+        webView.loadHTMLString(webLottieHtml(lottieJs: js, animJson: anim),
+                               baseURL: URL(string: "https://reticle.dev/sample/web-lottie"))
+        return webView
+    }
+
+    /// A modal built as a Web Component (custom element + open shadow root).
+    static func makeWebComponentDialogWebView() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        webView.loadHTMLString(webComponentHtml,
+                               baseURL: URL(string: "https://reticle.dev/sample/web-component"))
+        return webView
+    }
+
+    private static func bundledResource(_ name: String, _ ext: String) -> String {
+        guard let url = Bundle.module.url(forResource: name, withExtension: ext),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return ""
+        }
+        return text
+    }
+
     static let basicCheckoutHtml = """
         <!doctype html>
         <html>
@@ -161,6 +187,120 @@ enum SampleWebFixtures {
               var ctx = canvas.getContext('2d');
               ctx.fillStyle = '#34A853';
               ctx.fillRect(0, 0, 160, 60);
+            </script>
+          </body>
+        </html>
+        """
+
+    // Shared modal-overlay styling for the two web dialog fixtures.
+    private static let modalCss = """
+        body { font-family: sans-serif; margin: 16px; }
+        .overlay {
+          position: fixed; inset: 0; display: none;
+          align-items: center; justify-content: center;
+          background: rgba(0,0,0,0.45);
+        }
+        .overlay.open { display: flex; }
+        .card {
+          background: #fff; border-radius: 16px; padding: 24px;
+          width: 280px; text-align: center;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        }
+        .card h2 { font-size: 18px; margin: 12px 0 8px; }
+        .card p { font-size: 14px; color: #444; margin: 0 0 20px; }
+        .card button { font-size: 15px; padding: 10px 18px; margin: 0 6px; }
+        #lottie-anim { width: 96px; height: 96px; margin: 0 auto; }
+        """
+
+    private static func webLottieHtml(lottieJs: String, animJson: String) -> String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>\(modalCss)</style>
+          </head>
+          <body>
+            <p id="web-status" data-testid="webLottie.status">Idle</p>
+            <button id="open-lottie" data-testid="webLottie.trigger" onclick="openLottieDialog()">
+              Show status dialog
+            </button>
+            <div id="lottie-dialog" class="overlay" data-testid="webLottie.dialog"
+              role="dialog" aria-modal="true" aria-label="Please wait">
+              <div class="card">
+                <div id="lottie-anim" data-testid="webLottie.animation"></div>
+                <h2 id="lottie-title" data-testid="webLottie.title">Please wait</h2>
+                <p id="lottie-message" data-testid="webLottie.message">Processing your request...</p>
+                <button id="lottie-done" data-testid="webLottie.done" onclick="finishLottieDialog()">Done</button>
+              </div>
+            </div>
+            <script>\(lottieJs)</script>
+            <script>
+              var lottieAnimationData = \(animJson);
+              var lottieInstance = null;
+              function openLottieDialog() {
+                document.getElementById('lottie-dialog').classList.add('open');
+                if (!lottieInstance) {
+                  lottieInstance = lottie.loadAnimation({
+                    container: document.getElementById('lottie-anim'),
+                    renderer: 'svg', loop: true, autoplay: true,
+                    animationData: lottieAnimationData
+                  });
+                }
+              }
+              function finishLottieDialog() {
+                document.getElementById('lottie-dialog').classList.remove('open');
+                document.getElementById('web-status').innerText = 'Done';
+              }
+            </script>
+          </body>
+        </html>
+        """
+    }
+
+    static let webComponentHtml = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body { font-family: sans-serif; margin: 16px; }</style>
+          </head>
+          <body>
+            <p id="wc-status" data-testid="webComponent.status">Idle</p>
+            <button id="open-wc" data-testid="webComponent.trigger"
+              onclick="document.querySelector('confirm-dialog').setAttribute('open','')">
+              Delete item
+            </button>
+            <confirm-dialog data-testid="webComponent.dialog"></confirm-dialog>
+            <script>
+              class ConfirmDialog extends HTMLElement {
+                constructor() { super(); this.attachShadow({ mode: 'open' }); }
+                connectedCallback() {
+                  this.shadowRoot.innerHTML =
+                    '<style>' +
+                    ':host{display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)}' +
+                    ':host([open]){display:flex}' +
+                    '.card{background:#fff;border-radius:16px;padding:24px;width:280px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.25)}' +
+                    'h2{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#444;margin:0 0 20px}button{font-size:15px;padding:10px 18px;margin:0 6px}' +
+                    '</style>' +
+                    '<div class="card" role="dialog" aria-modal="true">' +
+                    '<h2 id="wc-title" data-testid="webComponent.title">Delete item?</h2>' +
+                    '<p id="wc-message" data-testid="webComponent.message">This will remove it permanently.</p>' +
+                    '<button id="wc-cancel" data-testid="webComponent.cancel">Cancel</button>' +
+                    '<button id="wc-confirm" data-testid="webComponent.confirm">Delete</button>' +
+                    '</div>';
+                  var self = this;
+                  this.shadowRoot.getElementById('wc-confirm').addEventListener('click', function() {
+                    self.removeAttribute('open');
+                    document.getElementById('wc-status').innerText = 'Deleted';
+                  });
+                  this.shadowRoot.getElementById('wc-cancel').addEventListener('click', function() {
+                    self.removeAttribute('open');
+                    document.getElementById('wc-status').innerText = 'Cancelled';
+                  });
+                }
+              }
+              customElements.define('confirm-dialog', ConfirmDialog);
             </script>
           </body>
         </html>
