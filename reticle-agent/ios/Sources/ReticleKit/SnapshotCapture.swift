@@ -192,9 +192,37 @@ struct SnapshotCapture {
             children: children,
             regions: probed.regions + lottieRegions,
             suspectedMultiRegion: probed.suspectedMultiRegion,
-            charGrid: probed.charGrid
+            charGrid: probed.charGrid,
+            scroll: scrollInfo(view)
         )
         return ref
+    }
+
+    /// A scroll view's current scroll capability, or nil for anything else.
+    ///
+    /// This is the evidence behind the commonest E2E dead end: a `List` /
+    /// `UICollectionView` keeps only its visible window realized, so a far-down
+    /// row has no node at all — and without this flag that is indistinguishable
+    /// from an element the app doesn't have. SwiftUI's `List` and `ScrollView` are
+    /// `UIScrollView`s underneath, so one check covers both.
+    private func scrollInfo(_ view: UIView) -> ScrollInfo? {
+        guard let scrollView = view as? UIScrollView else { return nil }
+        let inset = scrollView.adjustedContentInset
+        let offset = scrollView.contentOffset
+        let content = scrollView.contentSize
+        let bounds = scrollView.bounds.size
+        let epsilon: CGFloat = 0.5
+        let minY = -inset.top
+        let maxY = max(content.height + inset.bottom - bounds.height, minY)
+        let minX = -inset.left
+        let maxX = max(content.width + inset.right - bounds.width, minX)
+        let info = ScrollInfo(
+            canScrollUp: offset.y > minY + epsilon,
+            canScrollDown: offset.y < maxY - epsilon,
+            canScrollLeft: offset.x > minX + epsilon,
+            canScrollRight: offset.x < maxX - epsilon
+        )
+        return info.isScrollable ? info : nil
     }
 
     /// Some hosting surfaces expose content behind unlabeled AX *container*

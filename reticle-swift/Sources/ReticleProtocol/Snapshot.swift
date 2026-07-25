@@ -70,6 +70,8 @@ public struct Node: Codable, Sendable {
     public var regions: [InteractionRegion]
     public var suspectedMultiRegion: Bool
     public var charGrid: CharGrid?
+    /// Scroll capability, when this node is a scrollable container; nil otherwise.
+    public var scroll: ScrollInfo?
 
     public init(
         ref: String,
@@ -89,7 +91,8 @@ public struct Node: Codable, Sendable {
         children: [String] = [],
         regions: [InteractionRegion] = [],
         suspectedMultiRegion: Bool = false,
-        charGrid: CharGrid? = nil
+        charGrid: CharGrid? = nil,
+        scroll: ScrollInfo? = nil
     ) {
         self.ref = ref
         self.parentRef = parentRef
@@ -109,6 +112,7 @@ public struct Node: Codable, Sendable {
         self.regions = regions
         self.suspectedMultiRegion = suspectedMultiRegion
         self.charGrid = charGrid
+        self.scroll = scroll
     }
 
     /// True when this node carries a signal an agent can target it by. The
@@ -125,7 +129,7 @@ public struct Node: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
         case text, testId, frame, isVisible, isEnabled, isInteractive, custom
-        case children, regions, suspectedMultiRegion, charGrid
+        case children, regions, suspectedMultiRegion, charGrid, scroll
     }
 
     // Custom encode to reproduce reticle-core's omit-defaults JSON: a field
@@ -153,6 +157,7 @@ public struct Node: Codable, Sendable {
         if !regions.isEmpty { try c.encode(regions, forKey: .regions) }
         if suspectedMultiRegion { try c.encode(suspectedMultiRegion, forKey: .suspectedMultiRegion) }
         try c.encodeIfPresent(charGrid, forKey: .charGrid)
+        try c.encodeIfPresent(scroll, forKey: .scroll)
     }
 
     public init(from decoder: Decoder) throws {
@@ -175,5 +180,68 @@ public struct Node: Codable, Sendable {
         regions = try c.decodeIfPresent([InteractionRegion].self, forKey: .regions) ?? []
         suspectedMultiRegion = try c.decodeIfPresent(Bool.self, forKey: .suspectedMultiRegion) ?? false
         charGrid = try c.decodeIfPresent(CharGrid.self, forKey: .charGrid)
+        scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
+    }
+}
+
+/// A container's scroll capability — the Swift twin of reticle-core's
+/// `ScrollInfo`.
+///
+/// The evidence behind the commonest E2E dead end: a recycling list keeps only
+/// its visible window bound, so a far-down row has no node, no frame, and no
+/// selector — not merely an off-screen one. Flags say whether the container can
+/// still move in each direction right now; they are NOT a claim about what would
+/// come into view.
+public struct ScrollInfo: Codable, Sendable, Equatable {
+    public var canScrollUp: Bool
+    public var canScrollDown: Bool
+    public var canScrollLeft: Bool
+    public var canScrollRight: Bool
+
+    public init(
+        canScrollUp: Bool = false,
+        canScrollDown: Bool = false,
+        canScrollLeft: Bool = false,
+        canScrollRight: Bool = false
+    ) {
+        self.canScrollUp = canScrollUp
+        self.canScrollDown = canScrollDown
+        self.canScrollLeft = canScrollLeft
+        self.canScrollRight = canScrollRight
+    }
+
+    public var isScrollable: Bool {
+        canScrollUp || canScrollDown || canScrollLeft || canScrollRight
+    }
+
+    /// Compact rendering, e.g. "scroll:down" / "scroll:up,down".
+    public func describe() -> String {
+        var parts: [String] = []
+        if canScrollUp { parts.append("up") }
+        if canScrollDown { parts.append("down") }
+        if canScrollLeft { parts.append("left") }
+        if canScrollRight { parts.append("right") }
+        return parts.isEmpty ? "" : "scroll:" + parts.joined(separator: ",")
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case canScrollUp, canScrollDown, canScrollLeft, canScrollRight
+    }
+
+    // Omit-defaults JSON, matching the Kotlin encoder.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if canScrollUp { try c.encode(canScrollUp, forKey: .canScrollUp) }
+        if canScrollDown { try c.encode(canScrollDown, forKey: .canScrollDown) }
+        if canScrollLeft { try c.encode(canScrollLeft, forKey: .canScrollLeft) }
+        if canScrollRight { try c.encode(canScrollRight, forKey: .canScrollRight) }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        canScrollUp = try c.decodeIfPresent(Bool.self, forKey: .canScrollUp) ?? false
+        canScrollDown = try c.decodeIfPresent(Bool.self, forKey: .canScrollDown) ?? false
+        canScrollLeft = try c.decodeIfPresent(Bool.self, forKey: .canScrollLeft) ?? false
+        canScrollRight = try c.decodeIfPresent(Bool.self, forKey: .canScrollRight) ?? false
     }
 }

@@ -205,8 +205,39 @@ class SnapshotCapture(private val context: Context) {
             regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
             charGrid = region.charGrid,
+            scroll = scrollInfo(view),
         )
         return ref
+    }
+
+    /**
+     * A container's current scroll capability, or null when it has none.
+     *
+     * `canScrollVertically/Horizontally` is the one signal every scrolling
+     * container implements — `RecyclerView`, `ScrollView`, `NestedScrollView`,
+     * `ViewPager2`, `AbsListView` — so this needs no per-class allowlist. It
+     * matters because a recycling container keeps only its visible window bound:
+     * a far-down row has NO node at all, and without this flag that is
+     * indistinguishable from an element the app doesn't have.
+     *
+     * Restricted to `ViewGroup`s on purpose: a `TextView` whose text overflows
+     * also answers `canScrollVertically(1) == true` (it scrolls its own text), and
+     * reporting every truncated label as scrollable content would bury the one
+     * container an agent actually needs to move.
+     */
+    private fun scrollInfo(view: View): dev.reticle.core.ScrollInfo? {
+        if (view !is android.view.ViewGroup) return null
+        return try {
+            val info = dev.reticle.core.ScrollInfo(
+                canScrollUp = view.canScrollVertically(-1),
+                canScrollDown = view.canScrollVertically(1),
+                canScrollLeft = view.canScrollHorizontally(-1),
+                canScrollRight = view.canScrollHorizontally(1),
+            )
+            if (info.isScrollable) info else null
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun roleFor(view: View): String = when (view) {

@@ -123,7 +123,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   `ComposeTextRegions` from the semantics config (`Text`'s link annotations +
   the `GetTextLayoutResult` action's geometry) — reflectively, like the rest of
   the Compose path.
-- The CLI exposes `tap`, `swipe`, `drag`, and `type`. `pinch` keeps the API
+- The CLI exposes `tap`, `swipe`, `drag`, `scroll-to`, and `type`. `scroll-to`
+  drags a scrollable container until a selector resolves inside it and confirms
+  the position settled before reporting it — the only way to reach a row a
+  recycling list has not bound. `pinch` keeps the API
   shape but is not implemented (needs `sendevent` multi-touch).
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
@@ -165,7 +168,8 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, the Compose semantics screen, the canvas control
+mutation, agreement regions, the long list (recycling boundary + scroll
+evidence), the Compose semantics screen, the canvas control
 (virtual a11y sub-nodes under both id conventions + a touch-delegate rect),
 WebView DOM, same-origin iframe geometry (chained selector + a coordinate tap into
 the frame), the login keyboard trap, the system

@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    LongList(
+        title = "Long list",
+        subtitle = "60 recycled rows; far-down rows are absent until scrolled",
+        testId = "scenario.list",
+        activityClass = ListScenarioActivity::class.java,
+    ),
     Compose(
         title = "Compose semantics",
         subtitle = "testTag targets, a text link, a Compose dialog, and View interop",

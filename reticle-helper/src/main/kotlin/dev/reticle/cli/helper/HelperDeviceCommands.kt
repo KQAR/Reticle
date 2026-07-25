@@ -150,9 +150,12 @@ internal object HelperDeviceCommands {
                 if (sub == "drag") input.drag(fx, fy, tx, ty, dur) else input.swipe(fx, fy, tx, ty, dur)
                 buildJsonObject { put("gesture", sub); put("from", "$fx,$fy"); put("to", "$tx,$ty"); put("durationMs", dur) }
             }
+            "scrollTo", "scroll-to" -> HelperScrollTo.run(input, device, pkg, params)
             "type" -> typeText(input, device, pkg, params)
             "hideKeyboard", "hide-keyboard" -> hideKeyboard(input, device, pkg, params)
-            else -> throw CliError("unknown act gesture '$sub'")
+            else -> throw CliError(
+                "unknown act gesture '$sub' (tap/swipe/drag/scroll-to/type/hide-keyboard)"
+            )
         }
 
         val verify = verifySel?.let { HelperVerify.pollForChange(evidenceClient!!, it, before, params) }

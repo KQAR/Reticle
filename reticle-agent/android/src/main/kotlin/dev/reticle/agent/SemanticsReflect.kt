@@ -104,6 +104,60 @@ object SemanticsReflect {
     fun hasClickAction(node: Any): Boolean = configValue(node, "OnClick") != null
 
     /**
+     * Scroll capability of a scrollable composable (`LazyColumn`, `Modifier.
+     * verticalScroll`, …), read from the semantics scroll-axis ranges — the same
+     * properties that tell an accessibility service a container can scroll.
+     *
+     * `ScrollAxisRange` exposes `value`/`maxValue` as `() -> Float` lambdas plus a
+     * `reverseScrolling` flag; the flag flips which end "up" is, so it is applied
+     * rather than ignored.
+     */
+    fun scrollInfo(node: Any): dev.reticle.core.ScrollInfo? {
+        val vertical = axisRange(node, "VerticalScrollAxisRange")
+        val horizontal = axisRange(node, "HorizontalScrollAxisRange")
+        if (vertical == null && horizontal == null) return null
+        val info = dev.reticle.core.ScrollInfo(
+            canScrollUp = vertical?.canScrollBackward == true,
+            canScrollDown = vertical?.canScrollForward == true,
+            canScrollLeft = horizontal?.canScrollBackward == true,
+            canScrollRight = horizontal?.canScrollForward == true,
+        )
+        return if (info.isScrollable) info else null
+    }
+
+    private data class AxisRange(val canScrollBackward: Boolean, val canScrollForward: Boolean)
+
+    private fun axisRange(node: Any, keyName: String): AxisRange? {
+        val range = configValue(node, keyName) ?: return null
+        val value = lambdaFloat(range, "getValue") ?: return null
+        val maxValue = lambdaFloat(range, "getMaxValue") ?: return null
+        val reversed = try {
+            getter(range, "getReverseScrolling")?.invoke(range) as? Boolean ?: false
+        } catch (_: Throwable) {
+            false
+        }
+        val atStart = value <= EPSILON
+        val atEnd = value >= maxValue - EPSILON
+        return if (reversed) AxisRange(canScrollBackward = !atEnd, canScrollForward = !atStart)
+        else AxisRange(canScrollBackward = !atStart, canScrollForward = !atEnd)
+    }
+
+    /** Invoke a `() -> Float` property getter and unwrap the Float. */
+    private fun lambdaFloat(target: Any, getterName: String): Float? {
+        return try {
+            val fn = getter(target, getterName)?.invoke(target) ?: return null
+            val invoke = fn.javaClass.methods.firstOrNull {
+                it.name == "invoke" && it.parameterTypes.isEmpty()
+            } ?: return null
+            invoke.invoke(fn) as? Float
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private const val EPSILON = 0.5f
+
+    /**
      * Bounds of the node relative to its host window (Compose's
      * getBoundsInWindow). Callers convert to screen coordinates by adding the
      * host View's window origin, so Compose frames sit in the same coordinate

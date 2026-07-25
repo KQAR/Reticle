@@ -99,6 +99,12 @@ data class Node(
     val suspectedMultiRegion: Boolean = false,
     /** Character-position grid for text nodes; enables substring targeting. */
     val charGrid: CharGrid? = null,
+    /**
+     * Scroll capability, when this node is a scrollable container. Absent for
+     * ordinary nodes. See [ScrollInfo] — it is why "selector not found" can be
+     * told apart from "the element isn't in this app".
+     */
+    val scroll: ScrollInfo? = null,
 ) {
     /**
      * True when this node carries a signal an agent can target it by: a stable
@@ -113,4 +119,41 @@ data class Node(
             contentDescription != null ||
             !text.isNullOrBlank() ||
             isInteractive
+}
+
+/**
+ * A container's scroll capability, present only on nodes that have one.
+ *
+ * This is the missing evidence behind the commonest E2E dead end: a recycling
+ * list keeps only its visible window bound, so a far-down row is not merely
+ * off-viewport — it has no node, no frame, and no selector at all. Without this,
+ * a `RecyclerView` / `LazyColumn` / `UIScrollView` looks like any other
+ * container, and "selector not found" is indistinguishable from "the app doesn't
+ * have that element".
+ *
+ * The four flags are the honest, cheaply-true facts: whether the container can
+ * still move in each direction right now (Android `View.canScrollVertically`,
+ * Compose's scroll-axis ranges, iOS content offset vs content size). They are
+ * NOT a claim about what would come into view — Reticle emits evidence, and
+ * where a missing element actually lives is not knowable from here.
+ */
+@Serializable
+data class ScrollInfo(
+    val canScrollUp: Boolean = false,
+    val canScrollDown: Boolean = false,
+    val canScrollLeft: Boolean = false,
+    val canScrollRight: Boolean = false,
+) {
+    val isScrollable: Boolean
+        get() = canScrollUp || canScrollDown || canScrollLeft || canScrollRight
+
+    /** Compact rendering, e.g. "scroll:down" / "scroll:up,down". */
+    fun describe(): String = buildString {
+        val parts = ArrayList<String>(4)
+        if (canScrollUp) parts.add("up")
+        if (canScrollDown) parts.add("down")
+        if (canScrollLeft) parts.add("left")
+        if (canScrollRight) parts.add("right")
+        if (parts.isNotEmpty()) append("scroll:").append(parts.joinToString(","))
+    }
 }
