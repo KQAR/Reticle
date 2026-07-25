@@ -310,6 +310,10 @@ struct SnapshotCapture {
             b.axIndex[ref] = element
             let role = SwiftUISupport.role(for: traits)
             let testId = identifier.isEmpty ? nil : identifier
+            let elementFrame = frame.width > 0 ? rect(frame) : nil
+            // Links inside ONE SwiftUI Text are sub-regions of this element, not
+            // child elements — recovered from its accessibility attributed label.
+            let textRegions = SwiftUITextRegions.probe(element: element, screenFrame: elementFrame)
             b.nodes[ref] = Node(
                 ref: ref,
                 parentRef: parentRef,
@@ -319,10 +323,12 @@ struct SnapshotCapture {
                 contentDescription: label.isEmpty ? nil : label,
                 text: label.isEmpty ? nil : label,
                 testId: testId,
-                frame: frame.width > 0 ? rect(frame) : nil,
+                frame: elementFrame,
                 isEnabled: !traits.contains(.notEnabled),
                 isInteractive: traits.contains(.button) || traits.contains(.link) || traits.contains(.adjustable),
-                custom: ["observationBackend": .text("native-accessibility")]
+                custom: ["observationBackend": .text("native-accessibility")],
+                regions: textRegions.regions,
+                charGrid: textRegions.charGrid
             )
             refs.append(ref)
         }

@@ -131,6 +131,44 @@ echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan re
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
 kill "$HOLD" 2>/dev/null || true
 
+echo "== SWIFTUI TEXT LINKS (two links inside ONE Text) =="
+# The SwiftUI shape of the agreement row, and the asymmetry this closes: a markdown
+# `Text` is ONE accessibility element with one label — no UILabel, no
+# NSAttributedString .link run, no child element, no view to measure — so every
+# RegionProbe channel came up empty and the links were unaddressable, while the
+# UIKit row above decomposes fine. (The Android twin was fixed for Compose in the
+# same sweep.) The surface that does exist is `accessibilityAttributedLabel`:
+# system-emitted `UIAccessibilityTokenLink` runs plus per-run font tokens, from
+# which the geometry is re-laid out inside the element's own screen frame.
+# Each assertion is an OBSERVABLE side effect: the app's openURL handler names the
+# link it received, so a rect that is merely plausible fails here.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=swiftui
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/swiftui"
+SWIFTUI_REGIONS="$("$HOST" --target ios ui regions "$TMP/swiftui/snapshot.json")"
+echo "$SWIFTUI_REGIONS"
+echo "$SWIFTUI_REGIONS" | grep -q 'span "Terms"' \
+  || { echo "FAIL: the 'Terms' link inside the SwiftUI Text was not recovered"; exit 1; }
+echo "$SWIFTUI_REGIONS" | grep -q 'span "Privacy"' \
+  || { echo "FAIL: the 'Privacy' link inside the SwiftUI Text was not recovered"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id swiftui.agreement --region "Privacy"
+sleep 1
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "swiftui.status" | grep -q "opened privacy" \
+  || { echo "FAIL: tapping the recovered 'Privacy' rect did not open the privacy link"; exit 1; }
+# The other link must be its own target, not the same rect: tapping "Terms" opens
+# terms. Two links in one node are worth nothing if they resolve to one point.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id swiftui.agreement --region "Terms"
+sleep 1
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "swiftui.status" | grep -q "opened terms" \
+  || { echo "FAIL: tapping the recovered 'Terms' rect did not open the terms link"; exit 1; }
+"$HOST" --target ios debug logs --package "$LINKED_ID" | grep -q "swiftui_link_clicked" \
+  || { echo "FAIL: expected swiftui_link_clicked in the app log bridge"; exit 1; }
+# The char grid rides along, so a phrase that is NOT a link is addressable too.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id swiftui.agreement --region "Read the" \
+  || { echo "FAIL: the reconstructed char grid must resolve a non-link substring"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== LONG LIST (lazy boundary + scroll evidence) =="
 # SwiftUI's List realizes only the rows near the viewport, so a far-down row has
 # no view, no accessibility element, and no frame: the selector is absent, not
