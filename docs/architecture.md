@@ -287,6 +287,22 @@ keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
 
+**An out-of-process window is invisible; lost focus is the evidence.** A permission
+prompt, a biometric sheet or an autofill dialog is another process's window: it is in
+no window of this app and no node of this tree, so a capture taken while one is up
+looks entirely ordinary — every control still `tappable` — while input goes to the
+prompt. Reticle cannot reach that window (in-process observation, by design), so it
+reports the fact it CAN see: `screen.windowFocused` (Android `View.hasWindowFocus()`,
+iOS `UIApplication.applicationState`), rendered by `ui compact` as
+`window: UNFOCUSED …` ahead of the keyboard line, because in that state nothing in
+the tree is actionable. It never claims what is on top.
+
+The in-process **screenshot** is blind to that window too, which is why this flag
+matters more than it first appears: measured with an iOS notification alert up, the
+agent's screenshot showed only the app's own screen while a device-level
+`simctl io screenshot` showed the alert plainly. An agent that falls back to "look at
+the picture" is fooled exactly like the tree is.
+
 **A blocked DOM read is reported, not implied.** `alert()`/`confirm()` block the
 page's JS thread until the app dismisses them, so `evaluateJavascript` cannot call
 back and the DOM read hits its 750ms budget. The bridge degrades to L0 (the web

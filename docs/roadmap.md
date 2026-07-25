@@ -2,8 +2,9 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Status: roadmap and current-state doc (updated 2026-07-23, tracking 0.9.3 —
-Loom capture engine, traffic rules, and flow replay). Captures
+Status: roadmap and current-state doc (updated 2026-07-25, tracking 0.9.3 — Loom
+capture engine, traffic rules, flow replay, and the boundary-case sweep whose
+remaining items are listed under **Boundary-case sweep**). Captures
 the agreed direction for evolving Reticle from a single-platform Android CLI into a
 multi-platform runtime harness with an integrated capture proxy and a live web panel.
 `docs/architecture.md` describes the current implementation in more operational
@@ -763,6 +764,97 @@ backbone work is the prerequisite; a screenshot/pixel-stability signal is a
 separate alternative worth weighing. Until then, flows keep using explicit
 `settleMs` and `act --verify`'s before/after diff, and the agent decides when a
 screen has settled.
+
+# Boundary-case sweep (2026-07-25): what landed, what is left
+
+A prioritised sweep of "cases the tool cannot yet cover", run as one PR per point
+with the same discipline each time: **prove the cause on a device first**, fix only
+what the evidence justifies, then pin it with an assertion in both e2e suites. That
+order paid for itself — half the points turned out to be real defects that had been
+failing *closed* (silently returning nothing), and two "fixes" broke something else
+that the suites caught immediately.
+
+## Landed (PRs #107-#114)
+
+| Point | Verified cause | Outcome |
+| --- | --- | --- |
+| Region channels | `a11yVirtual` probed virtual ids `0 until childCount`, but the ids are the APP's (`ExploreByTouchHelper` may use stable domain ids) -> zero regions; `touchDelegate` read `TouchDelegate.mBounds`, which the platform blocks (`api=max-target-o`) for any modern target -> channel dead on every real app | Both fixed (androidx helper route + public `getTouchDelegateInfo()`); iOS learned the second `UIAccessibilityContainer` convention; `--region <source>` addresses label-less channels. Canvas-control scenario, both platforms |
+| Compose semantics | Bridge worked but had **zero** coverage (no Compose anywhere in the repo) | Compose scenario + e2e: testTag tap, `type` into a composable field, Compose `Dialog` as its own window, `AndroidView` interop |
+| Compose text links | A `Text` with two `LinkAnnotation`s = ONE node, no regions, no char grid (a `ClickableSpan` row decomposes fine) | `ComposeTextRegions`: link ranges from the semantics config + geometry from the `GetTextLayoutResult` action; per-link rects + char grid |
+| Same-origin iframe | Piercing and page-offset were CORRECT; nothing asserted them (iOS only checked JS activation, which passes with a wrong rect) | Coordinate-tap assertions on both platforms |
+| Off-screen list rows | A recycling/lazy list binds only its visible window: rows 0-14 of 60 (Android), 0-12 (iOS). Row 40 has no node, frame or selector | `Node.scroll` evidence (+ `scroll:up,down` in compact, + scroll hints in selector-miss diagnostics) and `act scroll-to`, both platforms |
+| Popup windows | `PopupWindow` / `Spinner` dropdown / `PopupMenu` were all captured correctly — but their rows share one resource id, so nothing could single one out | `--label` selector (exact -> substring, topmost window that has a match, **ambiguity is an error**), replacing a python ref-scraping hack in the iOS suite |
+| Blocked DOM read | Degrade was correct (~1s, opaque node) but SILENT: "no DOM nodes" was indistinguishable from "empty page" | `dom:unavailable` marker on the host node, both platforms |
+| iOS window occlusion | Every `UIWindow` was `kind = .view`, so window-vs-window occlusion had NEVER fired on iOS — an overlay window left everything beneath it looking tappable | `kind = .window`, minus keyboard host windows (screen-sized, they marked the whole screen occluded); overlay-window scenario |
+| Out-of-process windows | With Android's permission prompt up, `mCurrentFocus` was the permission controller while the capture still listed every control as `tappable`. The in-process **screenshot** is blind to it too (device-level `simctl io screenshot` shows the alert; the agent's does not) | `screen.windowFocused` + `window: UNFOCUSED …` leading the compact; permission scenario, Android e2e asserts loss AND clearing |
+
+Self-inflicted bugs the suites caught, worth remembering as failure shapes:
+`act scroll-to` first flicked (a flinging list left the reported point stale by the
+next command -> now it drags slowly and confirms `settled`); it picked the largest
+scrollable *anywhere*, which was a background window's page scroller; it re-chose
+direction every iteration, so an absent selector ping-ponged at the list's end. And
+the sample's own home list had outgrown one screen, so its last rows were clipped and
+genuinely untappable — a resolved tap landed on the system navigation bar.
+
+## Left to do (next session)
+
+Ordered by value. Each item's cause is already measured unless marked otherwise.
+
+1. **iOS: assert the focus evidence in the suite.** `screen.windowFocused` is
+   implemented and verified by hand on iOS (the sample's `permission` scenario
+   reports `window: UNFOCUSED`), but it is NOT asserted in `scripts/e2e-ios.sh`,
+   because the state cannot be re-armed or cleaned up: an app switch SUSPENDS the app
+   on a simulator (the agent's socket dies, `GET /snapshot timed out`), while a real
+   `UNUserNotificationCenter` alert keeps the app foreground-inactive but
+   `simctl privacy reset notifications` does not reliably re-arm the prompt once
+   answered, and nothing in the host or `simctl` can ANSWER an open one
+   (`simctl privacy grant` -> "Operation not permitted"; terminating the app leaves it
+   standing). A stuck alert silently swallows every later HID tap — measured, it broke
+   the checkout section. Options to explore: a fresh/erased simulator per run, an
+   XCUITest-side dismissal, or accepting a coordinate tap derived from screen size
+   (the alert's buttons sit at ~57% height, ~32%/~68% width on iPhone 17) with a
+   verify-and-retry loop and the section placed LAST.
+2. **`act tap --settle`.** Measured: tapping a `PopupMenu` item the moment it is first
+   captured landed on the row ABOVE it (`--label "Delete item"` produced
+   `Menu: Rename`) because the popup was still animating in and the rect was stale by
+   dispatch time. `act scroll-to` already solves this class by polling until the
+   resolved point repeats; the e2e currently works around it with a `sleep 1`. An
+   opt-in `--settle` on `tap` would remove the guesswork for callers. (Note the
+   existing decision that a general `wait --for appears` stays dropped: this is
+   narrower — same resolution path as the tap itself, no `isVisible` proxy.)
+3. **SwiftUI `Text` markdown links yield no regions (iOS).** Measured: the sample's
+   `swiftui.agreement` ("Read the Terms and Privacy", two links in ONE `Text`) reports
+   ZERO regions — the same asymmetry that was just fixed for Compose on Android.
+   Investigate whether a usable surface exists (link ranges via
+   `accessibilityAttributedLabel`, per-range geometry) BEFORE building: SwiftUI-drawn
+   text has no accessible layout object, so this may be an honest boundary rather than
+   a fix. Follow the "verify the cause before building" rule.
+4. **Screenshot degrade surfaces (`SurfaceView` / `FLAG_SECURE`).** Known degrade
+   paths (in-process capture cannot see a `SurfaceView`'s content or a secure window;
+   the CLI can fall back to `adb exec-out screencap`) with NO case pinning them.
+   Cause not yet measured this round. Add a scenario and assert the degrade is
+   REPORTED (the `dom:unavailable` treatment applied to screenshots: an absence must
+   be labelled, not inferred).
+5. **Third-party WebView kernels (X5/UC) — document, do not build.** `WebViewBridge`
+   is typed on `android.webkit.WebView`, so a third-party kernel loses the whole DOM
+   capability silently. Decision taken this round with the maintainer: the target apps
+   do not use one, so write it up as an explicit boundary (README/skill/`docs`) and
+   make a suspected third-party kernel node say so, rather than adding a reflective
+   adapter that cannot be verified without a real X5 sample.
+6. **Structural boundaries, written down as boundaries.** Closed shadow roots,
+   cross-origin iframes, bitmap-baked text, pure-Canvas controls with no accessibility
+   surface, out-of-process system UI (permission prompts, biometric sheets, share
+   sheets, Custom Tabs / `SFSafariViewController`, the IME itself), DRM video. Each is
+   genuinely unreachable for an in-process agent; several are now *partially* covered
+   by evidence (`window: UNFOCUSED`, `dom:unavailable`, `occluded-by`). Collect them in
+   one Honest Boundary section plus the skill, so an agent stops guessing and a future
+   contributor stops re-investigating.
+
+Two flakes seen repeatedly on the software-GPU emulator, worth fixing if they recur:
+a DOM assertion taken from a single snapshot while `lottie-web` animates (the 750ms
+`evaluateJavascript` budget lapses and the whole DOM folds away — now polled), and a
+scenario dialog that occasionally did not appear within the 60s `wait_compact` budget
+(reproduced green by hand, twice).
 
 # Proposed next: evidence workflows + security-evidence lane
 

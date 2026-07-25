@@ -168,7 +168,8 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, the web JS dialog (alert() blocking the page's JS
+mutation, agreement regions, the system permission prompt (out-of-process window ->
+`window: UNFOCUSED`), the web JS dialog (alert() blocking the page's JS
 thread -> `dom:unavailable`), the popup windows (PopupWindow / Spinner dropdown /
 PopupMenu + `--label`), the long list (recycling boundary + scroll evidence), the
 Compose semantics screen, the canvas control

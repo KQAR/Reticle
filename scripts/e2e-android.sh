@@ -610,6 +610,43 @@ R act tap --package "$PKG" --css "#lottie-done" >/dev/null
 wait_compact "$PKG" "Done"
 R ui report --package "$PKG" --output "$TMP/web-lottie-done"
 
+echo "== SYSTEM PERMISSION PROMPT (out of process: focus evidence) =="
+# The one on-screen thing an in-process agent structurally CANNOT capture: the
+# prompt belongs to the permission controller, another process, so it is in no
+# window of this app and no node of this tree. Verified during this work:
+# `mCurrentFocus=com.google.android.permissioncontroller/...GrantPermissionsActivity`
+# while the capture still listed every control as tappable. Reticle cannot show the
+# prompt; it CAN report that this app's window lost focus, which is a fact and
+# enough for an agent to stop instead of tapping into a void.
+"$ADB" -s "$SERIAL" shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+open_scenario scenario.permission permission.trigger
+if R ui compact --live --package "$PKG" | head -1 | grep -q "UNFOCUSED"; then
+  echo "FAIL: the app should hold focus before the prompt is raised"; exit 1
+fi
+R act tap --package "$PKG" --test-id permission.trigger >/dev/null
+wait_compact "$PKG" "UNFOCUSED"
+# The prompt's own content must be absent — the boundary, stated as an assertion so
+# nobody later mistakes silence for capture.
+R ui report --package "$PKG" --output "$TMP/permission"
+/usr/bin/python3 - "$TMP/permission/snapshot.json" <<'PYEOF' || exit 1
+import json, sys
+snap = json.load(open(sys.argv[1]))
+for node in snap["nodes"].values():
+    name = (node.get("typeName") or "").lower()
+    if "permissioncontroller" in name:
+        print(f"FAIL: another process's node leaked into the tree: {name}")
+        sys.exit(1)
+if snap["screen"].get("windowFocused") is not False:
+    print("FAIL: screen.windowFocused should be false while another window has focus")
+    sys.exit(1)
+PYEOF
+# Dismissing restores focus, and the evidence clears with it.
+"$ADB" -s "$SERIAL" shell input keyevent KEYCODE_BACK >/dev/null 2>&1 || true
+sleep 2
+if R ui compact --live --package "$PKG" | head -1 | grep -q "UNFOCUSED"; then
+  echo "FAIL: focus evidence must clear once the prompt is gone"; exit 1
+fi
+
 echo "== WEB JS DIALOG (alert() blocks the page's JS thread) =="
 # `alert()` is not one more dialog: it blocks the page's JS thread until the app
 # dismisses it, so while the modal is up the DOM bridge's evaluateJavascript can
