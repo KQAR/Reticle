@@ -48,8 +48,10 @@ CLI 通过 `adb forward` 与之通信。agent 在进程内捕获实时 UI 树;CL
 
 - **`span`**——真实的 `ClickableSpan` / `URLSpan` 区间,带逐行像素命中矩形和
   链接颜色。
-- **`a11yVirtual`**——虚拟无障碍子节点(`ExploreByTouchHelper`)。
-- **`touchDelegate`**——扩展/转发的命中矩形。
+- **`a11yVirtual`**——虚拟无障碍子节点(`ExploreByTouchHelper`),无论 app 采用
+  哪种虚拟 id 约定。
+- **`touchDelegate`**——扩展/转发的命中矩形(API 29+),无标签,因此用
+  `--region touchDelegate` 定位。
 - **`textMarker`**——自绘行上每个文本内括号/markdown 链接对应一个区域,各自带
   矩形。括号检测与脚本无关(markdown `[text](url)`,以及 `«…»`、`《…》` 这类
   成对分隔符)。

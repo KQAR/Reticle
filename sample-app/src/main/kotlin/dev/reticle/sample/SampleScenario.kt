@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    CanvasControl(
+        title = "Canvas control regions",
+        subtitle = "Virtual a11y sub-nodes and a touch-delegate hit rect",
+        testId = "scenario.canvasControl",
+        activityClass = CanvasControlScenarioActivity::class.java,
+    ),
     WebView(
         title = "WebView DOM",
         subtitle = "Native title bar with a full-screen WebView underneath",

@@ -125,6 +125,42 @@ echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan re
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
 kill "$HOLD" 2>/dev/null || true
 
+echo "== CANVAS CONTROL regions (accessibility sub-elements) =="
+# Two self-drawn controls, one per legal `UIAccessibilityContainer` convention:
+# `accessibilityElements` (the shorthand) and the container METHODS
+# (`accessibilityElementCount` / `accessibilityElement(at:)`, elements built on
+# demand). The probe originally read only the array, so every control written the
+# second way surfaced zero sub-regions. There is no touch-delegate analogue on
+# iOS: an expanded hit area is a `point(inside:with:)` override, i.e. app code
+# with no introspectable rect.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=canvasControl
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/canvas"
+CANVAS_REGIONS="$("$HOST" --target ios ui regions "$TMP/canvas/snapshot.json")"
+echo "$CANVAS_REGIONS"
+echo "$CANVAS_REGIONS" | grep -q 'a11yVirtual "Monthly"' \
+  || { echo "FAIL: expected sub-regions from the accessibilityElements control"; exit 1; }
+echo "$CANVAS_REGIONS" | grep -q 'a11yVirtual "A3"' \
+  || { echo "FAIL: expected sub-regions from the CONTAINER-METHODS control"; exit 1; }
+# The segments are painted, not subviews, and the control hit-tests taps itself,
+# so only a correct recovered rect produces the status change. HID-only (a
+# painted segment has no in-process activation surface).
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id canvas.segments --region "Monthly"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/canvas-seg"
+"$HOST" --target ios ui compact "$TMP/canvas-seg/snapshot.json" | grep -q "Segment: Monthly" \
+  || { echo "FAIL: tap on the accessibilityElements sub-region did not land"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id canvas.seats --region "A3"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/canvas-seat"
+"$HOST" --target ios ui compact "$TMP/canvas-seat/snapshot.json" | grep -q "Seat: A3" \
+  || { echo "FAIL: tap on the container-methods sub-region did not land"; exit 1; }
+CANVAS_LOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$CANVAS_LOGS" | grep -q "canvas_seat_picked" \
+  || { echo "FAIL: expected canvas_seat_picked in the app log bridge"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== WEBVIEW DOM =="
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webview
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 3

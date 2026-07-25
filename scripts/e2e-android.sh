@@ -201,6 +201,52 @@ echo "$REGIONS" | grep -q "colorSpan"  || { echo "FAIL: expected a colorSpan reg
 R act tap --package "$PKG" --test-id agreement.markdown --region "Privacy" >/dev/null
 R act tap --package "$PKG" --test-id agreement.plain --region "Privacy Policy" >/dev/null
 
+echo "== CANVAS CONTROL regions (virtual a11y nodes + touch delegate) =="
+# A self-drawn control has no child views, so its segments exist only as virtual
+# accessibility nodes; a touch delegate's forwarded rect exists only in the
+# delegate. Both channels were shipped but never exercised, and both were broken:
+# the virtual-node probe assumed dense 0-based ids (so a control with stable ids
+# yielded nothing), and the delegate rect came from a `TouchDelegate.mBounds`
+# reflection the platform blocks (api=max-target-o) for anything targeting O+.
+open_scenario scenario.canvasControl canvas.segments
+R ui report --package "$PKG" --output "$TMP/canvas"
+CANVAS_REGIONS="$(R ui regions "$TMP/canvas/snapshot.json")"
+echo "$CANVAS_REGIONS"
+echo "$CANVAS_REGIONS" | grep -q 'a11yVirtual "Monthly"' \
+  || { echo "FAIL: expected virtual a11y regions from the dense-id canvas control"; exit 1; }
+echo "$CANVAS_REGIONS" | grep -q 'a11yVirtual "A3"' \
+  || { echo "FAIL: expected virtual a11y regions from the STABLE-id canvas control"; exit 1; }
+echo "$CANVAS_REGIONS" | grep -q "touchDelegate" \
+  || { echo "FAIL: expected a touchDelegate region for the delegate-expanded icon"; exit 1; }
+# The delegate rect must be the expanded row, not the icon's own 20x20 frame.
+/usr/bin/python3 - "$TMP/canvas/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+host = next(n for n in nodes if n.get("testId") == "canvas.iconHost")
+icon = next(n for n in nodes if n.get("testId") == "canvas.icon")
+rect = next(r["rects"][0] for r in host["regions"] if r["source"] == "touchDelegate")
+if rect["width"] <= icon["frame"]["width"] * 2:
+    print(f"FAIL: touchDelegate rect {rect} is not wider than the icon {icon['frame']}")
+    sys.exit(1)
+PY
+# Taps driven from the recovered rects. The control hit-tests privately and the
+# delegate rect's center is far from the icon, so a wrong rect silently does
+# nothing — the status text is the only honest proof.
+R act tap --package "$PKG" --test-id canvas.segments --region "Monthly" >/dev/null
+wait_compact "$PKG" "Segment: Monthly"   # tap on the dense-id virtual node did not land otherwise
+R act tap --package "$PKG" --test-id canvas.seats --region "A3" >/dev/null
+wait_compact "$PKG" "Seat: A3"   # tap on the stable-id virtual node did not land otherwise
+# `--region touchDelegate` addresses a channel that carries no label (a delegate's
+# target is only resolvable through an a11y connection, which an in-process agent
+# lacks), so the source name is the selector.
+R act tap --package "$PKG" --test-id canvas.iconHost --region touchDelegate >/dev/null
+wait_compact "$PKG" "Icon tapped"   # tap inside the forwarded touch-delegate rect never reached the icon otherwise
+CANVAS_LOGS="$(R debug logs --package "$PKG")"
+echo "$CANVAS_LOGS" | grep -q "canvas_segment_picked" \
+  || { echo "FAIL: expected canvas_segment_picked in the app log bridge"; exit 1; }
+echo "$CANVAS_LOGS" | grep -q "canvas_icon_tapped" \
+  || { echo "FAIL: expected canvas_icon_tapped in the app log bridge"; exit 1; }
+
 echo "== WEBVIEW DOM =="
 # The home row loads the basic checkout fixture; the readiness marker is a
 # folded DOM node, so this also proves the WebView loaded and the DOM bridge

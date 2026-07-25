@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **Fixed: two region channels that shipped but never worked.** Both were
+  discovered by finally giving them a sample scenario (a self-drawn canvas
+  control), and both failed silently — they returned zero regions rather than an
+  error, so a self-drawn control looked simply "unaddressable".
+  - `a11yVirtual` on Android probed virtual ids `0 until childCount`, but a
+    provider's ids are chosen by the app: `ExploreByTouchHelper` may hand out
+    dense indexes OR stable domain ids (a seat number, a row id). Controls using
+    the latter recovered nothing. It now asks the host node for its declared
+    child ids, then the androidx helper for `getVisibleVirtualViews` (app-side
+    code, so no non-SDK restriction applies), and only then falls back to the
+    dense probe.
+  - `a11yVirtual` on iOS read only the `accessibilityElements` array, so every
+    control implementing the other legal `UIAccessibilityContainer` convention —
+    `accessibilityElementCount()` + `accessibilityElement(at:)`, elements built
+    on demand — surfaced nothing. Both conventions are now read.
+  - `touchDelegate` reflected `TouchDelegate.mBounds`, which the platform blocks
+    (`api=max-target-o`) for any app targeting O or newer — i.e. the channel was
+    dead on every modern app. It now reads the public
+    `TouchDelegate.getTouchDelegateInfo()` (API 29+), and reports nothing below
+    29 rather than guessing. The forwarded rect carries no label because a
+    delegate's target resolves only through an accessibility connection, which an
+    in-process agent has no access to; `act tap --region touchDelegate` addresses
+    it by source name instead (`--region` now matches a region source, not just a
+    label).
+
+- Sample apps + e2e: a new **canvas control** scenario on both platforms — a
+  control that paints its own segments (no child views), exposing them as virtual
+  accessibility sub-nodes, plus (Android) a 20px icon whose hit area is expanded
+  across the whole row by a `TouchDelegate`. Each platform ships one control per
+  container convention, so a harness cannot pass by covering only one. Every
+  assertion drives a tap from the recovered rect and checks the app's own status
+  text: the controls hit-test privately and the delegate rect's center is nowhere
+  near the icon, so a wrong rect silently does nothing.
+
 - Lottie internal-element recognition. When an app bakes a whole dialog (title,
   message, buttons) into a single Lottie animation, the plain tree sees one
   opaque node and nothing downstream can act on it. A new **Lottie bridge**
