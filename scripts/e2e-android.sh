@@ -206,6 +206,37 @@ echo "$REGIONS" | grep -q "colorSpan"  || { echo "FAIL: expected a colorSpan reg
 R act tap --package "$PKG" --test-id agreement.markdown --region "Privacy" >/dev/null
 R act tap --package "$PKG" --test-id agreement.plain --region "Privacy Policy" >/dev/null
 
+echo "== POPUP WINDOWS (PopupWindow, Spinner dropdown, PopupMenu) + --label =="
+# `AlertDialog` was already covered, but each of these attaches its own root to
+# WindowManagerGlobal through a different framework path. They are also the case
+# where a captured control has NO id of its own: dropdown rows and menu items share
+# one resource id (`text1`, `title`), so `--label` (exact-then-substring, ambiguity
+# refused) is the only stable way to single one out.
+open_scenario scenario.popups popup.trigger
+# 1. An app-authored PopupWindow: its content is a separate window root.
+R act tap --package "$PKG" --test-id popup.trigger >/dev/null
+wait_compact "$PKG" "popupWindow.title"
+R act tap --package "$PKG" --test-id popupWindow.action >/dev/null
+wait_compact "$PKG" "Popup applied"
+# 2. A Spinner dropdown: framework popup, rows addressable only by label.
+R act tap --package "$PKG" --test-id popup.spinner >/dev/null
+wait_compact "$PKG" "Basic"
+R act tap --package "$PKG" --label "Pro" >/dev/null
+wait_compact "$PKG" "Spinner: Pro"
+# 3. A PopupMenu (the overflow shape), same story.
+R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
+wait_compact "$PKG" "Delete item"
+R act tap --package "$PKG" --label "Delete item" >/dev/null
+wait_compact "$PKG" "Menu: Delete item"
+# --label must REFUSE an ambiguous match rather than tap the first candidate: a
+# silent wrong tap is the failure mode this whole suite exists to catch.
+AMBIG="$(R act tap --package "$PKG" --label "Show" 2>&1 || true)"
+echo "$AMBIG" | grep -q "matched 2 visible nodes" \
+  || { echo "FAIL: an ambiguous --label must be refused, got: $AMBIG"; exit 1; }
+POPUP_LOGS="$(R debug logs --package "$PKG")"
+echo "$POPUP_LOGS" | grep -q "popup_menu_picked" \
+  || { echo "FAIL: expected popup_menu_picked in the app log bridge"; exit 1; }
+
 echo "== LONG LIST (recycling boundary + scroll evidence) =="
 # The commonest E2E dead end: a RecyclerView binds only its visible window, so a
 # far-down row has NO node, frame, or selector — it is absent, not off-screen.
@@ -563,12 +594,14 @@ echo "$WEB_LOTTIE" | grep "webLottie.message" | grep -q "Processing your request
   || { echo "FAIL: web lottie message not captured"; exit 1; }
 echo "$WEB_LOTTIE" | grep "webLottie.done" | grep -q 'button' \
   || { echo "FAIL: web lottie 'Done' button not captured"; exit 1; }
-# The DOM button must land: #lottie-done sets #web-status to "Done".
+# The DOM button must land: #lottie-done sets #web-status to "Done". POLL for it
+# rather than taking one snapshot: the DOM bridge caps its evaluateJavascript wait
+# at 750ms, and while lottie-web animates on a software-GPU emulator that budget
+# can lapse — the WebView then degrades to an opaque node (its honest L0), so a
+# single capture can miss the whole DOM and read as "the tap didn't land".
 R act tap --package "$PKG" --css "#lottie-done" >/dev/null
-sleep 1
+wait_compact "$PKG" "Done"
 R ui report --package "$PKG" --output "$TMP/web-lottie-done"
-R ui compact "$TMP/web-lottie-done/snapshot.json" | grep "webLottie.status" | grep -q "Done" \
-  || { echo "FAIL: tapping the web lottie 'Done' button did not update the status"; exit 1; }
 
 echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
 # A modal built as a Web Component whose content lives in an OPEN shadow root.

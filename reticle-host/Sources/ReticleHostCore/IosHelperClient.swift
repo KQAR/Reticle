@@ -481,6 +481,11 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     private func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
         if let p = parsePoint(params["point"]) { return p }
         let selector = selectorFromParams(params)
+        if let label = selector.label {
+            // Ambiguity must reach the user; Render.findNode swallows it to keep
+            // its non-throwing shape.
+            _ = try Render.labelMatch(snapshot, label).map { $0 }
+        }
         guard let node = Render.findNode(snapshot, selector) else {
             throw HelperError("could not resolve a tap point from selector \(selector.describe())"
                 + Self.scrollHint(snapshot))
@@ -839,6 +844,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             cssSelector: params["css"] as? String,
             ref: params["ref"] as? String,
             point: parsePoint(params["point"]),
+            label: params["label"] as? String,
             region: params["region"] as? String
         )
     }

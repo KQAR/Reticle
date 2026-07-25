@@ -149,7 +149,7 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     }
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]
-    for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "region", "from", "to",
+    for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "label", "region", "from", "to",
               "duration", "text", "container", "direction", "max-swipes"] {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }

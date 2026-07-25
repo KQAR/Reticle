@@ -49,6 +49,9 @@ class SelectorResolver(
         selector.ref?.let { ref ->
             semantic.node(ref)?.frame?.let { return Resolved(center(it), "semantic:ref", ref) }
         }
+        selector.label?.let { label ->
+            labelMatch(label)?.let { n -> n.frame?.let { return Resolved(center(it), "label", n.ref) } }
+        }
 
         // 3. Fall back to view-tree frames.
         val node = when {
@@ -56,9 +59,78 @@ class SelectorResolver(
             selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
             selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
             selector.ref != null -> snapshot.nodes[selector.ref]
+            selector.label != null -> labelMatch(selector.label!!)
             else -> null
         }
         node?.frame?.let { return Resolved(center(it), "view", node.ref) }
+        return null
+    }
+
+    /**
+     * The single visible node whose text / a11y label matches, for framework
+     * controls with no id of their own (a `Spinner`'s rows, `PopupMenu` items,
+     * alert buttons — captured, but sharing one resource id like `text1`).
+     *
+     * Two rules keep it deterministic rather than "close enough":
+     *   - exact match first, substring only if nothing matched exactly;
+     *   - ambiguity THROWS. Silently taking the first of several matches is how a
+     *     tap lands on the wrong row while looking like it worked.
+     *
+     * Scoped to the topmost window, so a menu item wins over identical text left
+     * behind on the screen underneath it.
+     */
+    private fun labelMatch(label: String): Node? {
+        val top = topWindowRef()
+        val candidates = snapshot.nodes.values.filter { node ->
+            node.isVisible && node.frame != null &&
+                (top == null || windowRefOf(node) == top)
+        }
+        fun textOf(node: Node) = node.text ?: node.contentDescription
+        val exact = candidates.filter { textOf(it)?.trim() == label }
+        val matches = exact.ifEmpty {
+            candidates.filter { textOf(it)?.contains(label, ignoreCase = true) == true }
+        }
+        // Nested duplicates are not an ambiguity: a row container repeats its
+        // child's text, and an alert button wraps a label with the same string at
+        // (almost) the same point. Drop any match that is an ANCESTOR of another
+        // and keep the innermost. Two matches in DIFFERENT subtrees stay ambiguous
+        // — that is the case worth refusing.
+        val leaves = matches.filter { node -> matches.none { isAncestor(node, it) } }
+        return when {
+            leaves.isEmpty() -> null
+            leaves.size == 1 -> leaves.first()
+            else -> throw CliError(
+                "label '$label' matched ${leaves.size} visible nodes " +
+                    leaves.take(6).joinToString(", ") { n ->
+                        "'${n.text ?: n.contentDescription}' at ${n.frame?.let { f -> "${f.x.toInt()},${f.y.toInt()}" }} (${n.ref})"
+                    } +
+                    ". Refusing to guess — narrow it with --test-id / --resource-id / --ref, or use --point."
+            )
+        }
+    }
+
+    /** Is [candidate] a proper ancestor of [node]? */
+    private fun isAncestor(candidate: Node, node: Node): Boolean {
+        var current = node.parentRef?.let { snapshot.nodes[it] }
+        while (current != null) {
+            if (current.ref == candidate.ref) return true
+            current = current.parentRef?.let { snapshot.nodes[it] }
+        }
+        return false
+    }
+
+    /** The last visible window root; popups/dialogs stack last. */
+    private fun topWindowRef(): String? =
+        snapshot.root()?.children
+            ?.filter { snapshot.nodes[it]?.kind == dev.reticle.core.NodeKind.window }
+            ?.lastOrNull { snapshot.nodes[it]?.isVisible == true }
+
+    private fun windowRefOf(node: Node): String? {
+        var current: Node? = node
+        while (current != null) {
+            if (current.kind == dev.reticle.core.NodeKind.window) return current.ref
+            current = current.parentRef?.let { snapshot.nodes[it] }
+        }
         return null
     }
 

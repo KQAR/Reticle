@@ -154,14 +154,19 @@ public struct Selector: Codable, Sendable {
     public var cssSelector: String?
     public var ref: String?
     public var point: Point?
+    /// Visible text or a11y label, for framework controls with no stable id
+    /// (Spinner rows, PopupMenu items, alert buttons). Exact match first, then
+    /// substring; ambiguity is an error, never a silent first match.
+    public var label: String?
     public var region: String?
 
-    public init(testId: String? = nil, resourceId: String? = nil, cssSelector: String? = nil, ref: String? = nil, point: Point? = nil, region: String? = nil) {
+    public init(testId: String? = nil, resourceId: String? = nil, cssSelector: String? = nil, ref: String? = nil, point: Point? = nil, label: String? = nil, region: String? = nil) {
         self.testId = testId
         self.resourceId = resourceId
         self.cssSelector = cssSelector
         self.ref = ref
         self.point = point
+        self.label = label
         self.region = region
     }
 
@@ -172,6 +177,7 @@ public struct Selector: Codable, Sendable {
         else if let cssSelector { base = "css=\(cssSelector)" }
         else if let ref { base = "ref=\(ref)" }
         else if let point { base = "point=\(point.x),\(point.y)" }
+        else if let label { base = "label=\(label)" }
         if let region { return "\(base) region=\"\(region)\"" }
         return base
     }

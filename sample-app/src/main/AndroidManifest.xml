@@ -33,6 +33,10 @@
             android:exported="false"
             android:label="Agreement Regions" />
         <activity
+            android:name="dev.reticle.sample.PopupScenarioActivity"
+            android:exported="false"
+            android:label="Popup Windows" />
+        <activity
             android:name="dev.reticle.sample.ListScenarioActivity"
             android:exported="false"
             android:label="Long List" />
