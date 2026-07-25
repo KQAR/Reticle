@@ -318,6 +318,39 @@ R ui report --package "$PKG" --output "$TMP/webview-after"
 R ui compact "$TMP/webview-after/snapshot.json" | grep -q "Web paid" \
   || { echo "FAIL: DOM tap did not fire #web-pay onclick (web.status never became 'Web paid')"; exit 1; }
 
+echo "== SAME-ORIGIN IFRAME (chained selector + page-offset geometry) =="
+# The DOM walk pierces same-origin iframes and accumulates the frame's page
+# offset, because frame content coordinates are relative to the FRAME viewport.
+# Nothing asserted that offset before, and getting it wrong is silent: the rect
+# lands near the top of the page and a coordinate tap hits an unrelated element.
+# The complex fixture carries the frame; it is selected by the fixture extra
+# (`am start` from shell can start the non-exported activity).
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario complex >/dev/null 2>&1
+wait_compact "$PKG" "complex.iframeButton"
+R ui report --package "$PKG" --output "$TMP/iframe"
+R ui node "$TMP/iframe/snapshot.json" --css "#fixture-frame >>> #iframe-button" >/dev/null \
+  || { echo "FAIL: chained selector for same-origin iframe content did not resolve"; exit 1; }
+# Geometry: the frame's inner button must sit INSIDE the iframe element's rect. A
+# dropped page offset fails this while still producing a plausible-looking rect.
+/usr/bin/python3 - "$TMP/iframe/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "complex.iframe")
+button = next(n["frame"] for n in nodes if n.get("testId") == "complex.iframeButton")
+inside = (button["x"] >= frame["x"] - 1 and button["y"] >= frame["y"] - 1
+          and button["x"] + button["width"] <= frame["x"] + frame["width"] + 1
+          and button["y"] + button["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: iframe content rect {button} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+# A COORDINATE tap (not DOM activation, which would pass even with a wrong rect)
+# at the reported rect must fire the frame's own onclick.
+R act tap --package "$PKG" --css "#fixture-frame >>> #iframe-button" >/dev/null
+wait_compact "$PKG" "Frame clicked"
+
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField
 # Focus the code field so the soft keyboard comes up.

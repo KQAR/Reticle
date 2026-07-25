@@ -138,8 +138,16 @@ enum SampleWebFixtures {
 
             <section id="boundaries">
               <div id="shadow-host" data-testid="complex.shadowHost">Shadow host</div>
+              <!--
+                A same-origin (srcdoc) frame. The button carries its own onclick so
+                a COORDINATE tap can be told apart from one that merely dispatched:
+                the frame's content coordinates are relative to the frame viewport,
+                so a missing page offset puts the reported rect at the top of the
+                page and the tap lands somewhere else entirely.
+              -->
               <iframe id="fixture-frame" data-testid="complex.iframe"
-                srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'>Inside frame</button>">
+                srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'
+                  onclick='this.innerText=&quot;Frame clicked&quot;'>Inside frame</button>">
               </iframe>
               <p id="hidden-display">Hidden by display</p>
               <p id="hidden-visibility">Hidden by visibility</p>
