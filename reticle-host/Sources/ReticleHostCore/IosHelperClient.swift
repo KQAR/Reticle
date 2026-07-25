@@ -177,7 +177,10 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         let pkg = try bundleId(params)
         do {
             let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.screenshot)
-            return ["via": "agent", "pngBase64": data.base64EncodedString()]
+            var out: [String: Any] = ["via": "agent", "pngBase64": data.base64EncodedString()]
+            let degraded = screenshotDegrades(pkg)
+            if !degraded.isEmpty { out["degraded"] = degraded }
+            return out
         } catch {
             if let serial, !serial.isEmpty,
                (try? Simctl.listDevices().contains { $0.udid == serial && $0.state == "Booted" }) == true {
@@ -185,6 +188,22 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                 return ["via": "simctl", "pngBase64": png.base64EncodedString()]
             }
             throw error
+        }
+    }
+
+    /// What the in-process picture is missing, said out loud rather than left as a
+    /// blank rect: nodes the agent marked `pixels:unavailable` — on iOS the system
+    /// keyboard's host window, which refuses to render into a borrowed context, so
+    /// the keys are simply absent from the image (measured against
+    /// `simctl io screenshot`). Best-effort: no snapshot, no note.
+    private func screenshotDegrades(_ pkg: String) -> [String] {
+        guard let snapshot = try? fetchSnapshot(pkg) else { return [] }
+        return snapshot.nodes.values.filter { $0.pixelsUnavailable() }.map { node in
+            let id = node.testId ?? node.ref
+            let where_ = node.frame.map { " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? ""
+            return "\(id)\(where_) is not in this picture: \(node.typeName ?? "this window") "
+                + "does not render into an in-process context. A device-level capture "
+                + "(`xcrun simctl io <udid> screenshot`) shows it."
         }
     }
 

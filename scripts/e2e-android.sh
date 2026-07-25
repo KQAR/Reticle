@@ -71,12 +71,20 @@ wait_runtime() { # package
 # starts — which can be BEFORE the first Activity attaches its window — so a
 # healthy runtime alone does not mean on-screen content is present yet.
 wait_compact() { # package needle
-  local pkg="$1" needle="$2" deadline=$(( $(date +%s) + 60 ))
+  local pkg="$1" needle="$2" last="" deadline=$(( $(date +%s) + 60 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if R ui compact --live --package "$pkg" 2>/dev/null | grep -q "$needle"; then return 0; fi
+    last="$(R ui compact --live --package "$pkg" 2>&1 || true)"
+    if printf '%s' "$last" | grep -q "$needle"; then return 0; fi
     sleep 2
   done
-  echo "FAIL: '$needle' never appeared on screen for $pkg within 60s"; exit 1
+  # Print what WAS on screen. A bare timeout cannot distinguish "the tap never
+  # landed" from "the dialog is up but the capture degraded under animation load" —
+  # the shape of the flake this suite has hit twice on a software-GPU emulator.
+  echo "FAIL: '$needle' never appeared on screen for $pkg within 60s"
+  echo "--- last observation (why it timed out) ---"
+  printf '%s\n' "$last"
+  echo "-------------------------------------------"
+  exit 1
 }
 boot_app() { # package
   "$ADB" -s "$SERIAL" shell am force-stop "$1" >/dev/null 2>&1 || true
@@ -769,6 +777,76 @@ R ui compact "$TMP/lottie-only-done/snapshot.json" | grep "lottieOnly.status" | 
   || { echo "FAIL: tapping the recovered Lottie 'Delete' position did not fire the in-canvas callback"; exit 1; }
 R debug logs --package "$PKG" | grep -q "lottie_only_choice" \
   || { echo "FAIL: expected lottie_only_choice in the app log bridge"; exit 1; }
+
+echo "== SCREENSHOT DEGRADE (SurfaceView + FLAG_SECURE) =="
+# The two ways a screenshot lies, and they are exact complements — measured here,
+# not assumed:
+#   - a SurfaceView draws into its OWN surface (composited by SurfaceFlinger), so the
+#     agent's in-process Canvas walk leaves a transparent hole exactly there
+#     (rgba 0,0,0,0) while `adb exec-out screencap` shows the magenta surface;
+#   - FLAG_SECURE is the mirror: the in-process capture is unaffected while the
+#     device-level capture comes back fully blanked (rgba 0,0,0,255).
+# Either failure is SILENT by default, and a blank rect reads as "the app drew
+# nothing there" — the same trap `dom:unavailable` closed for the DOM. So each
+# absence must be LABELLED: `pixels:unavailable` on the node, `screencap:blank` on
+# the window, and a `degraded:` line on the picture that is actually missing them.
+# This asserts the labels AND the pixels behind them, so the labels can never drift
+# into being decorative.
+open_scenario scenario.screenshotDegrade degrade.surface
+# Read a single pixel: crop with sips (native, fast), downsample to 1x1, then decode
+# that trivial PNG. Pure-python unfiltering of a full-screen PNG would be far slower.
+PX_PY="$TMP/px.py"
+cat > "$PX_PY" <<'PYEOF'
+import sys, zlib, struct
+data = open(sys.argv[1], 'rb').read()
+pos, idat, ct = 8, b'', 6
+while pos < len(data):
+    ln, typ = struct.unpack('>I4s', data[pos:pos+8]); pos += 8
+    chunk = data[pos:pos+ln]; pos += ln + 4
+    if typ == b'IHDR': ct = struct.unpack('>IIBB', chunk[:10])[3]
+    elif typ == b'IDAT': idat += chunk
+    elif typ == b'IEND': break
+ch = {0: 1, 2: 3, 4: 2, 6: 4}[ct]
+px = list(zlib.decompress(idat)[1:1 + ch])   # 1x1: one filter byte, then the pixel
+while len(px) < 4: px.append(255)
+print(",".join(str(v) for v in px))
+PYEOF
+pixel_at() { # png x y -> "r,g,b,a"
+  sips -c 40 40 --cropOffset "$3" "$2" "$1" --out "$TMP/px-crop.png" >/dev/null 2>&1
+  sips -z 1 1 "$TMP/px-crop.png" --out "$TMP/px-tiny.png" >/dev/null 2>&1
+  /usr/bin/python3 "$PX_PY" "$TMP/px-tiny.png"
+}
+SURFACE_RECT="$(R ui compact --live --package "$PKG" | grep "degrade.surface")"
+echo "$SURFACE_RECT"
+echo "$SURFACE_RECT" | grep -q "pixels:unavailable" \
+  || { echo "FAIL: the SurfaceView must be marked pixels:unavailable"; exit 1; }
+R ui screenshot --package "$PKG" --output "$TMP/degrade-agent.png" | tee "$TMP/degrade-agent.txt"
+grep -q "degraded: degrade.surface" "$TMP/degrade-agent.txt" \
+  || { echo "FAIL: the screenshot must report the region it could not capture"; exit 1; }
+"$ADB" -s "$SERIAL" exec-out screencap -p > "$TMP/degrade-device.png"
+AGENT_PX="$(pixel_at "$TMP/degrade-agent.png" 400 500)"
+DEVICE_PX="$(pixel_at "$TMP/degrade-device.png" 400 500)"
+echo "surface pixel: agent=$AGENT_PX device=$DEVICE_PX"
+[ "$AGENT_PX" = "0,0,0,0" ] \
+  || { echo "FAIL: the in-process capture should have a transparent hole over the SurfaceView, got $AGENT_PX"; exit 1; }
+echo "$DEVICE_PX" | grep -q "^255,0,255" \
+  || { echo "FAIL: the device capture should show the magenta surface, got $DEVICE_PX"; exit 1; }
+# FLAG_SECURE: now the DEVICE capture is the blind one, and it must say so too.
+R act tap --package "$PKG" --test-id degrade.secureToggle >/dev/null
+wait_compact "$PKG" "Secure: on"
+R ui screenshot --package "$PKG" --output "$TMP/degrade-agent-secure.png" | tee "$TMP/degrade-secure.txt"
+grep -q "FLAG_SECURE window" "$TMP/degrade-secure.txt" \
+  || { echo "FAIL: a FLAG_SECURE window must be reported alongside the picture"; exit 1; }
+"$ADB" -s "$SERIAL" exec-out screencap -p > "$TMP/degrade-device-secure.png"
+SECURE_DEVICE_PX="$(pixel_at "$TMP/degrade-device-secure.png" 400 150)"
+SECURE_AGENT_PX="$(pixel_at "$TMP/degrade-agent-secure.png" 400 150)"
+echo "secure pixel: agent=$SECURE_AGENT_PX device=$SECURE_DEVICE_PX"
+[ "$SECURE_DEVICE_PX" = "0,0,0,255" ] \
+  || { echo "FAIL: the device capture of a FLAG_SECURE window should be blank, got $SECURE_DEVICE_PX"; exit 1; }
+[ "$SECURE_AGENT_PX" != "0,0,0,255" ] \
+  || { echo "FAIL: the in-process capture should be unaffected by FLAG_SECURE, got $SECURE_AGENT_PX"; exit 1; }
+R debug logs --package "$PKG" | grep -q "screenshot_secure_toggled" \
+  || { echo "FAIL: expected screenshot_secure_toggled in the app log bridge"; exit 1; }
 
 echo "== INJECTION path (noagent app, JDWP) =="
 # The noagent flavor carries none of dev.reticle.agent.* — the injected dex is

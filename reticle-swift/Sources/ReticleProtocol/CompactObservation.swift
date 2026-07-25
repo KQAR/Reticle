@@ -63,7 +63,9 @@ public struct CompactObservation: Codable, Sendable {
                         isInteractive: node.isInteractive,
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
-                        domUnavailable: node.domUnavailable()
+                        domUnavailable: node.domUnavailable(),
+                        pixelsUnavailable: node.pixelsUnavailable(),
+                        screencapBlank: node.screencapBlank()
                     )
                 )
             }
@@ -100,6 +102,14 @@ public struct CompactItem: Codable, Sendable {
     /// its budget). Without it, "no DOM nodes" and "this web view is empty" are the
     /// same observation.
     public var domUnavailable: Bool
+    /// True when this node's pixels are missing from an IN-PROCESS screenshot (an
+    /// iOS keyboard host window, an Android `SurfaceView`). The picture is not a
+    /// second opinion for these — it silently omits them.
+    public var pixelsUnavailable: Bool
+    /// True when this window's DEVICE-level capture is blanked (Android
+    /// `FLAG_SECURE`) while the in-process one is not. The complement of
+    /// `pixelsUnavailable`.
+    public var screencapBlank: Bool
 
     public init(
         ref: String,
@@ -112,7 +122,9 @@ public struct CompactItem: Codable, Sendable {
         isInteractive: Bool = false,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
-        domUnavailable: Bool = false
+        domUnavailable: Bool = false,
+        pixelsUnavailable: Bool = false,
+        screencapBlank: Bool = false
     ) {
         self.ref = ref
         self.role = role
@@ -125,6 +137,8 @@ public struct CompactItem: Codable, Sendable {
         self.occludedBy = occludedBy
         self.scroll = scroll
         self.domUnavailable = domUnavailable
+        self.pixelsUnavailable = pixelsUnavailable
+        self.screencapBlank = screencapBlank
     }
 
     /// One-line rendering for agent-facing text output. Matches reticle-core's `line()`.
@@ -143,12 +157,14 @@ public struct CompactItem: Codable, Sendable {
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         if domUnavailable { state += " dom:unavailable" }
+        if pixelsUnavailable { state += " pixels:unavailable" }
+        if screencapBlank { state += " screencap:blank" }
         return "\(selector) \(role)\(labelPart)\(framePart)\(state)"
     }
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive, occludedBy, scroll
-        case domUnavailable
+        case domUnavailable, pixelsUnavailable, screencapBlank
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -164,6 +180,8 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
+        if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
+        if screencapBlank { try c.encode(screencapBlank, forKey: .screencapBlank) }
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,5 +197,7 @@ public struct CompactItem: Codable, Sendable {
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
+        pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false
+        screencapBlank = try c.decodeIfPresent(Bool.self, forKey: .screencapBlank) ?? false
     }
 }

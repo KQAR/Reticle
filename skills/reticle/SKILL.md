@@ -131,6 +131,15 @@ instead of a 30s hang.
 link the agent: you can still see the screen (and drive it via `adb`-backed
 `act`/`--point`) even when no structured tree is available.
 
+**Do not read a blank rect as "nothing was drawn."** The two capture paths are blind
+in complementary ways, and each says so: the in-process picture omits a
+`SurfaceView`'s content (its node is marked `pixels:unavailable`; on iOS the same
+mark lands on the keyboard's host window), while a device-level `screencap` of a
+`FLAG_SECURE` window comes back fully blank (that window is marked
+`screencap:blank`). `ui screenshot` prints a `degraded:` line for whatever the
+picture it just wrote is missing — when you see one, switch paths rather than
+concluding the screen is empty.
+
 ## Core workflow
 
 ```bash

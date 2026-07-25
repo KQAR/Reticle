@@ -163,6 +163,15 @@ struct SnapshotCapture {
         if let testId {
             custom.merge(ReticleRuntime.shared.metadata(for: testId)) { _, new in new }
         }
+        // The in-process screenshot silently omits the keyboard: its host window
+        // refuses to render into a borrowed context (`drawHierarchy` returns false),
+        // and `ScreenshotCapture` skips it rather than let it black out everything
+        // below. Measured with the login scenario — the agent's picture is the app's
+        // plain background where `simctl io screenshot` shows the keys. Label the
+        // absence so nobody reads that blank strip as "no keyboard".
+        if SnapshotCapture.isKeyboardHostWindow(view) {
+            custom["pixelStatus"] = .text("unavailable")
+        }
 
         // Sub-node interaction evidence (link runs, virtual a11y elements,
         // re-colored runs, text markers, char grid).

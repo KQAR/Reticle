@@ -372,6 +372,19 @@ echo "$LOGIN_COMPACT" | grep -q "keyboard: visible" \
   || { echo "FAIL: compact must lead with 'keyboard: visible' while the keyboard is up"; exit 1; }
 echo "$LOGIN_COMPACT" | grep "login.submitButton" | grep -q "occluded-by:keyboard" \
   || { echo "FAIL: the covered submit button must be marked occluded-by:keyboard"; exit 1; }
+# The screenshot's own blind spot, on the same screen. The keyboard's host window
+# refuses to render into a borrowed context (`drawHierarchy` returns false), and the
+# capture skips it rather than let it black out everything below — correct, but
+# silent until now. Measured on iOS 26.3: over the keys the agent's picture is the
+# app's plain background (255,255,255) while `simctl io screenshot` shows the
+# keyboard (239,240,242 / 226,228,232). So the absence gets labelled, exactly as
+# `dom:unavailable` labels an unreadable DOM: `pixels:unavailable` on the window,
+# plus a `degraded:` line on the picture that is missing it.
+echo "$LOGIN_COMPACT" | grep "window" | grep -q "pixels:unavailable" \
+  || { echo "FAIL: the keyboard host window must be marked pixels:unavailable"; exit 1; }
+"$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/login-shot.png" | tee "$TMP/login-shot.txt"
+grep -q "is not in this picture" "$TMP/login-shot.txt" \
+  || { echo "FAIL: the screenshot must report the window it could not capture"; exit 1; }
 # Dismiss in-process and confirm the settled state round-trips.
 HIDE_OUT="$("$HOST" --target ios act hide-keyboard --package "$LINKED_ID")"
 echo "$HIDE_OUT"

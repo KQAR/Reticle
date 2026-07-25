@@ -90,5 +90,9 @@
             android:name="dev.reticle.sample.LottieOnlyDialogScenarioActivity"
             android:exported="false"
             android:label="Lottie-only Dialog" />
+        <activity
+            android:name="dev.reticle.sample.ScreenshotDegradeScenarioActivity"
+            android:exported="false"
+            android:label="Screenshot Degrade" />
     </application>
 </manifest>
