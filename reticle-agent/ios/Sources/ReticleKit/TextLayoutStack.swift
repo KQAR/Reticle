@@ -21,8 +21,13 @@ struct TextLayoutStack {
     private let storage: NSTextStorage?
     /// Origin of the text container in the view's own coordinate space.
     private let originInView: CGPoint
+    /// Set when there is no backing view to convert through: an accessibility
+    /// element's frame is already in screen coordinates, so the container origin IS
+    /// the screen origin.
+    private let screenOrigin: CGPoint?
 
     init?(view: UIView) {
+        screenOrigin = nil
         switch view {
         case let textView as UITextView:
             guard let attributed = textView.attributedText, attributed.length > 0 else { return nil }
@@ -56,6 +61,26 @@ struct TextLayoutStack {
         }
     }
 
+    /// A stack for text that has NO backing view to borrow geometry from: a SwiftUI
+    /// accessibility element, whose attributed label and screen frame are all that
+    /// exist. Same reconstruction as the `UILabel` case, anchored to the screen rect
+    /// instead of a view.
+    init?(attributed: NSAttributedString, screenFrame: Rect) {
+        guard attributed.length > 0, screenFrame.width > 0 else { return nil }
+        self.attributed = attributed
+        let textStorage = NSTextStorage(attributedString: attributed)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(width: screenFrame.width, height: .greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        manager = layoutManager
+        container = textContainer
+        storage = textStorage
+        originInView = .zero
+        screenOrigin = CGPoint(x: screenFrame.x, y: screenFrame.y)
+    }
+
     /// A label set via plain `text` still needs font/color attributes for the
     /// rebuilt stack to measure like the real one.
     private static func effectiveAttributedText(of label: UILabel) -> NSAttributedString? {
@@ -71,7 +96,7 @@ struct TextLayoutStack {
 
     /// Per-line screen rects for a character range. A range wrapping across
     /// lines yields one rect per line — never collapsed to a single block.
-    func screenRects(for range: NSRange, in view: UIView) -> [Rect] {
+    func screenRects(for range: NSRange, in view: UIView?) -> [Rect] {
         guard range.length > 0, range.location + range.length <= attributed.length else { return [] }
         let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
         var rects: [CGRect] = []
@@ -91,7 +116,7 @@ struct TextLayoutStack {
     /// from the layout manager — robust across fonts, kerning, and spacing).
     /// `approximate` flags mixed-direction text, where a logical range can map
     /// to a non-contiguous visual span.
-    func charLines(in view: UIView) -> ([CharLine], Bool) {
+    func charLines(in view: UIView?) -> ([CharLine], Bool) {
         let fullGlyphs = manager.glyphRange(for: container)
         guard fullGlyphs.length > 0 else { return ([], false) }
         let text = attributed.string as NSString
@@ -150,16 +175,20 @@ struct TextLayoutStack {
 
     // MARK: - Coordinate conversion
 
-    private func screenRect(containerRect: CGRect, in view: UIView) -> Rect {
+    private func screenRect(containerRect: CGRect, in view: UIView?) -> Rect {
         let topLeft = screenPoint(containerPoint: containerRect.origin, in: view)
         return Rect(x: topLeft.x, y: topLeft.y, width: Double(containerRect.width), height: Double(containerRect.height))
     }
 
     /// Container coords -> view coords -> window coords -> screen coords,
     /// mirroring SnapshotCapture's frame math.
-    private func screenPoint(containerPoint: CGPoint, in view: UIView) -> (x: Double, y: Double) {
+    private func screenPoint(containerPoint: CGPoint, in view: UIView?) -> (x: Double, y: Double) {
+        // No view: the container was anchored to a screen rect to begin with.
+        if let screenOrigin {
+            return (Double(containerPoint.x + screenOrigin.x), Double(containerPoint.y + screenOrigin.y))
+        }
         let inView = CGPoint(x: containerPoint.x + originInView.x, y: containerPoint.y + originInView.y)
-        guard let window = view.window else {
+        guard let view, let window = view.window else {
             return (Double(inView.x), Double(inView.y))
         }
         let inWindow = view.convert(inView, to: nil)

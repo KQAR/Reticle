@@ -527,6 +527,23 @@ addressable — this is a documented contract, not a bug. An optional, default-o
 `RETICLE_SWIFTUI_REFLECT=1`) is surfaced as evidence-tagged metadata, never as a
 selector.
 
+**Links inside one `Text` are sub-regions of that element**, the same shape the
+Compose bridge handles on Android. A markdown `Text` ("Read the \[Terms]\(…) and
+\[Privacy]\(…)") is ONE accessibility element with one label: no `UILabel`, no
+`NSAttributedString.link` run, no child element, and no view to measure, so every
+`RegionProbe` channel comes up empty. The one surface that does exist — measured,
+after the alternatives (child elements, element count, custom actions, custom
+rotors, `_accessibility*` link accessors) all returned nothing — is
+`accessibilityAttributedLabel`, which splits the label into runs carrying
+`UIAccessibilityTokenLink` on the link ranges plus per-run font tokens. Those are
+system-emitted attributes on a public property, not SwiftUI internals.
+`SwiftUITextRegions` re-lays those runs out with their own fonts inside the
+element's screen frame (the `TextLayoutStack` reconstruction, anchored to a screen
+rect instead of a view) and emits per-link `span` regions plus a char grid.
+Geometry is therefore **reconstructed, not read** — pinned end to end by the iOS
+suite, which taps each recovered rect and checks which URL the app's `openURL`
+handler actually received.
+
 ## What stays on disk vs. what goes to the agent
 
 Full snapshots are written to disk (`ui report` → `snapshot.json`), and agents
