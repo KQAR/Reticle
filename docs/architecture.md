@@ -203,6 +203,21 @@ an opaque L0 leaf. CSS targeting is host-side: DOM nodes carry a `domCssSelector
 metadata field, and `act tap --css '#web-pay'` resolves that snapshot node to a
 real adb tap point.
 
+**Third-party kernels (X5/TBS, UC) are a boundary, deliberately not an adapter.**
+`WebViewBridge` is typed on `android.webkit.WebView`; a kernel that only *calls*
+itself a WebView cannot be attached to, so such a view has no DOM at any level —
+structurally, not transiently. A reflective adapter was considered and **rejected**:
+it could not be verified without a real kernel sample, and an unverifiable bridge
+that silently returns nothing is worse than a stated boundary. What Reticle does
+instead is refuse to look like an empty page — `SnapshotCapture` marks a view whose
+class says WebView but is not the platform one (and which wraps no real WebView)
+with `custom["domStatus"] = "unsupportedKernel"` plus `custom["domKernel"]` naming
+the class, compact renders `dom:unsupported-kernel`, and a `--css` miss on that
+screen explains why no selector can ever match. The test is the shape, not a vendor
+list, so it needs no maintenance as kernels come and go; "suspected" is the honest
+word, which is why the class name travels with the claim. iOS has one web engine,
+so this cannot arise there.
+
 ## Two trees, and which command uses which
 
 Reticle maintains **two separate trees** from a single capture. Confusing them

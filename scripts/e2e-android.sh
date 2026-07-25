@@ -848,6 +848,33 @@ echo "secure pixel: agent=$SECURE_AGENT_PX device=$SECURE_DEVICE_PX"
 R debug logs --package "$PKG" | grep -q "screenshot_secure_toggled" \
   || { echo "FAIL: expected screenshot_secure_toggled in the app log bridge"; exit 1; }
 
+echo "== THIRD-PARTY WEBVIEW KERNEL (a boundary that says its own name) =="
+# `WebViewBridge` is typed on android.webkit.WebView, so an X5/TBS or UC kernel has
+# NO DOM at any level — and the failure used to be indistinguishable from a page
+# that happened to be empty. A reflective adapter was rejected (unverifiable without
+# a real kernel sample), so the deliverable is the label, not the capability.
+# The fixture is a self-drawn view whose class is named WebView but is not the
+# platform one — exactly the shape the shipped rule tests — next to a REAL WebView,
+# because the contrast is what makes the marker mean anything.
+open_scenario scenario.foreignKernel kernel.foreign
+KERNEL_COMPACT="$(R ui compact --live --package "$PKG")"
+echo "$KERNEL_COMPACT"
+echo "$KERNEL_COMPACT" | grep "kernel.foreign" | grep -q "dom:unsupported-kernel" \
+  || { echo "FAIL: a suspected third-party kernel must be marked dom:unsupported-kernel"; exit 1; }
+# The real WebView beside it still has its DOM: the marker is about THIS kernel, not
+# a blanket "web is unreadable".
+echo "$KERNEL_COMPACT" | grep -q "Real WebView DOM" \
+  || { echo "FAIL: the real WebView's DOM must still be captured on the same screen"; exit 1; }
+echo "$KERNEL_COMPACT" | grep "kernel.real" | grep -q "dom:unsupported-kernel" \
+  && { echo "FAIL: a real android.webkit.WebView must NOT be flagged as a foreign kernel"; exit 1; }
+# The claim carries its evidence: which class triggered it.
+R ui node --live --package "$PKG" --test-id kernel.foreign | grep -q "foreignkernel.WebView" \
+  || { echo "FAIL: the node must name the class behind the kernel suspicion"; exit 1; }
+# And the wall is explained where an agent actually hits it — a --css miss.
+KERNEL_MISS="$(R act tap --package "$PKG" --css "#not-there" 2>&1 || true)"
+echo "$KERNEL_MISS" | grep -q "third-party WebView kernel" \
+  || { echo "FAIL: a --css miss must explain the kernel boundary, got: $KERNEL_MISS"; exit 1; }
+
 echo "== INJECTION path (noagent app, JDWP) =="
 # The noagent flavor carries none of dev.reticle.agent.* — the injected dex is
 # their sole source. Prove observation works in an app that never linked the AAR.

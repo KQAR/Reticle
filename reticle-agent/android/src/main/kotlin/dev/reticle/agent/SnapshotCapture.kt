@@ -201,7 +201,9 @@ class SnapshotCapture(private val context: Context) {
             isVisible = view.visibility == View.VISIBLE && view.width > 0 && view.height > 0,
             isEnabled = view.isEnabled,
             isInteractive = isInteractive,
-            custom = scalarProperties(view) + screenshotStatus(view, isWindow = kindOverride == NodeKind.window),
+            custom = scalarProperties(view) +
+                screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
+                foreignWebKernel(view),
             children = childRefs,
             regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
@@ -231,6 +233,44 @@ class SnapshotCapture(private val context: Context) {
             out["screencapStatus"] = MetadataValue.Text("blank")
         }
         return out
+    }
+
+    /**
+     * A **suspected third-party WebView kernel** — X5/TBS
+     * (`com.tencent.smtt.sdk.WebView`), UC (`com.uc.webview.export.WebView`), and
+     * their kin. `WebViewBridge` is typed on `android.webkit.WebView`, so none of
+     * them can be bridged and the view is simply an opaque rect: no DOM at any
+     * level, ever. Reticle deliberately does NOT add a reflective adapter for them
+     * (it could not be verified without a real kernel sample), so the honest move is
+     * to make the boundary say its own name instead of looking like an empty page.
+     *
+     * The test is the shape, not a vendor list: a class that calls itself a WebView
+     * yet is not the platform one. An app's own subclass of the real `WebView` never
+     * reaches here (it IS a `WebView`), and a container that merely wraps one is
+     * excluded by the descendant check — a wrapper's DOM is available through the
+     * real view inside it. "Suspected" is the honest word, so the class name rides
+     * along as evidence.
+     */
+    private fun foreignWebKernel(view: View): Map<String, MetadataValue> {
+        if (view is WebView) return emptyMap()
+        val className = view.javaClass.name
+        if (!className.contains("WebView")) return emptyMap()
+        if (containsSystemWebView(view)) return emptyMap()
+        return mapOf(
+            "domStatus" to MetadataValue.Text("unsupportedKernel"),
+            "domKernel" to MetadataValue.Text(className),
+        )
+    }
+
+    /** Does this subtree hold a real `android.webkit.WebView`? Then it is a wrapper. */
+    private fun containsSystemWebView(view: View): Boolean {
+        if (view is WebView) return true
+        if (view !is ViewGroup) return false
+        for (i in 0 until view.childCount) {
+            val child = view.getChildAt(i) ?: continue
+            if (containsSystemWebView(child)) return true
+        }
+        return false
     }
 
     /** `FLAG_SECURE` on this window root's layout params, when it has any. */

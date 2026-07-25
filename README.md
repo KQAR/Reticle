@@ -39,6 +39,7 @@ input.
 | Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For a **debuggable** app without the AAR: `reticle app inject` loads a payload dex over JDWP and starts the runtime — no repackage, no root (works even on locked `user` builds where `wrap.sh` is blocked). Non-debuggable release builds still need Frida/root. |
 | Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. The port is derived per-app from the `applicationId` (agent and CLI compute the same value), so multiple linked apps never collide on one fixed port. |
 | Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
+| Read embedded web content | A read-only DOM bridge on `android.webkit.WebView` / `WKWebView`. A **third-party Android kernel** (X5/TBS, UC) cannot be bridged at all — that view is marked `dom:unsupported-kernel` rather than reported as an empty page. |
 | Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
 | Selector resolution | Semantic tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
 

@@ -130,6 +130,23 @@ data class Node(
      * `custom["pixelStatus"] = "unavailable"`; this is the single place that
      * spelling is interpreted.
      */
+    /**
+     * True when this node is a **suspected third-party WebView kernel** (X5/TBS,
+     * UC, …): a class whose name says WebView but which is not an
+     * `android.webkit.WebView`, so `WebViewBridge` — typed on the platform class —
+     * cannot attach and there is NO DOM for this view at any level. Unlike
+     * [domUnavailable], which is a transient read failure, this is a structural
+     * boundary: retrying, waiting, or dismissing a modal will never produce DOM
+     * nodes here. `custom["domKernel"]` carries the class that triggered it, so the
+     * claim can be checked rather than believed.
+     */
+    fun domKernelUnsupported(): Boolean =
+        (custom["domStatus"] as? MetadataValue.Text)?.value == "unsupportedKernel"
+
+    /** The class name behind [domKernelUnsupported], for reporting. */
+    fun domKernelName(): String? =
+        (custom["domKernel"] as? MetadataValue.Text)?.value
+
     fun pixelsUnavailable(): Boolean =
         (custom["pixelStatus"] as? MetadataValue.Text)?.value == "unavailable"
 

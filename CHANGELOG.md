@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **A third-party WebView kernel now says its own name.** `WebViewBridge` is typed on
+  `android.webkit.WebView`, so an X5/TBS or UC kernel — a class that *calls* itself a
+  WebView but is not the platform one — cannot be attached to: no `--css`, no styles,
+  no piercing, at any level. Until now that was indistinguishable from a page that
+  happened to be empty.
+
+  A reflective adapter was considered and **rejected**: it cannot be verified without
+  a real kernel sample, and an unverifiable bridge that silently returns nothing is
+  worse than a stated boundary. So the deliverable is the label, not the capability:
+  the node carries `dom:unsupported-kernel` with `custom.domKernel` naming the class
+  that triggered it, and a `--css` miss on that screen explains that no selector can
+  ever match there. It is kept distinct from `dom:unavailable` on purpose — that one
+  says "could not read it just now" (retry may help), this one says "there is nothing
+  to read" (retrying is pointless).
+
+  The rule is the SHAPE, not a vendor list, so it needs no upkeep: a class named
+  WebView that is not `android.webkit.WebView` and wraps no real one. `scenario.foreignKernel`
+  pins it with a self-drawn stand-in beside a REAL WebView, since the contrast — one
+  marked, one still serving its DOM — is what makes the marker mean anything. iOS has
+  one web engine, so this cannot arise there.
+
 - **The screenshot's blind spots are labelled, not left blank.** A picture is trusted
   more readily than a tree, so a silent omission in one is the worst kind of evidence.
   Measured on an emulator with a new `scenario.screenshotDegrade`, the two capture
