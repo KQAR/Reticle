@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Docs: the roadmap is a roadmap again.** It had grown to ~1000 lines in which
+  settled decisions, finished work, design sketches and open items were interleaved,
+  so "what is actually left?" could not be answered without reading all of it. Now
+  377 lines with one job per section: the goal and its scope constraints, a
+  current-state table, **`What's left` — the only to-do list in the file**, ordered
+  by leverage with a size and how well each item's cause is established (measured /
+  by construction / neither, and "neither" means reproduce it first), then
+  `Decisions of record`, `Investigated and dropped`, and the completed
+  boundary-case sweep.
+
+  Cut by deduplication rather than by deletion of substance: the event envelope and
+  taxonomy live in `reticle-protocol/events.md`, the honest-boundary list in
+  `docs/architecture.md`, the module map in `AGENTS.md`, the helper RPC contract in
+  `reticle-protocol/helper-rpc.md` — the roadmap now points at each instead of
+  carrying a second copy that could drift. Every decision kept its *why*. The
+  Chinese roadmap was regenerated against the same structure (it had been stale
+  since 2026-07-23), and inbound references from `DESIGN.md`,
+  `docs/architecture.md`, `reticle-protocol/helper-rpc.md` and
+  `reticle-host/Package.swift` now name sections that exist.
+
 - **Honest boundaries, collected in one place.** Everything an in-process observer
   structurally cannot reach — closed shadow roots, cross-origin iframes, third-party
   WebView kernels, bitmap-baked text, pure-Canvas controls with no accessibility

@@ -4,7 +4,7 @@ import PackageDescription
 // reticle-host — the Swift host CLI. It drives Android through the Kotlin
 // `reticle helper` over the JSONL RPC contract (reticle-protocol/helper-rpc.md);
 // it owns no device-specific code itself. This is the first real slice of the
-// "Swift host + per-platform helpers" direction (docs/roadmap.md). The
+// "Swift host + per-platform helpers" decision (docs/roadmap.md). The
 // Hummingbird-backed serve event-bus skeleton and read-only Web panel live here;
 // the capture proxy remains a later phase.
 let package = Package(
@@ -42,7 +42,7 @@ let package = Package(
         ),
         // The host-side capture proxy + MITM + mock store, isolated behind the
         // `NetworkEventSink` protocol so it builds and tests without the daemon
-        // (docs/roadmap.md: "proxy backend behind an interface"). ReticleHostCore
+        // (docs/roadmap.md: "the capture engine sits behind one sink"). ReticleHostCore
         // supplies the sink (EventStore) and the Hummingbird/CLI adapters.
         .target(
             name: "ReticleNetworkLane",
