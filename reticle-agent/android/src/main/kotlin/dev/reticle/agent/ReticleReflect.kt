@@ -9,6 +9,21 @@ import android.view.View
  */
 object ReticleReflect {
 
+    /**
+     * Call a public no-arg method by name, or null if it isn't there / throws.
+     * Used to read Compose value types (AnnotatedString ranges, link
+     * annotations) without a compile-time dependency on them.
+     */
+    fun invokeNoArg(target: Any, name: String): Any? {
+        return try {
+            target.javaClass.methods
+                .firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
+                ?.invoke(target)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     /** Android resource-id entry name, e.g. R.id.checkout_pay_button -> "checkout_pay_button". */
     fun resourceEntryName(view: View): String? {
         val id = view.id

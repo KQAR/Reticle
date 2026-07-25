@@ -242,6 +242,21 @@ R act tap --package "$PKG" --test-id compose.dialogTrigger >/dev/null
 wait_compact "$PKG" "composeDialog.title"
 R act tap --package "$PKG" --test-id composeDialog.confirm >/dev/null
 wait_compact "$PKG" "Confirmed"
+# Sub-regions inside ONE Compose text node: its links are AnnotatedString ranges,
+# not child nodes, so they are recovered from the semantics config (Text ->
+# getLinkAnnotations) plus the GetTextLayoutResult action's laid-out geometry.
+# Each link must resolve to its OWN rect — tapping "Terms" must not open "Privacy".
+R ui report --package "$PKG" --output "$TMP/compose-links"
+COMPOSE_REGIONS="$(R ui regions "$TMP/compose-links/snapshot.json")"
+echo "$COMPOSE_REGIONS"
+echo "$COMPOSE_REGIONS" | grep -q 'span "Terms" -> terms' \
+  || { echo "FAIL: expected a span region for the Compose text link 'Terms'"; exit 1; }
+echo "$COMPOSE_REGIONS" | grep -q 'span "Privacy" -> privacy' \
+  || { echo "FAIL: expected a span region for the Compose text link 'Privacy'"; exit 1; }
+R act tap --package "$PKG" --test-id compose.agreement --region "Terms" >/dev/null
+wait_compact "$PKG" "opened Terms"
+R act tap --package "$PKG" --test-id compose.agreement --region "Privacy" >/dev/null
+wait_compact "$PKG" "opened Privacy"
 COMPOSE_LOGS="$(R debug logs --package "$PKG")"
 echo "$COMPOSE_LOGS" | grep -q "compose_paid" \
   || { echo "FAIL: expected compose_paid in the app log bridge"; exit 1; }
