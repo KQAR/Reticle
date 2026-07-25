@@ -270,6 +270,12 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
 
 ## Known Boundary
 
+The complete list lives in `docs/architecture.md` -> **Honest boundaries**: every
+structurally unreachable case next to the evidence emitted for it and the scenario
+that pins it. Keep it current — a boundary discovered and not written down there is
+one a future contributor re-investigates from scratch. The entries below are the
+operational notes that don't fit that table.
+
 - `app launch` uses `monkey ... LAUNCHER` (retried once on a transient adb-shell
   timeout); the agent auto-starts via its `ContentProvider`, so no special launch
   env is needed for linked apps.

@@ -3,8 +3,9 @@
 **English** | [简体中文](roadmap.zh-CN.md)
 
 Status: roadmap and current-state doc (updated 2026-07-25, tracking 0.9.3 — Loom
-capture engine, traffic rules, flow replay, and the boundary-case sweep whose
-remaining items are listed under **Boundary-case sweep**). Captures
+capture engine, traffic rules, flow replay, and the **Boundary-case sweep**, now
+complete: fifteen points, each proved on a device before it was fixed, and the
+`docs/architecture.md` **Honest boundaries** table that came out of it). Captures
 the agreed direction for evolving Reticle from a single-platform Android CLI into a
 multi-platform runtime harness with an integrated capture proxy and a live web panel.
 `docs/architecture.md` describes the current implementation in more operational
@@ -774,7 +775,7 @@ order paid for itself — half the points turned out to be real defects that had
 failing *closed* (silently returning nothing), and two "fixes" broke something else
 that the suites caught immediately.
 
-## Landed (PRs #107-#120)
+## Landed (PRs #107-#121)
 
 | Point | Verified cause | Outcome |
 | --- | --- | --- |
@@ -791,6 +792,7 @@ that the suites caught immediately.
 | SwiftUI Text links | A markdown `Text` is ONE accessibility element with one label: no `UILabel`, no `NSAttributedString.link` run, no child element (probed: 0), no element count (0), no custom actions, no usable rotor, and no `_accessibility*` link accessor — so every RegionProbe channel came up empty, while the UIKit row beside it decomposed fine. `accessibilityAttributedLabel` DOES carry `UIAccessibilityTokenLink` runs + per-run font tokens (system attributes on a public property) | `SwiftUITextRegions`: re-lay the runs out with their own fonts inside the element's screen frame (`TextLayoutStack` anchored to a screen rect instead of a view) -> per-link `span` regions + char grid. Geometry is reconstructed, so the iOS suite asserts it by CONSEQUENCE — tap each recovered rect, check which URL the app's `openURL` handler received. First e2e coverage the SwiftUI scenario has had |
 | Screenshot degrade | Measured, and the two paths turned out to be exact complements — not the "in-process misses both" the note assumed: a `SurfaceView` is a transparent hole (rgba 0,0,0,0) in the in-process capture but magenta in `adb exec-out screencap`, while `FLAG_SECURE` blanks the DEVICE capture (0,0,0,255) and leaves the in-process one untouched. iOS has a third shape: the keyboard's host window refuses to render into a borrowed context, so the capture already skipped it — silently | `pixels:unavailable` on the node whose pixels the in-process picture lacks (iOS: the keyboard host window), `screencap:blank` on a `FLAG_SECURE` window, and a `degraded:` line on `ui screenshot` naming what THIS picture is missing and which path would show it. `scenario.screenshotDegrade` + both suites asserting the labels AND the pixels behind them |
 | Third-party WebView kernels | Confirmed by construction: the bridge is typed on `android.webkit.WebView`, so a kernel that only calls itself a WebView gets no DOM at any level — and that was indistinguishable from an empty page | Documented as a boundary and REPORTED, not adapted (a reflective adapter cannot be verified without a real kernel sample): `dom:unsupported-kernel` + `custom.domKernel` naming the class, a `--css` miss that explains the wall, and `scenario.foreignKernel` — a self-drawn stand-in beside a real WebView, so the contrast is asserted. Kept distinct from `dom:unavailable`: "nothing to read" vs "could not read it just now" |
+| Structural boundaries | Several were assumed rather than measured. Writing them down forced two checks: a CLOSED shadow root drops only its content (the host element is captured at its own rect — measured after giving it a box, since a zero-height host is dropped by the viewport filter for an unrelated reason), and the cross-origin case genuinely cannot be exercised offline | One **Honest boundaries** table in `docs/architecture.md`: each unreachable case next to the evidence emitted for it and the scenario that pins it, with "not exercised" written down where it is true. Agent-facing half in the skill (what each marker means, what to do instead of retrying). Closed-vs-open shadow roots now asserted side by side in the complex fixture |
 | iOS focus evidence, asserted | The evidence worked on iOS but was unassertable for two measured reasons, both now solved: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright — "Operation not permitted" — so run 2 sees no prompt) and an open alert could not be **answered** from the host, and a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle (that resets the authorization to `notDetermined`); answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow width — no text read, so language-independent) inside an answer→retry→re-check loop. The section runs LAST because the reinstall wipes the app's container. `scripts/e2e-ios.sh` now asserts the same three things Android does: focused before, `window: UNFOCUSED` leading the compact while the app's own controls are still captured as `tappable` (the trap), and the evidence clearing once answered — plus `permission.status = "Prompt dismissed"` as proof the tap reached the alert rather than the alert simply going away |
 
 Self-inflicted bugs the suites caught, worth remembering as failure shapes:
@@ -801,24 +803,24 @@ direction every iteration, so an absent selector ping-ponged at the list's end. 
 the sample's own home list had outgrown one screen, so its last rows were clipped and
 genuinely untappable — a resolved tap landed on the system navigation bar.
 
-## Left to do (next session)
+## Left to do
 
-Ordered by value. Each item's cause is already measured unless marked otherwise.
+**Nothing — the sweep is complete.** All fifteen points landed, each one proved on a
+device first and pinned by an assertion in both suites. What the sweep produced
+beyond the individual fixes: a shared vocabulary for stating an absence
+(`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`,
+`pixels:unavailable`, `screencap:blank`), and the **Honest boundaries** table in
+`docs/architecture.md`, which is where the next such case should be recorded.
 
-1. **Structural boundaries, written down as boundaries.** Closed shadow roots,
-   cross-origin iframes, bitmap-baked text, pure-Canvas controls with no accessibility
-   surface, out-of-process system UI (permission prompts, biometric sheets, share
-   sheets, Custom Tabs / `SFSafariViewController`, the IME itself), DRM video. Each is
-   genuinely unreachable for an in-process agent; several are now *partially* covered
-   by evidence (`window: UNFOCUSED`, `dom:unavailable`, `occluded-by`). Collect them in
-   one Honest Boundary section plus the skill, so an agent stops guessing and a future
-   contributor stops re-investigating.
-
-Two flakes seen repeatedly on the software-GPU emulator, worth fixing if they recur:
-a DOM assertion taken from a single snapshot while `lottie-web` animates (the 750ms
-`evaluateJavascript` budget lapses and the whole DOM folds away — now polled), and a
-scenario dialog that occasionally did not appear within the 60s `wait_compact` budget
-(reproduced green by hand, twice).
+Two flakes on the software-GPU emulator, both still open. A DOM assertion taken from
+a single snapshot while `lottie-web` animates (the 750ms `evaluateJavascript` budget
+lapses and the whole DOM folds away — now polled). And the native-Lottie dialog not
+appearing within the 60s `wait_compact` budget: seen twice more on 2026-07-25, and
+NOT reproducible in isolation (4/4 green by hand, with the trigger's rect stable from
+the first capture — so it is not the `tap --settle` class). Rather than guess at a
+fix, `wait_compact` now prints the last observation when it times out, so the next
+occurrence says whether the tap never landed or the dialog was up and the capture
+degraded under animation load.
 
 # Proposed next: evidence workflows + security-evidence lane
 

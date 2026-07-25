@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Honest boundaries, collected in one place.** Everything an in-process observer
+  structurally cannot reach — closed shadow roots, cross-origin iframes, third-party
+  WebView kernels, bitmap-baked text, pure-Canvas controls with no accessibility
+  surface, out-of-process system UI (permission prompts, biometric sheets, share
+  sheets, Custom Tabs / `SFSafariViewController`, the IME), the screenshot's blind
+  spots, DRM surfaces, non-debuggable release builds, real-device iOS input — now sits
+  in one table in `docs/architecture.md`, each row paired with **the evidence Reticle
+  emits instead** and **the scenario that pins it**. Rows that nothing exercises say
+  so out loud (cross-origin frames need a second origin; there is no DRM sample),
+  rather than letting a missing test read as coverage. The skill carries the
+  agent-facing half: what each marker means and what to do instead of retrying.
+
+  One claim was upgraded from theory to measurement while writing it: a **closed**
+  shadow root now sits beside the open one in the complex web fixture, and the suite
+  asserts the difference — the open root is pierced, the closed root's content is
+  absent, and the closed host element is still captured at its own rect. An asserted
+  absence, so silence there can never be mistaken for capture.
+
 - **A third-party WebView kernel now says its own name.** `WebViewBridge` is typed on
   `android.webkit.WebView`, so an X5/TBS or UC kernel — a class that *calls* itself a
   WebView but is not the platform one — cannot be attached to: no `--css`, no styles,
