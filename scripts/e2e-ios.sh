@@ -379,15 +379,11 @@ echo "$DIALOG_COMPACT" | grep -q '"Delete"' \
   || { echo "FAIL: alert 'Delete' action not captured"; exit 1; }
 echo "$DIALOG_COMPACT" | grep -q '"Cancel"' \
   || { echo "FAIL: alert 'Cancel' action not captured"; exit 1; }
-# Alert actions carry no testId (UIAlertAction cannot attach one), so resolve the
-# interactive "Delete" element's ref from the snapshot and HID-tap it. Observable
-# side effect: the alert dismisses and dialog.status flips to "Deleted".
-DELETE_REF="$(/usr/bin/python3 -c 'import json
-s=json.load(open("'"$TMP"'/dialog/snapshot.json"))
-print(next(r for r,v in s["nodes"].items()
-  if v.get("contentDescription")=="Delete" and v.get("isInteractive")))')"
-[ -n "$DELETE_REF" ] || { echo "FAIL: could not resolve the alert 'Delete' action ref"; exit 1; }
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --ref "$DELETE_REF"
+# Alert actions carry no testId (UIAlertAction cannot attach one), which is exactly
+# what `--label` is for: match the visible text, refuse ambiguity, and never fall
+# back to guessing. This replaced a snapshot-scraping hack that dug the ref out
+# with python — refs are minted per capture, so that was fragile by construction.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Delete"
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dialog-done"
 DIALOG_AFTER="$("$HOST" --target ios ui compact "$TMP/dialog-done/snapshot.json")"

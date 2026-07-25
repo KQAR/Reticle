@@ -250,9 +250,16 @@ reticle act tap   --package <pkg> --css '#web-pay'
 reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
 reticle act scroll-to --package <pkg> --test-id list.item40   # then tap it
+reticle act tap   --package <pkg> --label "Delete item"       # framework rows/menu items
 reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
+
+`--label` is for controls the framework builds without ids: `Spinner` dropdown rows
+and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at
+all. It matches visible text / the a11y label (exact, then substring) in the topmost
+window and **refuses an ambiguous match** rather than tapping the first candidate.
+Prefer `--test-id` whenever the app owns the control.
 
 A recycling / lazy list binds only its visible window, so a far-down row has **no
 node at all** — `tap` can never reach it and a "not found" there does not mean the

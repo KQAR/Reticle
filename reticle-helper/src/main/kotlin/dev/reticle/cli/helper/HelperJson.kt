@@ -47,6 +47,7 @@ internal fun selectorFrom(params: JsonObject): Selector = Selector(
         val (x, y) = parseXY(it)
         dev.reticle.core.Point(x.toDouble(), y.toDouble())
     },
+    label = params.str("label"),
     region = params.str("region"),
 )
 
