@@ -31,6 +31,20 @@ enum SampleWebFixtures {
         return webView
     }
 
+    /// The page whose button blocks its own JS thread with a bounded busy loop —
+    /// the deterministic twin of Android's `alert()` case. While that loop runs,
+    /// `evaluateJavaScript` cannot call back, so the DOM read must time out and the
+    /// view must degrade to one opaque node reporting `dom:unavailable`.
+    ///
+    /// (Disabling content JavaScript does NOT reproduce this: measured, the app's
+    /// own `evaluateJavaScript` still runs and the DOM reads fine.)
+    static func makeDomBlockedWebView() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        webView.loadHTMLString(webJsDialogHtml,
+                               baseURL: URL(string: "https://reticle.dev/sample/web-dom-blocked"))
+        return webView
+    }
+
     private static func bundledResource(_ name: String, _ ext: String) -> String {
         guard let url = Bundle.module.url(forResource: name, withExtension: ext),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
@@ -265,6 +279,29 @@ enum SampleWebFixtures {
         </html>
         """
     }
+
+    /// Kept byte-comparable with the Android fixture's `webJsDialogHtml`.
+    static let webJsDialogHtml = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body { font-family: sans-serif; margin: 16px; }</style>
+          </head>
+          <body>
+            <h1 id="js-title" data-testid="jsDialog.title">Payment</h1>
+            <p id="js-status" data-testid="jsDialog.status">Ready</p>
+            <button id="js-alert" data-testid="jsDialog.alertButton"
+              onclick="alert('Payment failed'); document.getElementById('js-status').innerText = 'Alert dismissed';">
+              Pay (raises a JS alert)
+            </button>
+            <button id="js-busy" data-testid="jsDialog.busyButton"
+              onclick="var end = Date.now() + 4000; while (Date.now() < end) {} document.getElementById('js-status').innerText = 'Busy done';">
+              Block the JS thread for 4s
+            </button>
+          </body>
+        </html>
+        """
 
     static let webComponentHtml = """
         <!doctype html>

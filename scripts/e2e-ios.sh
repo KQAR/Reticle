@@ -460,6 +460,46 @@ sleep 1
   || { echo "FAIL: tapping the web lottie 'Done' button did not update the status"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
+echo "== WEB DOM BLOCKED (unreadable DOM degrades to dom:unavailable) =="
+# The DOM bridge caps its evaluateJavaScript wait and, on failure, keeps the web
+# view as ONE opaque node. An absence is ambiguous, so the node must also SAY the
+# DOM was unreadable — otherwise "blocked bridge" and "empty page" are the same
+# observation. Android produces this with a JS `alert()`; on iOS a page's alert()
+# never reaches the app's WKUIDelegate in this configuration (measured), so the page
+# blocks its own JS thread with a bounded busy loop — the same condition, and it
+# clears itself so recovery is observable.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webDomBlocked
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dom-ok"
+"$HOST" --target ios ui compact "$TMP/dom-ok/snapshot.json" | grep -q "jsDialog.busyButton" \
+  || { echo "FAIL: expected the page's DOM nodes before blocking its JS thread"; exit 1; }
+# Block the page's JS thread, then capture while it is blocked.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#js-busy"
+START="$(date +%s)"
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dom-blocked"
+ELAPSED=$(( $(date +%s) - START ))
+[ "$ELAPSED" -lt 20 ] \
+  || { echo "FAIL: capture took ${ELAPSED}s with the page's JS blocked — degrade, don't block"; exit 1; }
+DOM_BLOCKED="$("$HOST" --target ios ui compact "$TMP/dom-blocked/snapshot.json")"
+echo "$DOM_BLOCKED"
+echo "$DOM_BLOCKED" | grep -q "dom:unavailable" \
+  || { echo "FAIL: an unreadable DOM must be reported as dom:unavailable"; exit 1; }
+echo "$DOM_BLOCKED" | grep -q "jsDialog.busyButton" \
+  && { echo "FAIL: no DOM nodes should be reported while the page's JS is blocked"; exit 1; }
+# The degrade is scoped to the web view: native content on the same screen stays.
+echo "$DOM_BLOCKED" | grep -q "domBlocked.status" \
+  || { echo "FAIL: native content next to the web view must still be captured"; exit 1; }
+# Once the loop ends the bridge answers again — the marker must clear, not stick.
+sleep 5
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dom-back"
+DOM_BACK="$("$HOST" --target ios ui compact "$TMP/dom-back/snapshot.json")"
+echo "$DOM_BACK" | grep -q "Busy done" \
+  || { echo "FAIL: the page's JS did not finish / DOM never came back"; exit 1; }
+echo "$DOM_BACK" | grep -q "dom:unavailable" \
+  && { echo "FAIL: dom:unavailable must clear once the DOM is readable again"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
 echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
 # A modal built as a Web Component whose content lives in an OPEN shadow root.
 # Asserts Reticle pierces the shadow boundary and folds the modal's elements into

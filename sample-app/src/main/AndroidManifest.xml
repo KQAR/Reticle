@@ -33,6 +33,10 @@
             android:exported="false"
             android:label="Agreement Regions" />
         <activity
+            android:name="dev.reticle.sample.WebJsDialogScenarioActivity"
+            android:exported="false"
+            android:label="Web JS Dialog" />
+        <activity
             android:name="dev.reticle.sample.PopupScenarioActivity"
             android:exported="false"
             android:label="Popup Windows" />

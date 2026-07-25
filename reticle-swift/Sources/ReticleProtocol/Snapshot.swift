@@ -118,6 +118,14 @@ public struct Node: Codable, Sendable {
     /// True when this node carries a signal an agent can target it by. The
     /// single source of truth shared by the semantic-tree and compact-observation
     /// projections, matching reticle-core's `hasTargetingSignal()`.
+    /// True when this node hosts a web view whose DOM could not be read at capture
+    /// time. The agents set `custom["domStatus"] = "unavailable"`; this is the one
+    /// place that spelling is interpreted.
+    public func domUnavailable() -> Bool {
+        if case .text(let v)? = custom["domStatus"] { return v == "unavailable" }
+        return false
+    }
+
     public func hasTargetingSignal() -> Bool {
         testId != nil
             || resourceId != nil

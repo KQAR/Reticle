@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **A blocked DOM bridge now says so: `dom:unavailable`.** A web page can raise a
+  NATIVE modal from JavaScript (`alert()` / `confirm()`), and that blocks the
+  page's JS thread until the app dismisses it — so `evaluateJavascript` can never
+  call back and the DOM read times out. Verified the bridge already degrades
+  correctly (capture returns in ~1s, the WebView stays an opaque node, the modal's
+  own content is captured), but the degrade was SILENT: "no DOM nodes" and "this
+  web view is empty" were the same observation, which is also what made a
+  lottie-animation flake read as "the tap didn't land". Both agents now mark the
+  host node `custom["domStatus"] = "unavailable"` whenever a DOM read fails, and
+  `ui compact` renders it as `dom:unavailable`.
+
+- Sample apps + e2e: a **web JS dialog** scenario on Android — a page whose button
+  calls `alert()`, with the app implementing `onJsAlert` as real apps do. Asserts
+  the capture does not hang (~1s), the native modal's message is captured, the DOM
+  is absent AND labelled `dom:unavailable`, and that dismissing it (via
+  `--label "OK"`) lets the page's own JS continue.
+
+  iOS gets the same code path through a different trigger, and the reason is worth
+  recording: measured on iOS 26.3, a page's `alert()` **never reaches the app's
+  `WKUIDelegate`** in this configuration — the controller is alive, `uiDelegate` is
+  set, no `deinit` fires, and the statement after `alert()` runs immediately, so
+  WebKit simply skips the panel. (Disabling content JavaScript is not a substitute
+  either: the app's own `evaluateJavaScript` still runs and the DOM reads fine.) The
+  iOS scenario therefore has the page block its own JS thread with a bounded busy
+  loop — the same condition an `alert()` creates, deterministic, and self-clearing
+  so recovery is asserted too: `dom:unavailable` appears, native content on the same
+  screen is still captured, and the marker CLEARS when the loop ends. A JS modal
+  that does appear on iOS is an app-presented `UIAlertController`, already covered
+  by the system-dialog scenario.
+
+- e2e: the popup-menu step now waits for the popup's enter animation before tapping.
+  `wait_compact` returns the moment a row is first captured, which can be
+  mid-animation — the rect is then stale by dispatch time and the touch lands on the
+  neighbour (measured: `--label "Delete item"` produced `Menu: Rename`). Reticle
+  reports positions faithfully; it cannot hold a moving target still, so the caller
+  waits. Tracked separately: an opt-in `act tap --settle` that would remove the
+  guesswork.
+
 - **New selector: `--label`.** Framework-built controls carry no id of their own —
   a `Spinner` dropdown's rows and a `PopupMenu`'s items share one resource id
   (`text1`, `title`), and a `UIAlertAction` cannot take an identifier at all. They
