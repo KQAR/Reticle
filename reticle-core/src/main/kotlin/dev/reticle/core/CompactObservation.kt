@@ -71,6 +71,7 @@ data class CompactObservation(
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
                             domUnavailable = node.domUnavailable(),
+                            domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
                             screencapBlank = node.screencapBlank(),
                         )
@@ -123,6 +124,11 @@ data class CompactItem(
      * Android `SurfaceView`, an iOS keyboard host window). The picture is not a
      * second opinion for these — it silently omits them.
      */
+    /**
+     * True when this node is a suspected third-party WebView kernel (X5/UC): no DOM
+     * bridge exists for it at all. A structural boundary, not a transient degrade.
+     */
+    val domKernelUnsupported: Boolean = false,
     val pixelsUnavailable: Boolean = false,
     /**
      * True when this window is `FLAG_SECURE`: the DEVICE-level capture is blanked,
@@ -145,6 +151,7 @@ data class CompactItem(
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
             if (domUnavailable) append(" dom:unavailable")
+            if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")
             if (screencapBlank) append(" screencap:blank")
         }
