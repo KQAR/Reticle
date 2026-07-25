@@ -4,8 +4,10 @@
 # the full round trip through `reticle --target ios`: linked launch + inject,
 # ui report, compact, screenshot, a mutate, an `act --verify` node-state diff,
 # the system dialog (UIAlertController content recognition), the native Lottie
-# dialog, the web Lottie modal, the web-component (shadow DOM) modal, and the
-# Lottie-only dialog (recovering elements baked into one Lottie).
+# dialog, the web Lottie modal, the web-component (shadow DOM) modal, the
+# Lottie-only dialog (recovering elements baked into one Lottie), and — last, for
+# the reasons stated there — the system permission prompt (an out-of-process window
+# -> `window: UNFOCUSED`, asserted both while it is up and once it is answered).
 #
 # Requires: Xcode + an iOS Simulator runtime, and a built ReticleHost binary
 # (swift build --package-path reticle-host). Pass a booted simulator udid as $1,
@@ -45,7 +47,11 @@ echo "== build protocol + agent =="
 DYLIB="$ROOT/reticle-agent/ios/.build/arm64-apple-macosx/debug/libReticleInjection.dylib"
 
 echo "== build + install sample apps =="
-"$ROOT/scripts/build-sample-ios.sh" SampleApp        "$LINKED_ID"  "$UDID" >/dev/null
+# Keep the linked app's bundle path: the permission section reinstalls it to re-arm
+# the notification prompt (see the last section for why).
+LINKED_APP="$("$ROOT/scripts/build-sample-ios.sh" SampleApp "$LINKED_ID" "$UDID" | tail -1)"
+LINKED_APP="${LINKED_APP#APP_BUNDLE=}"
+[ -d "$LINKED_APP" ] || { echo "FAIL: build-sample-ios.sh did not report the .app bundle path"; exit 1; }
 "$ROOT/scripts/build-sample-ios.sh" SampleAppNoAgent "$NOAGENT_ID" "$UDID" >/dev/null
 
 hold_launch() { # bundleId [dylib port]
@@ -612,19 +618,89 @@ HOLD="$(hold_launch "$NOAGENT_ID" "$DYLIB" "$PORT")"; sleep 3
 "$HOST" --target ios ui compact "$TMP/inject/snapshot.json"
 kill "$HOLD" 2>/dev/null || true
 
-# NOTE (iOS focus evidence is NOT asserted here, deliberately). `screen.windowFocused`
-# is implemented on iOS and was verified by hand: raising the sample's `permission`
-# scenario alert reports `window: UNFOCUSED …`. It is not in this suite because the
-# state cannot be re-armed or cleaned up reliably:
-#   - an app switch would suspend the app on a simulator, tearing down the agent's
-#     socket, so the evidence becomes unreadable (`GET /snapshot timed out`);
-#   - a real UNUserNotificationCenter alert keeps the app foreground-inactive (so the
-#     agent still answers) but `simctl privacy reset notifications` does not reliably
-#     re-arm the prompt once answered, and nothing in the host or simctl can ANSWER an
-#     open one (`simctl privacy grant` -> "Operation not permitted"; terminating the
-#     app leaves it standing) — a stuck alert then silently swallows every later HID
-#     tap (measured: it broke the checkout assertion).
-# The Android suite asserts the same evidence end to end, including that it clears.
-# Tracked in docs/roadmap.md.
+echo "== SYSTEM PERMISSION PROMPT (out of process: focus evidence) =="
+# The one on-screen thing an in-process agent structurally CANNOT capture: the
+# alert belongs to another process, so it is in no window of this app and no node of
+# this tree, yet it takes every touch. Reticle cannot show it; it CAN report that
+# this app is no longer the active recipient of input
+# (`screen.windowFocused == false`). The Android twin asserts the same evidence.
+#
+# This section runs LAST and holds the two facts that make it scriptable at all
+# (both measured on iOS 26.3 — do not "simplify" them away):
+#   - RE-ARM. Once answered, the authorization is remembered, and
+#     `xcrun simctl privacy … reset notifications` fails outright ("Operation not
+#     permitted"), so a second run would never see a prompt. Re-INSTALLING the
+#     bundle does reset it to notDetermined — hence the reinstall here, and hence
+#     last: it wipes the linked app's container.
+#   - ANSWER. Nothing in simctl can answer an open alert (`simctl privacy grant` ->
+#     "Operation not permitted"; terminating the app leaves the alert standing), and
+#     an unanswered alert silently swallows every later HID tap. A coordinate HID tap
+#     does answer it: the buttons sit at ~57% of screen height, ~32% (deny) and ~68%
+#     (allow) of its width. Coordinates only, no text is read, so the simulator's
+#     language does not matter. Answer -> retry -> re-check, so a missed tap fails
+#     loudly instead of poisoning the run.
+xcrun simctl terminate "$UDID" "$LINKED_ID" 2>/dev/null || true
+xcrun simctl uninstall "$UDID" "$LINKED_ID" >/dev/null 2>&1 || true
+xcrun simctl install "$UDID" "$LINKED_APP" >/dev/null
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=permission
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/permission-before"
+"$HOST" --target ios ui compact "$TMP/permission-before/snapshot.json" | grep -q "UNFOCUSED" \
+  && { echo "FAIL: the app should hold focus before the prompt is raised"; exit 1; }
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id permission.trigger
+sleep 3
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/permission"
+PERM_COMPACT="$("$HOST" --target ios ui compact "$TMP/permission/snapshot.json")"
+echo "$PERM_COMPACT"
+echo "$PERM_COMPACT" | head -1 | grep -q "UNFOCUSED" \
+  || { echo "FAIL: compact must LEAD with the lost-focus evidence while the prompt is up"; exit 1; }
+# The trap this evidence exists for: the tree is unchanged and still calls the
+# app's own controls tappable, while a touch would in fact go to the alert.
+echo "$PERM_COMPACT" | grep "permission.trigger" | grep -q "tappable" \
+  || { echo "FAIL: expected the app's controls to still be captured (that IS the trap)"; exit 1; }
+/usr/bin/python3 - "$TMP/permission-before/snapshot.json" "$TMP/permission/snapshot.json" <<'PYEOF' || exit 1
+import json, sys
+before = json.load(open(sys.argv[1]))
+after = json.load(open(sys.argv[2]))
+if before["screen"].get("windowFocused") is not True:
+    print("FAIL: screen.windowFocused should be true before the prompt is raised")
+    sys.exit(1)
+if after["screen"].get("windowFocused") is not False:
+    print("FAIL: screen.windowFocused should be false while another window has focus")
+    sys.exit(1)
+# The boundary itself, asserted so nobody later mistakes silence for capture: the
+# alert added NOTHING to the tree. Stated by SHAPE (the node set is unchanged while
+# a foreign window is on top), not by matching the alert's wording — the alert is
+# localized, so a text check would assert nothing on a non-English simulator.
+if len(after["nodes"]) != len(before["nodes"]):
+    print("FAIL: the node set changed while the out-of-process alert was up "
+          f"({len(before['nodes'])} -> {len(after['nodes'])}); an in-process capture "
+          "must neither see that window nor lose its own")
+    sys.exit(1)
+PYEOF
+# Answer the alert with a coordinate tap (deny), derived from the screen size.
+DENY_PT="$(/usr/bin/python3 -c 'import json,sys
+s = json.load(open(sys.argv[1]))["screen"]["size"]
+print("%d,%d" % (s["width"] * 0.32, s["height"] * 0.568))' "$TMP/permission/snapshot.json")"
+ANSWERED=0
+for _ in 1 2 3; do
+  "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --point "$DENY_PT" || true
+  sleep 2
+  if ! "$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep -q "UNFOCUSED"; then
+    ANSWERED=1; break
+  fi
+done
+[ "$ANSWERED" = 1 ] \
+  || { echo "FAIL: could not answer the permission alert at $DENY_PT — focus evidence never cleared"; exit 1; }
+# ...and the app's own state proves the tap ANSWERED the alert rather than the alert
+# merely going away: the authorization callback ran with granted=false.
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/permission-answered"
+"$HOST" --target ios ui compact "$TMP/permission-answered/snapshot.json" \
+  | grep "permission.status" | grep -q "Prompt dismissed" \
+  || { echo "FAIL: the deny tap did not reach the alert (permission.status never settled)"; exit 1; }
+"$HOST" --target ios debug logs --package "$LINKED_ID" | grep -q "permission_result" \
+  || { echo "FAIL: expected permission_result in the app log bridge"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
 
 echo "== OK: artifacts in $TMP =="

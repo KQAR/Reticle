@@ -23,22 +23,26 @@
   `windowFocused` is the one signal that doesn't.
 
 - Sample apps + e2e: a **system permission prompt** scenario on both platforms
-  (`POST_NOTIFICATIONS` on Android, `UNUserNotificationCenter` on iOS). The suites
-  assert the app holds focus beforehand, loses it while the prompt is up, that no
-  node from the other process leaks into the tree (the boundary, asserted so silence
-  is never mistaken for capture), and — on Android, where BACK can answer the prompt
-  — that the evidence clears afterwards.
+  (`POST_NOTIFICATIONS` on Android, `UNUserNotificationCenter` on iOS). Both suites
+  now assert the same lifecycle: the app holds focus beforehand, loses it while the
+  prompt is up (with `window: UNFOCUSED` leading the compact while the app's own
+  controls are still captured as `tappable` — that IS the trap), no node from the
+  other process leaks into the tree (the boundary, asserted so silence is never
+  mistaken for capture), and the evidence clears once the prompt is answered.
 
-  On iOS the evidence is implemented and verified by hand (the sample's `permission`
-  scenario reports `window: UNFOCUSED`) but deliberately NOT asserted in the suite,
-  with the reasons recorded in `scripts/e2e-ios.sh` and `docs/roadmap.md`: an app
-  switch suspends the app on a simulator (the agent's socket dies), while a real
-  `UNUserNotificationCenter` alert keeps the app foreground-inactive yet cannot be
-  re-armed (`simctl privacy reset notifications` does not restore the prompt once
-  answered) or answered (`simctl privacy grant` -> "Operation not permitted";
-  terminating the app leaves it standing) — and a stuck alert silently swallows every
-  later HID tap, measured to break the checkout section. Android asserts the full
-  lifecycle including clearing.
+  Making the iOS half assertable took two measured workarounds, both documented in
+  `scripts/e2e-ios.sh`. The prompt cannot be **re-armed** with
+  `xcrun simctl privacy … reset notifications` (it fails outright, "Operation not
+  permitted"), so the section re-INSTALLS the app bundle, which does reset the
+  authorization to `notDetermined` — and therefore runs LAST, since that wipes the
+  app's container. And an open alert cannot be **answered** from the host
+  (`simctl privacy grant` -> "Operation not permitted"; terminating the app leaves the
+  alert standing) while a stuck one silently swallows every later HID tap, so the
+  suite answers it with a coordinate HID tap at the alert's fixed layout position
+  (~57% of screen height, ~32% deny / ~68% allow of its width — no text is read, so
+  the simulator's language does not matter) inside an answer→retry→re-check loop.
+  `permission.status` flipping to "Prompt dismissed" is the proof the tap reached the
+  alert rather than the alert merely going away.
 
 - **Fixed: window-vs-window occlusion never fired on iOS.** Every `UIWindow` was
   captured as `kind = .view`, and `CompactObservation` computes occlusion by walking
