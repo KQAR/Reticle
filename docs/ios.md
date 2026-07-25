@@ -304,3 +304,16 @@ analogue of linking the Android AAR:
 - **No auth, loopback only** — same dev-machine-trusted model as Android. The
   agent auto-starts on injection or in DEBUG / when `ReticleAgentEnabled` is set,
   so it stays out of shipped release builds that merely link the framework.
+
+## Measured WebKit boundary: a page's `alert()` does not reach the app
+
+On iOS 26.3 a page calling `alert()` inside a `WKWebView` never invokes the app's
+`WKUIDelegate` panel method in the sample's configuration — the controller is
+alive, `uiDelegate` is set, no `deinit` fires, and the statement following
+`alert()` executes immediately, so WebKit skips the panel outright. Consequence
+for verification: the "a JS modal blocks the DOM bridge" case cannot be produced
+this way on iOS. The sample's `webDomBlocked` scenario instead has the page block
+its own JS thread with a bounded busy loop, which creates the identical condition
+(`evaluateJavaScript` cannot call back) deterministically, and clears itself so
+recovery is observable. When a JS modal *does* appear on iOS it is an
+app-presented `UIAlertController`, which the system-dialog scenario covers.

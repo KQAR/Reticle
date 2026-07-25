@@ -70,6 +70,7 @@ data class CompactObservation(
                             isInteractive = node.isInteractive,
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
+                            domUnavailable = node.domUnavailable(),
                         )
                     )
                 }
@@ -108,6 +109,13 @@ data class CompactItem(
      * the list hasn't been scrolled there".
      */
     val scroll: ScrollInfo? = null,
+    /**
+     * True when this node hosts a web view whose DOM could not be read at capture
+     * time (a JS modal blocking the page's thread, JS disabled, or a read that
+     * outran its budget). Without it, "no DOM nodes" and "this web view is empty"
+     * are the same observation.
+     */
+    val domUnavailable: Boolean = false,
 ) {
     /** One-line rendering for agent-facing text output. */
     fun line(): String {
@@ -123,6 +131,7 @@ data class CompactItem(
             if (isInteractive) append(" tappable")
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
+            if (domUnavailable) append(" dom:unavailable")
         }
         return "$selector $role$labelPart$framePart$state"
     }

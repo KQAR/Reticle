@@ -23,6 +23,10 @@ import java.util.concurrent.TimeUnit
 object WebViewBridge {
     private const val TIMEOUT_MS = 750L
 
+    /** Marker for "the DOM could not be read from this WebView right now". */
+    const val DOM_STATUS_KEY = "domStatus"
+    const val DOM_STATUS_UNAVAILABLE = "unavailable"
+
     data class Pending(
         val webView: WebView,
         val parentRef: String,
@@ -39,8 +43,20 @@ object WebViewBridge {
         if (pending.isEmpty() || Looper.myLooper() == Looper.getMainLooper()) return
         for (capture in pending) {
             val refs = captureOne(capture, density, handler, nodes, makeRef)
-            if (refs.isEmpty()) continue
             val parent = nodes[capture.parentRef] ?: continue
+            if (refs.isEmpty()) {
+                // Say so, rather than leaving an absence to be interpreted. A DOM
+                // read fails for reasons an agent must be able to tell apart from
+                // "this WebView has no content": a `alert()`/`confirm()` modal
+                // blocks the page's JS thread so `evaluateJavascript` can never
+                // call back, JS may be disabled, or the read may simply have
+                // outrun its budget while the page animates. All of those look
+                // identical — an opaque node — unless the node carries the fact.
+                nodes[capture.parentRef] = parent.copy(
+                    custom = parent.custom + mapOf(DOM_STATUS_KEY to MetadataValue.Text(DOM_STATUS_UNAVAILABLE)),
+                )
+                continue
+            }
             nodes[capture.parentRef] = parent.copy(children = parent.children + refs)
         }
     }

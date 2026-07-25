@@ -62,7 +62,8 @@ public struct CompactObservation: Codable, Sendable {
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
                         occludedBy: occluderOf(node, windowRef: currentWindow),
-                        scroll: node.scroll
+                        scroll: node.scroll,
+                        domUnavailable: node.domUnavailable()
                     )
                 )
             }
@@ -94,6 +95,11 @@ public struct CompactItem: Codable, Sendable {
     /// Scroll capability when this item is a scrollable container — how an agent
     /// tells "this selector doesn't exist" from "it isn't bound yet".
     public var scroll: ScrollInfo?
+    /// True when this node hosts a web view whose DOM could not be read at capture
+    /// time (a JS modal blocking the page's thread, JS off, or a read that outran
+    /// its budget). Without it, "no DOM nodes" and "this web view is empty" are the
+    /// same observation.
+    public var domUnavailable: Bool
 
     public init(
         ref: String,
@@ -105,7 +111,8 @@ public struct CompactItem: Codable, Sendable {
         isEnabled: Bool = true,
         isInteractive: Bool = false,
         occludedBy: String? = nil,
-        scroll: ScrollInfo? = nil
+        scroll: ScrollInfo? = nil,
+        domUnavailable: Bool = false
     ) {
         self.ref = ref
         self.role = role
@@ -117,6 +124,7 @@ public struct CompactItem: Codable, Sendable {
         self.isInteractive = isInteractive
         self.occludedBy = occludedBy
         self.scroll = scroll
+        self.domUnavailable = domUnavailable
     }
 
     /// One-line rendering for agent-facing text output. Matches reticle-core's `line()`.
@@ -134,11 +142,13 @@ public struct CompactItem: Codable, Sendable {
         if isInteractive { state += " tappable" }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
+        if domUnavailable { state += " dom:unavailable" }
         return "\(selector) \(role)\(labelPart)\(framePart)\(state)"
     }
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive, occludedBy, scroll
+        case domUnavailable
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -153,6 +163,7 @@ public struct CompactItem: Codable, Sendable {
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
+        if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
     }
 
     public init(from decoder: Decoder) throws {
@@ -167,5 +178,6 @@ public struct CompactItem: Codable, Sendable {
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
+        domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
     }
 }

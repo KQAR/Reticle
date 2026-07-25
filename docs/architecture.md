@@ -287,6 +287,13 @@ keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
 
+**A blocked DOM read is reported, not implied.** `alert()`/`confirm()` block the
+page's JS thread until the app dismisses them, so `evaluateJavascript` cannot call
+back and the DOM read hits its 750ms budget. The bridge degrades to L0 (the web
+view stays one opaque node) — but an absence is ambiguous, so the host node gets
+`custom["domStatus"] = "unavailable"` and compact renders `dom:unavailable`. Same
+marker for JS disabled or a read that outran its budget under animation load.
+
 **Scroll capability is evidence, not a promise.** A recycling or lazy container
 (`RecyclerView`, `LazyColumn`, `UIScrollView`/SwiftUI `List`) binds only its
 visible window, so a far-down row has no node, no frame, and no selector at all —
