@@ -69,4 +69,6 @@ dependencies {
     // APK carries none of the runtime classes.
     "linkedImplementation"(project(":reticle-agent:android"))
     implementation(libs.androidx.appcompat)
+    // Real Lottie animation view for the native-lottie-dialog scenario.
+    implementation(libs.lottie)
 }

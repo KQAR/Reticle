@@ -162,6 +162,9 @@ struct SnapshotCapture {
         // Sub-node interaction evidence (link runs, virtual a11y elements,
         // re-colored runs, text markers, char grid).
         let probed = RegionProbe.probe(view, isSwiftUIHost: !hostingEvidence.isEmpty)
+        // A Lottie bakes its whole UI into one layer; recover its text layers as
+        // sub-regions so they stay targetable.
+        let lottieRegions = LottieBridge.regions(for: view, screenFrame: screenFrame(view))
 
         #if canImport(WebKit)
         // A WKWebView stays an opaque view node here; its DOM is folded in as
@@ -187,7 +190,7 @@ struct SnapshotCapture {
             isInteractive: isInteractive(view),
             custom: custom,
             children: children,
-            regions: probed.regions,
+            regions: probed.regions + lottieRegions,
             suspectedMultiRegion: probed.suspectedMultiRegion,
             charGrid: probed.charGrid
         )
