@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **New evidence: `screen.windowFocused`.** A system permission prompt, a biometric
+  sheet, an autofill dialog — each belongs to ANOTHER process, so it appears in no
+  window of this app and in no node of the tree. Measured during this work: with the
+  Android permission prompt up, `mCurrentFocus` was
+  `com.google.android.permissioncontroller/...GrantPermissionsActivity` while the
+  capture still listed every control as `tappable`. That is the worst shape of
+  wrongness this project guards against — a confident, ordinary-looking observation
+  while input goes somewhere else entirely. Reticle cannot show what is on top
+  (structurally out of reach), but it can report the FACT that this app's window no
+  longer has focus: Android reads `View.hasWindowFocus()`, iOS reads
+  `UIApplication.applicationState`, and `ui compact` leads with
+  `window: UNFOCUSED — another window has input focus …`, above even the keyboard
+  line, because nothing in the tree is actionable in that state.
+
+  Worth recording alongside it: the in-process SCREENSHOT is blind to that window
+  too — with the iOS notification alert up, the agent's screenshot showed only the
+  app's own Checkout screen while `xcrun simctl io screenshot` showed the alert
+  plainly. So "does the screen look right" fails the same way the tree does;
+  `windowFocused` is the one signal that doesn't.
+
+- Sample apps + e2e: a **system permission prompt** scenario on both platforms
+  (`POST_NOTIFICATIONS` on Android, `UNUserNotificationCenter` on iOS). The suites
+  assert the app holds focus beforehand, loses it while the prompt is up, that no
+  node from the other process leaks into the tree (the boundary, asserted so silence
+  is never mistaken for capture), and — on Android, where BACK can answer the prompt
+  — that the evidence clears afterwards.
+
+  On iOS the evidence is implemented and verified by hand (the sample's `permission`
+  scenario reports `window: UNFOCUSED`) but deliberately NOT asserted in the suite,
+  with the reasons recorded in `scripts/e2e-ios.sh` and `docs/roadmap.md`: an app
+  switch suspends the app on a simulator (the agent's socket dies), while a real
+  `UNUserNotificationCenter` alert keeps the app foreground-inactive yet cannot be
+  re-armed (`simctl privacy reset notifications` does not restore the prompt once
+  answered) or answered (`simctl privacy grant` -> "Operation not permitted";
+  terminating the app leaves it standing) — and a stuck alert silently swallows every
+  later HID tap, measured to break the checkout section. Android asserts the full
+  lifecycle including clearing.
+
 - **Fixed: window-vs-window occlusion never fired on iOS.** Every `UIWindow` was
   captured as `kind = .view`, and `CompactObservation` computes occlusion by walking
   the application node's WINDOW children in stacking order — so an overlay window

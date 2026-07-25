@@ -124,7 +124,12 @@ struct SnapshotCapture {
             size: Size(width: Double(bounds.width), height: Double(bounds.height)),
             density: Double(screen.scale),
             interfaceStyle: style,
-            keyboard: KeyboardMonitor.shared.status()
+            keyboard: KeyboardMonitor.shared.status(),
+            // A system alert (permission, biometric) is presented by another
+            // process, so it appears in no window of this app: the tree looks
+            // ordinary while input goes elsewhere. `applicationState` is the fact
+            // iOS does expose — `.active` means this app still receives input.
+            windowFocused: UIApplication.shared.applicationState == .active
         )
     }
 

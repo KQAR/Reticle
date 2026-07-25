@@ -58,7 +58,17 @@ internal object HelperRenderCommands {
         // Lead with the IME state when it was probed: the keyboard is invisible
         // to the node walk, so without this line an agent has no way to know
         // that "tappable" items near the bottom would actually hit the keys.
-        val kb = snapshot.screen.keyboard ?: return lines.joinToString("\n")
+        // Focus loss outranks the keyboard line: when another process's window has
+        // focus (a permission prompt, a biometric sheet) NOTHING in this tree is
+        // tappable, however tappable it looks.
+        val focusLine = if (snapshot.screen.windowFocused == false) {
+            "window: UNFOCUSED — another window has input focus (a system prompt is not part of " +
+                "this app's tree); taps will not reach these items"
+        } else {
+            null
+        }
+        val kb = snapshot.screen.keyboard
+            ?: return (listOfNotNull(focusLine) + lines).joinToString("\n")
         val header = if (kb.visible) {
             val where = kb.frame?.let { " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]" } ?: ""
             val covered = compact.items.count { it.occludedBy == CompactObservation.OCCLUDER_KEYBOARD }
@@ -68,7 +78,7 @@ internal object HelperRenderCommands {
         } else {
             "keyboard: hidden"
         }
-        return (listOf(header) + lines).joinToString("\n")
+        return (listOfNotNull(focusLine) + listOf(header) + lines).joinToString("\n")
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {

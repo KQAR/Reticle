@@ -37,6 +37,20 @@ data class ScreenInfo(
      * snapshot records that part of the screen is covered by the keyboard.
      */
     val keyboard: KeyboardInfo? = null,
+    /**
+     * Does this app's top window still hold input focus? Null when the platform
+     * did not probe it.
+     *
+     * The honest answer to the one on-screen thing an in-process agent cannot
+     * see. A system permission prompt, a biometric sheet, an autofill dialog —
+     * all belong to another process, so they appear in no window of this app and
+     * in no node of this tree. A capture taken while one is up looks like an
+     * ordinary screen with every control still "tappable", yet input goes
+     * elsewhere. This flag does not reveal what is on top; it reports the fact
+     * that something is, which is enough for an agent to stop instead of tapping
+     * into a void.
+     */
+    val windowFocused: Boolean? = null,
 )
 
 @Serializable

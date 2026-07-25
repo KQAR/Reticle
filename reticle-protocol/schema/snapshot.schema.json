@@ -78,6 +78,10 @@
           "type": ["string", "null"],
           "description": "\"light\" | \"dark\" — UI night-mode flag, or null."
         },
+        "windowFocused": {
+          "type": ["boolean", "null"],
+          "description": "Does this app's top window still hold input focus? False means another window — possibly another process's, e.g. a permission prompt — has it."
+        },
         "keyboard": {
           "oneOf": [{ "$ref": "#/$defs/KeyboardInfo" }, { "type": "null" }],
           "description": "System keyboard (IME) state at capture time, or null when the platform did not probe it. The IME is another process's window, so it never appears in the node tree; this field is the only record that part of the screen is covered."
