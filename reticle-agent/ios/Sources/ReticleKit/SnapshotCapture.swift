@@ -177,7 +177,23 @@ struct SnapshotCapture {
         b.nodes[ref] = Node(
             ref: ref,
             parentRef: parentRef,
-            kind: .view,
+            // A UIWindow must be `.window`, not `.view`. `CompactObservation`
+            // computes occlusion by walking the application node's WINDOW children
+            // in stacking order, so while every window was typed `.view` the
+            // window-vs-window path could not fire on iOS at all — an overlay
+            // window covering the screen left the nodes underneath looking
+            // perfectly tappable. Android has always reported this.
+            //
+            // The keyboard's host windows are the exception, and not a cosmetic
+            // one: `UIRemoteKeyboardWindow` / `UITextEffectsWindow` span the WHOLE
+            // screen even though the visible keys occupy the bottom strip, so
+            // treating them as occluders marked every node on screen occluded —
+            // including the ones above the keyboard (measured: the login screen's
+            // status label and text field). Keyboard coverage has its own, exact
+            // channel: `screen.keyboard` plus `occluded-by:keyboard`, which also
+            // clears the moment `act hide-keyboard` runs, whereas the window can
+            // linger.
+            kind: (view is UIWindow && !SnapshotCapture.isKeyboardHostWindow(view)) ? .window : .view,
             typeName: NSStringFromClass(type(of: view)),
             role: role(for: view),
             resourceId: nil,
@@ -205,6 +221,19 @@ struct SnapshotCapture {
     /// row has no node at all — and without this flag that is indistinguishable
     /// from an element the app doesn't have. SwiftUI's `List` and `ScrollView` are
     /// `UIScrollView`s underneath, so one check covers both.
+    /// Windows that merely HOST the system keyboard's remote content. Their frames
+    /// are screen-sized, so they must not act as occluders — see the `kind:`
+    /// comment above.
+    static func isKeyboardHostWindow(_ view: UIView) -> Bool {
+        var cls: AnyClass? = type(of: view)
+        while let current = cls {
+            let name = NSStringFromClass(current)
+            if name.contains("RemoteKeyboardWindow") || name.contains("TextEffectsWindow") { return true }
+            cls = class_getSuperclass(current)
+        }
+        return false
+    }
+
     private func scrollInfo(_ view: UIView) -> ScrollInfo? {
         guard let scrollView = view as? UIScrollView else { return nil }
         let inset = scrollView.adjustedContentInset

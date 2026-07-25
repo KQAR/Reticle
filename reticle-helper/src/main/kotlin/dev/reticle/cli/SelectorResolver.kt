@@ -80,11 +80,9 @@ class SelectorResolver(
      * behind on the screen underneath it.
      */
     private fun labelMatch(label: String): Node? {
-        val top = topWindowRef()
-        val candidates = snapshot.nodes.values.filter { node ->
-            node.isVisible && node.frame != null &&
-                (top == null || windowRefOf(node) == top)
-        }
+        val candidates = inHighestWindowWithAny(
+            snapshot.nodes.values.filter { it.isVisible && it.frame != null }
+        )
         fun textOf(node: Node) = node.text ?: node.contentDescription
         val exact = candidates.filter { textOf(it)?.trim() == label }
         val matches = exact.ifEmpty {
@@ -119,11 +117,26 @@ class SelectorResolver(
         return false
     }
 
-    /** The last visible window root; popups/dialogs stack last. */
-    private fun topWindowRef(): String? =
-        snapshot.root()?.children
+    /**
+     * Keep only the candidates that live in the HIGHEST-stacked window containing
+     * any of them. A popup's item must win over the same words left on the screen
+     * behind it — but "topmost window" alone is the wrong rule: the system keyboard
+     * is itself a window in the scene on iOS, so hard-scoping to the top window
+     * would hide the app's own content whenever the keyboard is up. Preferring the
+     * highest window that HAS a match gives the popup precedence without ever
+     * emptying the candidate set.
+     */
+    private fun inHighestWindowWithAny(nodes: List<Node>): List<Node> {
+        val windowRefs = snapshot.root()?.children
             ?.filter { snapshot.nodes[it]?.kind == dev.reticle.core.NodeKind.window }
-            ?.lastOrNull { snapshot.nodes[it]?.isVisible == true }
+            ?: return nodes
+        if (windowRefs.isEmpty()) return nodes
+        val byWindow = nodes.groupBy { windowRefOf(it) }
+        for (ref in windowRefs.asReversed()) {
+            byWindow[ref]?.takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        return nodes
+    }
 
     private fun windowRefOf(node: Node): String? {
         var current: Node? = node
