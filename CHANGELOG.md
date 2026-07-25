@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **Fixed: window-vs-window occlusion never fired on iOS.** Every `UIWindow` was
+  captured as `kind = .view`, and `CompactObservation` computes occlusion by walking
+  the application node's WINDOW children in stacking order — so an overlay window
+  covering the screen left the controls beneath it looking perfectly tappable, which
+  is the precise silent wrongness the occlusion work exists to prevent. (Measured:
+  `r1 kind=view role=window UIWindow`.) `UIWindow` nodes are now `kind = .window`,
+  and a control under an overlay window reports `occluded-by:<windowRef>` exactly as
+  on Android — with one deliberate exception found by the fix itself: the keyboard's
+  host windows (`UIRemoteKeyboardWindow` / `UITextEffectsWindow`) span the WHOLE
+  screen even though the visible keys occupy the bottom strip, so treating them as
+  occluders marked every node on screen occluded, including nodes well above the
+  keyboard. Keyboard coverage keeps its own exact channel (`screen.keyboard` +
+  `occluded-by:keyboard`), which also clears the instant `act hide-keyboard` runs,
+  whereas the window can linger. The `UIAlertController` case remains without occlusion because iOS
+  presents an alert INSIDE the presenting window — a presentation difference, not a
+  missing capability, and the e2e now says so instead of implying a gap.
+
+- Window scoping for `--label` and `act scroll-to` now prefers the highest-stacked
+  window that CONTAINS a candidate, rather than the topmost window outright. Making
+  `UIWindow`s real windows activated those filters on iOS, where the system keyboard
+  is itself a window in the scene — a strict "top window only" rule would have
+  emptied the candidate set whenever the keyboard was up.
+
+- Sample app + e2e (iOS): an **overlay window** scenario — a real second `UIWindow`
+  at `.alert` level over the screen. Asserts nothing is occluded before it exists,
+  the control beneath is `occluded-by` once it is up, the overlay's own content is
+  captured, its dismiss button is reachable by `--label` (window scoping and all),
+  and the occlusion CLEARS when it goes away.
+
 - **A blocked DOM bridge now says so: `dom:unavailable`.** A web page can raise a
   NATIVE modal from JavaScript (`alert()` / `confirm()`), and that blocks the
   page's JS thread until the app dismisses it — so `evaluateJavascript` can never
@@ -210,8 +239,9 @@
   window-vs-window occlusion path. iOS's `SystemDialogViewController` presents a
   `UIAlertController` *inside* the presenting window (not a separate `UIWindow`),
   so the e2e asserts the alert's title / message / actions are captured but
-  deliberately makes no `occluded-by` assertion (iOS `UIWindow` nodes are captured
-  as `.view`, so the window-occlusion path does not fire there). Both scenarios
+  deliberately makes no `occluded-by` assertion — there is no second window there to
+  occlude anything. (At the time this also reflected iOS capturing every `UIWindow`
+  as `.view`; that has since been fixed — see the overlay-window entry above.) Both scenarios
   are app-owned dialogs — a true system-process permission prompt is out of reach
   for an in-process agent. Verified on an emulator + simulator; element content
   and frames confirmed pixel-accurate against screenshots.

@@ -36,7 +36,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|list|canvasControl|webview|swiftui|tabbar|login|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|list|canvasControl|webview|swiftui|tabbar|login|overlayWindow|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -70,6 +70,8 @@ private let scenarioEntries: [ScenarioEntry] = [
                   subtitle: "Four-item TabView with per-tab pages"),
     ScenarioEntry(tag: "login", title: "Login keyboard trap",
                   subtitle: "Bottom submit button that the keyboard covers"),
+    ScenarioEntry(tag: "overlayWindow", title: "Overlay window",
+                  subtitle: "A real second UIWindow that occludes the screen beneath it"),
     ScenarioEntry(tag: "dialog", title: "System dialog",
                   subtitle: "UIAlertController raised over the scenario"),
     ScenarioEntry(tag: "lottieDialog", title: "Lottie dialog",
@@ -109,6 +111,8 @@ private func scenarioDestination(_ tag: String) -> some View {
             // Defeat SwiftUI's automatic keyboard avoidance: the trap only
             // reproduces when the button stays put and the keyboard covers it.
             .ignoresSafeArea(.keyboard)
+    case "overlayWindow":
+        ScenarioScreen { OverlayWindowViewController() }.navigationTitle("Overlay window")
     case "dialog":
         ScenarioScreen { SystemDialogViewController() }.navigationTitle("System dialog")
     case "lottieDialog":

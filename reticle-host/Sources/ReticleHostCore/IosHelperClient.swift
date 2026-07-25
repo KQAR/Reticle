@@ -630,9 +630,6 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             }) else { throw HelperError("scroll-to: no node matched --container '\(wanted)'") }
             return node
         }
-        let topWindow = snapshot.root()?.children
-            .filter { snapshot.nodes[$0]?.kind == .window }
-            .last { snapshot.nodes[$0]?.isVisible == true }
         func windowRef(of node: Node) -> String? {
             var current: Node? = node
             while let n = current {
@@ -641,12 +638,18 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
             }
             return nil
         }
-        return snapshot.nodes.values
-            .filter { $0.scroll?.isScrollable == true && $0.frame != nil }
-            .filter { topWindow == nil || windowRef(of: $0) == topWindow }
-            .max { lhs, rhs in
-                (lhs.frame!.width * lhs.frame!.height) < (rhs.frame!.width * rhs.frame!.height)
-            }
+        let scrollables = snapshot.nodes.values.filter { $0.scroll?.isScrollable == true && $0.frame != nil }
+        // Highest-stacked window that HAS a scroller: the keyboard is itself a
+        // window in the scene, so "top window only" would find nothing when it is up.
+        let windowRefs = (snapshot.root()?.children ?? []).filter { snapshot.nodes[$0]?.kind == .window }
+        var scoped = Array(scrollables)
+        for ref in windowRefs.reversed() {
+            let inWindow = scrollables.filter { windowRef(of: $0) == ref }
+            if !inWindow.isEmpty { scoped = inWindow; break }
+        }
+        return scoped.max { lhs, rhs in
+            (lhs.frame!.width * lhs.frame!.height) < (rhs.frame!.width * rhs.frame!.height)
+        }
     }
 
     private func firstDirection(_ scroll: ScrollInfo) -> String? {
