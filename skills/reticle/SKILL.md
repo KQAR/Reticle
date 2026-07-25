@@ -255,6 +255,11 @@ reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
 
+`window: UNFOCUSED` in a compact means another window — very likely another
+process's, e.g. a permission prompt — holds input focus. Nothing in the tree is
+tappable in that state, and the prompt itself is NOT in the tree (out of process, by
+design). Deal with the prompt first; don't retry taps.
+
 `--label` is for controls the framework builds without ids: `Spinner` dropdown rows
 and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at
 all. It matches visible text / the a11y label (exact, then substring) in the topmost

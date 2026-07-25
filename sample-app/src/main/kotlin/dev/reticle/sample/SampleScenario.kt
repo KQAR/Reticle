@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    Permission(
+        title = "System permission prompt",
+        subtitle = "Another process's window: invisible to the tree, visible as lost focus",
+        testId = "scenario.permission",
+        activityClass = PermissionScenarioActivity::class.java,
+    ),
     WebJsDialog(
         title = "Web JS dialog",
         subtitle = "alert() raises a native modal and blocks the page's JS thread",

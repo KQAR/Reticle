@@ -612,4 +612,19 @@ HOLD="$(hold_launch "$NOAGENT_ID" "$DYLIB" "$PORT")"; sleep 3
 "$HOST" --target ios ui compact "$TMP/inject/snapshot.json"
 kill "$HOLD" 2>/dev/null || true
 
+# NOTE (iOS focus evidence is NOT asserted here, deliberately). `screen.windowFocused`
+# is implemented on iOS and was verified by hand: raising the sample's `permission`
+# scenario alert reports `window: UNFOCUSED …`. It is not in this suite because the
+# state cannot be re-armed or cleaned up reliably:
+#   - an app switch would suspend the app on a simulator, tearing down the agent's
+#     socket, so the evidence becomes unreadable (`GET /snapshot timed out`);
+#   - a real UNUserNotificationCenter alert keeps the app foreground-inactive (so the
+#     agent still answers) but `simctl privacy reset notifications` does not reliably
+#     re-arm the prompt once answered, and nothing in the host or simctl can ANSWER an
+#     open one (`simctl privacy grant` -> "Operation not permitted"; terminating the
+#     app leaves it standing) — a stuck alert then silently swallows every later HID
+#     tap (measured: it broke the checkout assertion).
+# The Android suite asserts the same evidence end to end, including that it clears.
+# Tracked in docs/roadmap.md.
+
 echo "== OK: artifacts in $TMP =="

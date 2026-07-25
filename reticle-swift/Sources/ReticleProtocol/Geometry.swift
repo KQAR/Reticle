@@ -54,12 +54,28 @@ public struct ScreenInfo: Codable, Equatable, Sendable {
     /// appears in the node tree — this is the only record that part of the
     /// screen is covered. (Currently filled by the Android agent.)
     public var keyboard: KeyboardInfo?
+    /// Does this app's top window still hold input focus? Nil when unprobed.
+    ///
+    /// The honest answer to the one on-screen thing an in-process agent cannot
+    /// see: a system permission prompt, a biometric sheet or an autofill dialog
+    /// belongs to another process, so it appears in no window of this app and no
+    /// node of this tree — a capture taken while one is up looks like an ordinary
+    /// screen with every control still "tappable". This does not reveal what is on
+    /// top; it reports that something is.
+    public var windowFocused: Bool?
 
-    public init(size: Size, density: Double, interfaceStyle: String? = nil, keyboard: KeyboardInfo? = nil) {
+    public init(
+        size: Size,
+        density: Double,
+        interfaceStyle: String? = nil,
+        keyboard: KeyboardInfo? = nil,
+        windowFocused: Bool? = nil
+    ) {
         self.size = size
         self.density = density
         self.interfaceStyle = interfaceStyle
         self.keyboard = keyboard
+        self.windowFocused = windowFocused
     }
 }
 

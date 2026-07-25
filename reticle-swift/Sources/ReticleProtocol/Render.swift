@@ -53,7 +53,16 @@ public enum Render {
         // invisible to the node walk, so without this line an agent has no way
         // to know that "tappable" items near the bottom would actually hit the
         // keys. Matches the Kotlin helper's rendering.
-        guard let kb = snapshot.screen.keyboard else { return lines.joined(separator: "\n") }
+        // Focus loss outranks the keyboard line: when another window holds input
+        // focus (a system prompt, presented by another process and therefore absent
+        // from this tree) nothing here is tappable, however tappable it looks.
+        let focusLine: String? = snapshot.screen.windowFocused == false
+            ? "window: UNFOCUSED — another window has input focus (a system prompt is not part of "
+                + "this app's tree); taps will not reach these items"
+            : nil
+        guard let kb = snapshot.screen.keyboard else {
+            return ((focusLine.map { [$0] } ?? []) + lines).joined(separator: "\n")
+        }
         let header: String
         if kb.visible {
             let whereStr = kb.frame.map { " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? ""
@@ -64,7 +73,7 @@ public enum Render {
         } else {
             header = "keyboard: hidden"
         }
-        return ([header] + lines).joined(separator: "\n")
+        return ((focusLine.map { [$0] } ?? []) + [header] + lines).joined(separator: "\n")
     }
 
     static func tree(_ snapshot: Snapshot, maxDepth: Int) -> String {
