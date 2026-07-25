@@ -303,6 +303,26 @@ agent's screenshot showed only the app's own screen while a device-level
 `simctl io screenshot` showed the alert plainly. An agent that falls back to "look at
 the picture" is fooled exactly like the tree is.
 
+**The screenshot's own blind spots are labelled, not left blank.** A picture is
+believed more readily than a tree, so where it silently omits something the omission
+must be stated. The two paths fail in exactly complementary ways, both measured with
+`scenario.screenshotDegrade` on an emulator:
+
+| what | in-process capture (`agent /screenshot`) | device capture (`adb exec-out screencap`) |
+| --- | --- | --- |
+| `SurfaceView` content | **missing** — its own surface is composited by SurfaceFlinger, so the Canvas walk leaves rgba `0,0,0,0` | present (magenta, `255,0,255`) |
+| `FLAG_SECURE` window | present, unaffected | **blanked** — the whole frame is `0,0,0,255` |
+
+So the node carries `custom["pixelStatus"] = "unavailable"` (compact:
+`pixels:unavailable`) and the window carries `custom["screencapStatus"] = "blank"`
+(compact: `screencap:blank`), and `reticle ui screenshot` prints a `degraded:` line
+naming what the picture it just wrote is missing. iOS has the same shape for a
+different reason: the keyboard's host window refuses to render into a borrowed
+context (`drawHierarchy` returns false, and the capture skips it rather than let it
+black out everything below), so that window is marked `pixels:unavailable` too —
+measured, the agent's picture shows the app's plain background where
+`simctl io screenshot` shows the keys.
+
 **A blocked DOM read is reported, not implied.** `alert()`/`confirm()` block the
 page's JS thread until the app dismisses them, so `evaluateJavascript` cannot call
 back and the DOM read hits its 750ms budget. The bridge degrades to L0 (the web

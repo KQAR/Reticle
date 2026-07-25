@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **The screenshot's blind spots are labelled, not left blank.** A picture is trusted
+  more readily than a tree, so a silent omission in one is the worst kind of evidence.
+  Measured on an emulator with a new `scenario.screenshotDegrade`, the two capture
+  paths fail in exactly complementary ways:
+
+  | | in-process (`agent /screenshot`) | device (`adb exec-out screencap`) |
+  | --- | --- | --- |
+  | `SurfaceView` content | **missing** — rgba `0,0,0,0`, a transparent hole | present (`255,0,255`) |
+  | `FLAG_SECURE` window | present, unaffected | **blanked** — `0,0,0,255` |
+
+  So the `SurfaceView` node now carries `pixels:unavailable` and the secure window
+  `screencap:blank` (compact renders both), and `reticle ui screenshot` prints a
+  `degraded:` line naming what the picture it just wrote is missing and which path
+  would show it. iOS gets the same marker for a different cause, also measured: the
+  keyboard's host window refuses to render into a borrowed context, so the agent's
+  picture shows the app's plain background where `simctl io screenshot` shows the
+  keys — the capture already skipped that window, it just never said so.
+
+  Both suites assert the labels AND the pixels behind them (crop with `sips`, decode a
+  1x1 PNG), so the markers cannot quietly become decorative.
+
 - **SwiftUI `Text` links are addressable (iOS).** A markdown `Text` ("Read the
   [Terms](…) and [Privacy](…)") is ONE accessibility element with one label — no
   `UILabel`, no `NSAttributedString.link` run, no child element, no view to measure —

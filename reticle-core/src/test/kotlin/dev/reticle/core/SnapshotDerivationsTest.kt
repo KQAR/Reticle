@@ -218,6 +218,44 @@ class SnapshotDerivationsTest {
     }
 
     @Test
+    fun compact_labelsWhatEachScreenshotPathCannotShow() {
+        // A blank rect in a picture reads as "the app drew nothing there", so both
+        // blind spots are marked on the node and rendered: a SurfaceView is missing
+        // from the IN-PROCESS capture, a FLAG_SECURE window from the DEVICE one.
+        val nodes = linkedMapOf(
+            "app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("win")),
+            "win" to Node(
+                ref = "win", parentRef = "app", kind = NodeKind.window, typeName = "DecorView",
+                role = "window", isInteractive = true, frame = Rect(0.0, 0.0, 1080.0, 2400.0),
+                custom = mapOf("screencapStatus" to MetadataValue.Text("blank")),
+                children = listOf("surface"),
+            ),
+            "surface" to Node(
+                ref = "surface", parentRef = "win", kind = NodeKind.view, typeName = "android.view.SurfaceView",
+                role = "view", contentDescription = "Video surface", frame = Rect(0.0, 200.0, 1080.0, 600.0),
+                custom = mapOf("pixelStatus" to MetadataValue.Text("unavailable")),
+            ),
+        )
+        val compact = CompactObservation.from(
+            Snapshot(
+                capturedAtMillis = 0L,
+                screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+                rootRef = "app",
+                nodes = nodes,
+            )
+        )
+        val surface = compact.items.first { it.ref == "surface" }
+        assertTrue(surface.pixelsUnavailable, "the SurfaceView must carry the in-process blind spot")
+        assertTrue(surface.line().contains("pixels:unavailable"), surface.line())
+        val window = compact.items.first { it.ref == "win" }
+        assertTrue(window.screencapBlank, "the FLAG_SECURE window must carry the device-capture blind spot")
+        assertTrue(window.line().contains("screencap:blank"), window.line())
+        // The two are complements, never the same claim about one capture.
+        assertFalse(surface.screencapBlank)
+        assertFalse(window.pixelsUnavailable)
+    }
+
+    @Test
     fun uiReport_derivesEveryViewFromOneSnapshot() {
         val snapshot = sampleSnapshot()
         val report = UiReport.from(snapshot)

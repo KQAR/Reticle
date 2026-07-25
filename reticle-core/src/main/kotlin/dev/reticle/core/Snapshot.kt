@@ -121,6 +121,26 @@ data class Node(
     fun domUnavailable(): Boolean =
         (custom["domStatus"] as? MetadataValue.Text)?.value == "unavailable"
 
+    /**
+     * True when this node's pixels are NOT in an in-process screenshot: an Android
+     * `SurfaceView` draws into its own surface (composited by SurfaceFlinger, so the
+     * agent's Canvas walk leaves a transparent hole where the video/GL content is),
+     * and an iOS keyboard host window refuses to render into a borrowed context.
+     * Measured, not assumed — see `scenario.screenshotDegrade`. Agents set
+     * `custom["pixelStatus"] = "unavailable"`; this is the single place that
+     * spelling is interpreted.
+     */
+    fun pixelsUnavailable(): Boolean =
+        (custom["pixelStatus"] as? MetadataValue.Text)?.value == "unavailable"
+
+    /**
+     * The mirror image: this window is `FLAG_SECURE`, so a DEVICE-level capture
+     * (`adb exec-out screencap`) comes back blanked while the in-process capture is
+     * unaffected. Agents set `custom["screencapStatus"] = "blank"`.
+     */
+    fun screencapBlank(): Boolean =
+        (custom["screencapStatus"] as? MetadataValue.Text)?.value == "blank"
+
     fun hasTargetingSignal(): Boolean =
         testId != null ||
             resourceId != null ||
