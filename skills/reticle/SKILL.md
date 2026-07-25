@@ -240,6 +240,17 @@ visible DOM. iframe inner documents, shadow-root internals, pseudo-elements, and
 background-image intrinsic dimensions are boundaries unless explicitly added
 later. CSS `background-image` itself is still visible as `domStyleBackgroundImage`.
 
+**Third-party WebView kernels have no DOM at all.** The bridge is typed on
+`android.webkit.WebView`, so an X5/TBS or UC kernel (a class that calls itself a
+WebView but is not the platform one) cannot be attached to: no `--css`, no styles,
+no piercing, at any level. This is structural, not a transient degrade — retrying
+or waiting will never produce DOM nodes. Reticle reports it instead of looking
+like an empty page: the node carries `dom:unsupported-kernel` (with the class name
+in `custom.domKernel`), and a `--css` miss on such a screen says so. Target those
+views as plain views (`--test-id` / `--point`); their in-page content is only
+reachable if the app exposes it some other way. iOS is unaffected — there is one
+web engine.
+
 ## Acting on the app
 
 Selector resolution is semantic-first, then view-tree frames, then a raw

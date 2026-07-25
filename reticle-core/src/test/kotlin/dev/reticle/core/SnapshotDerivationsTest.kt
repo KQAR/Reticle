@@ -256,6 +256,42 @@ class SnapshotDerivationsTest {
     }
 
     @Test
+    fun compact_separatesAnUnreadableDomFromAKernelThatHasNone() {
+        // Two different claims that used to look identical: "the DOM could not be
+        // read just now" (retry may help) and "this kernel has no DOM bridge at all"
+        // (retrying is pointless).
+        val nodes = linkedMapOf(
+            "app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("blocked", "kernel")),
+            "blocked" to Node(
+                ref = "blocked", parentRef = "app", kind = NodeKind.view, typeName = "android.webkit.WebView",
+                role = "container", contentDescription = "Blocked web view", frame = Rect(0.0, 0.0, 100.0, 100.0),
+                custom = mapOf("domStatus" to MetadataValue.Text("unavailable")),
+            ),
+            "kernel" to Node(
+                ref = "kernel", parentRef = "app", kind = NodeKind.view, typeName = "com.tencent.smtt.sdk.WebView",
+                role = "view", contentDescription = "X5 view", frame = Rect(0.0, 100.0, 100.0, 100.0),
+                custom = mapOf(
+                    "domStatus" to MetadataValue.Text("unsupportedKernel"),
+                    "domKernel" to MetadataValue.Text("com.tencent.smtt.sdk.WebView"),
+                ),
+            ),
+        )
+        val snapshot = Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+            rootRef = "app",
+            nodes = nodes,
+        )
+        assertEquals("com.tencent.smtt.sdk.WebView", snapshot.nodes["kernel"]!!.domKernelName())
+        val compact = CompactObservation.from(snapshot)
+        val blocked = compact.items.first { it.ref == "blocked" }
+        val kernel = compact.items.first { it.ref == "kernel" }
+        assertTrue(blocked.domUnavailable && !blocked.domKernelUnsupported, blocked.line())
+        assertTrue(kernel.domKernelUnsupported && !kernel.domUnavailable, kernel.line())
+        assertTrue(kernel.line().contains("dom:unsupported-kernel"), kernel.line())
+    }
+
+    @Test
     fun uiReport_derivesEveryViewFromOneSnapshot() {
         val snapshot = sampleSnapshot()
         val report = UiReport.from(snapshot)

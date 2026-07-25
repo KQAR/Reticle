@@ -283,6 +283,12 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
   `Adb` falls back to `$ANDROID_SERIAL`. With multiple devices and neither set,
   `deviceState()` throws a `DeviceError` naming the candidates rather than
   guessing — `doctor`/`devices` still list them all. See `AdbDeviceSelectionTest`.
+- `WebViewBridge` is typed on `android.webkit.WebView`, so a third-party kernel
+  (X5/TBS, UC) has no DOM at any level. Deliberately NOT adapted reflectively — it
+  could not be verified without a real kernel sample. Instead the capture marks such
+  a view `dom:unsupported-kernel` (+ `custom.domKernel`) and a `--css` miss explains
+  it; `scenario.foreignKernel` covers the shape with a self-drawn stand-in beside a
+  real WebView.
 - The two screenshot blind spots are exact complements, and both are now
   **labelled** rather than left as a blank rect (measured by
   `scenario.screenshotDegrade`): a `SurfaceView`'s own surface is missing from the

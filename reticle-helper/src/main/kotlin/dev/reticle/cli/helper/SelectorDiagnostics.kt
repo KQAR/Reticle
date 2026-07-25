@@ -36,7 +36,23 @@ internal object SelectorDiagnostics {
             else -> "Use one of: --test-id, --resource-id, --css, --ref, or --point x,y."
         }
         val regionHint = selector.region?.let { regionHint(snapshot, selector, it) }
-        return listOfNotNull(candidates, regionHint, scrollHint(snapshot)).joinToString(" ")
+        return listOfNotNull(candidates, regionHint, scrollHint(snapshot), kernelHint(snapshot, selector))
+            .joinToString(" ")
+    }
+
+    /**
+     * A `--css` miss on a screen whose web view is a third-party kernel is not a
+     * wrong selector — there is no DOM to match against, and no wait or retry will
+     * make one. Said here because this is exactly where an agent hits that wall.
+     */
+    private fun kernelHint(snapshot: Snapshot, selector: Selector): String? {
+        if (selector.cssSelector == null) return null
+        val kernels = snapshot.nodes.values.filter { it.domKernelUnsupported() }
+        if (kernels.isEmpty()) return null
+        val named = kernels.mapNotNull { it.domKernelName() }.distinct().joinToString(", ")
+        return "Note: this screen has a suspected third-party WebView kernel ($named). " +
+            "Reticle's DOM bridge is typed on android.webkit.WebView, so that view has NO DOM " +
+            "at any level — target it as a plain view (--test-id / --point) instead of by CSS."
     }
 
     /**

@@ -106,6 +106,12 @@ enum class SampleScenario(
         subtitle = "A SurfaceView the in-process capture cannot see, and FLAG_SECURE",
         testId = "scenario.screenshotDegrade",
         activityClass = ScreenshotDegradeScenarioActivity::class.java,
+    ),
+    ForeignKernel(
+        title = "Third-party WebView kernel",
+        subtitle = "A non-android.webkit kernel has no DOM at any level, and says so",
+        testId = "scenario.foreignKernel",
+        activityClass = ForeignKernelScenarioActivity::class.java,
     );
 
     fun intent(context: Context): Intent = Intent(context, activityClass)
