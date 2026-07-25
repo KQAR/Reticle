@@ -59,6 +59,14 @@ object SampleWebFixtures {
             html = webComponentHtml,
         )
 
+    /** A page that raises a native JS modal (`alert()`), blocking the JS thread. */
+    fun webJsDialogFixture(): Fixture =
+        Fixture(
+            heightPx = ViewGroup.LayoutParams.MATCH_PARENT,
+            baseUrl = "https://reticle.dev/sample/web-js-dialog",
+            html = webJsDialogHtml,
+        )
+
     private fun readAsset(context: Context, name: String): String =
         context.assets.open(name).bufferedReader().use { it.readText() }
 
@@ -322,6 +330,34 @@ object SampleWebFixtures {
                 document.getElementById('web-status').innerText = 'Done';
               }
             </script>
+          </body>
+        </html>
+    """.trimIndent()
+
+/**
+     * A page whose button raises a NATIVE modal from JavaScript. `alert()` blocks
+     * the page's JS thread until the app dismisses it, which is what makes this a
+     * boundary case rather than another dialog: while it is up, the DOM bridge's
+     * `evaluateJavascript` can never call back.
+     */
+    private val webJsDialogHtml: String = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body { font-family: sans-serif; margin: 16px; }</style>
+          </head>
+          <body>
+            <h1 id="js-title" data-testid="jsDialog.title">Payment</h1>
+            <p id="js-status" data-testid="jsDialog.status">Ready</p>
+            <button id="js-alert" data-testid="jsDialog.alertButton"
+              onclick="alert('Payment failed'); document.getElementById('js-status').innerText = 'Alert dismissed';">
+              Pay (raises a JS alert)
+            </button>
+            <button id="js-busy" data-testid="jsDialog.busyButton"
+              onclick="var end = Date.now() + 4000; while (Date.now() < end) {} document.getElementById('js-status').innerText = 'Busy done';">
+              Block the JS thread for 4s
+            </button>
           </body>
         </html>
     """.trimIndent()

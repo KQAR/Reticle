@@ -23,6 +23,12 @@ enum class SampleScenario(
         testId = "scenario.agreements",
         activityClass = AgreementScenarioActivity::class.java,
     ),
+    WebJsDialog(
+        title = "Web JS dialog",
+        subtitle = "alert() raises a native modal and blocks the page's JS thread",
+        testId = "scenario.webJsDialog",
+        activityClass = WebJsDialogScenarioActivity::class.java,
+    ),
     Popups(
         title = "Popup windows",
         subtitle = "PopupWindow, a Spinner dropdown, and an overflow PopupMenu",
