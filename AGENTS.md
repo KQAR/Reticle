@@ -116,7 +116,12 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 - Reticle does not synthesize a Compose view tree. Compose elements are valid
   movement/input targets only when exposed through the SemanticsNode tree
   (`Modifier.testTag`, contentDescription). Never invent selectors from private
-  Compose internals.
+  Compose internals. The `scenario.compose` sample screen is the end-to-end
+  coverage for this path (tagged tap, `type` into a composable `TextField`, a
+  `Dialog`'s own window/semantics owner, and an `AndroidView` interop child).
+  Known limitation, measured: a `LinkAnnotation` inside a Compose `Text` is
+  captured as ONE node with no sub-regions — `RegionProbe` runs on Views, so the
+  span/char-grid channels don't reach Compose text yet.
 - The CLI exposes `tap`, `swipe`, `drag`, and `type`. `pinch` keeps the API
   shape but is not implemented (needs `sendevent` multi-touch).
 - Keep full snapshots on disk. Send compact observations to agents by default,
@@ -159,8 +164,9 @@ scripts/e2e-android.sh [<serial>]               # full device/emulator round tri
 
 It builds the agent + both sample flavors, installs them, and drives every
 scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
-mutation, agreement regions, the canvas control (virtual a11y sub-nodes under
-both id conventions + a touch-delegate rect), WebView DOM, the login keyboard trap, the system
+mutation, agreement regions, the Compose semantics screen, the canvas control
+(virtual a11y sub-nodes under both id conventions + a touch-delegate rect),
+WebView DOM, the login keyboard trap, the system
 dialog (AlertDialog window recognition + occlusion), the native Lottie dialog,
 the web Lottie modal, the web-component (shadow DOM) modal, the Lottie-only
 dialog (recovering title/message/buttons baked into one Lottie via the Lottie
