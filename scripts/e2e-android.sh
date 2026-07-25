@@ -474,6 +474,19 @@ PY
 # at the reported rect must fire the frame's own onclick.
 R act tap --package "$PKG" --css "#fixture-frame >>> #iframe-button" >/dev/null
 wait_compact "$PKG" "Frame clicked"
+# The shadow-DOM boundary, asserted from BOTH sides on one screen: an OPEN root is
+# pierced, a CLOSED one cannot be — `{mode:'closed'}` gives the page itself no
+# `shadowRoot` handle, so the traversal script has nothing to walk. The absence is
+# the assertion; without it, "no closed-shadow nodes" would just be silence.
+SHADOW_COMPACT="$(R ui compact --live --package "$PKG")"
+echo "$SHADOW_COMPACT" | grep -q "complex.shadowButton" \
+  || { echo "FAIL: an OPEN shadow root must still be pierced"; exit 1; }
+echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
+  && { echo "FAIL: a CLOSED shadow root must not be readable — this would be a wrong claim, not a win"; exit 1; }
+# The host element itself is still there: the boundary is the root's content, not
+# the element, so the closed widget stays targetable as a plain DOM node.
+echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
+  || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField

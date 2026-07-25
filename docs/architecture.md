@@ -587,3 +587,45 @@ specific refs/nodes on demand (`ui node`). `reticle serve` persists daemon
 events, body artifacts, mock config, and action traces under the session
 directory. This keeps token cost low while preserving full fidelity for when
 it's needed.
+
+## Honest boundaries: what Reticle cannot reach, and what it says instead
+
+An in-process observer has real limits, and the danger is never the limit itself —
+it is a limit that looks like an ordinary, empty-ish observation. This section is
+the single place they are collected, so an agent stops guessing and a contributor
+stops re-investigating. **The rule for all of them: an unreachable thing must
+produce evidence naming itself, never silence.**
+
+The vocabulary that carries these facts, all rendered by `ui compact`:
+
+| Marker | Means |
+| --- | --- |
+| `window: UNFOCUSED …` | Another process's window holds input focus; nothing in this tree is tappable right now |
+| `keyboard: visible […]` + `occluded-by:keyboard` | The IME covers these items (it is never a node) |
+| `occluded-by:<ref>` | An in-app window above this one covers its tap point |
+| `dom:unavailable` | This web view's DOM could not be read *at capture time* (blocked JS thread, JS off, budget) — retry may help |
+| `dom:unsupported-kernel` | A third-party WebView kernel: there is no DOM bridge for it at all — retry never helps |
+| `pixels:unavailable` | This node's pixels are missing from the **in-process** screenshot |
+| `screencap:blank` | This window blanks a **device-level** screenshot (`FLAG_SECURE`) |
+| `scroll:up,down` | The container has travel left, so an absent row may simply be unbound |
+
+### The boundaries themselves
+
+| Boundary | Why it is unreachable | What Reticle emits instead | Pinned by |
+| --- | --- | --- | --- |
+| **Closed shadow roots** | `{mode:'closed'}` gives the page itself no `shadowRoot` handle, so the traversal script has nothing to walk. Open roots ARE pierced | The host element is still captured as a normal DOM node (measured: `#closed-shadow-host` at its real rect); only its innards are absent. Target the host, or ask the app to open the root | `complex` web fixture — both twins on one screen, the absence asserted |
+| **Cross-origin iframes** | `contentDocument` access throws by browser policy; nothing in the app can override it. Same-origin frames are pierced, with the page offset accumulated | The frame element stays a normal node with its rect; no children | Same-origin case is pinned; the cross-origin case is **not exercised** (needs a second origin, and both suites run offline) |
+| **Third-party WebView kernels (X5/TBS, UC)** | `WebViewBridge` is typed on `android.webkit.WebView`. A reflective adapter was rejected: unverifiable without a real kernel sample | `dom:unsupported-kernel` + `custom.domKernel` naming the class, and a `--css` miss that explains the wall | `scenario.foreignKernel` (stand-in beside a real WebView) |
+| **Bitmap-baked text** | Text drawn into an image has no text node anywhere. OCR is out of scope — it would be a guess wearing an observation's clothes | The image node with its frame and `domImage*`/resource metadata. A **Lottie** is the exception, not the rule: its text layers are recovered from the parsed composition | `scenario.lottieOnlyDialog` (recovery); no OCR path exists by design |
+| **Pure-Canvas controls with no accessibility surface** | A canvas is one View; sub-controls exist only in the app's own hit-testing | Whatever channel the app DOES expose: virtual a11y nodes, a touch delegate, link/color runs, or the char grid. With none of them, only the canvas rect and coordinates | `scenario.canvasControl` (both id conventions + a touch delegate) |
+| **Out-of-process system UI** — permission prompts, biometric sheets, share sheets, Custom Tabs / `SFSafariViewController`, the IME | Another process's window: in no window of this app, in no node of this tree, and invisible to the in-process screenshot too | `screen.windowFocused` → `window: UNFOCUSED` (a fact about THIS app, never a claim about what is on top); for the IME, `screen.keyboard` + `occluded-by:keyboard` + `act hide-keyboard` | `scenario.permission` (both platforms, loss AND clearing); login keyboard trap |
+| **Screenshot blind spots** | A `SurfaceView`'s surface is composited by SurfaceFlinger (absent in-process); `FLAG_SECURE` blanks the device-level capture; an iOS keyboard host window refuses to render into a borrowed context | `pixels:unavailable` / `screencap:blank` + a `degraded:` line on the picture naming what is missing and which path would show it | `scenario.screenshotDegrade` (labels and pixels both asserted) |
+| **DRM / protected video** | Same mechanism as a `SurfaceView`, plus a protected surface the system will not let anyone read | The `pixels:unavailable` treatment above; the player's controls are ordinary views and stay targetable | **Not exercised** — no DRM sample in the repo. Listed because the mechanism is the one already measured |
+| **Non-debuggable release builds without the AAR** | JDWP attach requires a debuggable app; Frida/root are out of scope by design | `app inject` fails loudly with the reason rather than half-attaching | `noagent` flavor covers the debuggable-inject path |
+| **Real-device iOS input** | The simulator HID surface has no device equivalent reachable from the host | `act activate` (in-process, the device analogue of a tap) works; coordinate taps are refused with that guidance | `scripts/e2e-ios-device.sh` |
+
+Two rules keep this list honest. A boundary earns a row only when the mechanism is
+understood — "not exercised" is written down where it is, rather than implied by a
+missing test. And nothing here is worked around by inference: no OCR, no
+guess-from-screenshot targeting, no reflective bridge that cannot be verified. The
+agent is told what is unknown; it decides what to do about it.
