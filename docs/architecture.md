@@ -170,7 +170,7 @@ session store through a single `NetworkEventSink` protocol (`emit` +
 conforms to that sink in `ReticleHostCore`, and the Hummingbird rule/flow routes and
 the `reticle rule` / `reticle replay flow` CLIs are thin adapters over the lane's
 public API. This is the compiler-enforced realization of the "capture engine behind
-an interface" goal (docs/roadmap.md): the lane builds and tests without the daemon,
+one sink" decision (docs/roadmap.md): the lane builds and tests without the daemon,
 and swapping the engine means editing one target, not untangling it from the host. Its
 end-to-end path (serve → proxy → mock → `events.jsonl`, including a MITM'd HTTPS
 hit) is guarded on real sockets by `scripts/e2e-proxy.sh` in CI.

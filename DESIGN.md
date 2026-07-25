@@ -511,7 +511,7 @@ Cards hold at `{rounded.lg}` 12px — never pill, rarely 16px. Pills are reserve
 5. Treat lavender as scarce: selection, focus, links, action markers — nothing else.
 6. Lead every action trace with an evidence screenshot.
 7. Every token in this file maps 1:1 to a CSS custom property in the `:root` block of `reticle-host/Sources/ReticleHostCore/WebPanel.swift` (`--canvas`, `--surface-1`, `--ink`, `--primary`, …). Update the CSS variables and this file together; never hard-code a hex in a component rule.
-8. The panel stays **display-only** (see `docs/roadmap.md`, Phase 3): no mutating controls, so no primary-button spec exists — do not add one without revisiting the roadmap.
+8. The panel stays **display-only** (see `docs/roadmap.md` → Deferred, "Web panel reverse-drive"): no mutating controls, so no primary-button spec exists — do not add one without revisiting that decision, which would force a bidirectional transport.
 9. Add new variants as separate component entries.
 10. Run `npx @google/design.md lint DESIGN.md` after edits.
 
