@@ -126,6 +126,25 @@ public struct Node: Codable, Sendable {
         return false
     }
 
+    /// True when this node's pixels are NOT in an in-process screenshot: an iOS
+    /// keyboard host window refuses to render into a borrowed context (measured: the
+    /// whole keyboard is absent from the agent's picture while a device capture shows
+    /// it), and an Android `SurfaceView` leaves a transparent hole. Agents set
+    /// `custom["pixelStatus"] = "unavailable"`; this is the one place that spelling
+    /// is interpreted.
+    public func pixelsUnavailable() -> Bool {
+        if case .text(let v)? = custom["pixelStatus"] { return v == "unavailable" }
+        return false
+    }
+
+    /// The mirror image: a window whose DEVICE-level capture comes back blanked
+    /// (Android `FLAG_SECURE`) while the in-process capture is unaffected. Agents set
+    /// `custom["screencapStatus"] = "blank"`.
+    public func screencapBlank() -> Bool {
+        if case .text(let v)? = custom["screencapStatus"] { return v == "blank" }
+        return false
+    }
+
     public func hasTargetingSignal() -> Bool {
         testId != nil
             || resourceId != nil

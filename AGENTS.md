@@ -283,8 +283,15 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
   `Adb` falls back to `$ANDROID_SERIAL`. With multiple devices and neither set,
   `deviceState()` throws a `DeviceError` naming the candidates rather than
   guessing — `doctor`/`devices` still list them all. See `AdbDeviceSelectionTest`.
-- In-process `/screenshot` won't capture `SurfaceView` / secure windows; the
-  CLI can fall back to `adb exec-out screencap` for those (`reticle ui screenshot`).
+- The two screenshot blind spots are exact complements, and both are now
+  **labelled** rather than left as a blank rect (measured by
+  `scenario.screenshotDegrade`): a `SurfaceView`'s own surface is missing from the
+  in-process capture (transparent hole) but present in `adb exec-out screencap`, so
+  its node carries `pixels:unavailable`; a `FLAG_SECURE` window blanks the
+  device-level capture while the in-process one is fine, so its window node carries
+  `screencap:blank`. `reticle ui screenshot` prints a `degraded:` line for whichever
+  applies to the picture it just wrote. On iOS the same `pixels:unavailable` marks
+  the keyboard's host window, which will not render into an in-process context.
 - Injection into apps without the AAR: `reticle app inject` over JDWP for any
   **debuggable** app (no repackage, no root — works on locked `user` builds where
   `wrap.sh` is blocked); the payload dex is built by `:reticle-agent:android:dexPayload`

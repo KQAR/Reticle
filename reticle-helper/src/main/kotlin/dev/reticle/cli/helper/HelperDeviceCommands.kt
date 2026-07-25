@@ -251,8 +251,57 @@ internal object HelperDeviceCommands {
         return buildJsonObject {
             put("via", via)
             put("pngBase64", Base64.getEncoder().encodeToString(bytes))
+            val degraded = pkg?.let { screenshotDegrades(device, it, params, viaAgent = agentBytes != null) }
+            if (!degraded.isNullOrEmpty()) {
+                put("degraded", buildJsonArray { degraded.forEach { add(it) } })
+            }
         }
     }
+
+    /**
+     * What this picture is missing, said out loud. A blank rect in a screenshot is
+     * indistinguishable from "the app drew nothing there", so each capture path
+     * reports its own blindness from the nodes the agent already marks:
+     *
+     * - in-process: `pixels:unavailable` nodes (a `SurfaceView`'s own surface is
+     *   composited by SurfaceFlinger, so the Canvas walk leaves a transparent hole);
+     * - device-level `screencap`: `screencap:blank` windows (`FLAG_SECURE` blanks the
+     *   whole frame, while the in-process capture is unaffected).
+     *
+     * Best-effort: a snapshot that cannot be fetched simply yields no note, since the
+     * picture itself is already written.
+     */
+    private fun screenshotDegrades(
+        device: dev.reticle.cli.platform.DeviceController,
+        pkg: String,
+        params: JsonObject,
+        viaAgent: Boolean,
+    ): List<String> = runCatching {
+        val client = runtimeClientFor(device, pkg, params)
+        if (client.probe() !is RuntimeHealth.Healthy) return emptyList()
+        val snapshot = client.snapshot()
+        val out = ArrayList<String>()
+        for (node in snapshot.nodes.values) {
+            if (viaAgent && node.pixelsUnavailable()) {
+                val id = node.testId ?: node.resourceId ?: node.ref
+                val where = node.frame?.let {
+                    " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]"
+                } ?: ""
+                out += "$id$where is not in this picture: an in-process capture cannot read " +
+                    "another process's surface (${node.typeName}). `adb exec-out screencap` can."
+            }
+            if (node.screencapBlank()) {
+                out += if (viaAgent) {
+                    "${node.ref} is a FLAG_SECURE window: this in-process picture is complete, but a " +
+                        "device-level `adb exec-out screencap` of it comes back blank."
+                } else {
+                    "${node.ref} is a FLAG_SECURE window: THIS picture is blanked by the system. " +
+                        "The in-process capture (`--package`, with the agent up) is unaffected."
+                }
+            }
+        }
+        out
+    }.getOrElse { emptyList() }
 
     private fun typeText(
         input: InputDispatcher,

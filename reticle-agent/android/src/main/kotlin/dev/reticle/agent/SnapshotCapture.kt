@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.View
+import android.view.SurfaceView
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
@@ -200,7 +201,7 @@ class SnapshotCapture(private val context: Context) {
             isVisible = view.visibility == View.VISIBLE && view.width > 0 && view.height > 0,
             isEnabled = view.isEnabled,
             isInteractive = isInteractive,
-            custom = scalarProperties(view),
+            custom = scalarProperties(view) + screenshotStatus(view, isWindow = kindOverride == NodeKind.window),
             children = childRefs,
             regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
@@ -208,6 +209,34 @@ class SnapshotCapture(private val context: Context) {
             scroll = scrollInfo(view),
         )
         return ref
+    }
+
+    /**
+     * Label the two ways a screenshot lies about this node, so an absence in the
+     * picture is never inferred from a blank rect. Both were measured on an emulator
+     * with `scenario.screenshotDegrade`:
+     *
+     * - a `SurfaceView` draws into its own surface, composited by SurfaceFlinger, so
+     *   the in-process Canvas walk leaves a transparent hole (rgba 0,0,0,0) exactly
+     *   where the magenta surface is, while `adb exec-out screencap` shows it;
+     * - `FLAG_SECURE` is the mirror image — the in-process capture is unaffected
+     *   while the device-level capture comes back fully blanked (rgba 0,0,0,255).
+     */
+    private fun screenshotStatus(view: View, isWindow: Boolean): Map<String, MetadataValue> {
+        val out = LinkedHashMap<String, MetadataValue>()
+        if (view is SurfaceView) {
+            out["pixelStatus"] = MetadataValue.Text("unavailable")
+        }
+        if (isWindow && secureWindow(view)) {
+            out["screencapStatus"] = MetadataValue.Text("blank")
+        }
+        return out
+    }
+
+    /** `FLAG_SECURE` on this window root's layout params, when it has any. */
+    private fun secureWindow(root: View): Boolean {
+        val params = root.layoutParams as? WindowManager.LayoutParams ?: return false
+        return (params.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
     }
 
     /**
