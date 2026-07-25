@@ -33,6 +33,10 @@
             android:exported="false"
             android:label="Agreement Regions" />
         <activity
+            android:name="dev.reticle.sample.ListScenarioActivity"
+            android:exported="false"
+            android:label="Long List" />
+        <activity
             android:name="dev.reticle.sample.ComposeScenarioActivity"
             android:exported="false"
             android:label="Compose Semantics" />

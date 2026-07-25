@@ -69,6 +69,7 @@ data class CompactObservation(
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
                             occludedBy = occluderOf(node, currentWindow),
+                            scroll = node.scroll,
                         )
                     )
                 }
@@ -101,6 +102,12 @@ data class CompactItem(
      * dispatched at this item would land on the occluder instead.
      */
     val occludedBy: String? = null,
+    /**
+     * Scroll capability when this item is a scrollable container. An agent needs
+     * it to tell "this selector doesn't exist" from "it isn't bound yet because
+     * the list hasn't been scrolled there".
+     */
+    val scroll: ScrollInfo? = null,
 ) {
     /** One-line rendering for agent-facing text output. */
     fun line(): String {
@@ -115,6 +122,7 @@ data class CompactItem(
             if (!isEnabled) append(" disabled")
             if (isInteractive) append(" tappable")
             occludedBy?.let { append(" occluded-by:$it") }
+            scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
         }
         return "$selector $role$labelPart$framePart$state"
     }

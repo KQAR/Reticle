@@ -100,6 +100,7 @@ func selectorKey(_ cliName: String) -> String {
     switch cliName {
     case "test-id": return "testId"
     case "resource-id": return "resourceId"
+    case "max-swipes": return "maxSwipes"
     default: return cliName
     }
 }

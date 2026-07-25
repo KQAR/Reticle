@@ -287,6 +287,18 @@ keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
 
+**Scroll capability is evidence, not a promise.** A recycling or lazy container
+(`RecyclerView`, `LazyColumn`, `UIScrollView`/SwiftUI `List`) binds only its
+visible window, so a far-down row has no node, no frame, and no selector at all —
+absent, not off-screen. `Node.scroll` reports whether the container can still move
+in each direction right now (Android `canScrollVertically/Horizontally`, limited
+to `ViewGroup`s because an overflowing `TextView` also answers true; Compose's
+semantics scroll-axis ranges, honouring `reverseScrolling`; iOS content offset vs
+content size), and compact renders it as `scroll:up,down`. It deliberately does
+NOT claim what would come into view — where a missing element lives is not
+knowable from a snapshot. Selector-miss diagnostics on both hosts name the
+scrollable containers so "not found" can be told apart from "not bound yet".
+
 **Compose text is decomposed through the semantics surface, not `Layout`.** The
 channels above read `Spanned` + `Layout`, neither of which exists in Compose, so a
 `Text` with two `LinkAnnotation`s used to arrive as one node with no regions —

@@ -142,14 +142,15 @@ func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
 }
 
 func cmdAct(_ c: HelperCalling, _ args: Args) throws {
-    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/type/hide-keyboard)") }
+    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/type/hide-keyboard)") }
     if gesture == "batch" {
         try cmdActBatch(c, args)
         return
     }
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]
-    for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "region", "from", "to", "duration", "text"] {
+    for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "region", "from", "to",
+              "duration", "text", "container", "direction", "max-swipes"] {
         if let v = args.option(k) { params[selectorKey(k)] = v }
     }
     // `type --submit`: press the keyboard's action key after typing (agent
