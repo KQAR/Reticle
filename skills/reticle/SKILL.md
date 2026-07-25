@@ -610,6 +610,32 @@ Mutations are allowlisted (`text`, `textColor`, `textSize`, `backgroundColor`,
 rebind or restart reverts them. Compose nodes are intentionally immutable here;
 drive declarative UI through the app's own state.
 
+## Honest boundaries (what no retry will fix)
+
+Some things are structurally out of reach for an in-process observer. Reticle
+reports each one instead of returning a plausible-looking nothing, so read the
+marker rather than concluding the screen is empty. **If you see one of these, stop
+and switch tactics — retrying, waiting, or re-capturing will not change it.**
+
+| You see | It means | Do this |
+| --- | --- | --- |
+| `window: UNFOCUSED …` | Another process's window (permission prompt, biometric sheet, share sheet, Custom Tab) has input focus. It is in NO node of the tree and NOT in the agent's screenshot | Deal with that window first; don't tap into the void |
+| `dom:unavailable` | The DOM could not be read *at this moment* (a JS modal blocking the page thread, JS off, budget) | Dismiss the modal / re-capture — this one CAN clear |
+| `dom:unsupported-kernel` | A third-party WebView kernel (X5/UC). There is no DOM for it at any level | Target it as a plain view (`--test-id` / `--point`); `--css` will never match |
+| `pixels:unavailable` | These pixels are missing from the in-process screenshot (Android `SurfaceView`, iOS keyboard window) | Use a device-level capture if you need the picture |
+| `screencap:blank` | A `FLAG_SECURE` window blanks device-level captures | Use the in-process capture (`--package`, agent up) |
+| `occluded-by:<ref>` / `occluded-by:keyboard` | Something is on top of your target's tap point | Dismiss it (`act hide-keyboard`) or target the thing on top |
+| `scroll:up,down` on a container + selector miss | The row may simply not be bound yet | `act scroll-to`, then tap |
+
+Also structural, with no marker because there is nothing to mark: a **closed**
+shadow root (the host element is captured, its contents are not — open roots ARE
+pierced), a **cross-origin iframe** (browser policy; same-origin frames are
+pierced), **text baked into a bitmap** (no OCR — that would be a guess dressed as
+an observation; a Lottie is the exception, its text layers are recovered), and a
+**pure-Canvas control** that exposes no accessibility surface at all (only its rect
+and coordinates exist). `docs/architecture.md` has the full table with what pins
+each one.
+
 ## Rules
 
 - Verify with evidence: check the changed node/state after an action — don't
