@@ -3,6 +3,7 @@ package dev.reticle.sample
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import dev.reticle.agent.Reticle
@@ -30,7 +31,20 @@ class MainActivity : AppCompatActivity() {
         SampleScenario.entries.forEach { scenario ->
             root.addView(scenarioRow(scenario))
         }
-        setContentView(root)
+        // The scenario list outgrew one screen: without a scroller the last rows
+        // are clipped and simply unreachable — a tap resolves to coordinates that
+        // land on the system navigation bar. Scrollable is also the honest shape
+        // for a home list, and it is what `act scroll-to` needs to work with.
+        setContentView(ScrollView(this).apply {
+            tag = "home.scroller"
+            addView(
+                root,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        })
 
         // App-authored evidence via the log / view-metadata bridge.
         Reticle.log("home_visible", mapOf("scenarioCount" to SampleScenario.entries.size))

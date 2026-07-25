@@ -36,7 +36,27 @@ internal object SelectorDiagnostics {
             else -> "Use one of: --test-id, --resource-id, --css, --ref, or --point x,y."
         }
         val regionHint = selector.region?.let { regionHint(snapshot, selector, it) }
-        return listOfNotNull(candidates, regionHint).joinToString(" ")
+        return listOfNotNull(candidates, regionHint, scrollHint(snapshot)).joinToString(" ")
+    }
+
+    /**
+     * A miss inside a recycling list is not the same failure as a wrong selector:
+     * a container that keeps only its visible window bound has NO node for a
+     * far-down row, so "not found" and "not bound yet" look identical. When the
+     * screen holds a container that can still scroll, say so — stating the fact,
+     * not promising the element is down there.
+     */
+    private fun scrollHint(snapshot: Snapshot): String? {
+        val scrollable = snapshot.nodes.values
+            .filter { it.scroll?.isScrollable == true }
+            .take(3)
+        if (scrollable.isEmpty()) return null
+        val described = scrollable.joinToString(", ") { node ->
+            val id = node.testId ?: node.resourceId ?: node.ref
+            "'$id' (${node.scroll?.describe()})"
+        }
+        return "Note: the screen has scrollable content ($described); " +
+            "a recycling list only binds its visible window, so an unbound row has no node yet."
     }
 
     private fun regionHint(snapshot: Snapshot, selector: Selector, region: String): String? {

@@ -61,7 +61,8 @@ public struct CompactObservation: Codable, Sendable {
                         frame: node.frame,
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
-                        occludedBy: occluderOf(node, windowRef: currentWindow)
+                        occludedBy: occluderOf(node, windowRef: currentWindow),
+                        scroll: node.scroll
                     )
                 )
             }
@@ -90,6 +91,9 @@ public struct CompactItem: Codable, Sendable {
     /// or `CompactObservation.occluderKeyboard` for the system keyboard. A tap
     /// dispatched at this item would land on the occluder instead.
     public var occludedBy: String?
+    /// Scroll capability when this item is a scrollable container — how an agent
+    /// tells "this selector doesn't exist" from "it isn't bound yet".
+    public var scroll: ScrollInfo?
 
     public init(
         ref: String,
@@ -100,7 +104,8 @@ public struct CompactItem: Codable, Sendable {
         frame: Rect? = nil,
         isEnabled: Bool = true,
         isInteractive: Bool = false,
-        occludedBy: String? = nil
+        occludedBy: String? = nil,
+        scroll: ScrollInfo? = nil
     ) {
         self.ref = ref
         self.role = role
@@ -111,6 +116,7 @@ public struct CompactItem: Codable, Sendable {
         self.isEnabled = isEnabled
         self.isInteractive = isInteractive
         self.occludedBy = occludedBy
+        self.scroll = scroll
     }
 
     /// One-line rendering for agent-facing text output. Matches reticle-core's `line()`.
@@ -127,11 +133,12 @@ public struct CompactItem: Codable, Sendable {
         if !isEnabled { state += " disabled" }
         if isInteractive { state += " tappable" }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
+        if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         return "\(selector) \(role)\(labelPart)\(framePart)\(state)"
     }
 
     private enum CodingKeys: String, CodingKey {
-        case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive, occludedBy
+        case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive, occludedBy, scroll
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -145,6 +152,7 @@ public struct CompactItem: Codable, Sendable {
         if !isEnabled { try c.encode(isEnabled, forKey: .isEnabled) }
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
+        try c.encodeIfPresent(scroll, forKey: .scroll)
     }
 
     public init(from decoder: Decoder) throws {
@@ -158,5 +166,6 @@ public struct CompactItem: Codable, Sendable {
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
+        scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
     }
 }

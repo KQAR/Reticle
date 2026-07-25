@@ -226,6 +226,17 @@ $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
 
+# A recycling / lazy list binds only its visible window, so a far-down row has no
+# node at all — `tap` can never reach it, and blind swipes have no termination
+# condition. Every scrollable container reports its remaining travel
+# (`scroll:up,down` in compact), and `act scroll-to` drags one until the selector
+# resolves inside it, confirms the position stopped moving (`settled=1`), and
+# reports the point the next command can use. Running out of travel is a loud
+# failure: "nothing under that selector came into view".
+$CLI act tap       --package dev.reticle.sample --test-id scenario.list
+$CLI act scroll-to --package dev.reticle.sample --test-id list.item40
+$CLI act tap       --package dev.reticle.sample --test-id list.item40
+
 # The system keyboard is another process's window — it never appears in the
 # node tree, so a covered submit button still looks tappable. Snapshots carry
 # screen.keyboard, `ui compact` leads with a keyboard header, covered items are

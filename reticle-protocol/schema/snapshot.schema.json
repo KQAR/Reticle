@@ -197,6 +197,17 @@
       },
       "additionalProperties": false
     },
+    "ScrollInfo": {
+      "type": "object",
+      "description": "Whether a scrollable container can still move in each direction right now. Not a claim about what would come into view.",
+      "properties": {
+        "canScrollUp": { "type": "boolean" },
+        "canScrollDown": { "type": "boolean" },
+        "canScrollLeft": { "type": "boolean" },
+        "canScrollRight": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "Node": {
       "type": "object",
       "required": ["ref", "kind", "typeName"],
@@ -234,6 +245,10 @@
         "suspectedMultiRegion": { "type": "boolean" },
         "charGrid": {
           "oneOf": [{ "$ref": "#/$defs/CharGrid" }, { "type": "null" }]
+        },
+        "scroll": {
+          "oneOf": [{ "$ref": "#/$defs/ScrollInfo" }, { "type": "null" }],
+          "description": "Scroll capability when this node is a scrollable container; absent otherwise."
         }
       },
       "additionalProperties": false

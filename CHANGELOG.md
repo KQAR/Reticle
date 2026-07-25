@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+- **Scroll evidence: `Node.scroll` / `CompactItem.scroll`.** A recycling or lazy
+  container binds only its visible window, so a far-down row has no node, no
+  frame, and no selector — it is ABSENT, not off-screen. Until now a
+  `RecyclerView` / `LazyColumn` / `UIScrollView` looked like any other container,
+  which made "selector not found" indistinguishable from "this app has no such
+  element". Every scrollable container now reports whether it can still move in
+  each direction (Android `View.canScrollVertically/Horizontally` restricted to
+  `ViewGroup`s — a `TextView` with overflowing text answers `true` too and would
+  bury the real container; Compose's semantics scroll-axis ranges, honouring
+  `reverseScrolling`; iOS `UIScrollView` content offset vs content size), rendered
+  in compact as `scroll:up,down`. Selector-miss diagnostics on BOTH hosts now name
+  the scrollable containers on screen and say an unbound row has no node yet —
+  stating the fact, never promising the element is down there.
+
+- **New: `act scroll-to`.** `tap` alone cannot reach a row a recycling list has
+  not bound, so "tap the 40th row" was unreachable and an agent scripting blind
+  swipes had no termination condition. `act scroll-to --test-id X
+  [--container <sel>] [--direction down|up|left|right] [--max-swipes N]` drags the
+  scrollable container until the selector resolves to a point INSIDE it, then
+  reports `swipes`, `direction`, `container`, and the usable point. This is not
+  the `wait --for appears` primitive that was dropped on reliability grounds: that
+  one's success test was `isVisible`, a weak platform-divergent proxy, while this
+  one is `act tap`'s own resolution plus containment in the container's rect.
+  Two details are the whole contract: it drags SLOWLY rather than flicking (a
+  flinging list kept moving after the gesture returned — measured: the reported
+  point was already stale by the next command), and once found it polls until the
+  position stops changing and reports `settled`. Exhaustion is a loud failure that
+  distinguishes "the container ran out of travel, nothing under that selector came
+  into view" from "the swipe budget ran out". Both platforms: the Kotlin helper for
+  Android, the Swift host (HID drags) for the iOS simulator. Two subtleties the
+  first cut got wrong and now guards: the container is chosen only from the TOPMOST
+  window (a background screen's page scroller can be larger than the foreground
+  list, so plain "largest scrollable" moved something invisible), and the direction
+  is locked for the run (re-picking per iteration made an absent selector ping-pong
+  at the list's end instead of finishing a sweep).
+
+- Sample: the home scenario list is now inside a `ScrollView`. It had outgrown one
+  screen, so the last rows were clipped and genuinely untappable — a resolved tap
+  landed on the system navigation bar and silently did nothing. The Android e2e's
+  navigation helper now uses `act scroll-to` before tapping a row, dogfooding the
+  primitive on the exact failure that surfaced this.
+
+- Sample apps + e2e: a **long list** scenario on both platforms (60 rows;
+  `RecyclerView` on Android, SwiftUI `List` on iOS) that pins the recycling
+  boundary as an executable assertion: the first rows are bound, row 40 is not,
+  the container reports `scroll:down`, and a miss on row 40 explains itself.
+
+- iOS `--region` now also matches a region **source** (`--region touchDelegate`),
+  matching the Android resolver — the two had drifted when source matching landed.
+
 - **Compose text links are addressable.** A `Text` carries its `LinkAnnotation`s
   as `AnnotatedString` ranges, not as child nodes, and the region channels run on
   Views — so a two-link agreement row in Compose was captured as ONE node with no

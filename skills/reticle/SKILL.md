@@ -249,9 +249,19 @@ reticle act tap   --package <pkg> --test-id checkout.payButton
 reticle act tap   --package <pkg> --css '#web-pay'
 reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
+reticle act scroll-to --package <pkg> --test-id list.item40   # then tap it
 reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
+
+A recycling / lazy list binds only its visible window, so a far-down row has **no
+node at all** — `tap` can never reach it and a "not found" there does not mean the
+app lacks the element. Scrollable containers report their remaining travel
+(`scroll:up,down` in `ui compact`), and `act scroll-to` drags one until the
+selector resolves inside it, confirms the position stopped moving (`settled=1`),
+and reports the point the next command can use. If the container runs out of
+travel it fails loudly — that is the honest "nothing under that selector came into
+view", not a claim about the app.
 
 `act type` types **any** text. Give it a targeting selector (`--test-id`,
 `--css`, `--point`, …) and it taps that field first so the text lands in *that*
