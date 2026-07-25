@@ -3,7 +3,7 @@
 The contract between a **non-JVM host** (the Swift host) and the **Kotlin Android
 helper** (`reticle helper`). The helper is today's Android host layer (adb + JDWP
 injector + input) kept in Kotlin and driven across a process boundary; see
-`docs/roadmap.md` → "Direction: Swift host + per-platform helpers".
+`docs/roadmap.md` → Decisions of record, "Swift host + per-platform helpers".
 
 This lives in `reticle-protocol/` because it is a cross-language contract, exactly
 like the wire protocol (`snapshot.schema.json`). The payloads that carry UI trees
