@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Compose text links are addressable.** A `Text` carries its `LinkAnnotation`s
+  as `AnnotatedString` ranges, not as child nodes, and the region channels run on
+  Views — so a two-link agreement row in Compose was captured as ONE node with no
+  regions and no char grid, while the identical `ClickableSpan` row on a `View`
+  decomposed fine (measured on API 36 / Compose 1.7.5). `ComposeTextRegions` now
+  recovers them from the surface Compose exposes to accessibility: the semantics
+  config's `Text` (`getLinkAnnotations` for the authored ranges) plus the
+  `GetTextLayoutResult` action — the one TalkBack invokes — for the laid-out glyph
+  geometry, which is the Compose analogue of `Layout`. Emits one `span` region per
+  link with its own per-line rects and its url/tag as the target, plus a char grid
+  so an arbitrary substring stays targetable. All reflective (the agent keeps its
+  `compileOnly` Compose dependency) and fails closed to no regions on any shape
+  mismatch. e2e asserts each link resolves to its OWN rect — tapping "Terms" must
+  not open "Privacy".
+
 - e2e: **same-origin iframe geometry** is now asserted on both platforms. The DOM
   walk already pierced same-origin frames and accumulated the frame's page offset
   (frame content coordinates are viewport-relative), but nothing checked the
@@ -20,9 +35,6 @@
   own semantics owner, an `AndroidView` interop child is captured as a real View,
   and every tagged composable carries a usable frame. Adds Compose to
   `sample-app` (the repo's only Compose surface, existing for this purpose).
-  Measured limitation, now recorded: a `LinkAnnotation` inside a Compose `Text`
-  is captured as ONE node with no sub-regions, because the region channels run on
-  Views — so a link inside Compose text is not yet addressable.
 
 - **Fixed: two region channels that shipped but never worked.** Both were
   discovered by finally giving them a sample scenario (a self-drawn canvas
