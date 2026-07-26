@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **One selection point for the four helper backends, instead of four copies of the
+  same error handling.** `runHelperBacked` had a branch per backend (iOS in-host,
+  `--use-daemon` broker, the resident helperd hot path, a direct spawn), and each
+  branch carried its own `do/catch` with the same `JsonEnvelope.enabled` fork — four
+  chances for one of them to drift. Worse, client teardown was per-branch and
+  differently named (`shutdown()` / `close()` / nothing), so only two of the four
+  released anything.
+
+  `HelperCalling` now declares `close()` with a default no-op, so a backend that
+  owns no transport says so by inheriting it, and the CLI can `defer { client.close() }`
+  once without knowing which backend it got. Backend choice moves into
+  `makeClient(args:serial:)` — the priority order (iOS → broker → helperd → direct
+  spawn, with helperd bring-up failure falling through rather than failing the
+  command) is now readable in one place instead of inferred from nesting. The
+  no-helper-binary case keeps its distinct exit code 2 and plain-text message via a
+  `HelperUnavailable` error, because a missing helper is a setup problem rather than
+  a call that failed — there is no RPC result to envelope.
 - **The Honest boundaries table is its own document (`docs/boundaries.md`).** It had
   grown into a third of `architecture.md`, which was therefore three documents in
   one: a design explanation read once, a tutorial, and a reference table consulted
