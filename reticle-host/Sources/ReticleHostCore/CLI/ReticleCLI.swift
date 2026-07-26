@@ -74,9 +74,9 @@ public enum ReticleCLI {
     private static func runHelperBacked(command: String, args: Args) -> Int32 {
         let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
         do {
-            let client = try makeClient(args: args, serial: serialArg)
-            defer { client.close() }
-            return try dispatch(command: command, args: args, client: client)
+            let backend = try makeBackend(args: args, serial: serialArg)
+            defer { backend.close() }
+            return try dispatch(command: command, args: args, backend: backend)
         } catch let unavailable as HelperUnavailable {
             // A setup problem, not a failed call: no helper binary means no
             // command could have run. Exits 2 (like a usage error), and stays
@@ -93,8 +93,8 @@ public enum ReticleCLI {
         }
     }
 
-    /// Picks the backend for a helper-backed command and returns it ready to
-    /// call. Four backends, one selection point, in priority order:
+    /// Picks the backend for a command and returns it ready to call. Two backends
+    /// over four transports, one selection point, in priority order:
     ///
     /// 1. **`--target ios`** — natively in-host (simctl / DYLD / direct HTTP /
     ///    CoreSimulator HID). No Kotlin helper, no daemon broker.
@@ -106,15 +106,18 @@ public enum ReticleCLI {
     ///    Opt out with `--no-daemon` / `RETICLE_NO_DAEMON=1`; any bring-up
     ///    failure falls through to (4) rather than failing the command.
     /// 4. **a direct helper spawn** — the always-available fallback.
-    private static func makeClient(args: Args, serial: String?) throws -> HelperCalling {
+    private static func makeBackend(args: Args, serial: String?) throws -> HostBackend {
         if (args.option("target") ?? "android") == "ios" {
+            // Natively in-host: typed the whole way down, no JSONL anywhere.
             return IosHelperClient(serial: serial)
         }
+        // The three Android transports differ only in how the JSONL envelope
+        // travels, so one adapter turns any of them into the typed backend.
         if shouldUseDaemonHelper(args) {
-            return DaemonHelperClient(serial: serial)
+            return AndroidBackend(DaemonHelperClient(serial: serial))
         }
         if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serial) {
-            return client
+            return AndroidBackend(client)
         }
         guard let helper = resolveHelper(args) else {
             throw HelperUnavailable("could not find the reticle helper; set RETICLE_HELPER or pass --helper")
@@ -125,7 +128,7 @@ public enum ReticleCLI {
             serial: serial
         )
         try client.start()
-        return client
+        return AndroidBackend(client)
     }
 
     /// Returns the process exit code for the command.
@@ -134,31 +137,31 @@ public enum ReticleCLI {
     /// it projects its three-state outcome onto an exit code for shell/CI
     /// consumers. That projection is opt-in, and never the primary channel — the
     /// outcome is always a field in the result (see `cmdAct`).
-    private static func dispatch(command: String, args: Args, client: HelperCalling) throws -> Int32 {
+    private static func dispatch(command: String, args: Args, backend: HostBackend) throws -> Int32 {
         switch command {
-        case "doctor": try cmdDoctor(client, args)
-        case "devices": try cmdDevices(client, args)
-        case "status": try cmdStatus(client, args)
+        case "doctor": try cmdDoctor(backend, args)
+        case "devices": try cmdDevices(backend, args)
+        case "status": try cmdStatus(backend, args)
         case "app":
             switch args.positional(1) {
-            case "launch": try cmdLaunch(client, args)
-            case "inject": try cmdInject(client, args)
+            case "launch": try cmdLaunch(backend, args)
+            case "inject": try cmdInject(backend, args)
             default: throw HelperError("unknown app subcommand: \(args.positional(1) ?? "<none>")")
             }
-        case "inject": try cmdInject(client, args)
-        case "launch": try cmdLaunch(client, args)
-        case "act": return try cmdAct(client, args)
-        case "mutate": try cmdMutate(client, args)
-        case "debug": try cmdDebug(client, args)
+        case "inject": try cmdInject(backend, args)
+        case "launch": try cmdLaunch(backend, args)
+        case "act": return try cmdAct(backend, args)
+        case "mutate": try cmdMutate(backend, args)
+        case "debug": try cmdDebug(backend, args)
         case "ui":
             switch args.positional(1) {
-            case "report": try cmdUiReport(client, args)
-            case "screenshot": try cmdScreenshot(client, args)
-            case "tree": try cmdUiRender(client, args, view: "tree")
-            case "compact": try cmdUiRender(client, args, view: "compact")
-            case "outline": try cmdUiRender(client, args, view: "outline")
-            case "node": try cmdUiRender(client, args, view: "node")
-            case "regions": try cmdUiRender(client, args, view: "regions")
+            case "report": try cmdUiReport(backend, args)
+            case "screenshot": try cmdScreenshot(backend, args)
+            case "tree": try cmdUiRender(backend, args, view: "tree")
+            case "compact": try cmdUiRender(backend, args, view: "compact")
+            case "outline": try cmdUiRender(backend, args, view: "outline")
+            case "node": try cmdUiRender(backend, args, view: "node")
+            case "regions": try cmdUiRender(backend, args, view: "regions")
             default: throw HelperError("unknown ui subcommand: \(args.positional(1) ?? "<none>")")
             }
         default:

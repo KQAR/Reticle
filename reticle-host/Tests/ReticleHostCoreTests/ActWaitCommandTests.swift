@@ -18,6 +18,12 @@ private final class RecordingBackend: HelperCalling, @unchecked Sendable {
 
 /// The `act wait` CLI → RPC mapping, and the exit code it projects.
 ///
+/// The fakes below implement `HelperCalling` — the Android *transport* — and the
+/// tests drive them through `AndroidBackend`, so what is asserted is the whole
+/// chain: CLI flags -> typed `ActRequest` -> wire params. Faking the typed backend
+/// instead would have skipped the translation step, which is where a dropped flag
+/// would now hide.
+///
 /// This suite exists because the first version of `cmdActWait` silently dropped
 /// `--point`, so the helper's by-name refusal ("a coordinate always resolves") was
 /// unreachable through the CLI and users got a generic "needs a predicate"
@@ -30,7 +36,7 @@ struct ActWaitCommandTests {
     private func run(_ argv: [String], reply: [String: Any]) throws -> (Int32, RecordingBackend) {
         let backend = RecordingBackend()
         backend.reply = reply
-        let code = try cmdAct(backend, Args(argv))
+        let code = try cmdAct(AndroidBackend(backend), Args(argv))
         return (code, backend)
     }
 
@@ -182,7 +188,7 @@ struct ActWaitBatchTests {
             ["gesture": "tap"],
         ]
         #expect(throws: (any Error).self) {
-            try cmdAct(backend, Args(["act", "batch", "--package", "p", "--file", file]))
+            try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         }
         // The third step must never have been dispatched.
         #expect(backend.calls.count == 2)
@@ -198,7 +204,7 @@ struct ActWaitBatchTests {
         """)
         let backend = ScriptedBackend()
         backend.replies = [waitReply("absent"), ["gesture": "tap"]]
-        let code = try cmdAct(backend, Args(["act", "batch", "--package", "p", "--file", file]))
+        let code = try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         #expect(code == 0)
         #expect(backend.calls.count == 2, "a non-strict wait must not gate the batch")
         try? FileManager.default.removeItem(atPath: file)
@@ -213,7 +219,7 @@ struct ActWaitBatchTests {
         """)
         let backend = ScriptedBackend()
         backend.replies = [waitReply("resolved"), ["gesture": "tap"]]
-        _ = try cmdAct(backend, Args(["act", "batch", "--package", "p", "--file", file]))
+        _ = try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         #expect(backend.calls.count == 2)
         try? FileManager.default.removeItem(atPath: file)
     }
