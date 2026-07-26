@@ -182,6 +182,68 @@ R replay gif "$TMP/trace" >/dev/null
 R debug logs --package "$PKG" | grep -q "checkout_paid" \
   || { echo "FAIL: expected checkout_paid in the app log bridge"; exit 1; }
 
+echo "== WAIT: three-state outcome (resolved / absent) + --strict exit codes =="
+# `act wait` is the primitive for crossing an async boundary: --verify can only
+# watch a node that ALREADY resolves, so "act, then a NEW screen appears" is
+# inexpressible without this. What must hold here is the separation of its three
+# outcomes — an agent may act on `absent` but must only switch tactics on
+# `unknowable`, so the two can never be conflated.
+#
+# checkout.status is "Paid!" by now, so a matching text predicate is satisfied.
+WAIT_OK="$(R act wait --package "$PKG" --for '#checkout.status' --text 'Paid' --timeout 4000)"
+echo "$WAIT_OK"
+echo "$WAIT_OK" | grep -q "RESOLVED" \
+  || { echo "FAIL: wait on the already-flipped checkout.status was not RESOLVED"; exit 1; }
+# The predicate must be echoed verbatim: a caller should never have to infer what
+# was waited on.
+echo "$WAIT_OK" | grep -q 'text testId=checkout.status contains "Paid"' \
+  || { echo "FAIL: wait did not echo the predicate it was given"; exit 1; }
+# A predicate that will never come true on a SETTLED screen, against a node that
+# DOES resolve. Resolution is what immunizes this from scroll doubt, so it must
+# be an honest `absent` and must report what was actually on the node.
+WAIT_ABSENT="$(R act wait --package "$PKG" --for '#checkout.status' --text 'NeverGonnaHappen' --timeout 3000)"
+echo "$WAIT_ABSENT"
+echo "$WAIT_ABSENT" | grep -q "ABSENT" \
+  || { echo "FAIL: a settled miss on a resolved node must be ABSENT, not unknowable"; exit 1; }
+echo "$WAIT_ABSENT" | grep -q 'observed: "Paid!"' \
+  || { echo "FAIL: an absent text predicate must report the text it DID find"; exit 1; }
+# `ok` stays true and the default exit stays 0: a predicate that did not come
+# true is an observation, not a tool failure.
+R act wait --package "$PKG" --for '#checkout.status' --text 'NeverGonnaHappen' --timeout 1500 --json \
+  | grep -q '"ok":true' \
+  || { echo "FAIL: a timed-out wait must still be ok:true in the JSON envelope"; exit 1; }
+# --strict projects the outcome onto an exit code for shell/CI callers. 3 and 4
+# must stay distinct: 3 says "this is not there", 4 says "I could not see".
+set +e
+R act wait --package "$PKG" --for '#checkout.status' --text 'Paid' --timeout 3000 --strict >/dev/null
+WAIT_RC_OK=$?
+R act wait --package "$PKG" --for '#checkout.status' --text 'NeverGonnaHappen' --timeout 1500 --strict >/dev/null
+WAIT_RC_ABSENT=$?
+set -e
+[ "$WAIT_RC_OK" -eq 0 ] || { echo "FAIL: --strict on a resolved wait exited $WAIT_RC_OK, expected 0"; exit 1; }
+[ "$WAIT_RC_ABSENT" -eq 3 ] || { echo "FAIL: --strict on an absent wait exited $WAIT_RC_ABSENT, expected 3"; exit 1; }
+# `gone` on a selector that never existed holds immediately.
+R act wait --package "$PKG" --for '#no.such.node.anywhere' --gone --timeout 2000 | grep -q "RESOLVED" \
+  || { echo "FAIL: gone on a nonexistent selector was not RESOLVED"; exit 1; }
+# `--idle` waits for the SCREEN, states no expectation about content, and so can
+# never report `absent`. It must also return as soon as the screen is quiet
+# rather than burning its whole budget.
+WAIT_IDLE="$(R act wait --package "$PKG" --idle --timeout 20000)"
+echo "$WAIT_IDLE"
+echo "$WAIT_IDLE" | grep -q "idle: RESOLVED" \
+  || { echo "FAIL: --idle did not settle on a static screen"; exit 1; }
+IDLE_MS="$(printf '%s' "$WAIT_IDLE" | sed -n 's/.*RESOLVED in \([0-9]*\)ms.*/\1/p')"
+[ -n "$IDLE_MS" ] && [ "$IDLE_MS" -lt 5000 ] \
+  || { echo "FAIL: --idle took ${IDLE_MS:-?}ms on a static screen; it must return once quiet, not at the deadline"; exit 1; }
+# Predicates the tool cannot answer are refused rather than answered wrongly.
+set +e
+R act wait --package "$PKG" --point 10,20 --timeout 1000 >/dev/null 2>"$TMP/wait-point.err"
+WAIT_RC_POINT=$?
+set -e
+[ "$WAIT_RC_POINT" -ne 0 ] || { echo "FAIL: wait --point must be refused (a coordinate always resolves)"; exit 1; }
+grep -q -- "--point" "$TMP/wait-point.err" \
+  || { echo "FAIL: the --point refusal must say why; got: $(cat "$TMP/wait-point.err")"; exit 1; }
+
 echo "== CHECKOUT: type (ASCII + non-ASCII paste) =="
 # ASCII goes through `input text`; the field must focus first (the helper taps
 # the selector target before typing).
@@ -289,6 +351,26 @@ PY
 MISS="$(R act tap --package "$PKG" --test-id list.item40 2>&1 || true)"
 echo "$MISS" | grep -q "scrollable content" \
   || { echo "FAIL: a miss on an unbound row must mention the scrollable container: $MISS"; exit 1; }
+# The same evidence must lift a `wait` out of `absent`. An unbound row has NO
+# node at all, so its absence is not evidence — reporting it as `absent` would
+# tell an agent the app is missing a feature it simply had not scrolled to. This
+# is the single most important thing the three-state outcome buys.
+WAIT_UNKNOWABLE="$(R act wait --package "$PKG" --for '#list.item40' --timeout 3000)"
+echo "$WAIT_UNKNOWABLE"
+echo "$WAIT_UNKNOWABLE" | grep -q "UNKNOWABLE" \
+  || { echo "FAIL: a wait for an unbound row must be UNKNOWABLE, never ABSENT"; exit 1; }
+echo "$WAIT_UNKNOWABLE" | grep -q "scroll:" \
+  || { echo "FAIL: the unknowable verdict must name the scroll travel that clouds it"; exit 1; }
+# An unknowable must hand back a tactic, not just a complaint.
+echo "$WAIT_UNKNOWABLE" | grep -q "next: act scroll-to --test-id list.item40" \
+  || { echo "FAIL: the unknowable verdict must suggest scroll-to for the row"; exit 1; }
+# exit 4, distinct from the 3 an `absent` produces.
+set +e
+R act wait --package "$PKG" --for '#list.item40' --timeout 1500 --strict >/dev/null
+WAIT_RC_UNKNOWABLE=$?
+set -e
+[ "$WAIT_RC_UNKNOWABLE" -eq 4 ] \
+  || { echo "FAIL: --strict on an unknowable wait exited $WAIT_RC_UNKNOWABLE, expected 4 (not 3)"; exit 1; }
 # `act scroll-to` closes the gap: swipe the container until the selector resolves
 # INSIDE it, then confirm the position stopped moving before reporting it. That
 # settle step is the whole contract — a flinging list made the first
@@ -504,6 +586,19 @@ echo "$LOGIN_COMPACT" | grep -q "keyboard: visible" \
   || { echo "FAIL: compact must lead with 'keyboard: visible' while the keyboard is up"; exit 1; }
 echo "$LOGIN_COMPACT" | grep "login.submitButton" | grep -q "occluded-by:keyboard" \
   || { echo "FAIL: the covered submit button must be marked occluded-by:keyboard"; exit 1; }
+# A wait for the covered button must RESOLVE — it is targetable, and the very
+# next `act` resolves it the same way — while carrying the occlusion as a caveat
+# with the command that clears it. Downgrading this to a failure would conflate
+# "can the next act target it" with "can the user see it"; the earlier, dropped
+# `wait --for appears` proposal made exactly that mistake by testing isVisible.
+WAIT_OCCLUDED="$(R act wait --package "$PKG" --for '#login.submitButton' --timeout 3000)"
+echo "$WAIT_OCCLUDED"
+echo "$WAIT_OCCLUDED" | grep -q "RESOLVED" \
+  || { echo "FAIL: a keyboard-covered but targetable button must still be RESOLVED"; exit 1; }
+echo "$WAIT_OCCLUDED" | grep -q "caveats: occluded-by:keyboard" \
+  || { echo "FAIL: the resolved wait must carry the occlusion as a caveat"; exit 1; }
+echo "$WAIT_OCCLUDED" | grep -q "next: act hide-keyboard" \
+  || { echo "FAIL: the occlusion caveat must suggest hide-keyboard"; exit 1; }
 # Dismiss in-process and confirm the settled state round-trips.
 HIDE_OUT="$(R act hide-keyboard --package "$PKG")"
 echo "$HIDE_OUT"
@@ -670,6 +765,22 @@ if snap["screen"].get("windowFocused") is not False:
     print("FAIL: screen.windowFocused should be false while another window has focus")
     sys.exit(1)
 PYEOF
+# The strongest case for the three-state outcome. permission.status genuinely has
+# not changed — but the reason is that nobody has answered a prompt this process
+# cannot see, so `absent` would be a lie an agent would act on ("the app never
+# grants the permission"). It must be UNKNOWABLE, with the lost focus named.
+WAIT_UNFOCUSED="$(R act wait --package "$PKG" --for '#permission.status' --text 'granted' --timeout 3000)"
+echo "$WAIT_UNFOCUSED"
+echo "$WAIT_UNFOCUSED" | grep -q "UNKNOWABLE" \
+  || { echo "FAIL: a wait behind another process's window must be UNKNOWABLE, never ABSENT"; exit 1; }
+echo "$WAIT_UNFOCUSED" | grep -q "reasons:.*window-unfocused" \
+  || { echo "FAIL: the unknowable verdict must name the lost window focus"; exit 1; }
+set +e
+R act wait --package "$PKG" --for '#permission.status' --text 'granted' --timeout 1500 --strict >/dev/null
+WAIT_RC_UNFOCUSED=$?
+set -e
+[ "$WAIT_RC_UNFOCUSED" -eq 4 ] \
+  || { echo "FAIL: --strict behind a foreign window exited $WAIT_RC_UNFOCUSED, expected 4"; exit 1; }
 # Dismissing restores focus, and the evidence clears with it.
 "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_BACK >/dev/null 2>&1 || true
 sleep 2
@@ -709,6 +820,15 @@ echo "$JS_OPEN" | grep -q "jsDialog.status" \
 # agent can tell a blocked bridge from an empty page.
 echo "$JS_OPEN" | grep -q "dom:unavailable" \
   || { echo "FAIL: the web view must report dom:unavailable while the DOM is unreadable"; exit 1; }
+# A `--css` wait cannot be answered at all while the bridge is blocked, so it must
+# be UNKNOWABLE with dom:unavailable as the reason — not `absent`, which would
+# read as "the page does not contain that element".
+WAIT_DOM="$(R act wait --package "$PKG" --for 'css=#js-alert' --timeout 3000)"
+echo "$WAIT_DOM"
+echo "$WAIT_DOM" | grep -q "UNKNOWABLE" \
+  || { echo "FAIL: a css wait with an unreadable DOM must be UNKNOWABLE, never ABSENT"; exit 1; }
+echo "$WAIT_DOM" | grep -q "dom:unavailable" \
+  || { echo "FAIL: the unknowable css wait must name dom:unavailable as its reason"; exit 1; }
 # Dismissing releases the JS thread: the page's own onclick continues, and the DOM
 # bridge starts answering again.
 R act tap --package "$PKG" --label "OK" >/dev/null

@@ -111,6 +111,65 @@ grep -q "Paid!" "$TRACE_JSON" \
 # (host-local, no device). It must find the screenshots the trace just wrote.
 "$HOST" replay gif "$TMP/trace"
 [ -s "$TMP/trace/replay.gif" ] || { echo "FAIL: replay gif produced no artifact"; exit 1; }
+echo "== WAIT: three-state outcome (resolved / absent) + --strict exit codes =="
+# The iOS half of `act wait`. It dispatches no input, so unlike `tap` it needs no
+# HID surface and works on real devices too. The classification comes from
+# ReticleProtocol — the same code the Android helper runs, pinned by
+# reticle-protocol/fixtures/wait-classification.cases.json — so what this proves
+# is that the iOS poll loop feeds it the right probe.
+#
+# checkout.status is "Paid!" by now, so a matching text predicate holds.
+WAIT_OK="$("$HOST" --target ios act wait --package "$LINKED_ID" --for '#checkout.status' --text 'Paid' --timeout 4000)"
+echo "$WAIT_OK"
+echo "$WAIT_OK" | grep -q "RESOLVED" \
+  || { echo "FAIL: wait on the already-flipped checkout.status was not RESOLVED"; exit 1; }
+echo "$WAIT_OK" | grep -q 'text testId=checkout.status contains "Paid"' \
+  || { echo "FAIL: wait did not echo the predicate it was given"; exit 1; }
+# A miss on a node that DOES resolve, on a settled screen: an honest negative that
+# reports what was actually there.
+WAIT_ABSENT="$("$HOST" --target ios act wait --package "$LINKED_ID" --for '#checkout.status' --text 'NeverGonnaHappen' --timeout 3000)"
+echo "$WAIT_ABSENT"
+echo "$WAIT_ABSENT" | grep -q "ABSENT" \
+  || { echo "FAIL: a settled miss on a resolved node must be ABSENT, not unknowable"; exit 1; }
+echo "$WAIT_ABSENT" | grep -q 'observed: "Paid!"' \
+  || { echo "FAIL: an absent text predicate must report the text it DID find"; exit 1; }
+# A timeout is an observation, not a tool failure: ok stays true, exit stays 0.
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#checkout.status' --text 'NeverGonnaHappen' \
+  --timeout 1500 --json | grep -q '"ok":true' \
+  || { echo "FAIL: a timed-out wait must still be ok:true in the JSON envelope"; exit 1; }
+# --strict projects the outcome onto an exit code. 3 (not there) and 4 (could not
+# see) must stay distinct — the unknowable side is asserted in the permission
+# section below.
+set +e
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#checkout.status' --text 'Paid' --timeout 3000 --strict >/dev/null
+WAIT_RC_OK=$?
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#checkout.status' --text 'NeverGonnaHappen' --timeout 1500 --strict >/dev/null
+WAIT_RC_ABSENT=$?
+set -e
+[ "$WAIT_RC_OK" -eq 0 ] || { echo "FAIL: --strict on a resolved wait exited $WAIT_RC_OK, expected 0"; exit 1; }
+[ "$WAIT_RC_ABSENT" -eq 3 ] || { echo "FAIL: --strict on an absent wait exited $WAIT_RC_ABSENT, expected 3"; exit 1; }
+# `gone` on a selector that never existed holds immediately.
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#no.such.node.anywhere' --gone --timeout 2000 \
+  | grep -q "RESOLVED" \
+  || { echo "FAIL: gone on a nonexistent selector was not RESOLVED"; exit 1; }
+# `--idle` states no expectation about content, so it can never report `absent`,
+# and must return once the screen is quiet rather than at the deadline.
+WAIT_IDLE="$("$HOST" --target ios act wait --package "$LINKED_ID" --idle --timeout 20000)"
+echo "$WAIT_IDLE"
+echo "$WAIT_IDLE" | grep -q "idle: RESOLVED" \
+  || { echo "FAIL: --idle did not settle on a static screen"; exit 1; }
+IDLE_MS="$(printf '%s' "$WAIT_IDLE" | sed -n 's/.*RESOLVED in \([0-9]*\)ms.*/\1/p')"
+[ -n "$IDLE_MS" ] && [ "$IDLE_MS" -lt 5000 ] \
+  || { echo "FAIL: --idle took ${IDLE_MS:-?}ms on a static screen; it must return once quiet"; exit 1; }
+# Both platforms must refuse the same unanswerable predicates, word for word.
+set +e
+"$HOST" --target ios act wait --package "$LINKED_ID" --point 10,20 --timeout 1000 >/dev/null 2>"$TMP/wait-point.err"
+WAIT_RC_POINT=$?
+set -e
+[ "$WAIT_RC_POINT" -ne 0 ] || { echo "FAIL: wait --point must be refused (a coordinate always resolves)"; exit 1; }
+grep -q -- "--point" "$TMP/wait-point.err" \
+  || { echo "FAIL: the --point refusal must say why; got: $(cat "$TMP/wait-point.err")"; exit 1; }
+
 "$HOST" --target ios mutate --package "$LINKED_ID" --test-id checkout.payButton --property alpha --value 0.4
 kill "$HOLD" 2>/dev/null || true
 
@@ -196,6 +255,23 @@ PY
 MISS="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id list.item40 2>&1 || true)"
 echo "$MISS" | grep -q "scrollable content" \
   || { echo "FAIL: a miss on an unrealized row must mention the scrollable container: $MISS"; exit 1; }
+# The same evidence must lift a `wait` out of `absent`. An unrealized row has no
+# node at all, so reporting `absent` would tell an agent the app lacks a feature
+# it simply had not scrolled to.
+WAIT_UNKNOWABLE="$("$HOST" --target ios act wait --package "$LINKED_ID" --for '#list.item40' --timeout 3000)"
+echo "$WAIT_UNKNOWABLE"
+echo "$WAIT_UNKNOWABLE" | grep -q "UNKNOWABLE" \
+  || { echo "FAIL: a wait for an unrealized row must be UNKNOWABLE, never ABSENT"; exit 1; }
+echo "$WAIT_UNKNOWABLE" | grep -q "scroll:" \
+  || { echo "FAIL: the unknowable verdict must name the scroll travel that clouds it"; exit 1; }
+echo "$WAIT_UNKNOWABLE" | grep -q "next: act scroll-to --test-id list.item40" \
+  || { echo "FAIL: the unknowable verdict must suggest scroll-to for the row"; exit 1; }
+set +e
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#list.item40' --timeout 1500 --strict >/dev/null
+WAIT_RC_UNKNOWABLE=$?
+set -e
+[ "$WAIT_RC_UNKNOWABLE" -eq 4 ] \
+  || { echo "FAIL: --strict on an unknowable wait exited $WAIT_RC_UNKNOWABLE, expected 4 (not 3)"; exit 1; }
 # `act scroll-to` drags the container until the selector resolves INSIDE it, then
 # polls until the position stops moving before reporting it. The settle step is
 # the contract: a flinging list keeps moving after the gesture returns, and a
@@ -385,6 +461,18 @@ echo "$LOGIN_COMPACT" | grep "window" | grep -q "pixels:unavailable" \
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/login-shot.png" | tee "$TMP/login-shot.txt"
 grep -q "is not in this picture" "$TMP/login-shot.txt" \
   || { echo "FAIL: the screenshot must report the window it could not capture"; exit 1; }
+# A wait for the covered button must RESOLVE — it is targetable, and the next act
+# resolves it the same way — carrying the occlusion as a caveat plus the command
+# that clears it. Testing isVisible instead (the reason an earlier wait proposal
+# was dropped) would have turned this into a spurious failure.
+WAIT_OCCLUDED="$("$HOST" --target ios act wait --package "$LINKED_ID" --for '#login.submitButton' --timeout 3000)"
+echo "$WAIT_OCCLUDED"
+echo "$WAIT_OCCLUDED" | grep -q "RESOLVED" \
+  || { echo "FAIL: a keyboard-covered but targetable button must still be RESOLVED"; exit 1; }
+echo "$WAIT_OCCLUDED" | grep -q "caveats: occluded-by:keyboard" \
+  || { echo "FAIL: the resolved wait must carry the occlusion as a caveat"; exit 1; }
+echo "$WAIT_OCCLUDED" | grep -q "next: act hide-keyboard" \
+  || { echo "FAIL: the occlusion caveat must suggest hide-keyboard"; exit 1; }
 # Dismiss in-process and confirm the settled state round-trips.
 HIDE_OUT="$("$HOST" --target ios act hide-keyboard --package "$LINKED_ID")"
 echo "$HIDE_OUT"
@@ -729,6 +817,21 @@ echo "$PERM_COMPACT" | head -1 | grep -q "UNFOCUSED" \
 # app's own controls tappable, while a touch would in fact go to the alert.
 echo "$PERM_COMPACT" | grep "permission.trigger" | grep -q "tappable" \
   || { echo "FAIL: expected the app's controls to still be captured (that IS the trap)"; exit 1; }
+# The strongest case for the three-state outcome. permission.status genuinely has
+# not changed — but only because nobody answered a prompt this process cannot see,
+# so `absent` would be a lie an agent would act on. It must be UNKNOWABLE.
+WAIT_UNFOCUSED="$("$HOST" --target ios act wait --package "$LINKED_ID" --for '#permission.status' --text 'granted' --timeout 3000)"
+echo "$WAIT_UNFOCUSED"
+echo "$WAIT_UNFOCUSED" | grep -q "UNKNOWABLE" \
+  || { echo "FAIL: a wait behind another process's window must be UNKNOWABLE, never ABSENT"; exit 1; }
+echo "$WAIT_UNFOCUSED" | grep -q "reasons:.*window-unfocused" \
+  || { echo "FAIL: the unknowable verdict must name the lost window focus"; exit 1; }
+set +e
+"$HOST" --target ios act wait --package "$LINKED_ID" --for '#permission.status' --text 'granted' --timeout 1500 --strict >/dev/null
+WAIT_RC_UNFOCUSED=$?
+set -e
+[ "$WAIT_RC_UNFOCUSED" -eq 4 ] \
+  || { echo "FAIL: --strict behind a foreign window exited $WAIT_RC_UNFOCUSED, expected 4"; exit 1; }
 /usr/bin/python3 - "$TMP/permission-before/snapshot.json" "$TMP/permission/snapshot.json" <<'PYEOF' || exit 1
 import json, sys
 before = json.load(open(sys.argv[1]))

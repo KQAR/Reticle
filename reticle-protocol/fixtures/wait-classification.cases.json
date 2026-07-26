@@ -1,0 +1,207 @@
+{
+  "$comment": "Authoritative decision table for act wait's three-state outcome. Read by BOTH the Kotlin (reticle-core WaitClassificationTest) and Swift (ReticleProtocol WaitClassificationTests) suites, so the Android helper and the iOS host cannot drift on what an answer means. Adding a branch to classify() without adding a case here leaves that branch unpinned on one platform. Note the success test throughout: `resolved` means the selector resolved through the same path an `act` uses — never `isVisible`, which is the proxy an earlier wait proposal was dropped over.",
+  "cases": [
+    {
+      "name": "appear satisfied on a clean screen",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "ref": "r7", "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "appear satisfied but the keyboard covers the tap point",
+      "$comment": "Targetability is satisfied; being covered is a separate fact. Occlusion must NOT downgrade the outcome, or 'can the next act target it' and 'can the user see it' get conflated.",
+      "predicate": { "kind": "appear", "selector": { "testId": "login.submitButton" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "occludedBy": "keyboard", "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": ["occluded-by:keyboard"] }
+    },
+    {
+      "name": "appear satisfied on a node that resolves but is not visible",
+      "$comment": "The exact case the isVisible proxy got wrong. The semantic tree keeps hidden-but-labelled nodes, so this resolves and the next act WILL target it — that is a fact worth reporting, with the invisibility as a caveat rather than a silent failure.",
+      "predicate": { "kind": "appear", "selector": { "testId": "checkout.status" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "visible": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": ["resolved-but-not-visible"] }
+    },
+    {
+      "name": "appear satisfied while another process holds focus",
+      "predicate": { "kind": "appear", "selector": { "testId": "checkout.payButton" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "windowFocused": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": ["window-unfocused"] }
+    },
+    {
+      "name": "appear missed on a settled screen is an honest negative",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "appear missed while the screen never settled is unknowable",
+      "$comment": "The budget ran out mid-animation or mid-load, so 'not there' was never established.",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": false, "digest": "z" },
+      "quiet": false,
+      "expect": { "outcome": "unknowable", "reasons": ["tree-still-changing"], "caveats": [] }
+    },
+    {
+      "name": "appear missed while another process owns the screen is unknowable",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": false, "windowFocused": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["window-unfocused"], "caveats": [] }
+    },
+    {
+      "name": "appear missed with scroll travel left is unknowable",
+      "$comment": "A recycling/lazy list has no node at all for an unbound row, so its absence is not evidence.",
+      "predicate": { "kind": "appear", "selector": { "testId": "list.item40" } },
+      "probe": { "resolved": false, "digest": "a", "scrollTravel": ["@list scroll:down"] },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["@list scroll:down"], "caveats": [] }
+    },
+    {
+      "name": "css appear missed with an unreadable DOM is unknowable",
+      "predicate": { "kind": "appear", "selector": { "cssSelector": "#style-target" } },
+      "probe": { "resolved": false, "domUnavailable": true, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["dom:unavailable"], "caveats": [] }
+    },
+    {
+      "name": "css appear missed on a third-party kernel is unknowable",
+      "predicate": { "kind": "appear", "selector": { "cssSelector": "#pay" } },
+      "probe": { "resolved": false, "domKernelUnsupported": true, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["dom:unsupported-kernel"], "caveats": [] }
+    },
+    {
+      "name": "a DOM marker does not make a testId predicate unknowable",
+      "$comment": "Negative case, and the reason the DOM checks are gated on the selector kind: an unreadable web view elsewhere on screen says nothing about a native node, and letting it leak in would turn honest negatives into permanent 'unknowable'.",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": false, "domUnavailable": true, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "several blocking conditions are all reported",
+      "predicate": { "kind": "appear", "selector": { "testId": "cart.total" } },
+      "probe": { "resolved": false, "windowFocused": false, "digest": "z", "scrollTravel": ["@list scroll:up,down"] },
+      "quiet": false,
+      "expect": {
+        "outcome": "unknowable",
+        "reasons": ["tree-still-changing", "window-unfocused", "@list scroll:up,down"],
+        "caveats": []
+      }
+    },
+    {
+      "name": "gone satisfied because the selector no longer resolves",
+      "predicate": { "kind": "gone", "selector": { "testId": "toast" } },
+      "probe": { "resolved": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "gone satisfied on a scrollable screen is ambiguous",
+      "$comment": "A recycling list unbinds rows that merely scrolled off, so 'removed' and 'recycled' are indistinguishable here. The outcome still holds; the caveat is mandatory.",
+      "predicate": { "kind": "gone", "selector": { "testId": "list.item3" } },
+      "probe": { "resolved": false, "digest": "a", "scrollTravel": ["@list scroll:down"] },
+      "quiet": true,
+      "expect": {
+        "outcome": "resolved",
+        "reasons": [],
+        "caveats": ["may-be-unbound-not-removed", "@list scroll:down"]
+      }
+    },
+    {
+      "name": "gone unsatisfied on a settled screen is an honest negative",
+      "predicate": { "kind": "gone", "selector": { "testId": "toast" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "gone unsatisfied ignores scroll travel",
+      "$comment": "Scroll travel only clouds a MISS. Here the selector still resolved, so there is nothing it could hide.",
+      "predicate": { "kind": "gone", "selector": { "testId": "toast" } },
+      "probe": { "resolved": true, "source": "view", "digest": "a", "scrollTravel": ["@list scroll:down"] },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "gone on an invisible-but-resolvable node is NOT satisfied",
+      "$comment": "The isVisible proxy would have called this gone. It is not: the next act still resolves and targets it, which is the only sense of 'gone' that means anything operationally.",
+      "predicate": { "kind": "gone", "selector": { "testId": "spinner" } },
+      "probe": { "resolved": true, "source": "semantic:testId", "visible": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "text satisfied by a substring match",
+      "predicate": { "kind": "text", "selector": { "testId": "checkout.status" }, "textContains": "Paid" },
+      "probe": { "resolved": true, "source": "semantic:testId", "observedText": "Paid!", "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "text unsatisfied reports what was actually there",
+      "predicate": { "kind": "text", "selector": { "testId": "checkout.status" }, "textContains": "Paid" },
+      "probe": { "resolved": true, "source": "semantic:testId", "observedText": "Cart: 3 items", "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "text mismatch on a resolved node ignores scroll travel",
+      "$comment": "The node resolved and was read; scrolling cannot change the text it holds. Gating scroll doubt on the predicate kind instead of on 'never resolved' would make every text predicate on a scrollable screen permanently unknowable.",
+      "predicate": { "kind": "text", "selector": { "testId": "checkout.status" }, "textContains": "Paid" },
+      "probe": { "resolved": true, "source": "semantic:testId", "observedText": "Cart: 3 items", "digest": "a", "scrollTravel": ["@list scroll:down"] },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "text on a selector that never resolved doubts scroll travel",
+      "$comment": "The complement of the case above: nothing was read, so travel could still bring the node into the bound window.",
+      "predicate": { "kind": "text", "selector": { "testId": "list.item40" }, "textContains": "Paid" },
+      "probe": { "resolved": false, "digest": "a", "scrollTravel": ["@list scroll:down"] },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["@list scroll:down"], "caveats": [] }
+    },
+    {
+      "name": "text on a selector that never resolved is otherwise a negative",
+      "predicate": { "kind": "text", "selector": { "testId": "checkout.status" }, "textContains": "Paid" },
+      "probe": { "resolved": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "absent", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "an ambiguous label predicate is unknowable, not absent",
+      "$comment": "The resolver refuses to guess between several matching nodes (ambiguity is an error, never a silent first-match), so the wait has no answer either. Carried on the probe rather than thrown, so a label that turns ambiguous mid-wait ends with an explanation instead of an exception.",
+      "predicate": { "kind": "appear", "selector": { "label": "Delete item" } },
+      "probe": { "resolved": false, "digest": "a", "ambiguous": true },
+      "quiet": true,
+      "expect": { "outcome": "unknowable", "reasons": ["selector-ambiguous"], "caveats": [] }
+    },
+    {
+      "name": "idle resolves when the screen settled",
+      "predicate": { "kind": "idle" },
+      "probe": { "resolved": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": [] }
+    },
+    {
+      "name": "idle is unknowable when the screen never settled",
+      "$comment": "The only outcome an idle wait can report besides resolved. It never says 'absent', because the caller stated no expectation about content.",
+      "predicate": { "kind": "idle" },
+      "probe": { "resolved": false, "digest": "z" },
+      "quiet": false,
+      "expect": { "outcome": "unknowable", "reasons": ["tree-still-changing"], "caveats": [] }
+    },
+    {
+      "name": "idle settled while another process holds focus",
+      "predicate": { "kind": "idle" },
+      "probe": { "resolved": false, "windowFocused": false, "digest": "a" },
+      "quiet": true,
+      "expect": { "outcome": "resolved", "reasons": [], "caveats": ["window-unfocused"] }
+    }
+  ]
+}
