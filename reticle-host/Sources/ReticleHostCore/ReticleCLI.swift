@@ -78,8 +78,7 @@ public enum ReticleCLI {
         if (args.option("target") ?? "android") == "ios" {
             let client = IosHelperClient(serial: serialArg)
             do {
-                try dispatch(command: command, args: args, client: client)
-                return 0
+                return try dispatch(command: command, args: args, client: client)
             } catch {
                 if JsonEnvelope.enabled(args) {
                     JsonEnvelope.error(error)
@@ -93,8 +92,7 @@ public enum ReticleCLI {
         if shouldUseDaemonHelper(args) {
             let client = DaemonHelperClient(serial: serialArg)
             do {
-                try dispatch(command: command, args: args, client: client)
-                return 0
+                return try dispatch(command: command, args: args, client: client)
             } catch {
                 if JsonEnvelope.enabled(args) {
                     JsonEnvelope.error(error)
@@ -113,8 +111,7 @@ public enum ReticleCLI {
         if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serialArg) {
             defer { client.close() }
             do {
-                try dispatch(command: command, args: args, client: client)
-                return 0
+                return try dispatch(command: command, args: args, client: client)
             } catch {
                 if JsonEnvelope.enabled(args) {
                     JsonEnvelope.error(error)
@@ -137,9 +134,9 @@ public enum ReticleCLI {
         )
         do {
             try client.start()
-            try dispatch(command: command, args: args, client: client)
+            let code = try dispatch(command: command, args: args, client: client)
             client.shutdown()
-            return 0
+            return code
         } catch {
             if JsonEnvelope.enabled(args) {
                 JsonEnvelope.error(error)
@@ -151,7 +148,13 @@ public enum ReticleCLI {
         }
     }
 
-    private static func dispatch(command: String, args: Args, client: HelperCalling) throws {
+    /// Returns the process exit code for the command.
+    ///
+    /// Almost every command is 0-or-throw. `act wait --strict` is the exception:
+    /// it projects its three-state outcome onto an exit code for shell/CI
+    /// consumers. That projection is opt-in, and never the primary channel — the
+    /// outcome is always a field in the result (see `cmdAct`).
+    private static func dispatch(command: String, args: Args, client: HelperCalling) throws -> Int32 {
         switch command {
         case "doctor": try cmdDoctor(client, args)
         case "devices": try cmdDevices(client, args)
@@ -164,7 +167,7 @@ public enum ReticleCLI {
             }
         case "inject": try cmdInject(client, args)
         case "launch": try cmdLaunch(client, args)
-        case "act": try cmdAct(client, args)
+        case "act": return try cmdAct(client, args)
         case "mutate": try cmdMutate(client, args)
         case "debug": try cmdDebug(client, args)
         case "ui":
@@ -181,6 +184,7 @@ public enum ReticleCLI {
         default:
             throw HelperError("unknown command: \(command)")
         }
+        return 0
     }
 
     private static func shouldUseDaemonHelper(_ args: Args) -> Bool {
