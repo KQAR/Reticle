@@ -1,42 +1,43 @@
 import Foundation
 
-func cmdDevices(_ c: HelperCalling, _ args: Args) throws {
-    let r = try c.call("listDevices")
-    let devices = (r["devices"] as? [[String: Any]]) ?? []
+func cmdDevices(_ backend: HostBackend, _ args: Args) throws {
+    let devices = try backend.listDevices()
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(["devices": devices])
+        try JsonEnvelope.success(["devices": devices.map(\.jsonObject)])
         return
     }
     if devices.isEmpty { print("devices: none"); return }
-    for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
+    for d in devices { print("  \(d.serial)  [\(d.state)]") }
 }
 
-func cmdDoctor(_ c: HelperCalling, _ args: Args) throws {
-    let ping = try c.call("ping")
-    let devicesResponse = try c.call("listDevices")
-    let devices = (devicesResponse["devices"] as? [[String: Any]]) ?? []
+func cmdDoctor(_ backend: HostBackend, _ args: Args) throws {
+    let ping = try backend.ping()
+    let devices = try backend.listDevices()
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(["helper": ping, "devices": devices])
+        try JsonEnvelope.success([
+            "helper": ["pong": true, "version": ping.version],
+            "devices": devices.map(\.jsonObject),
+        ])
         return
     }
-    print("helper: ok (cli version \(ping["version"] ?? "?"))")
+    print("helper: ok (cli version \(ping.version))")
     if devices.isEmpty { print("devices: none"); return }
-    for d in devices { print("  \(d["serial"] ?? "?")  [\(d["state"] ?? "?")]") }
+    for d in devices { print("  \(d.serial)  [\(d.state)]") }
 }
 
-func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
+func cmdStatus(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
-    let r = try c.call("status", ["package": pkg])
+    let status = try backend.status(StatusRequest(package: pkg))
     let advisory = RuntimeProcessStateStore().observe(
         package: pkg,
         serial: serialOption(args),
-        result: r
+        result: status.jsonObject
     )
     if let advisory {
         publishRuntimeAdvisoryIfDaemonIsRunning(package: pkg, target: platformTarget(args), advisory: advisory)
     }
     if JsonEnvelope.enabled(args) {
-        var data = r
+        var data = status.jsonObject
         data["package"] = pkg
         if let advisory {
             data["advisory"] = advisory.jsonObject
@@ -45,35 +46,34 @@ func cmdStatus(_ c: HelperCalling, _ args: Args) throws {
         return
     }
     print("package: \(pkg)")
-    print("running: \(r["running"] ?? false)\(r["pid"].map { " (pid=\($0))" } ?? "")")
-    print("runtime: \(r["runtime"] ?? "unknown")")
+    print("running: \(status.running)\(status.pid.map { " (pid=\($0))" } ?? "")")
+    print("runtime: \(status.runtime ?? "unknown")")
     if let advisory {
         print("advisory: \(advisory.message)")
     }
 }
 
-func cmdInject(_ c: HelperCalling, _ args: Args) throws {
+func cmdInject(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
-    var params: [String: Any] = ["package": pkg]
     let isIos = (args.option("target") ?? "android") == "ios"
+    var payload: String?
     // On iOS the injectable is a dylib (resolved by IosHelperClient); the Android
     // payload dex only applies to the Android/JDWP path.
     if isIos {
-        if let payload = args.option("payload-dex") { params["payloadDex"] = payload }
+        payload = args.option("payload-dex")
     } else {
         let devPayload = "reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar"
-        let payload = args.option("payload-dex")
+        payload = args.option("payload-dex")
             ?? (FileManager.default.fileExists(atPath: devPayload)
                 ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
-        if let payload { params["payloadDex"] = payload }
     }
-    let r = try c.call("inject", params)
-    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: r)
+    let started = try backend.inject(AppStartRequest(package: pkg, payload: payload))
+    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(r)
+        try JsonEnvelope.success(started.jsonObject)
         return
     }
-    print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
+    print("runtime live: \(started.packageName) pid=\(started.pid.map(String.init) ?? "?") port=\(started.port.map(String.init) ?? "?") agent=\(started.agentVersion ?? "?")")
     if !isIos {
         // The JDWP handshake dead-zone on a freshly launched debug process is
         // most of inject's 30s+ wall clock; a linked agent skips all of it.
@@ -81,25 +81,25 @@ func cmdInject(_ c: HelperCalling, _ args: Args) throws {
     }
 }
 
-func cmdUiReport(_ c: HelperCalling, _ args: Args) throws {
+func cmdUiReport(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
     let outDir = args.option("output") ?? "reticle-report"
-    let r = try c.call("uiReport", ["package": pkg])
+    let report = try backend.uiReport(PackageRequest(package: pkg))
     let fm = FileManager.default
     try fm.createDirectory(atPath: outDir, withIntermediateDirectories: true)
     let pruned = pruneStaleReportArtifacts(in: outDir, fm: fm)
 
     for key in ["snapshot", "semantics", "compact"] {
-        guard let tree = r[key] else { continue }
+        guard let tree = report.trees[key] else { continue }
         let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted])
         try data.write(to: URL(fileURLWithPath: "\(outDir)/\(key).json"))
     }
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success([
             "output": outDir,
-            "nodeCount": r["nodeCount"] ?? NSNull(),
-            "compactItemCount": r["compactItemCount"] ?? NSNull(),
-            "semanticNodeCount": r["semanticNodeCount"] ?? NSNull(),
+            "nodeCount": report.nodeCount as Any? ?? NSNull(),
+            "compactItemCount": report.compactItemCount as Any? ?? NSNull(),
+            "semanticNodeCount": report.semanticNodeCount as Any? ?? NSNull(),
             "prunedStaleArtifacts": pruned,
             "files": [
                 "snapshot": "\(outDir)/snapshot.json",
@@ -110,7 +110,7 @@ func cmdUiReport(_ c: HelperCalling, _ args: Args) throws {
         return
     }
     print("wrote report to \(outDir)")
-    print("nodes: \(r["nodeCount"] ?? "?"), compact items: \(r["compactItemCount"] ?? "?"), semantic nodes: \(r["semanticNodeCount"] ?? "?")")
+    print("nodes: \(report.nodeCount.map(String.init) ?? "?"), compact items: \(report.compactItemCount.map(String.init) ?? "?"), semantic nodes: \(report.semanticNodeCount.map(String.init) ?? "?")")
     if pruned > 0 {
         print("pruned \(pruned) stale artifact(s) from a prior report (use `ui screenshot` for a fresh frame)")
     }
@@ -130,59 +130,65 @@ func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
     return removed
 }
 
-func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
+func cmdLaunch(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
-    let r = try c.call("launch", ["package": pkg])
-    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: r)
+    let started = try backend.launch(AppStartRequest(package: pkg))
+    RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(r)
+        try JsonEnvelope.success(started.jsonObject)
         return
     }
-    print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
+    print("runtime live: \(started.packageName) pid=\(started.pid.map(String.init) ?? "?") port=\(started.port.map(String.init) ?? "?") agent=\(started.agentVersion ?? "?")")
 }
 
 @discardableResult
-func cmdAct(_ c: HelperCalling, _ args: Args) throws -> Int32 {
+func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/type/hide-keyboard/wait)") }
     if gesture == "batch" {
-        try cmdActBatch(c, args)
+        try cmdActBatch(backend, args)
         return 0
     }
     if gesture == "wait" {
-        return try cmdActWait(c, args)
+        return try cmdActWait(backend, args)
     }
-    let pkg = try args.require("package")
-    var params: [String: Any] = ["gesture": gesture, "package": pkg]
-    for k in ["test-id", "resource-id", "css", "ref", "point", "alias", "label", "region", "from", "to",
-              "duration", "text", "container", "direction", "max-swipes"] {
-        if let v = args.option(k) { params[selectorKey(k)] = v }
-    }
+    var request = ActRequest(
+        gesture: gesture,
+        package: try args.require("package"),
+        selector: args.hostSelector(["test-id", "resource-id", "css", "ref", "point", "alias", "label", "region"])
+    )
+    request.from = args.option("from")
+    request.to = args.option("to")
+    request.duration = args.option("duration")
+    request.text = args.option("text")
+    request.container = args.option("container")
+    request.direction = args.option("direction")
+    request.maxSwipes = args.option("max-swipes")
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
-    if let submit = args.option("submit"), submit != "false" { params["submit"] = true }
+    request.submit = args.flag("submit")
     // `tap --settle`: re-resolve the selector until its point stops moving before
     // dispatching, so a still-animating popup cannot make the touch land on its
     // neighbour. Opt-in, because it costs a poll loop on every tap.
-    if let settle = args.option("settle"), settle != "false" { params["settle"] = true }
-    if let t = args.option("settle-timeout") { params["settleTimeoutMs"] = Int(t) ?? 2000 }
-    if let v = args.option("verify") { params["verify"] = v }
-    if let t = args.option("verify-timeout") { params["verifyTimeoutMs"] = Int(t) ?? 2000 }
+    request.settle = args.flag("settle")
+    request.settleTimeoutMs = args.option("settle-timeout").map { Int($0) ?? 2000 }
+    request.verify = args.option("verify")
+    request.verifyTimeoutMs = args.option("verify-timeout").map { Int($0) ?? 2000 }
     if let out = args.option("trace-output") {
-        params["traceOutput"] = out
+        request.traceOutput = out
     } else if let out = automaticSessionTraceOutput() {
-        params["traceOutput"] = out
-        params["traceAuto"] = true
+        request.traceOutput = out
+        request.traceAuto = true
     }
-    if let t = args.option("trace-delay") { params["traceDelayMs"] = Int(t) ?? 250 }
+    request.traceDelayMs = args.option("trace-delay").map { Int($0) ?? 250 }
 
-    let r = try c.call("act", params)
+    let outcome = try backend.act(request)
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(r)
+        try JsonEnvelope.success(outcome.raw)
         return 0
     }
-    print(r.filter { $0.key != "verify" && $0.key != "trace" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
-    if let verify = r["verify"] as? [String: Any] { printVerify(verify) }
-    if let trace = r["trace"] as? [String: Any] {
+    print(outcome.displayFields.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
+    if let verify = outcome.verify { printVerify(verify) }
+    if let trace = outcome.trace {
         printTrace(trace)
         publishTraceIfDaemonIsRunning(trace)
     }
@@ -198,30 +204,31 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws -> Int32 {
 /// projection of that field for shell/CI callers (`--strict`), never the primary
 /// channel: a non-zero exit reads as "the command broke" to an agent driving this
 /// through a shell, which is worse than a clear line on stdout.
-private func cmdActWait(_ c: HelperCalling, _ args: Args) throws -> Int32 {
-    let pkg = try args.require("package")
-    var params: [String: Any] = ["gesture": "wait", "package": pkg]
-    // `point` and `alias` are forwarded even though a wait cannot use them: the
-    // helper refuses each BY NAME ("a coordinate always resolves", "an alias
-    // describes the screen a wait exists to watch change"). Dropping them here
-    // would silently downgrade those to the generic "needs a predicate".
-    for k in ["test-id", "resource-id", "css", "ref", "label", "for", "alias", "point"] {
-        if let v = args.option(k) { params[selectorKey(k)] = v }
-    }
-    if let gone = args.option("gone"), gone != "false" { params["gone"] = true }
-    if let idle = args.option("idle"), idle != "false" { params["idle"] = true }
+private func cmdActWait(_ backend: HostBackend, _ args: Args) throws -> Int32 {
+    var request = ActRequest(
+        gesture: "wait",
+        package: try args.require("package"),
+        // `point` and `alias` are forwarded even though a wait cannot use them: the
+        // backend refuses each BY NAME ("a coordinate always resolves", "an alias
+        // describes the screen a wait exists to watch change"). Dropping them here
+        // would silently downgrade those to the generic "needs a predicate".
+        selector: args.hostSelector(["test-id", "resource-id", "css", "ref", "label", "alias", "point"])
+    )
+    request.waitFor = args.option("for")
+    request.waitGone = args.flag("gone")
+    request.waitIdle = args.flag("idle")
     // `--text` on a wait means "contains this substring", not `type`'s "send this
     // text". Renamed on the wire so a batch step can never be read as a type.
-    if let text = args.option("text") { params["textContains"] = text }
-    if let t = args.option("timeout") { params["timeoutMs"] = Int(t) ?? 10_000 }
-    if let q = args.option("quiet-for") { params["quietMs"] = Int(q) ?? 400 }
+    request.textContains = args.option("text")
+    request.timeoutMs = args.option("timeout").map { Int($0) ?? 10_000 }
+    request.quietMs = args.option("quiet-for").map { Int($0) ?? 400 }
 
-    let r = try c.call("act", params)
-    let outcome = (r["outcome"] as? String) ?? "unknown"
+    let result = try backend.act(request)
+    let outcome = result.outcome ?? "unknown"
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(r)
+        try JsonEnvelope.success(result.raw)
     } else {
-        printWait(r, outcome: outcome)
+        printWait(result.raw, outcome: outcome)
     }
     guard let strict = args.option("strict"), strict != "false" else { return 0 }
     switch outcome {
@@ -265,7 +272,7 @@ private func intOf(_ value: Any?) -> Int? {
     }
 }
 
-func cmdActBatch(_ c: HelperCalling, _ args: Args) throws {
+func cmdActBatch(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
     let file = try args.require("file")
     let data = try Data(contentsOf: URL(fileURLWithPath: file))
@@ -276,21 +283,20 @@ func cmdActBatch(_ c: HelperCalling, _ args: Args) throws {
     let traceRoot = args.option("trace-output")
     var results: [[String: Any]] = []
     for (index, rawStep) in steps.enumerated() {
-        var params = rawStep
-        let gesture = params["gesture"] as? String ?? ""
+        let gesture = rawStep["gesture"] as? String ?? ""
         guard !gesture.isEmpty else {
             throw HelperError("act batch step \(index + 1) is missing gesture")
         }
-        params["package"] = params["package"] ?? pkg
-        if let traceRoot, params["traceOutput"] == nil {
-            params["traceOutput"] = URL(fileURLWithPath: traceRoot)
+        var request = ActRequest.fromBatchStep(rawStep, defaultPackage: pkg)
+        if let traceRoot, request.traceOutput == nil {
+            request.traceOutput = URL(fileURLWithPath: traceRoot)
                 .appendingPathComponent(String(format: "step-%02d-%@", index + 1, gesture))
                 .path
         }
-        if let delay = args.option("trace-delay"), params["traceDelayMs"] == nil {
-            params["traceDelayMs"] = Int(delay) ?? 250
+        if let delay = args.option("trace-delay"), request.traceDelayMs == nil {
+            request.traceDelayMs = Int(delay) ?? 250
         }
-        let result = try c.call("act", params)
+        let result = try backend.act(request).raw
         // A `wait` step is the only step that can report a non-fatal
         // disappointment: it never throws, because a predicate that did not come
         // true is an observation. But inside a BATCH the usual intent is a gate —
@@ -318,7 +324,7 @@ func cmdActBatch(_ c: HelperCalling, _ args: Args) throws {
                 publishTraceIfDaemonIsRunning(trace)
             }
         }
-        if let delayMs = batchInt(params["delayMs"]), delayMs > 0 {
+        if let delayMs = batchInt(rawStep["delayMs"]), delayMs > 0 {
             Thread.sleep(forTimeInterval: Double(delayMs) / 1000.0)
         }
     }

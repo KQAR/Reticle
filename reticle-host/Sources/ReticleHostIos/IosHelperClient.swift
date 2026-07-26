@@ -2,60 +2,65 @@ import Foundation
 import ReticleHostShared
 import ReticleProtocol
 
-/// Native in-host implementation of `HelperCalling` for iOS — no Kotlin helper,
-/// no daemon broker. Device control is `xcrun simctl`; observation/mutation are
-/// direct loopback HTTP to the in-process agent; screenshots use `simctl io`;
-/// input synthesis uses the private CoreSimulator HID backend. Because the whole
-/// CLI is written against `HelperCalling.call(method, params)`, every `cmd*`
-/// function works unchanged against this client.
-public final class IosHelperClient: HelperCalling, @unchecked Sendable {
+/// Native in-host `HostBackend` for iOS — no Kotlin helper, no daemon broker.
+/// Device control is `xcrun simctl`/`devicectl`; observation and mutation are
+/// direct loopback HTTP to the in-process agent; screenshots use the agent (with
+/// `simctl io` as an explicit fallback); input synthesis uses the private
+/// CoreSimulator HID backend.
+///
+/// It implements the typed backend interface directly. It used to implement
+/// `HelperCalling` — the Android helper's *wire* shape — which meant a 30-case
+/// switch over method-name strings and unpacking `[String: Any]` for parameters
+/// this process had in hand all along. A backend with no wire should not have to
+/// speak one to be callable.
+public final class IosHelperClient: HostBackend, @unchecked Sendable {
     let serial: String?
 
     public init(serial: String?) {
         self.serial = serial
     }
 
-    @discardableResult
-    public func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
-        switch method {
-        case "ping":
-            return ["pong": true, "version": ReticleVersion.current]
-        case "listDevices":
-            return try listDevices()
-        case "status":
-            return try status(params)
-        case "launch":
-            return try launchOrInject(params, inject: false)
-        case "inject":
-            return try launchOrInject(params, inject: true)
-        case "uiReport":
-            return try uiReport(params)
-        case "screenshot":
-            return try screenshot(params)
-        case "render":
-            return try render(params)
-        case "mutate":
-            return try mutate(params)
-        case "logs":
-            return try logs(params)
-        case "logcat":
-            // No process-wide log scrape yet on iOS; app-authored logs are /logs.
-            return ["lines": [String]()]
-        case "act":
-            return try act(params)
-        default:
-            throw HelperError("iOS target (--target ios) does not support method '\(method)'")
+    public func ping() throws -> PingResult {
+        PingResult(version: ReticleVersion.current)
+    }
+
+    public func listDevices() throws -> [DeviceSummary] {
+        try Simctl.listDevices().map {
+            DeviceSummary(serial: $0.udid, state: $0.state.lowercased(), name: $0.name, runtime: $0.runtime)
         }
+    }
+
+    public func status(_ request: StatusRequest) throws -> StatusResult {
+        // Runtime health comes over loopback and doesn't need simctl, so a simctl
+        // failure shouldn't fail the whole status — but it must be reported, not
+        // swallowed into an empty device list that reads like "no simulators".
+        var devices: [DeviceSummary] = []
+        do {
+            devices = try listDevices()
+        } catch {
+            FileHandle.standardError.write(Data("warning: could not list simulators: \(error)\n".utf8))
+        }
+        if let info = IosAgentHTTP(bundleId: request.package).probeRuntime() {
+            return StatusResult(devices: devices, running: true, pid: info.pid, runtime: "healthy",
+                                port: info.port, agentVersion: info.agentVersion)
+        }
+        return StatusResult(devices: devices, running: false, pid: nil, runtime: "unreachable")
+    }
+
+    public func launch(_ request: AppStartRequest) throws -> RuntimeStartResult {
+        try start(request, inject: false)
+    }
+
+    public func inject(_ request: AppStartRequest) throws -> RuntimeStartResult {
+        try start(request, inject: true)
+    }
+
+    public func logcat() throws -> [String] {
+        // No process-wide log scrape yet on iOS; app-authored logs are `logs`.
+        []
     }
 
     // MARK: - Devices
-
-    private func listDevices() throws -> [String: Any] {
-        let devices = try Simctl.listDevices().map { d -> [String: Any] in
-            ["serial": d.udid, "state": d.state.lowercased(), "name": d.name, "runtime": d.runtime]
-        }
-        return ["devices": devices]
-    }
 
     func bundleId(_ params: [String: Any]) throws -> String {
         guard let pkg = params["package"] as? String, !pkg.isEmpty else {
@@ -64,69 +69,33 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return pkg
     }
 
-    // MARK: - Status
-
-    private func status(_ params: [String: Any]) throws -> [String: Any] {
-        let pkg = try bundleId(params)
-        // Runtime health comes over loopback and doesn't need simctl, so a simctl
-        // failure shouldn't fail the whole status — but it must be reported, not
-        // swallowed into an empty device list that reads like "no simulators".
-        var devices: [[String: Any]] = []
-        var devicesError: String?
-        do {
-            devices = (try listDevices()["devices"] as? [[String: Any]]) ?? []
-        } catch {
-            devicesError = "\(error)"
-        }
-        let http = IosAgentHTTP(bundleId: pkg)
-        var result: [String: Any] = ["devices": devices as Any, "package": pkg]
-        if let devicesError { result["devicesError"] = devicesError }
-        if let info = http.probeRuntime() {
-            result["running"] = true
-            result["pid"] = info.pid
-            result["runtime"] = "healthy"
-        } else {
-            result["running"] = false
-            result["runtime"] = "unreachable"
-        }
-        return result
-    }
-
     // MARK: - Launch / inject
 
-    private func launchOrInject(_ params: [String: Any], inject: Bool) throws -> [String: Any] {
-        let pkg = try bundleId(params)
+    private func start(_ request: AppStartRequest, inject: Bool) throws -> RuntimeStartResult {
+        let pkg = request.package
         let udid = try Simctl.resolveUdid(serial)
         let port = PortMap.derivePort(pkg)
 
         var childEnv: [String: String] = ["SIMCTL_CHILD_RETICLE_PORT": String(port)]
         if inject {
-            let dylib = try resolveInjectionDylib(params)
-            childEnv["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = dylib
+            childEnv["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = try resolveInjectionDylib(request.payload)
         }
         // Restart so the injected env / a fresh runtime takes effect.
         Simctl.terminate(udid: udid, bundleId: pkg)
         let pid = try Simctl.launch(udid: udid, bundleId: pkg, childEnv: childEnv)
 
         // Success means the runtime is actually answering, not that launch returned.
-        let http = IosAgentHTTP(bundleId: pkg)
-        guard let info = http.waitForRuntime(deadline: 12.0) else {
+        guard let info = IosAgentHTTP(bundleId: pkg).waitForRuntime(deadline: 12.0) else {
             throw HelperError("launched \(pkg) (pid \(pid)) but its Reticle runtime never answered on port \(port); "
                 + (inject ? "check the injection dylib is a simulator build and the app holds no injection block"
                           : "is ReticleKit linked and Reticle.start() called?"))
         }
-        var result: [String: Any] = [
-            "pid": info.pid,
-            "packageName": info.packageName,
-            "port": info.port,
-            "agentVersion": info.agentVersion,
-        ]
-        if inject { result["reportedPort"] = info.port }
-        return result
+        return RuntimeStartResult(packageName: info.packageName, pid: info.pid, port: info.port,
+                                  agentVersion: info.agentVersion)
     }
 
-    private func resolveInjectionDylib(_ params: [String: Any]) throws -> String {
-        if let explicit = params["payloadDex"] as? String { return explicit } // reused CLI flag
+    private func resolveInjectionDylib(_ payload: String?) throws -> String {
+        if let payload { return payload }
         if let env = ProcessInfo.processInfo.environment["RETICLE_IOS_INJECTION"] { return env }
         let fm = FileManager.default
         let cwd = fm.currentDirectoryPath
@@ -145,44 +114,37 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
 
     // MARK: - Observation
 
-    private func uiReport(_ params: [String: Any]) throws -> [String: Any] {
-        let pkg = try bundleId(params)
-        let http = IosAgentHTTP(bundleId: pkg)
-        let obj = try http.getJSONObject(Endpoints.report)
+    public func uiReport(_ request: PackageRequest) throws -> UiReportResult {
+        let obj = try IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.report)
         let snapshot = obj["snapshot"] as? [String: Any] ?? [:]
         let semantics = obj["semantics"] as? [String: Any] ?? [:]
         let compact = obj["compact"] as? [String: Any] ?? [:]
-        let nodeCount = (snapshot["nodes"] as? [String: Any])?.count ?? 0
-        let semanticCount = (semantics["nodes"] as? [String: Any])?.count ?? 0
-        let compactCount = (compact["items"] as? [Any])?.count ?? 0
-        return [
-            "nodeCount": nodeCount,
-            "compactItemCount": compactCount,
-            "semanticNodeCount": semanticCount,
-            "snapshot": snapshot,
-            "semantics": semantics,
-            "compact": compact,
-        ]
+        return UiReportResult(
+            nodeCount: (snapshot["nodes"] as? [String: Any])?.count ?? 0,
+            compactItemCount: (compact["items"] as? [Any])?.count ?? 0,
+            semanticNodeCount: (semantics["nodes"] as? [String: Any])?.count ?? 0,
+            trees: ["snapshot": snapshot, "semantics": semantics, "compact": compact]
+        )
     }
 
-    private func screenshot(_ params: [String: Any]) throws -> [String: Any] {
+    public func screenshot(_ request: ScreenshotRequest) throws -> ScreenshotResult {
         // The agent's in-process render always targets the app we're actually
         // talking to (device or simulator), so it is the source of truth. Only
         // fall back to `simctl io` when the agent can't render AND an explicit
         // simulator serial was given — never silently screenshot a stray booted
         // simulator when the real target is a device.
-        let pkg = try bundleId(params)
+        guard let pkg = request.package, !pkg.isEmpty else {
+            throw HelperError("iOS commands need --package <bundle-id>")
+        }
         do {
             let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.screenshot)
-            var out: [String: Any] = ["via": "agent", "pngBase64": data.base64EncodedString()]
-            let degraded = screenshotDegrades(pkg)
-            if !degraded.isEmpty { out["degraded"] = degraded }
-            return out
+            return ScreenshotResult(pngBase64: data.base64EncodedString(), via: "agent",
+                                    degraded: screenshotDegrades(pkg))
         } catch {
             if let serial, !serial.isEmpty,
                (try? Simctl.listDevices().contains { $0.udid == serial && $0.state == "Booted" }) == true {
                 let png = try Simctl.screenshotPng(udid: serial)
-                return ["via": "simctl", "pngBase64": png.base64EncodedString()]
+                return ScreenshotResult(pngBase64: png.base64EncodedString(), via: "simctl")
             }
             throw error
         }
@@ -204,50 +166,51 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
         }
     }
 
-    private func render(_ params: [String: Any]) throws -> [String: Any] {
-        let view = (params["view"] as? String) ?? "tree"
-        let snapshot = try loadSnapshotForRender(params)
-        let depth = (params["depth"] as? Int) ?? Int.max
-        let selector = selectorFromParams(params)
-        let text = try Render.view(view, snapshot: snapshot, depth: depth, selector: selector)
-        return ["text": text]
+    public func render(_ request: RenderRequest) throws -> RenderResult {
+        let snapshot = try loadSnapshotForRender(request)
+        let text = try Render.view(
+            request.view,
+            snapshot: snapshot,
+            depth: request.depth ?? Int.max,
+            selector: request.selector.protocolSelector
+        )
+        return RenderResult(text: text)
     }
 
-    private func loadSnapshotForRender(_ params: [String: Any]) throws -> Snapshot {
-        if (params["live"] as? String) == "true" {
-            let pkg = try bundleId(params)
+    private func loadSnapshotForRender(_ request: RenderRequest) throws -> Snapshot {
+        // `--live` arrives as the sentinel path the CLI uses for "capture now".
+        if request.snapshotPath == RenderRequest.liveSnapshotPath {
+            guard let pkg = request.package else {
+                throw HelperError("render --live needs --package")
+            }
             let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
             return try ReticleJSON.decode(Snapshot.self, from: data)
         }
-        guard let path = params["snapshot"] as? String else {
-            throw HelperError("render needs a 'snapshot' path (or live=true + package)")
-        }
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let data = try Data(contentsOf: URL(fileURLWithPath: request.snapshotPath))
         return try ReticleJSON.decode(Snapshot.self, from: data)
     }
 
-    private func mutate(_ params: [String: Any]) throws -> [String: Any] {
-        let pkg = try bundleId(params)
-        guard let property = params["property"] as? String else {
-            throw HelperError("mutate needs --property")
-        }
-        let value = metadataValue(from: params["value"])
-        let request = MutationRequest(selector: selectorFromParams(params), property: property, value: value)
-        let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.mutate, body: body)
+    public func mutate(_ request: MutateRequest) throws -> MutationOutcome {
+        let mutation = MutationRequest(
+            selector: request.selector.protocolSelector,
+            property: request.property,
+            value: MetadataValue.parsed(from: request.value)
+        )
+        let body = try ReticleJSON.encodeWire(mutation)
+        let (data, _) = try IosAgentHTTP(bundleId: request.package).post(Endpoints.mutate, body: body)
         let result = try ReticleJSON.decode(MutationResult.self, from: data)
-        var out: [String: Any] = ["applied": result.applied]
-        if let ref = result.ref { out["ref"] = ref }
-        if let prev = result.previousValue { out["previousValue"] = prev.displayString() }
-        if let msg = result.message { out["message"] = msg }
-        return out
+        return MutationOutcome(
+            applied: result.applied,
+            ref: result.ref,
+            previousValue: result.previousValue?.displayString()
+        )
     }
 
-    private func logs(_ params: [String: Any]) throws -> [String: Any] {
-        let pkg = try bundleId(params)
-        let obj = try IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.logs)
-        let entries = (obj["entries"] as? [[String: Any]]) ?? []
-        return ["entries": entries]
+    public func logs(_ request: PackageRequest) throws -> [AppLogEntry] {
+        let obj = try IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.logs)
+        return ((obj["entries"] as? [[String: Any]]) ?? []).map {
+            AppLogEntry(level: $0["level"] as? String ?? "?", message: $0["message"] as? String ?? "")
+        }
     }
 
     // MARK: - Actions (input synthesis)
@@ -257,6 +220,15 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
     /// producing the same `verify` result shape the host's `printVerify` renders.
     /// Previously iOS silently accepted and dropped `--verify`, so an agent believed
     /// it had checked a post-condition it never checked.
+    public func act(_ request: ActRequest) throws -> ActOutcome {
+        ActOutcome(raw: try act(request.wireParams))
+    }
+
+    /// The gesture handler still reads a parameter dictionary, and `act` is the one
+    /// method where that is not just inertia: `act batch` builds steps from user
+    /// JSON, and the modifiers are shared across gestures. The typed entry point
+    /// above is what callers see; converting this body is tracked separately so the
+    /// interface change and the internal one are reviewable apart.
     private func act(_ params: [String: Any]) throws -> [String: Any] {
         guard let watch = try verifyWatchSelector(params) else {
             return try performAct(params)
