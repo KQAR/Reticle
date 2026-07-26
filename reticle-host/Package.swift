@@ -16,6 +16,7 @@ let package = Package(
         .executable(name: "ReticleHost", targets: ["ReticleHost"]),
         .library(name: "ReticleHostCore", targets: ["ReticleHostCore"]),
         .library(name: "ReticleNetworkLane", targets: ["ReticleNetworkLane"]),
+        .library(name: "ReticleHostIos", targets: ["ReticleHostIos"]),
     ],
     dependencies: [
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", exact: "2.25.0"),
@@ -57,11 +58,27 @@ let package = Package(
             ],
             path: "Sources/ReticleNetworkLane"
         ),
+        // The iOS platform backend: simctl/devicectl device control, direct loopback
+        // HTTP to the in-process agent, the wait/scroll-to/verify loops, and private
+        // CoreSimulator HID input. It implements `HelperCalling` (in the shared layer)
+        // and depends on nothing above it — no daemon, no CLI — so the compiler now
+        // enforces what was previously only true by habit: the daemon never reaches
+        // into platform code, and a platform backend never reaches up into the CLI.
+        .target(
+            name: "ReticleHostIos",
+            dependencies: [
+                "ReticleHostShared",
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
+                "CReticleSimHID",
+            ],
+            path: "Sources/ReticleHostIos"
+        ),
         .target(
             name: "ReticleHostCore",
             dependencies: [
                 "ReticleHostShared",
                 "ReticleNetworkLane",
+                "ReticleHostIos",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
@@ -71,7 +88,6 @@ let package = Package(
                 .product(name: "SwiftASN1", package: "swift-asn1"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
-                "CReticleSimHID",
             ],
             path: "Sources/ReticleHostCore"
         ),
@@ -93,6 +109,7 @@ let package = Package(
                 "ReticleHostCore",
                 "ReticleHostShared",
                 "ReticleNetworkLane",
+                "ReticleHostIos",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
                 // Lets the capture-lane tests synthesize Loom `Flow`s directly, so the

@@ -1,9 +1,6 @@
 import Foundation
+import ReticleHostShared
 import ReticleProtocol
-
-// Disambiguate from ObjC's `Selector` (Foundation) — here we always mean the
-// protocol's target selector.
-private typealias TargetSelector = ReticleProtocol.Selector
 
 /// Native in-host implementation of `HelperCalling` for iOS — no Kotlin helper,
 /// no daemon broker. Device control is `xcrun simctl`; observation/mutation are
@@ -11,18 +8,18 @@ private typealias TargetSelector = ReticleProtocol.Selector
 /// input synthesis uses the private CoreSimulator HID backend. Because the whole
 /// CLI is written against `HelperCalling.call(method, params)`, every `cmd*`
 /// function works unchanged against this client.
-final class IosHelperClient: HelperCalling, @unchecked Sendable {
-    private let serial: String?
+public final class IosHelperClient: HelperCalling, @unchecked Sendable {
+    let serial: String?
 
-    init(serial: String?) {
+    public init(serial: String?) {
         self.serial = serial
     }
 
     @discardableResult
-    func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
+    public func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
         switch method {
         case "ping":
-            return ["pong": true, "version": ReticleCLI.version]
+            return ["pong": true, "version": ReticleVersion.current]
         case "listDevices":
             return try listDevices()
         case "status":
@@ -60,7 +57,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return ["devices": devices]
     }
 
-    private func bundleId(_ params: [String: Any]) throws -> String {
+    func bundleId(_ params: [String: Any]) throws -> String {
         guard let pkg = params["package"] as? String, !pkg.isEmpty else {
             throw HelperError("iOS commands need --package <bundle-id>")
         }
@@ -271,7 +268,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return result
     }
 
-    private func performAct(_ params: [String: Any]) throws -> [String: Any] {
+    func performAct(_ params: [String: Any]) throws -> [String: Any] {
         let pkg = try bundleId(params)
         let gesture = (params["gesture"] as? String) ?? "tap"
 
@@ -478,7 +475,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
 
     /// Merge a trace evidence package into an action result when tracing is on and
     /// the before-state was captured; otherwise return the result untouched.
-    private func finishTrace(
+    func finishTrace(
         _ tracer: IosActionTrace?, _ before: IosActionTrace.Capture?, _ settleMs: Int,
         gesture: String, selector: TargetSelector?,
         point: Point?, source: String?, ref: String?,
@@ -495,7 +492,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
 
     /// The selector to record in a trace, or nil when no selector fields were
     /// given (a bare point/coordinate action). Mirrors the helper's `selectorOrNull`.
-    private func selectorForTrace(_ params: [String: Any]) -> TargetSelector? {
+    func selectorForTrace(_ params: [String: Any]) -> TargetSelector? {
         let s = selectorFromParams(params)
         let empty = s.testId == nil && s.resourceId == nil && s.cssSelector == nil
             && s.ref == nil && s.point == nil && s.region == nil
@@ -511,7 +508,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     /// the private class/symbols are absent — e.g. an Xcode without the
     /// SimulatorKit layout this path is reverse-engineered against. In that case
     /// there is no silent no-op to fear: we error here rather than pretend.
-    private func assertHidAvailable(_ udid: String) throws {
+    func assertHidAvailable(_ udid: String) throws {
         if IosInputBackend(udid: udid).isAvailable() { return }
         throw HelperError(
             "HID input (tap/swipe/drag/type) is unavailable on this simulator: the private SimulatorKit HID "
@@ -521,7 +518,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     }
 
     /// In-process control activation via the agent's /activate endpoint.
-    private func activate(_ pkg: String, _ params: [String: Any]) throws -> [String: Any] {
+    func activate(_ pkg: String, _ params: [String: Any]) throws -> [String: Any] {
         let request = ActivationRequest(selector: selectorFromParams(params))
         let body = try ReticleJSON.encodeWire(request)
         let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.activate, body: body)
@@ -535,7 +532,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return out
     }
 
-    private func fetchSnapshot(_ pkg: String) throws -> Snapshot {
+    func fetchSnapshot(_ pkg: String) throws -> Snapshot {
         let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
         return try ReticleJSON.decode(Snapshot.self, from: data)
     }
@@ -549,11 +546,11 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     /// documents, matched region labels case-sensitively where Android did not, and
     /// applied a different selector precedence. The semantic tree is derived here
     /// from the same capture, so both trees still describe one frame.
-    private func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
+    func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
         try resolveTarget(params, snapshot: snapshot).point
     }
 
-    private func resolveTarget(
+    func resolveTarget(
         _ params: [String: Any], snapshot: Snapshot
     ) throws -> SelectorResolution.Resolved {
         if let p = parsePoint(params["point"]) {
@@ -571,7 +568,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return resolved
     }
 
-    private func settleRequested(_ params: [String: Any]) -> Bool { isTruthy(params["settle"]) }
+    func settleRequested(_ params: [String: Any]) -> Bool { isTruthy(params["settle"]) }
 
     /// Re-resolve the tap target until it lands on the same point twice in a row —
     /// it has stopped moving — or the budget runs out.
@@ -582,7 +579,7 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
     /// already performs, on the tap's own resolution path (no `isVisible` proxy).
     /// It never refuses to tap — a lapsed budget returns the freshest point flagged
     /// `stable = false`, which the caller reports as evidence.
-    private func settleTapPoint(
+    func settleTapPoint(
         _ pkg: String, _ params: [String: Any], first: Point
     ) -> SettledPoint {
         let budget = Double((params["settleTimeoutMs"] as? Int) ?? 2_000) / 1000.0
@@ -605,347 +602,4 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return SettledPoint(point: previous, stable: false)
     }
 
-    // MARK: - scroll-to
-
-    /// Drag a scrollable container until the selector resolves to a point inside
-    /// it, then confirm the position stopped moving. The iOS twin of the helper's
-    /// `HelperScrollTo`, and it exists for the same measured reason: a SwiftUI
-    /// `List` realizes only its visible window, so `list.item40` has no node at
-    /// all and `tap` can never reach it.
-    ///
-    /// Slow drags on purpose: a flick leaves the list decelerating after the
-    /// gesture returns, so the point reported would already be stale for the next
-    /// command. `settled` says whether the position was confirmed to have stopped.
-    private func scrollTo(_ pkg: String, _ params: [String: Any], udid: String) throws -> [String: Any] {
-        let selector = selectorFromParams(params)
-        let maxSwipes = Int((params["maxSwipes"] as? String) ?? "") ?? 12
-        let requested = (params["direction"] as? String)?.lowercased()
-        var swipes = 0
-        var lastDirection: String?
-        // Locked after the first pick: re-choosing per iteration made an absent
-        // selector ping-pong (at the bottom, "first available" becomes `up`), so a
-        // run would re-cover ground instead of finishing a sweep.
-        var lockedDirection: String?
-
-        while true {
-            let snapshot = try fetchSnapshot(pkg)
-            let container = try scrollContainer(snapshot, params)
-            if let point = resolvedInside(snapshot, params, container: container) {
-                let settled = confirmSettled(pkg, params, container: container, first: point)
-                var out: [String: Any] = [
-                    "gesture": "scroll-to", "via": "hid", "found": true, "swipes": swipes,
-                    "x": settled.point.x, "y": settled.point.y, "settled": settled.stable,
-                ]
-                if let lastDirection { out["direction"] = lastDirection }
-                if let container { out["container"] = container.testId ?? container.ref }
-                return out
-            }
-            guard let container, let frame = container.frame, let scroll = container.scroll else {
-                throw HelperError("scroll-to found no scrollable container on screen, so "
-                    + "\(selector.describe()) cannot be scrolled into view" + Self.scrollHint(snapshot))
-            }
-            let direction = requested ?? lockedDirection ?? firstDirection(scroll)
-            lockedDirection = direction
-            guard let direction, canScroll(scroll, direction) else {
-                throw HelperError("scroll-to reached the end of "
-                    + "'\(container.testId ?? container.ref)' after \(swipes) drag(s) without resolving "
-                    + "\(selector.describe()) (container now reports \(scroll.describe())). "
-                    + "Nothing realized under that selector came into view.")
-            }
-            if swipes >= maxSwipes {
-                throw HelperError("scroll-to gave up after \(maxSwipes) drag(s) \(direction) inside "
-                    + "'\(container.testId ?? container.ref)' without resolving \(selector.describe()). "
-                    + "The container can still scroll \(direction) — raise --max-swipes.")
-            }
-            let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            try drag(frame, direction, udid: udid, screen: screen)
-            lastDirection = direction
-            swipes += 1
-            Thread.sleep(forTimeInterval: 0.35)
-        }
-    }
-
-    private func resolvedInside(_ snapshot: Snapshot, _ params: [String: Any], container: Node?) -> Point? {
-        guard let point = try? resolveTapPoint(params, snapshot: snapshot) else { return nil }
-        guard let frame = container?.frame else { return point }
-        let inside = point.x >= frame.x && point.x <= frame.x + frame.width
-            && point.y >= frame.y && point.y <= frame.y + frame.height
-        return inside ? point : nil
-    }
-
-    private struct SettledPoint { let point: Point; let stable: Bool }
-
-    /// Poll until the target resolves to the same point twice — the list stopped —
-    /// or the budget runs out. Reports the freshest point either way.
-    private func confirmSettled(
-        _ pkg: String, _ params: [String: Any], container: Node?, first: Point
-    ) -> SettledPoint {
-        let deadline = Date().addingTimeInterval(2.0)
-        var previous = first
-        while Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.2)
-            guard let snapshot = try? fetchSnapshot(pkg) else { return SettledPoint(point: previous, stable: false) }
-            let fresh = (try? scrollContainer(snapshot, params)).flatMap { $0 }
-            guard let point = resolvedInside(snapshot, params, container: fresh) else {
-                return SettledPoint(point: previous, stable: false)
-            }
-            if abs(point.x - previous.x) < 1, abs(point.y - previous.y) < 1 {
-                return SettledPoint(point: point, stable: true)
-            }
-            previous = point
-        }
-        return SettledPoint(point: previous, stable: false)
-    }
-
-    /// The container to scroll: an explicit `--container`, else the largest
-    /// scrollable node **in the topmost window**.
-    ///
-    /// The window filter matters: a snapshot holds every window in the process,
-    /// so a background screen's page scroller can be larger than the foreground
-    /// list and plain "largest" would move something invisible. Within the top
-    /// window, largest is the right tie-break — a nested scroller is usually the
-    /// smaller of the two.
-    private func scrollContainer(_ snapshot: Snapshot, _ params: [String: Any]) throws -> Node? {
-        if let wanted = params["container"] as? String {
-            guard let node = snapshot.nodes.values.first(where: {
-                $0.testId == wanted || $0.resourceId == wanted || $0.ref == wanted
-            }) else { throw HelperError("scroll-to: no node matched --container '\(wanted)'") }
-            return node
-        }
-        func windowRef(of node: Node) -> String? {
-            var current: Node? = node
-            while let n = current {
-                if n.kind == .window { return n.ref }
-                current = n.parentRef.flatMap { snapshot.nodes[$0] }
-            }
-            return nil
-        }
-        let scrollables = snapshot.nodes.values.filter { $0.scroll?.isScrollable == true && $0.frame != nil }
-        // Highest-stacked window that HAS a scroller: the keyboard is itself a
-        // window in the scene, so "top window only" would find nothing when it is up.
-        let windowRefs = (snapshot.root()?.children ?? []).filter { snapshot.nodes[$0]?.kind == .window }
-        var scoped = Array(scrollables)
-        for ref in windowRefs.reversed() {
-            let inWindow = scrollables.filter { windowRef(of: $0) == ref }
-            if !inWindow.isEmpty { scoped = inWindow; break }
-        }
-        return scoped.max { lhs, rhs in
-            (lhs.frame!.width * lhs.frame!.height) < (rhs.frame!.width * rhs.frame!.height)
-        }
-    }
-
-    private func firstDirection(_ scroll: ScrollInfo) -> String? {
-        if scroll.canScrollDown { return "down" }
-        if scroll.canScrollRight { return "right" }
-        if scroll.canScrollUp { return "up" }
-        if scroll.canScrollLeft { return "left" }
-        return nil
-    }
-
-    private func canScroll(_ scroll: ScrollInfo, _ direction: String) -> Bool {
-        switch direction {
-        case "down": return scroll.canScrollDown
-        case "up": return scroll.canScrollUp
-        case "left": return scroll.canScrollLeft
-        case "right": return scroll.canScrollRight
-        default: return false
-        }
-    }
-
-    private func drag(
-        _ frame: Rect, _ direction: String, udid: String, screen: (Double, Double)
-    ) throws {
-        let cx = frame.x + frame.width / 2
-        let cy = frame.y + frame.height / 2
-        let dx = frame.width * 0.3
-        let dy = frame.height * 0.3
-        let backend = IosInputBackend(udid: udid)
-        // Content moves with the finger: dragging up scrolls DOWN.
-        switch direction {
-        case "down": try backend.swipe(from: (cx, cy + dy), to: (cx, cy - dy), screen: screen, durationMs: 700)
-        case "up": try backend.swipe(from: (cx, cy - dy), to: (cx, cy + dy), screen: screen, durationMs: 700)
-        case "right": try backend.swipe(from: (cx + dx, cy), to: (cx - dx, cy), screen: screen, durationMs: 700)
-        case "left": try backend.swipe(from: (cx - dx, cy), to: (cx + dx, cy), screen: screen, durationMs: 700)
-        default: throw HelperError("scroll-to: unknown --direction '\(direction)'")
-        }
-    }
-
-    /// A selector miss inside a lazy list is a different failure from a wrong
-    /// selector: the row has no node until it is realized. When the screen holds a
-    /// container with travel left, say so — stating the fact, not promising the
-    /// element is down there. Mirrors the Android helper's diagnostics.
-    static func scrollHint(_ snapshot: Snapshot) -> String {
-        let scrollable = snapshot.nodes.values.filter { $0.scroll?.isScrollable == true }.prefix(3)
-        if scrollable.isEmpty { return "" }
-        let described = scrollable.map { node -> String in
-            let id = node.testId ?? node.resourceId ?? node.ref
-            return "'\(id)' (\(node.scroll?.describe() ?? ""))"
-        }.joined(separator: ", ")
-        return ". Note: the screen has scrollable content (\(described)); "
-            + "a lazy list only realizes its visible window, so an unrealized row has no node yet"
-    }
-
-    private func parsePoint(_ raw: Any?) -> Point? {
-        guard let s = raw as? String else { return nil }
-        let parts = s.split(separator: ",")
-        guard parts.count == 2, let x = Double(parts[0]), let y = Double(parts[1]) else { return nil }
-        return Point(x: x, y: y)
-    }
-
-    // MARK: - Verify (act --verify)
-
-    private struct VerifyState {
-        let found: Bool
-        let text: String?
-        let label: String?
-        let enabled: Bool
-        let visible: Bool
-        let frame: String?
-        let custom: [String: String]
-    }
-
-    /// Resolves the `--verify` token into the node selector to watch, or nil when
-    /// verify is off. Mirrors the Android helper's `parseVerifyToken` grammar so both
-    /// platforms accept the same spellings (`#id`/`testId=`/`@id`/`resourceId=`/
-    /// `css=`/`ref=`/bare ref, plus `true` = watch the acted-on selector).
-    private func verifyWatchSelector(_ params: [String: Any]) throws -> TargetSelector? {
-        let token: String
-        if let s = params["verify"] as? String { token = s }
-        else if let b = params["verify"] as? Bool { token = b ? "true" : "false" }
-        else { return nil }
-        return try IosHelperClient.parseVerifyToken(token, actSelector: selectorFromParams(params))
-    }
-
-    /// Resolves a `--verify` token into the node selector to watch. Pure and
-    /// `internal` so it can be unit-tested without a device, mirroring the Android
-    /// helper's `parseVerifyToken` (and its `VerifyTokenTest`) grammar 1:1 — this
-    /// exact grammar silently regressed on Android once, so it stays test-guarded.
-    static func parseVerifyToken(_ token: String, actSelector: ReticleProtocol.Selector) throws -> ReticleProtocol.Selector? {
-        switch token {
-        case "false":
-            return nil
-        case "true":
-            let s = actSelector
-            if s.testId == nil && s.resourceId == nil && s.cssSelector == nil && s.ref == nil {
-                throw HelperError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|ref>, or act by selector rather than --point")
-            }
-            return ReticleProtocol.Selector(testId: s.testId, resourceId: s.resourceId, cssSelector: s.cssSelector, ref: s.ref)
-        default:
-            if token.hasPrefix("#") { return ReticleProtocol.Selector(testId: String(token.dropFirst())) }
-            if token.hasPrefix("@") { return ReticleProtocol.Selector(resourceId: String(token.dropFirst())) }
-            if token.hasPrefix("css=") { return ReticleProtocol.Selector(cssSelector: String(token.dropFirst("css=".count))) }
-            if token.hasPrefix("testId=") { return ReticleProtocol.Selector(testId: String(token.dropFirst("testId=".count))) }
-            if token.hasPrefix("resourceId=") { return ReticleProtocol.Selector(resourceId: String(token.dropFirst("resourceId=".count))) }
-            if token.hasPrefix("ref=") { return ReticleProtocol.Selector(ref: String(token.dropFirst("ref=".count))) }
-            if token.contains("=") {
-                throw HelperError("unrecognized --verify selector '\(token)': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, ref=<ref>, or a bare ref")
-            }
-            return ReticleProtocol.Selector(ref: token)
-        }
-    }
-
-    /// Captures the watched node's current state, or a not-found state when the
-    /// selector resolves nothing. A snapshot fetch failure reads as not-found —
-    /// verify never fails the action it wraps.
-    private func captureVerifyState(_ pkg: String, _ selector: TargetSelector) -> VerifyState {
-        guard let snapshot = try? fetchSnapshot(pkg), let node = Render.findNode(snapshot, selector) else {
-            return VerifyState(found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil, custom: [:])
-        }
-        let frame = node.frame.map { "\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))" }
-        return VerifyState(
-            found: true,
-            text: node.text,
-            label: node.contentDescription,
-            enabled: node.isEnabled,
-            visible: node.isVisible,
-            frame: frame,
-            custom: node.custom.mapValues { $0.displayString() }
-        )
-    }
-
-    /// Polls the watched node until it differs from `before` or the budget expires,
-    /// returning the `{selector, changed, note?, changes[]}` shape `printVerify` reads.
-    private func pollVerify(_ pkg: String, _ selector: TargetSelector, before: VerifyState, params: [String: Any]) -> [String: Any] {
-        let budgetMs = (params["verifyTimeoutMs"] as? Int)
-            ?? (params["verifyTimeoutMs"] as? Double).map(Int.init)
-            ?? 2000
-        let deadline = Date().addingTimeInterval(Double(budgetMs) / 1000.0)
-        var after = captureVerifyState(pkg, selector)
-        var changes = diffVerify(before, after)
-        while changes.isEmpty && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.15)
-            after = captureVerifyState(pkg, selector)
-            changes = diffVerify(before, after)
-        }
-        let selStr: String
-        if let t = selector.testId { selStr = "#\(t)" }
-        else if let r = selector.resourceId { selStr = "@\(r)" }
-        else if let c = selector.cssSelector { selStr = "css=\(c)" }
-        else if let r = selector.ref { selStr = r }
-        else { selStr = "?" }
-        var out: [String: Any] = ["selector": selStr, "changed": !changes.isEmpty]
-        if !after.found { out["note"] = "node not present after action" }
-        out["changes"] = changes.map { change -> [String: Any] in
-            var c: [String: Any] = ["field": change.field]
-            if let b = change.before { c["before"] = b }
-            if let a = change.after { c["after"] = a }
-            return c
-        }
-        return out
-    }
-
-    private func diffVerify(_ before: VerifyState, _ after: VerifyState) -> [(field: String, before: String?, after: String?)] {
-        var out: [(field: String, before: String?, after: String?)] = []
-        if before.found != after.found { out.append((field: "present", before: String(before.found), after: String(after.found))) }
-        if before.text != after.text { out.append((field: "text", before: before.text, after: after.text)) }
-        if before.label != after.label { out.append((field: "label", before: before.label, after: after.label)) }
-        if before.enabled != after.enabled { out.append((field: "enabled", before: String(before.enabled), after: String(after.enabled))) }
-        if before.visible != after.visible { out.append((field: "visible", before: String(before.visible), after: String(after.visible))) }
-        if before.frame != after.frame { out.append((field: "frame", before: before.frame, after: after.frame)) }
-        for key in Set(before.custom.keys).union(after.custom.keys).sorted() {
-            let b = before.custom[key]
-            let a = after.custom[key]
-            if b != a { out.append((field: key, before: b, after: a)) }
-        }
-        return out
-    }
-
-    // MARK: - Selector / value helpers
-
-    /// Interpret a CLI / batch-step boolean (`true`, `"true"`, `1`) as a flag.
-    private func isTruthy(_ value: Any?) -> Bool {
-        switch value {
-        case let b as Bool: return b
-        case let s as String: return s == "true" || s == "1"
-        case let n as NSNumber: return n.boolValue
-        default: return false
-        }
-    }
-
-    private func selectorFromParams(_ params: [String: Any]) -> TargetSelector {
-        TargetSelector(
-            testId: params["testId"] as? String,
-            resourceId: params["resourceId"] as? String,
-            cssSelector: params["css"] as? String,
-            ref: params["ref"] as? String,
-            point: parsePoint(params["point"]),
-            label: params["label"] as? String,
-            region: params["region"] as? String
-        )
-    }
-
-    /// Coerce a CLI string value into a MetadataValue (bool / int / real / text),
-    /// matching how the Kotlin helper interprets `mutate --value`.
-    private func metadataValue(from raw: Any?) -> MetadataValue {
-        guard let s = raw as? String else {
-            if let b = raw as? Bool { return .bool(b) }
-            if let i = raw as? Int { return .integer(Int64(i)) }
-            if let d = raw as? Double { return .real(d) }
-            return .text("\(raw ?? "")")
-        }
-        if s == "true" || s == "false" { return .bool(s == "true") }
-        if let i = Int64(s) { return .integer(i) }
-        if let d = Double(s) { return .real(d) }
-        return .text(s)
-    }
 }

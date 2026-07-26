@@ -1,7 +1,8 @@
 import Foundation
 import Testing
 import ReticleProtocol
-@testable import ReticleHostCore
+@testable import ReticleHostIos
+import ReticleHostShared
 
 /// Pins the iOS `--verify` token grammar to the Android helper's `parseVerifyToken`
 /// (guarded there by `VerifyTokenTest`). The two are hand-duplicated across the

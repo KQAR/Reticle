@@ -5,3 +5,6 @@
 // types unchanged — the split is an internal boundary, not an API break.
 @_exported import ReticleHostShared
 @_exported import ReticleNetworkLane
+// Same reasoning for the iOS platform backend, split out so the daemon cannot
+// reach into platform code and the backend cannot reach up into the CLI.
+@_exported import ReticleHostIos
