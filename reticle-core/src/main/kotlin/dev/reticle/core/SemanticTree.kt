@@ -31,13 +31,38 @@ data class SemanticTree(
     /** The root node; always resolves because [build] guarantees [rootRef] exists. */
     fun root(): SemanticNode? = nodes[rootRef]
 
-    /** Find a node by stable selector id (Compose testTag / app id). */
-    fun findByTestId(testId: String): SemanticNode? =
-        nodes.values.firstOrNull { it.testId == testId }
+    /**
+     * Find a node by stable selector id (Compose testTag / app id), taking the
+     * first in **document order** when an app repeats one. See [firstNode] for why
+     * the order is walked rather than taken from the map.
+     */
+    fun findByTestId(testId: String): SemanticNode? = firstNode { it.testId == testId }
 
-    /** Find by resource-id entry name. */
-    fun findByResourceId(resourceId: String): SemanticNode? =
-        nodes.values.firstOrNull { it.resourceId == resourceId }
+    /** Find by resource-id entry name, in document order. See [findByTestId]. */
+    fun findByResourceId(resourceId: String): SemanticNode? = firstNode { it.resourceId == resourceId }
+
+    /**
+     * First node satisfying [match] in document order: depth-first from the root,
+     * then any unreached ref in sorted order. The twin of `Snapshot.firstNode`,
+     * and the same reason: a first-match lookup over a map is a lookup over
+     * whatever key order the serializer produced, which is not a contract — and on
+     * the Swift side it was randomized per process.
+     */
+    fun firstNode(match: (SemanticNode) -> Boolean): SemanticNode? {
+        val seen = HashSet<String>()
+        fun visit(ref: String): SemanticNode? {
+            if (!seen.add(ref)) return null
+            val node = nodes[ref] ?: return null
+            if (match(node)) return node
+            for (child in node.children) visit(child)?.let { return it }
+            return null
+        }
+        visit(rootRef)?.let { return it }
+        for (ref in nodes.keys.sorted()) {
+            if (ref !in seen) visit(ref)?.let { return it }
+        }
+        return null
+    }
 
     companion object {
         /**
