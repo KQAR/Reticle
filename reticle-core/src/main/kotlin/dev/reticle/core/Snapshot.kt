@@ -31,6 +31,34 @@ data class Snapshot(
     fun children(ref: String): List<Node> =
         nodes[ref]?.children?.mapNotNull { nodes[it] } ?: emptyList()
 
+    /**
+     * First node satisfying [match] in **document order**: depth-first from the
+     * root, then any unreached ref in sorted order (an orphan window captured out
+     * of band stays addressable, but never outranks a node that is in the tree).
+     *
+     * Deliberately not `nodes.values.firstOrNull` — that follows the map's
+     * insertion order, i.e. whatever order the agent happened to serialize its
+     * keys in, which is not a contract. The Swift twin had it worse: a
+     * `Dictionary`'s order there is hash-seeded per process, so duplicate ids
+     * resolved differently between two runs. Both sides now walk the tree, so
+     * `reticle-protocol/fixtures/selector-resolution.cases.json` gets one answer.
+     */
+    fun firstNode(match: (Node) -> Boolean): Node? {
+        val seen = HashSet<String>()
+        fun visit(ref: String): Node? {
+            if (!seen.add(ref)) return null
+            val node = nodes[ref] ?: return null
+            if (match(node)) return node
+            for (child in node.children) visit(child)?.let { return it }
+            return null
+        }
+        visit(rootRef)?.let { return it }
+        for (ref in nodes.keys.sorted()) {
+            if (ref !in seen) visit(ref)?.let { return it }
+        }
+        return null
+    }
+
     companion object {
         /**
          * The wire format version this build emits. Must equal the `const` on
