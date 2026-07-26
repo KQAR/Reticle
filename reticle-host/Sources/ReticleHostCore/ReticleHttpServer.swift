@@ -14,6 +14,7 @@ public final class ReticleHttpServer: @unchecked Sendable {
     private var serverChannel: (any Channel)?
     private var startupError: Error?
     private var _flowReplayer: FlowReplaying?
+    private var _flowQuerier: FlowQuerying?
 
     /// The capture lane that services flow replays, bound after the server starts
     /// (the lane is created once the proxy port is known). nil until then / when
@@ -21,6 +22,13 @@ public final class ReticleHttpServer: @unchecked Sendable {
     public var flowReplayer: FlowReplaying? {
         get { lock.withLock { _flowReplayer } }
         set { lock.withLock { _flowReplayer = newValue } }
+    }
+
+    /// Bound alongside the replayer: listing exists to find something to replay, so
+    /// the two are available together or not at all.
+    public var flowQuerier: FlowQuerying? {
+        get { lock.withLock { _flowQuerier } }
+        set { lock.withLock { _flowQuerier = newValue } }
     }
 
     public private(set) var port: Int
@@ -105,7 +113,10 @@ public final class ReticleHttpServer: @unchecked Sendable {
         let router = Router()
         ReticleSessionRoutes(store: store, traceIngest: traceIngest, port: { [weak self] in self?.port ?? 0 }).register(on: router)
         ReticleRuleRoutes(ruleStore: ruleStore).register(on: router)
-        ReticleFlowRoutes(replayer: { [weak self] in self?.flowReplayer }).register(on: router)
+        ReticleFlowRoutes(
+            replayer: { [weak self] in self?.flowReplayer },
+            querier: { [weak self] in self?.flowQuerier }
+        ).register(on: router)
         ReticleHelperRoutes(helper: helper).register(on: router)
         ReticleStreamRoutes(store: store).register(on: router)
         return router

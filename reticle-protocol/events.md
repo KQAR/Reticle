@@ -74,6 +74,7 @@ The skeleton serves these endpoints on `127.0.0.1`:
 | `GET` | `/sessions/current/rules/values` | List current-session mock response values. |
 | `POST` | `/sessions/current/rules/values` | Create or update a mock response value. |
 | `DELETE` | `/sessions/current/rules/values/{id}` | Remove an unreferenced mock value. |
+| `GET` | `/sessions/current/flows` | Find still-replayable flows by filter (`host`, `method`, `urlContains`, `status`/`statusMin`/`statusMax`, `onlyErrors`, `sinceMillis`, `limit`). Scoped to the capture engine's buffer, not the session's full evidence. |
 | `POST` | `/sessions/current/flows/{id}/replay` | Re-send a captured flow with overrides; emits a `network.replay` event and returns the diff vs the original. |
 | `POST` | `/helper/rpc` | Present only when `serve --helper-broker` is enabled; forwards one helper RPC through the daemon-owned helper process. |
 | `GET` | `/events/stream?since=<id>` | Server-Sent Events replay followed by live events. |
@@ -153,11 +154,20 @@ When `reticle serve --proxy-port <port>` is running, the host proxy emits
 normalized network events into the same event stream:
 
 - `source`: `proxy`
-- `type`: `network.request`, `network.response`, `network.error`, or
-  `network.replay` (a re-sent flow plus its diff; see [Flow replay](#flow-replay)).
+- `type`: `network.request`, `network.response`, `network.error`,
+  `network.replay` (a re-sent flow plus its diff; see [Flow replay](#flow-replay)),
+  or `network.websocket` (one frame inside an upgraded socket; see
+  [WebSocket frames](#websocket-frames)).
 - `payload.requestId`: stable id shared by the request/response/error events.
 - `payload.method`, `url`, `scheme`, `host`, `port`, `path`: request target.
 - `payload.startMillis`, `endMillis`, `durationMs`: request interval timing.
+- `payload.firstByteMillis`, `ttfbMs`, `receiveMs`: when the response *head* came
+  back, and the two spans it splits the exchange into — server think-time
+  (`ttfbMs`) and body transfer (`receiveMs`), which sum to `durationMs`. "This
+  call is slow" has a different cause depending on which half it lands in.
+  Absent while pending, for a flow that failed before any head, and for a blind
+  CONNECT tunnel; `receiveMs` needs both ends, so a flow with a head but no
+  completion carries `ttfbMs` alone rather than a guess.
 - `payload.status`: HTTP status when a response is available.
 - `payload.tunnel`: true for HTTPS CONNECT tunnel observations.
 - `payload.mitm`: true only for decrypted HTTPS requests admitted by the MITM
@@ -183,7 +193,38 @@ The `network.*` payload has its own authoritative typed schema at
 contract test validates the golden fixtures against the schema, and a Swift test
 pins the emitter's field set to the same schema so neither side can drift.
 Golden fixtures: `network-request-event.golden.json`,
-`network-response-event.golden.json`, `network-error-event.golden.json`.
+`network-response-event.golden.json`, `network-error-event.golden.json`,
+`network-websocket-event.golden.json`.
+
+### WebSocket frames
+
+An upgraded socket is still an ordinary flow: its handshake produces a
+`network.request` and a `network.response` with `status: 101`. What happens
+*inside* it arrives as `network.websocket` events under the same
+`payload.requestId`, one per frame — not an array on the flow, because a socket
+may stay open for the whole session and a summary at close is evidence that may
+never come. Its payload has its own schema,
+`reticle-protocol/schema/network-websocket-payload.schema.json`:
+
+- `payload.frameIndex`: zero-based position in the socket's frame sequence.
+- `payload.direction`: `clientToServer` | `serverToClient`.
+- `payload.kind`: `text` | `binary` | `ping` | `pong` | `close` | `continuation`.
+- `payload.isFinal`: false for a fragment continued by later `continuation` frames.
+- `payload.bytes`, `payload.frameMillis`: wire size and observation time.
+- `payload.textPreview`, `payload.textPreviewTruncated`: UTF-8 preview of a text
+  frame, capped at 512 bytes. A binary frame has no text reading and carries no
+  preview. A frame too big to sit inline also has its whole payload under `refs`
+  as `wsFrame.<requestId>.<frameIndex>`; a small frame carries no artifact, so a
+  chatty socket does not strew thousands of files.
+
+Two caps sit above this, and hitting either emits one final `network.websocket`
+event with `payload.capReached: true`, `framesRecorded`, and — when the capture
+engine reported a count — `framesNotRecorded`. **The socket is still open and may
+still be talking**: the silence after that notice is the cap, not a quiet socket,
+and reading it as one is the mistake the event exists to prevent. Reticle stops
+after 1000 frames per socket so a single chatty socket cannot bury the session;
+the capture engine has its own 10k-frame / 5 MB cap, which can bite first on a
+few large frames.
 
 Responses are **streamed** back to the client as they arrive off the upstream
 socket, not buffered whole. An identity body with a known length is forwarded
@@ -268,6 +309,28 @@ reticle rule import --input /tmp/reticle-rules.json
 ```
 
 ## Flow replay
+
+### Finding a flow to replay
+
+`GET /sessions/current/flows` filters the capture engine's retained flows so an
+agent can name the exchange it means without pulling every summary into context.
+The scan runs over everything retained and only *then* applies `limit`, so a match
+older than the newest `limit` exchanges is still findable. Parameters (all
+optional, ANDed): `host` (exact or `*.example.com`), `method` (comma-separated),
+`urlContains`, `status` (sets both bounds) or `statusMin`/`statusMax`,
+`onlyErrors=true`, `sinceMillis`, `limit` (default 50, clamped to 500).
+
+The response is `{ flows, truncatedToLimit, replayableOnly }`, each flow carrying
+`requestId`, `method`, `url`, `host`, `status`, `error`, `startMillis`,
+`durationMs`, `ttfbMs`, `receiveMs`, body sizes, and `bodyCaptureTruncated`.
+
+**`replayableOnly` is always true and always stated.** This endpoint reads the
+capture engine's bounded in-memory ring — the only thing `replay` can act on — not
+the session's evidence log. A flow that has aged out of that ring is absent here
+while its `network.*` events remain in `events.jsonl`. So an empty result means
+"nothing replayable matches", never "this never happened"; for the latter question,
+read the events. The endpoint 404s when `serve` is running without a capture proxy,
+rather than returning an empty list that would read as "no traffic matched".
 
 `POST /sessions/current/flows/{id}/replay` closes Loom's capture → modify → replay
 → diff loop: it re-sends a captured flow (by its `requestId`) through the engine's

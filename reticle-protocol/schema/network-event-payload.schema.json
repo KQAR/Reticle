@@ -4,7 +4,18 @@
   "title": "Reticle proxy network.* event payload",
   "description": "Typed shape of the payload carried by proxy-sourced network.request / network.response / network.error events. The host proxy is the sole producer; this schema pins the fields so the Swift emitter and any consumer cannot silently drift.",
   "type": "object",
-  "required": ["requestId", "scheme", "method", "url", "host", "port", "path", "startMillis", "tunnel", "mitm"],
+  "required": [
+    "requestId",
+    "scheme",
+    "method",
+    "url",
+    "host",
+    "port",
+    "path",
+    "startMillis",
+    "tunnel",
+    "mitm"
+  ],
   "additionalProperties": false,
   "properties": {
     "requestId": {
@@ -43,6 +54,21 @@
     },
     "durationMs": {
       "description": "endMillis - startMillis, present only alongside endMillis.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "firstByteMillis": {
+      "description": "When the response head arrived. Absent while pending, for a flow that failed before any head, and for a blind CONNECT tunnel.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "ttfbMs": {
+      "description": "firstByteMillis - startMillis: server think-time. Present only alongside firstByteMillis.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "receiveMs": {
+      "description": "endMillis - firstByteMillis: body transfer time. Needs both ends, so a flow with a head but no completion carries ttfbMs alone.",
       "type": "integer",
       "minimum": 0
     },
@@ -118,17 +144,58 @@
       "description": "On a network.replay event, the diff of the replayed response vs the original. Header lists carry names only, never values.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["statusChanged", "bodyChanged", "bodyBytesFrom", "bodyBytesTo", "headersAdded", "headersRemoved", "headersChanged"],
+      "required": [
+        "statusChanged",
+        "bodyChanged",
+        "bodyBytesFrom",
+        "bodyBytesTo",
+        "headersAdded",
+        "headersRemoved",
+        "headersChanged"
+      ],
       "properties": {
-        "statusFrom": { "type": "integer" },
-        "statusTo": { "type": "integer" },
-        "statusChanged": { "type": "boolean" },
-        "bodyBytesFrom": { "type": "integer", "minimum": 0 },
-        "bodyBytesTo": { "type": "integer", "minimum": 0 },
-        "bodyChanged": { "type": "boolean" },
-        "headersAdded": { "type": "array", "items": { "type": "string" } },
-        "headersRemoved": { "type": "array", "items": { "type": "string" } },
-        "headersChanged": { "type": "array", "items": { "type": "string" } }
+        "statusFrom": {
+          "type": "integer"
+        },
+        "statusTo": {
+          "type": "integer"
+        },
+        "statusChanged": {
+          "type": "boolean"
+        },
+        "bodyBytesFrom": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bodyBytesTo": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bodyChanged": {
+          "type": "boolean"
+        },
+        "headersAdded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "headersRemoved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "headersChanged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bodyComparisonPartial": {
+          "description": "True when a capture cap clipped at least one of the two bodies, so bodyChanged was decided on prefixes. Under this flag bodyChanged:false means the recorded prefixes match, not that the responses do, and the diff is never reported as identical. Omitted when both bodies were captured whole.",
+          "type": "boolean"
+        }
       }
     }
   }

@@ -123,6 +123,7 @@ public final class ServeRuntime {
             // The lane is created after the server starts, so bind it now to service
             // `POST /sessions/current/flows/:id/replay`.
             server.flowReplayer = lane
+            server.flowQuerier = lane
             loomLane = lane
             let boundPort = lane.port
             if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {

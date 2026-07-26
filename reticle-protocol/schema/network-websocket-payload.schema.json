@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reticle.dev/schema/network-websocket-payload.schema.json",
+  "title": "Reticle proxy network.websocket event payload",
+  "description": "Typed shape of the payload carried by proxy-sourced network.websocket events: one frame observed on an open socket, or — with capReached — the notice that frames stopped being recorded. The socket's own upgrade is an ordinary network.request/network.response pair (status 101) under the same requestId; these carry what happened inside it. The host proxy is the sole producer.",
+  "type": "object",
+  "required": ["requestId", "url", "host", "frameIndex", "direction", "kind", "isFinal", "bytes", "frameMillis"],
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "The upgrade flow's id, so frames join their network.request.",
+      "type": "string",
+      "minLength": 1
+    },
+    "url": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "frameIndex": {
+      "description": "Zero-based position in the frame sequence recorded for this socket. On the capReached notice, the number of frames recorded before it.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "direction": {
+      "description": "Which way the frame travelled. 'none' on the capReached notice, which is not a frame.",
+      "type": "string",
+      "enum": ["clientToServer", "serverToClient", "none"]
+    },
+    "kind": {
+      "description": "WebSocket opcode as a readable kind (RFC 6455 5.2). 'capReached' on the notice, which has no opcode.",
+      "type": "string",
+      "enum": ["text", "binary", "ping", "pong", "close", "continuation", "capReached"]
+    },
+    "isFinal": {
+      "description": "FIN bit — false for a fragment continued by later continuation frames.",
+      "type": "boolean"
+    },
+    "bytes": {
+      "description": "Frame payload size on the wire.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "frameMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "textPreview": {
+      "description": "UTF-8 preview of a text frame, capped. Absent for a binary frame, which has no text reading. The whole payload is under the event's refs when it did not fit inline.",
+      "type": "string"
+    },
+    "textPreviewTruncated": {
+      "description": "True when textPreview is a prefix of the frame rather than the whole of it.",
+      "type": "boolean"
+    },
+    "capReached": {
+      "description": "Marks the one event announcing that no further frames on this socket will be recorded. The socket is still open and may still be talking — the silence that follows is the cap, not a quiet socket.",
+      "type": "boolean"
+    },
+    "framesRecorded": {
+      "description": "Frames emitted as events before the cap. Present on the capReached notice.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "framesNotRecorded": {
+      "description": "Frames the capture engine's own cap dropped, when it reported a count. Present on the capReached notice when known.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

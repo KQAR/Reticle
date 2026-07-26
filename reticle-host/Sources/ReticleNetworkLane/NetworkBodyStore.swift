@@ -38,6 +38,26 @@ final class NetworkBodyStore: @unchecked Sendable {
         )
     }
 
+    /// Writes one WebSocket frame's payload as an artifact. Separate from `store` so
+    /// the frame role can't be spelled by a caller: the filename is built from the
+    /// flow id and an `Int` index, never from free text.
+    func storeFrame(_ data: Data, requestId: String, index: Int) throws -> StoredBody? {
+        guard !data.isEmpty else { return nil }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let refName = "wsFrame.\(requestId).\(index)"
+        let url = directory.appendingPathComponent("\(requestId)-wsFrame-\(index).bin")
+        let slice = data.prefix(limitBytes)
+        lock.lock()
+        defer { lock.unlock() }
+        try Data(slice).write(to: url, options: .atomic)
+        return StoredBody(
+            refName: refName,
+            path: url.path,
+            bytes: data.count,
+            truncated: data.count > slice.count
+        )
+    }
+
     /// Writes an already-bounded body prefix for a streamed transfer and reports
     /// the full transfer size. The streaming path caps `prefix` at `limitBytes`
     /// while it forwards every byte to the client, so `bytes` is the true total
