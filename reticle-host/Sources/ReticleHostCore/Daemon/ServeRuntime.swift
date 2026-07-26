@@ -223,8 +223,8 @@ public final class ServeRuntime {
         )
         try client.start()
         defer { client.shutdown() }
-        let result = try client.call("proxySet", ["host": "127.0.0.1", "port": port])
-        let previous = result["previous"] as? String
+        let result = try AndroidBackend(client).setDeviceProxy(host: "127.0.0.1", port: port)
+        let previous = result.previous
         // Persist the fact that we set the proxy so a hard-killed/crashed daemon
         // can be reconciled on the next start (SIGKILL can't run the restore).
         DeviceProxyState(pid: getpid(), serial: options.serial, proxyPort: port, previous: previous).write()
@@ -243,9 +243,10 @@ public final class ServeRuntime {
         )
         do {
             try client.start()
-            _ = try client.call("proxyClear", ["port": stale.proxyPort])
+            let backend = AndroidBackend(client)
+            try backend.clearDeviceProxy(port: stale.proxyPort)
             if let previous = stale.previous, !previous.isEmpty {
-                _ = try client.call("proxySet", ["value": previous])
+                try backend.setDeviceProxy(raw: previous)
             }
             print("reticle serve: cleared a stale device proxy left by daemon pid \(stale.pid)")
         } catch {
@@ -285,10 +286,7 @@ public final class ServeRuntime {
         )
         try client.start()
         defer { client.shutdown() }
-        _ = try client.call("proxyInstallCa", [
-            "path": derPath,
-            "name": "Reticle Local Debug CA"
-        ])
+        _ = try AndroidBackend(client).installDeviceCa(path: derPath, name: "Reticle Local Debug CA")
     }
 
     private func restoreDeviceProxy() {
@@ -300,9 +298,10 @@ public final class ServeRuntime {
         )
         do {
             try client.start()
-            _ = try client.call("proxyClear", ["port": restore.proxyPort])
+            let backend = AndroidBackend(client)
+            try backend.clearDeviceProxy(port: restore.proxyPort)
             if let previous = restore.previous, !previous.isEmpty {
-                _ = try client.call("proxySet", ["value": previous])
+                try backend.setDeviceProxy(raw: previous)
             }
             // Restored cleanly — drop the crash-recovery marker.
             DeviceProxyState.clear(serial: restore.serial)
