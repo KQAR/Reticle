@@ -2,8 +2,10 @@ package dev.reticle.cli.platform
 
 /**
  * Gets the Reticle runtime running inside an app that does NOT link the agent,
- * with no root and no repackaging. Android does this over JDWP; other platforms
- * would have their own mechanism (or none, for non-debuggable builds).
+ * with no root and no repackaging — over JDWP, for a debuggable APK. An internal
+ * seam of the Android helper: this mechanism is the whole reason a Kotlin helper
+ * exists at all (see the "Swift host + per-platform helpers" decision), so it is
+ * Android-only by construction, not pending a second implementation.
  */
 interface AppInjector {
     /** Inject and start the runtime in [packageName]. */
