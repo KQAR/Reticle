@@ -351,7 +351,8 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
             try assertHidAvailable(simUdid!)
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            var point = try resolveTapPoint(params, snapshot: snapshot)
+            let target = try resolveTarget(params, snapshot: snapshot)
+            var point = target.point
             var stable: Bool? = nil
             if settleRequested(params) {
                 if params["point"] != nil {
@@ -364,13 +365,21 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
             }
             let before = tracer?.capture()
             try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
-            var result: [String: Any] = ["gesture": "tap", "via": "hid", "x": point.x, "y": point.y]
+            var result: [String: Any] = [
+                "gesture": "tap", "via": "hid", "x": point.x, "y": point.y,
+                // How it resolved, in the shared vocabulary (`semantic:testId`,
+                // `region:span`, `charGrid:approx`, …). It used to report the
+                // coarse "selector", which threw away exactly the distinction an
+                // agent needs: a char-grid approximation is not a semantic hit.
+                "source": target.source,
+            ]
+            if let ref = target.ref { result["ref"] = ref }
             // Honest flag, as in scroll-to: false means the target was still moving
             // when the budget lapsed, so this tap may have been aimed at a point that
             // had already changed.
             if let stable { result["settled"] = stable }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
-                                   point: point, source: params["point"] != nil ? "point" : "selector", ref: nil,
+                                   point: point, source: target.source, ref: target.ref,
                                    result: result)
         case "swipe", "drag":
             guard let udid = simUdid else {
@@ -528,49 +537,35 @@ public final class IosHelperClient: HelperCalling, @unchecked Sendable {
         return try ReticleJSON.decode(Snapshot.self, from: data)
     }
 
+    /// Resolves a tap target through the SHARED resolver in `ReticleProtocol`, the
+    /// same order the Kotlin helper applies and the same one pinned by
+    /// `reticle-protocol/fixtures/selector-resolution.cases.json`.
+    ///
+    /// This used to be a hand-rolled walk over `Render.findNode` — the view tree
+    /// only — so iOS silently skipped the semantic-first rule the architecture
+    /// documents, matched region labels case-sensitively where Android did not, and
+    /// applied a different selector precedence. The semantic tree is derived here
+    /// from the same capture, so both trees still describe one frame.
     func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
-        if let p = parsePoint(params["point"]) { return p }
-        let selector = selectorFromParams(params)
-        if let label = selector.label {
-            // Ambiguity must reach the user; Render.findNode swallows it to keep
-            // its non-throwing shape.
-            _ = try Render.labelMatch(snapshot, label).map { $0 }
+        try resolveTarget(params, snapshot: snapshot).point
+    }
+
+    func resolveTarget(
+        _ params: [String: Any], snapshot: Snapshot
+    ) throws -> SelectorResolution.Resolved {
+        if let p = parsePoint(params["point"]) {
+            return SelectorResolution.Resolved(point: p, source: "point", ref: nil)
         }
-        guard let node = Render.findNode(snapshot, selector) else {
+        let selector = selectorFromParams(params)
+        guard let resolved = try SelectorResolution.resolve(
+            snapshot: snapshot,
+            semantic: SemanticTree.build(from: snapshot),
+            selector: selector
+        ) else {
             throw HelperError("could not resolve a tap point from selector \(selector.describe())"
                 + Self.scrollHint(snapshot))
         }
-        // --region narrows to a sub-target inside the node: a discovered region
-        // label first (real hit-rect), else the char grid locates the substring
-        // (self-drawn rows with no structural markers). Plain substring
-        // matching, mirroring the Android selector resolver.
-        if let query = selector.region, !query.isEmpty {
-            if let region = node.regions.first(where: { ($0.label ?? "").contains(query) }),
-               let p = region.tapPoint() {
-                return p
-            }
-            // A channel with no label (a touch delegate's forwarded rect) is
-            // addressed by its SOURCE name, matching the Android resolver.
-            if let region = node.regions.first(where: {
-                $0.source.rawValue.caseInsensitiveCompare(query) == .orderedSame
-            }), let p = region.tapPoint() {
-                return p
-            }
-            if let grid = node.charGrid {
-                let text = grid.text as NSString
-                let r = text.range(of: query)
-                if r.location != NSNotFound,
-                   let rect = grid.rangeRects(start: r.location, end: r.location + r.length).first {
-                    return Point(x: rect.centerX, y: rect.centerY)
-                }
-            }
-            throw HelperError("node matched but no region or text matched '\(query)' "
-                + "(\(node.regions.count) region(s), charGrid=\(node.charGrid != nil ? "yes" : "no"))")
-        }
-        if let f = node.frame {
-            return Point(x: f.centerX, y: f.centerY)
-        }
-        throw HelperError("could not resolve a tap point from selector \(selector.describe())")
+        return resolved
     }
 
     func settleRequested(_ params: [String: Any]) -> Bool { isTruthy(params["settle"]) }
