@@ -119,7 +119,14 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
         return .eof
     }
 
-    /// Closes stdin so the helper exits its serve loop.
+    /// Closes stdin so the helper exits its serve loop. Idempotent: closing an
+    /// already-closed handle is ignored, and `waitUntilExit` on an exited process
+    /// returns at once — so a `defer`-ed `close()` after an explicit shutdown is
+    /// harmless.
+    func close() {
+        shutdown()
+    }
+
     func shutdown() {
         try? stdinPipe.fileHandleForWriting.close()
         process.waitUntilExit()
