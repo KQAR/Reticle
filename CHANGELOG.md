@@ -50,6 +50,23 @@
   `SelectorResolutionContractTests` (Swift). iOS's inline walk is replaced by
   `SelectorResolution` in `ReticleProtocol`, so the Swift host and the iOS agent
   share it the way they already share the models.
+- **The Kotlin `Platform` SPI is gone — it was an extension point its own decision
+  record had already closed.** `Platforms.current(target)` accepted a `--target` /
+  `RETICLE_TARGET` selector so "the selection point exists before a second platform
+  lands". A second platform landed, and it went somewhere else: iOS is native in the
+  Swift host (`ReticleCLI.swift` picks the target), because a helper exists **only**
+  where a platform's dirty-work lives outside the host's ecosystem — JDWP does, and
+  `simctl`/DYLD do not. Every one of the 20+ call sites passed no target and no code
+  ever read `RETICLE_TARGET`, so the parameter was dead and the abstraction was
+  advertising a portability it will never have.
+
+  Deleted `Platform`, `Platforms` and `AndroidPlatform`; device construction is now
+  the single `Adb.forSerial(serial)` (which keeps the `$ANDROID_SERIAL` fallback),
+  so a call site reads `Adb.forSerial(...)` instead of `Platforms.current().device(...)`.
+  `DeviceController` / `InputDispatcher` / `AppInjector` stay — they name real seams
+  and carry the KDoc — but they now say what they are: internal seams of the Android
+  helper, adb-shaped on purpose. A retired extension point is worse than none,
+  because the next contributor plans against it.
 
 - **The capture lane no longer loses flows quietly.** `handle` — which writes body
   and frame artifacts to disk — ran inline in the `for await` over Loom's flow
