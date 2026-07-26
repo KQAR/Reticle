@@ -314,6 +314,18 @@ final class IosHelperClient: HelperCalling, @unchecked Sendable {
                                             "keyboardVisible": keyboard?["visible"] ?? false])
         }
 
+        // The one gesture that dispatches no input: it only observes, so like
+        // `hide-keyboard` it needs no HID surface and works on real devices too.
+        if gesture == "wait" {
+            let predicate = try IosWaitRunner.predicate(from: params)
+            let runner = IosWaitRunner(fetch: { try self.fetchSnapshot(pkg) })
+            return try runner.run(
+                predicate: predicate,
+                timeoutMs: (params["timeoutMs"] as? Int) ?? WaitSchedule.defaultTimeoutMs,
+                quietMs: (params["quietMs"] as? Int) ?? WaitSchedule.defaultQuietMs
+            )
+        }
+
         // HID (real touch/keyboard) needs a booted simulator; a real device has no
         // host-reachable HID input surface.
         let simUdid = try? Simctl.resolveUdid(serial)

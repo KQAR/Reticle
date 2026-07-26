@@ -134,6 +134,33 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   resolve and dispatch); it watches the resolved POSITION only, so a view animating
   in place with a transform reports settled while not yet hit-testable. `pinch`
   keeps the API shape but is not implemented (needs `sendevent` multi-touch).
+- `act wait` is the only `act` gesture that dispatches no input — it polls until a
+  stated predicate holds. It exists because nothing else can express "act, then a
+  NEW screen appears": `--verify` can only watch a node that ALREADY resolves, and
+  `--settle` only watches whether a point stopped moving. Predicates: `--for
+  <selector>` (appear), `+ --gone`, `+ --text <substring>`, or `--idle` for the
+  screen itself going quiet. It takes neither `--point` (a coordinate always
+  "resolves") nor `--alias` (an alias describes the screen a wait exists to watch
+  change), and refuses both by name.
+  - **The success test is resolution through the act's own path, never
+    `isVisible`.** An earlier `wait --for appears` proposal was dropped over that
+    proxy (see the comments on `HelperScrollTo` and `settleInputTarget`); the
+    guarantee this one carries instead is that a `resolved` wait means the very
+    next `act` resolves the same way. Visibility and occlusion are reported as
+    caveats, not as the verdict.
+  - **The outcome is three-state, and the third state is the point:** `resolved` /
+    `absent` (a miss nothing prevented seeing) / `unknowable` (a miss that could
+    not have been seen — lost window focus, an unbound list row, an unreadable
+    DOM, a screen that never settled, an ambiguous label). Collapsing `unknowable`
+    into `absent` is how an observer lies: an agent reads `absent` as "the feature
+    is broken". `WaitVerdict.classify` in `reticle-core` (mirrored in
+    `ReticleProtocol`) decides this, pinned for BOTH platforms by
+    `reticle-protocol/fixtures/wait-classification.cases.json` — add a branch
+    there or it ships unpinned on one side.
+  - The outcome is a FIELD; `--json` stays `{"ok":true}` on a timeout, because a
+    predicate that did not come true is an observation, not a tool failure. Exit
+    codes are an opt-in lossy projection for shell/CI (`--strict`: 3 = absent,
+    4 = unknowable, kept distinct on purpose).
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
 - Runtime mutation is allowlisted (`alpha`, `visibility`, `text`,

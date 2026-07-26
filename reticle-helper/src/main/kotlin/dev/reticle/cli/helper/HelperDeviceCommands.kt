@@ -175,8 +175,12 @@ internal object HelperDeviceCommands {
             "scrollTo", "scroll-to" -> HelperScrollTo.run(input, device, pkg, params)
             "type" -> typeText(input, device, pkg, params)
             "hideKeyboard", "hide-keyboard" -> hideKeyboard(input, device, pkg, params)
+            // The one gesture that dispatches no input: it only observes. Kept
+            // under `act` because it is part of an action sequence (act, then wait
+            // for the consequence) and shares the selector/trace surface.
+            "wait" -> HelperWait.run(device, pkg, params)
             else -> throw CliError(
-                "unknown act gesture '$sub' (tap/swipe/drag/scroll-to/type/hide-keyboard)"
+                "unknown act gesture '$sub' (tap/swipe/drag/scroll-to/type/hide-keyboard/wait)"
             )
         }
 
