@@ -14,8 +14,11 @@ import dev.reticle.core.Snapshot
  *   "Use the semantic tree first for movement and input; selector actions
  *    should only fall back to view frames when no semantic match exists."
  *
- * So we try the semantic tree first (testId / resourceId), then the full
- * snapshot's view frames, then a raw point.
+ * This is the Android half of a two-language contract: `SelectorResolution` in
+ * `reticle-swift` is the iOS half, and both are pinned by
+ * `reticle-protocol/fixtures/selector-resolution.cases.json`. The fixture exists
+ * because the two had drifted — change resolution here only together with a case
+ * there, or iOS ships a different answer for the same command.
  */
 class SelectorResolver(
     private val snapshot: Snapshot,
@@ -25,15 +28,18 @@ class SelectorResolver(
     data class Resolved(val point: Point, val source: String, val ref: String?)
 
     fun resolve(selector: Selector): Resolved? {
-        // 0. Region-within-node: target a sub-region (span / virtual / char
+        // 0. An explicit point is the escape hatch for when resolution cannot
+        //    work, so nothing may override it — not even a --region needle passed
+        //    alongside it. (`resolveInputTarget` also short-circuits it before the
+        //    capture; this keeps the resolver's own order honest about that.)
+        selector.point?.let { return Resolved(it, "point", null) }
+
+        // 1. Region-within-node: target a sub-region (span / virtual / char
         //    range) inside a node, the multi-region case neither tree collapses.
         if (selector.region != null) {
-            resolveRegion(selector)?.let { return it }
-            // fall through to whole-node if the region couldn't be located
+            val node = nodeFor(selector) ?: return null
+            return resolveRegion(node, selector.region!!)
         }
-
-        // 1. Raw point wins if explicitly provided.
-        selector.point?.let { return Resolved(it, "point", null) }
 
         // 2. Semantic tree first. Use the matched node's own ref rather than
         //    re-scanning for it — the semantic tree preserves snapshot refs.
@@ -53,15 +59,8 @@ class SelectorResolver(
             labelMatch(label)?.let { n -> n.frame?.let { return Resolved(center(it), "label", n.ref) } }
         }
 
-        // 3. Fall back to view-tree frames.
-        val node = when {
-            selector.testId != null -> snapshot.nodes.values.firstOrNull { it.testId == selector.testId }
-            selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
-            selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
-            selector.ref != null -> snapshot.nodes[selector.ref]
-            selector.label != null -> labelMatch(selector.label!!)
-            else -> null
-        }
+        // 3. Fall back to view-tree frames, using the same node precedence.
+        val node = nodeFor(selector)
         node?.frame?.let { return Resolved(center(it), "view", node.ref) }
         return null
     }
@@ -81,7 +80,7 @@ class SelectorResolver(
      */
     private fun labelMatch(label: String): Node? {
         val candidates = inHighestWindowWithAny(
-            snapshot.nodes.values.filter { it.isVisible && it.frame != null }
+            documentOrder().filter { it.isVisible && it.frame != null }
         )
         fun textOf(node: Node) = node.text ?: node.contentDescription
         val exact = candidates.filter { textOf(it)?.trim() == label }
@@ -105,6 +104,26 @@ class SelectorResolver(
                     ". Refusing to guess — narrow it with --test-id / --resource-id / --ref, or use --point."
             )
         }
+    }
+
+    /**
+     * Every node in document order (DFS from the root, then unreached refs
+     * sorted). Label matching iterates this rather than the node map so that when
+     * two candidates tie, both platforms report the same one — the same reason
+     * `Snapshot.firstNode` exists.
+     */
+    private fun documentOrder(): List<Node> {
+        val out = ArrayList<Node>(snapshot.nodes.size)
+        val seen = HashSet<String>()
+        fun visit(ref: String) {
+            if (!seen.add(ref)) return
+            val node = snapshot.nodes[ref] ?: return
+            out.add(node)
+            node.children.forEach(::visit)
+        }
+        visit(snapshot.rootRef)
+        snapshot.nodes.keys.sorted().forEach(::visit)
+        return out
     }
 
     /** Is [candidate] a proper ancestor of [node]? */
@@ -148,20 +167,26 @@ class SelectorResolver(
     }
 
     /**
-     * Resolve a sub-region inside the node identified by the selector. Order:
+     * Resolve a sub-region inside [node]. Order:
      *   1. a discovered region (span / virtual a11y) whose label contains the
-     *      requested substring — most reliable, real hit-rect.
+     *      requested substring, case-insensitively — most reliable, real hit-rect.
+     *      (Case-insensitive because a11y labels are often case-normalized by the
+     *      platform.)
      *   2. a discovered region whose SOURCE is named: `--region touchDelegate`.
      *      Some channels are rect-only by nature (a touch delegate's forwarded
      *      rect has no in-process target identity), so a label match can never
      *      address them.
-     *   3. the char grid: locate the substring's character range and compute
-     *      its rect — works even when no region was discoverable (self-drawn).
+     *   3. the char grid: locate the substring's character range and compute its
+     *      rect — works even when no region was discoverable (self-drawn). Matched
+     *      VERBATIM, not case-folded: the grid maps on-screen text in any language
+     *      and case-folding rules are locale-dependent.
+     *
+     * A needle that matches none of the three **throws**. It used to fall through
+     * to a whole-node tap, which is the worst possible answer: on an agreement row
+     * the node's centre toggles the checkbox instead of opening the terms, so the
+     * caller got a successful-looking tap on a different target.
      */
-    private fun resolveRegion(selector: Selector): Resolved? {
-        val node = nodeFor(selector) ?: return null
-        val needle = selector.region ?: return null
-
+    private fun resolveRegion(node: Node, needle: String): Resolved {
         // 1. Discovered region by label match.
         node.regions
             .firstOrNull { it.label?.contains(needle, ignoreCase = true) == true }
@@ -187,19 +212,32 @@ class SelectorResolver(
                 }
             }
         }
-        return null
+        throw RegionMissError(
+            "node ${node.ref} matched but no region or on-screen text matched '$needle' " +
+                "(${node.regions.size} discovered region(s), " +
+                "charGrid=${if (node.charGrid != null) "yes" else "no"}). " +
+                "Refusing to tap the whole node instead — that would hit a different target. " +
+                "List what IS addressable with `ui regions`."
+        )
     }
 
+    /**
+     * The view-tree node a selector points at. ONE precedence order, shared by the
+     * whole-node and the `--region` paths: this used to try `ref` first, so
+     * `--test-id X --ref Y` picked a different node depending on whether
+     * `--region` was also passed.
+     */
     private fun nodeFor(selector: Selector): Node? = when {
-        selector.ref != null -> snapshot.nodes[selector.ref]
-        selector.testId != null -> snapshot.nodes.values.firstOrNull { it.testId == selector.testId }
-        selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
+        selector.testId != null -> snapshot.firstNode { it.testId == selector.testId }
+        selector.resourceId != null -> snapshot.firstNode { it.resourceId == selector.resourceId }
         selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
+        selector.ref != null -> snapshot.nodes[selector.ref]
+        selector.label != null -> labelMatch(selector.label!!)
         else -> null
     }
 
     private fun center(rect: Rect) = Point(rect.centerX, rect.centerY)
 
     private fun nodeByCssSelector(cssSelector: String): Node? =
-        snapshot.nodes.values.firstOrNull { it.domCssSelector() == cssSelector }
+        snapshot.firstNode { it.domCssSelector() == cssSelector }
 }

@@ -13,11 +13,34 @@ public struct SemanticTree: Codable, Sendable {
 
     public func node(_ ref: String) -> SemanticNode? { nodes[ref] }
     public func root() -> SemanticNode? { nodes[rootRef] }
+    /// First node with this testId in **document order**. Not `nodes.values.first`:
+    /// a Swift dictionary's iteration order is unspecified and hash-seeded per
+    /// process, so two apps' nodes sharing a testId (or one app's, by mistake)
+    /// used to resolve to a different node between two runs of the same command.
     public func findByTestId(_ testId: String) -> SemanticNode? {
-        nodes.values.first { $0.testId == testId }
+        first { $0.testId == testId }
     }
+
+    /// First node with this resourceId in document order. See `findByTestId`.
     public func findByResourceId(_ resourceId: String) -> SemanticNode? {
-        nodes.values.first { $0.resourceId == resourceId }
+        first { $0.resourceId == resourceId }
+    }
+
+    /// Depth-first from the root, then any unreached ref in sorted order — so an
+    /// orphan is addressable but never outranks a node that is in the tree.
+    public func first(where match: (SemanticNode) -> Bool) -> SemanticNode? {
+        var seen = Set<String>()
+        var found: SemanticNode?
+        func visit(_ ref: String) {
+            guard found == nil, !seen.contains(ref) else { return }
+            seen.insert(ref)
+            guard let node = nodes[ref] else { return }
+            if match(node) { found = node; return }
+            for child in node.children { visit(child) }
+        }
+        visit(rootRef)
+        for ref in nodes.keys.sorted() where found == nil { visit(ref) }
+        return found
     }
 
     /// Build a semantic view from a snapshot, keeping only nodes that carry a
