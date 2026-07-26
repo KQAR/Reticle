@@ -84,28 +84,42 @@ struct IosWaitRunner {
         let base = WaitProbe.screenState(snapshot, compact)
         guard let selector = predicate.selector else { return base }
 
-        // `Render.labelMatch` is the ambiguity-refusing resolver; ambiguity is
-        // CARRIED, not thrown, so a label that turns ambiguous mid-wait ends the
-        // wait with an explanation instead of an exception from inside the loop.
-        if let label = selector.label {
-            do {
-                _ = try Render.labelMatch(snapshot, label)
-            } catch {
-                return withAmbiguous(base)
-            }
-        }
-        // The same lookup `resolveTapPoint` performs, minus its throw. A node
-        // without a frame is not targetable, so it does not count as resolved.
-        guard let node = Render.findNode(snapshot, selector), node.frame != nil else {
+        // The same resolution `act` performs — the shared `SelectorResolution`, not
+        // a second lookup. The wait's whole contract is "a resolved wait guarantees
+        // the next act resolves the same way", which only holds if both call one
+        // resolver; this used to probe the view tree directly while `act` had its
+        // own walk, so a wait could resolve where the tap that followed could not.
+        //
+        // Ambiguity (and a region that matches nothing) is CARRIED, not thrown: a
+        // label that turns ambiguous mid-wait should end the wait with an
+        // explanation, not an exception from inside a poll loop.
+        let resolved: SelectorResolution.Resolved?
+        do {
+            resolved = try SelectorResolution.resolve(
+                snapshot: snapshot, semantic: SemanticTree.build(from: snapshot), selector: selector
+            )
+        } catch is SelectorResolution.RegionMiss {
+            // The node is there but the requested phrase is not (yet): an honest
+            // negative, not an unknowable. Conflating it with the ambiguity below
+            // would report "refusing to guess" for a phrase that simply has not
+            // rendered.
             return base
+        } catch {
+            return withAmbiguous(base)
         }
-        let item = compact.items.first { $0.ref == node.ref }
+        guard let resolved else { return base }
+
+        let node = resolved.ref.flatMap { snapshot.nodes[$0] }
+        let item = resolved.ref.flatMap { ref in compact.items.first { $0.ref == ref } }
         var probe = base
         probe.resolved = true
-        probe.source = item != nil ? "ios:node" : "ios:node(hidden)"
-        probe.ref = node.ref
-        probe.visible = node.isVisible
-        probe.observedText = node.text ?? node.contentDescription
+        probe.source = resolved.source
+        probe.ref = resolved.ref
+        // A node absent from the compact view is one the compact filter dropped (it
+        // keeps visible nodes only), so treat missing-from-compact as not visible
+        // rather than defaulting to true.
+        probe.visible = node?.isVisible ?? (item != nil)
+        probe.observedText = node?.text ?? node?.contentDescription
         probe.occludedBy = item?.occludedBy
         return probe
     }

@@ -1,0 +1,322 @@
+{
+  "$comment": "Authoritative decision table for the ACTION path's selector resolution — the order documented in docs/architecture.md 'Selector resolution order'. Read by BOTH the Kotlin (reticle-helper SelectorResolutionContractTest, driving SelectorResolver) and Swift (ReticleProtocol SelectorResolutionContractTests, driving SelectorResolution) suites, so the Android helper and the iOS host cannot drift on where a tap lands. Before this table existed they HAD drifted, in seven ways: iOS never consulted the semantic tree, the two disagreed on whether a --region miss taps the whole node or fails, region label matching was case-sensitive on one side only, node lookup precedence differed between the whole-node and region paths, and first-match lookups iterated an unordered dictionary (nondeterministic per process in Swift). Adding a branch to either resolver without a case here leaves it unpinned on one platform.",
+  "$rules": [
+    "0. An explicit --point wins over everything else and is returned verbatim — it is the escape hatch for when resolution cannot work, so nothing may override it. (Both hosts already short-circuited it before capture; the shared resolver now says so too.)",
+    "1. --region <needle> inside the selected node: a discovered region whose LABEL contains the needle (case-insensitive), then a region whose SOURCE is named (case-insensitive; for label-less channels like touchDelegate), then the char grid (substring matched VERBATIM — the on-screen text, in any language). A --region that matches nothing is an ERROR, never a silent whole-node tap: the caller asked for a phrase and must not be handed the checkbox instead.",
+    "2. The semantic tree, by testId -> resourceId -> cssSelector -> ref -> label.",
+    "3. The view tree, by the SAME precedence, for nodes the semantic projection dropped.",
+    "Every first-match lookup walks the tree in document order (DFS from the root, then any orphan refs in sorted order), so duplicate ids resolve to the same node on both platforms and across runs.",
+    "A --label that matches more than one visible node in different subtrees is an ERROR (ambiguousLabel); nested duplicates resolve to the innermost. Scoped to the highest-stacked window that contains any candidate."
+  ],
+  "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+      "size": { "width": 1080.0, "height": 2400.0 },
+      "density": 3.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+      "r0": {
+        "ref": "r0",
+        "kind": "application",
+        "typeName": "android.app.Application",
+        "children": ["w1", "w2"]
+      },
+      "w1": {
+        "ref": "w1",
+        "parentRef": "r0",
+        "kind": "window",
+        "typeName": "DecorView",
+        "frame": { "x": 0.0, "y": 0.0, "width": 1080.0, "height": 2400.0 },
+        "children": ["n1", "n2", "n3", "n4", "n5"]
+      },
+      "n1": {
+        "$comment": "The agreement row: a span region with a mixed-case label, a label-less touchDelegate region, and a char grid over the same text.",
+        "ref": "n1",
+        "parentRef": "w1",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "role": "text",
+        "testId": "agreement",
+        "resourceId": "agreement_row",
+        "text": "I agree to the Terms and Privacy",
+        "frame": { "x": 0.0, "y": 1800.0, "width": 1000.0, "height": 60.0 },
+        "isInteractive": true,
+        "regions": [
+          {
+            "source": "span",
+            "label": "Terms",
+            "target": "https://example.com/terms",
+            "charStart": 15,
+            "charEnd": 20,
+            "rects": [{ "x": 400.0, "y": 1800.0, "width": 100.0, "height": 60.0 }]
+          },
+          {
+            "source": "touchDelegate",
+            "rects": [{ "x": 900.0, "y": 1790.0, "width": 100.0, "height": 80.0 }]
+          }
+        ],
+        "charGrid": {
+          "text": "I agree to the Terms and Privacy",
+          "lines": [
+            {
+              "line": 0,
+              "start": 0,
+              "end": 32,
+              "top": 1800.0,
+              "bottom": 1860.0,
+              "xOffsets": [
+                0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
+                100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0, 180.0,
+                190.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 270.0,
+                280.0, 290.0, 300.0, 310.0, 320.0
+              ]
+            }
+          ]
+        }
+      },
+      "n2": {
+        "$comment": "Duplicate testId with n7, and n2 comes first in document order — so it must win on BOTH platforms.",
+        "ref": "n2",
+        "parentRef": "w1",
+        "kind": "view",
+        "typeName": "android.widget.Button",
+        "testId": "dup.button",
+        "text": "First",
+        "frame": { "x": 0.0, "y": 100.0, "width": 200.0, "height": 100.0 },
+        "isInteractive": true
+      },
+      "n3": {
+        "$comment": "A DOM node addressed by --css.",
+        "ref": "n3",
+        "parentRef": "w1",
+        "kind": "domNode",
+        "typeName": "DOMElement",
+        "role": "button",
+        "text": "Pay in WebView",
+        "frame": { "x": 100.0, "y": 300.0, "width": 240.0, "height": 72.0 },
+        "isInteractive": true,
+        "custom": {
+          "domCssSelector": { "_type": "text", "value": "#web-pay" }
+        }
+      },
+      "n4": {
+        "$comment": "Carries a targeting signal but NO frame: resolution must miss rather than invent a point or crash.",
+        "ref": "n4",
+        "parentRef": "w1",
+        "kind": "view",
+        "typeName": "android.view.View",
+        "testId": "frameless",
+        "isInteractive": true
+      },
+      "n5": {
+        "$comment": "Same words as the popup row below, but in the BACKGROUND window — the window scoping must not let it become an ambiguity.",
+        "ref": "n5",
+        "parentRef": "w1",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "text": "Delete item",
+        "frame": { "x": 0.0, "y": 900.0, "width": 300.0, "height": 60.0 },
+        "isInteractive": true
+      },
+      "w2": {
+        "$comment": "The topmost window (last in the root's children) — a popup.",
+        "ref": "w2",
+        "parentRef": "r0",
+        "kind": "window",
+        "typeName": "PopupDecorView",
+        "frame": { "x": 0.0, "y": 1000.0, "width": 1080.0, "height": 600.0 },
+        "children": ["n6", "n7", "n9"]
+      },
+      "n6": {
+        "$comment": "A row container repeating its child's text: a NESTED duplicate, which resolves to the innermost (n8) rather than refusing.",
+        "ref": "n6",
+        "parentRef": "w2",
+        "kind": "view",
+        "typeName": "android.widget.LinearLayout",
+        "text": "Delete item",
+        "frame": { "x": 0.0, "y": 1000.0, "width": 400.0, "height": 120.0 },
+        "isInteractive": true,
+        "children": ["n8"]
+      },
+      "n8": {
+        "ref": "n8",
+        "parentRef": "n6",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "text": "Delete item",
+        "frame": { "x": 20.0, "y": 1020.0, "width": 360.0, "height": 80.0 },
+        "isInteractive": true
+      },
+      "n7": {
+        "ref": "n7",
+        "parentRef": "w2",
+        "kind": "view",
+        "typeName": "android.widget.Button",
+        "testId": "dup.button",
+        "text": "Second",
+        "frame": { "x": 500.0, "y": 1200.0, "width": 200.0, "height": 100.0 },
+        "isInteractive": true
+      },
+      "n9": {
+        "$comment": "Two matches for 'Rename' in DIFFERENT subtrees of the same window: the ambiguity worth refusing.",
+        "ref": "n9",
+        "parentRef": "w2",
+        "kind": "view",
+        "typeName": "android.widget.LinearLayout",
+        "frame": { "x": 0.0, "y": 1400.0, "width": 1080.0, "height": 200.0 },
+        "children": ["n10", "n11"]
+      },
+      "n10": {
+        "ref": "n10",
+        "parentRef": "n9",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "text": "Rename",
+        "frame": { "x": 0.0, "y": 1400.0, "width": 200.0, "height": 80.0 },
+        "isInteractive": true
+      },
+      "n11": {
+        "ref": "n11",
+        "parentRef": "n9",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "text": "Rename",
+        "frame": { "x": 600.0, "y": 1400.0, "width": 200.0, "height": 80.0 },
+        "isInteractive": true
+      },
+      "orphan1": {
+        "$comment": "Reachable from no root child (a detached window captured out of band). Resolvable by ref, and iterated last in sorted order — never before a rooted node.",
+        "ref": "orphan1",
+        "kind": "view",
+        "typeName": "android.widget.TextView",
+        "testId": "detached",
+        "text": "Detached",
+        "frame": { "x": 10.0, "y": 20.0, "width": 100.0, "height": 40.0 },
+        "isInteractive": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "explicit point wins over every selector",
+      "selector": { "point": { "x": 12.0, "y": 34.0 }, "testId": "agreement" },
+      "expect": { "point": { "x": 12.0, "y": 34.0 }, "source": "point", "ref": null }
+    },
+    {
+      "name": "testId resolves through the semantic tree",
+      "selector": { "testId": "agreement" },
+      "expect": { "point": { "x": 500.0, "y": 1830.0 }, "source": "semantic:testId", "ref": "n1" }
+    },
+    {
+      "name": "resourceId resolves through the semantic tree",
+      "selector": { "resourceId": "agreement_row" },
+      "expect": { "point": { "x": 500.0, "y": 1830.0 }, "source": "semantic:resourceId", "ref": "n1" }
+    },
+    {
+      "name": "a DOM css selector resolves to the domNode's own rect",
+      "selector": { "cssSelector": "#web-pay" },
+      "expect": { "point": { "x": 220.0, "y": 336.0 }, "source": "dom:css", "ref": "n3" }
+    },
+    {
+      "name": "ref resolves through the semantic tree",
+      "selector": { "ref": "n7" },
+      "expect": { "point": { "x": 600.0, "y": 1250.0 }, "source": "semantic:ref", "ref": "n7" }
+    },
+    {
+      "name": "testId beats resourceId beats css beats ref when several are given",
+      "$comment": "One precedence order, used by both the whole-node and the --region path. The Kotlin region path used to try ref FIRST, so the same flags picked different nodes depending on whether --region was present.",
+      "selector": { "testId": "dup.button", "resourceId": "agreement_row", "cssSelector": "#web-pay", "ref": "n1" },
+      "expect": { "point": { "x": 100.0, "y": 150.0 }, "source": "semantic:testId", "ref": "n2" }
+    },
+    {
+      "name": "duplicate testIds resolve to the first in document order",
+      "$comment": "n2 (background window) precedes n7 (popup). Both sides used to read an unordered map here — in Swift that is randomized per process, so this case could flip between runs.",
+      "selector": { "testId": "dup.button" },
+      "expect": { "point": { "x": 100.0, "y": 150.0 }, "source": "semantic:testId", "ref": "n2" }
+    },
+    {
+      "name": "an orphan node is reachable by ref",
+      "selector": { "ref": "orphan1" },
+      "expect": { "point": { "x": 60.0, "y": 40.0 }, "source": "semantic:ref", "ref": "orphan1" }
+    },
+    {
+      "name": "a label in the topmost window wins over the same words underneath",
+      "$comment": "n5 carries 'Delete item' in the background window; the popup's row must win.",
+      "selector": { "label": "Delete item" },
+      "expect": { "point": { "x": 200.0, "y": 1060.0 }, "source": "label", "ref": "n8" }
+    },
+    {
+      "name": "a label matching two different subtrees refuses to guess",
+      "selector": { "label": "Rename" },
+      "expect": { "error": "ambiguousLabel" }
+    },
+    {
+      "name": "a node with a targeting signal but no frame misses instead of guessing",
+      "selector": { "testId": "frameless" },
+      "expect": { "miss": true }
+    },
+    {
+      "name": "an unknown testId misses",
+      "selector": { "testId": "nope.notHere" },
+      "expect": { "miss": true }
+    },
+    {
+      "name": "an empty selector misses",
+      "selector": {},
+      "expect": { "miss": true }
+    },
+    {
+      "name": "region by discovered label, exact case",
+      "selector": { "testId": "agreement", "region": "Terms" },
+      "expect": { "point": { "x": 450.0, "y": 1830.0 }, "source": "region:span", "ref": "n1" }
+    },
+    {
+      "name": "region by discovered label, case-insensitively",
+      "$comment": "iOS matched region labels case-sensitively and fell through to the char grid, which is verbatim — so 'terms' resolved to a DIFFERENT rect than 'Terms' there and the same rect on Android.",
+      "selector": { "testId": "agreement", "region": "terms" },
+      "expect": { "point": { "x": 450.0, "y": 1830.0 }, "source": "region:span", "ref": "n1" }
+    },
+    {
+      "name": "region by source name, for a channel that carries no label",
+      "selector": { "testId": "agreement", "region": "touchDelegate" },
+      "expect": { "point": { "x": 950.0, "y": 1830.0 }, "source": "region:touchDelegate", "ref": "n1" }
+    },
+    {
+      "name": "region by char-grid substring when no discovered region matches",
+      "$comment": "'Privacy' is chars 25..32 of the row text; the grid's xOffsets put that run at x 250..320.",
+      "selector": { "testId": "agreement", "region": "Privacy" },
+      "expect": { "point": { "x": 285.0, "y": 1830.0 }, "source": "charGrid", "ref": "n1" }
+    },
+    {
+      "name": "char-grid matching is verbatim, so a case-mismatched substring is not a match",
+      "$comment": "Deliberate asymmetry with a region LABEL: architecture.md pins the grid as 'the substring matched verbatim against the on-screen text, in any language'. Lower-casing it would make the rule locale-dependent.",
+      "selector": { "testId": "agreement", "region": "privacy" },
+      "expect": { "error": "regionMiss" }
+    },
+    {
+      "name": "a region that matches nothing fails loudly instead of tapping the whole node",
+      "$comment": "The Kotlin resolver used to fall through to the node's centre here, so `--region 'Terms'` on a row whose regions were never discovered silently toggled the checkbox and reported success.",
+      "selector": { "testId": "agreement", "region": "Nonexistent Phrase" },
+      "expect": { "error": "regionMiss" }
+    },
+    {
+      "name": "a region on a node with no regions and no char grid fails loudly",
+      "selector": { "testId": "dup.button", "region": "First" },
+      "expect": { "error": "regionMiss" }
+    },
+    {
+      "name": "a region whose node selector matches nothing misses before it can look for a region",
+      "selector": { "testId": "nope.notHere", "region": "Terms" },
+      "expect": { "miss": true }
+    },
+    {
+      "name": "an explicit point still wins when --region is also given",
+      "$comment": "Both hosts short-circuit a raw --point before any capture, so the point cannot be overridden by a region needle it was passed alongside.",
+      "selector": { "point": { "x": 7.0, "y": 8.0 }, "testId": "agreement", "region": "Terms" },
+      "expect": { "point": { "x": 7.0, "y": 8.0 }, "source": "point", "ref": null }
+    }
+  ]
+}
