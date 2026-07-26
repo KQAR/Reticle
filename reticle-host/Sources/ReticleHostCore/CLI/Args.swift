@@ -36,6 +36,14 @@ public struct Args {
         options[name]
     }
 
+    /// Whether a boolean flag is set. A bare `--settle` parses as `"true"`, and an
+    /// explicit `--settle false` turns it off — the same two-line dance that used to
+    /// be repeated at every flag site.
+    public func flag(_ name: String) -> Bool {
+        guard let value = options[name] else { return false }
+        return value != "false"
+    }
+
     /// Returns a required option or throws a CLI-facing error.
     public func require(_ name: String) throws -> String {
         guard let v = options[name] else {

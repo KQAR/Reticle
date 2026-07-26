@@ -21,6 +21,16 @@ The helper ships as the no-JDK native `reticle-helper` (GraalVM native-image).
 must pass `--enable-url-protocols=http` or every device call fails with "URL
 protocol http … not enabled" (the `:reticle-helper:nativeHelper` task does this).
 
+## Where this contract sits in the host
+
+The Swift host does **not** call these method names from its command code. It calls
+the typed `HostBackend` interface (one method per capability), and `AndroidBackend`
+is the single adapter that turns a typed request into the envelope below and the
+reply back into a typed result. So this document describes one backend's transport,
+not the host's internal interface — a distinction worth keeping, because the iOS
+backend implements the same capabilities with no wire at all, and used to have to
+speak this one to be callable.
+
 ## Transport
 
 - The host spawns `reticle helper` **once** and keeps it alive for the session

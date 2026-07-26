@@ -1,41 +1,35 @@
 import Foundation
 
-func cmdMutate(_ c: HelperCalling, _ args: Args) throws {
+func cmdMutate(_ backend: HostBackend, _ args: Args) throws {
     let pkg = try args.require("package")
-    var params: [String: Any] = [
-        "package": pkg,
-        "property": try args.require("property"),
-        "value": try args.require("value"),
-    ]
-    for k in ["test-id", "resource-id", "ref", "region"] {
-        if let v = args.option(k) { params[selectorKey(k)] = v }
-    }
-    let r = try c.call("mutate", params)
+    let result = try backend.mutate(MutateRequest(
+        package: pkg,
+        property: try args.require("property"),
+        value: try args.require("value"),
+        selector: args.hostSelector(["test-id", "resource-id", "ref", "region"])
+    ))
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(r)
+        try JsonEnvelope.success(result.jsonObject)
         return
     }
-    print("mutated \(r["ref"] ?? "?") (was \(r["previousValue"] ?? "?"))")
+    print("mutated \(result.ref ?? "?") (was \(result.previousValue ?? "?"))")
 }
 
-func cmdDebug(_ c: HelperCalling, _ args: Args) throws {
+func cmdDebug(_ backend: HostBackend, _ args: Args) throws {
     switch args.positional(1) {
     case "logs":
-        let pkg = try args.require("package")
-        let r = try c.call("logs", ["package": pkg])
-        let entries = (r["entries"] as? [[String: Any]]) ?? []
+        let entries = try backend.logs(PackageRequest(package: try args.require("package")))
         if JsonEnvelope.enabled(args) {
-            try JsonEnvelope.success(["entries": entries])
+            try JsonEnvelope.success(["entries": entries.map(\.jsonObject)])
             return
         }
         if entries.isEmpty {
             print("(runtime reachable, but 0 app-authored log entries)")
         } else {
-            for e in entries { print("[\(e["level"] ?? "?")] \(e["message"] ?? "")") }
+            for e in entries { print("[\(e.level)] \(e.message)") }
         }
     case "logcat":
-        let r = try c.call("logcat")
-        let lines = (r["lines"] as? [String]) ?? []
+        let lines = try backend.logcat()
         if JsonEnvelope.enabled(args) {
             try JsonEnvelope.success(["lines": lines])
             return
@@ -50,62 +44,79 @@ func cmdDebug(_ c: HelperCalling, _ args: Args) throws {
     }
 }
 
-func cmdScreenshot(_ c: HelperCalling, _ args: Args) throws {
+func cmdScreenshot(_ backend: HostBackend, _ args: Args) throws {
     let out = args.option("output") ?? "screenshot.png"
-    var params: [String: Any] = [:]
-    if let pkg = args.option("package") { params["package"] = pkg }
-    let r = try c.call("screenshot", params)
-    guard let b64 = r["pngBase64"] as? String, let data = Data(base64Encoded: b64) else {
+    let result = try backend.screenshot(ScreenshotRequest(package: args.option("package")))
+    guard let data = Data(base64Encoded: result.pngBase64) else {
         throw HelperError("screenshot returned no image data")
     }
     try data.write(to: URL(fileURLWithPath: out))
-    let degraded = (r["degraded"] as? [Any])?.compactMap { $0 as? String } ?? []
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success([
             "output": out,
             "bytes": data.count,
-            "via": r["via"] ?? NSNull(),
-            "degraded": degraded,
+            "via": result.via ?? NSNull(),
+            "degraded": result.degraded,
         ])
         return
     }
-    print("wrote \(out) (\(data.count) bytes) via \(r["via"] ?? "?")")
+    print("wrote \(out) (\(data.count) bytes) via \(result.via ?? "?")")
     // An absence must be labelled, not inferred: a blank rect in the image is
     // otherwise indistinguishable from the app having drawn nothing there.
-    for line in degraded { print("degraded: \(line)") }
+    for line in result.degraded { print("degraded: \(line)") }
 }
 
-func cmdUiRender(_ c: HelperCalling, _ args: Args, view: String) throws {
-    var params: [String: Any] = ["view": view]
-    let live = args.option("live") != nil
-    if live {
-        params["live"] = "true"
-        params["package"] = try args.require("package")
+func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
+    var view = view
+    var snapshotPath: String
+    var package = args.option("package")
+    if args.option("live") != nil {
+        snapshotPath = RenderRequest.liveSnapshotPath
+        package = try args.require("package")
     } else {
-        guard let snapshot = args.positional(2) else {
+        guard let positional = args.positional(2) else {
             throw HelperError("ui \(view) needs a snapshot.json path (or --live --package <pkg>)")
         }
-        params["snapshot"] = snapshot
-        if let pkg = args.option("package") { params["package"] = pkg }
+        snapshotPath = positional
     }
-    if view == "tree", args.option("semantics") != nil { params["view"] = "semantics" }
-    if let d = args.option("depth") { params["depth"] = Int(d) ?? 0 }
-    for k in ["test-id", "resource-id", "css", "ref"] {
-        if let v = args.option(k) { params[selectorKey(k)] = v }
-    }
-    let r = try c.call("render", params)
+    if view == "tree", args.option("semantics") != nil { view = "semantics" }
+    let result = try backend.render(RenderRequest(
+        view: view,
+        snapshotPath: snapshotPath,
+        depth: args.option("depth").map { Int($0) ?? 0 },
+        selector: args.hostSelector(["test-id", "resource-id", "css", "ref"]),
+        package: package
+    ))
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success(["text": (r["text"] as? String) ?? ""])
+        try JsonEnvelope.success(["text": result.text])
         return
     }
-    print((r["text"] as? String) ?? "")
+    print(result.text)
 }
 
-func selectorKey(_ cliName: String) -> String {
-    switch cliName {
-    case "test-id": return "testId"
-    case "resource-id": return "resourceId"
-    case "max-swipes": return "maxSwipes"
-    default: return cliName
+extension Args {
+    /// Reads the given CLI flags into a `HostSelector`.
+    ///
+    /// The flag-name → protocol-field mapping used to be a `selectorKey(_:)` string
+    /// function applied to a dictionary, so a command could quietly send `resource-id`
+    /// (never a wire key) and get a selector miss on a device instead of an error on a
+    /// laptop. Now the fields are named once, here.
+    func hostSelector(_ flags: [String]) -> HostSelector {
+        var selector = HostSelector()
+        for flag in flags {
+            guard let value = option(flag) else { continue }
+            switch flag {
+            case "test-id": selector.testId = value
+            case "resource-id": selector.resourceId = value
+            case "css": selector.cssSelector = value
+            case "ref": selector.ref = value
+            case "point": selector.point = value
+            case "label": selector.label = value
+            case "region": selector.region = value
+            case "alias": selector.alias = value
+            default: continue
+            }
+        }
+        return selector
     }
 }

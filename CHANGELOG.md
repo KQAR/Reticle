@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **The host's platform interface is typed; JSONL is back to being Android's
+  transport.** Every command used to be issued through one stringly-typed call —
+  `call("uiReport", ["package": pkg])`, returning `[String: Any]`. For Android that
+  shape is real: the call crosses a process boundary as JSONL. But the transport's
+  shape had been promoted into the *domain* abstraction, so the natively in-host iOS
+  backend paid for a wire it does not have — a 30-case switch over method-name
+  strings, 46 `as?` unpacks, and a mistyped key discovered at runtime on a device
+  instead of at compile time on a laptop. Meanwhile `ReticleProtocol` already had
+  typed models the host was carefully re-wrapping in dictionaries.
+
+  `HostBackend` is now the domain interface: one method per capability, typed
+  requests, typed results. Two implementations — `AndroidBackend`, which is the
+  **only** place the helper's method names and parameter keys are spelled and the
+  only place its replies are unpacked, and `IosHelperClient`, which implements the
+  interface directly and no longer speaks a wire at all. `HelperCalling` survives as
+  exactly what it is: the JSONL transport, shared by the three Android transports
+  (spawn, resident helperd socket, `serve --helper-broker`) that differ only in how
+  the envelope travels. `serve`'s device-proxy calls are typed too, so the daemon no
+  longer assembles `["keychain", …]`-style argv or `proxySet` params by hand.
+
+  Two places keep an untyped escape hatch, both on purpose and both documented at
+  the declaration. `act`'s **result** stays open (`ActOutcome.raw`): this is an
+  evidence tool, a gesture reports gesture-specific facts (`settled`, `submit.via`,
+  `wasVisible`, `settleSkipped`), and a closed struct would mean a new fact cannot
+  reach the user until the host is edited too — so it is typed where a *decision* is
+  made (a wait's three-state outcome, `--strict`'s exit code, a batch gate, whether
+  to publish a trace) and open where it is *displayed*. And an `act batch` step's
+  unrecognized keys are forwarded rather than dropped, so a step written against a
+  newer helper still reaches it.
+
+  Behaviour is unchanged: same wire, same stdout, same `--json` shapes.
+
 - **The iOS platform backend is its own target, so the layering below
   `ReticleHostCore` is now the layering above it too.** `ReticleHostShared` →
   `ReticleNetworkLane` → `ReticleHostCore` was split apart precisely so the capture
