@@ -1,18 +1,5 @@
 import Foundation
 
-/// Minimal call surface shared by local helper processes and daemon-forwarded RPC.
-public protocol HelperCalling: AnyObject, Sendable {
-    @discardableResult
-    func call(_ method: String, _ params: [String: Any]) throws -> [String: Any]
-}
-
-public extension HelperCalling {
-    @discardableResult
-    func call(_ method: String) throws -> [String: Any] {
-        try call(method, [:])
-    }
-}
-
 /// A long-lived client over the Kotlin helper's JSONL stdio RPC.
 final class HelperClient: HelperCalling, @unchecked Sendable {
     private let process = Process()

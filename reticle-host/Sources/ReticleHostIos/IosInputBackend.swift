@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import CReticleSimHID
 
 /// Input synthesis for the iOS simulator, isolated behind this seam (the analogue
