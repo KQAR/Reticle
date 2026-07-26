@@ -156,8 +156,9 @@ normalized network events into the same event stream:
 - `source`: `proxy`
 - `type`: `network.request`, `network.response`, `network.error`,
   `network.replay` (a re-sent flow plus its diff; see [Flow replay](#flow-replay)),
-  or `network.websocket` (one frame inside an upgraded socket; see
-  [WebSocket frames](#websocket-frames)).
+  `network.websocket` (one frame inside an upgraded socket; see
+  [WebSocket frames](#websocket-frames)), or `network.advisory` (the capture lane
+  reporting on its own fidelity; see [Capture advisories](#capture-advisories)).
 - `payload.requestId`: stable id shared by the request/response/error events.
 - `payload.method`, `url`, `scheme`, `host`, `port`, `path`: request target.
 - `payload.startMillis`, `endMillis`, `durationMs`: request interval timing.
@@ -195,6 +196,34 @@ pins the emitter's field set to the same schema so neither side can drift.
 Golden fixtures: `network-request-event.golden.json`,
 `network-response-event.golden.json`, `network-error-event.golden.json`,
 `network-websocket-event.golden.json`.
+
+### Capture advisories
+
+`network.advisory` is the capture lane reporting on itself, under
+`reticle-protocol/schema/network-advisory-payload.schema.json`. Capture degrading
+is a fact about the evidence, so it lands *in* the evidence rather than in a log
+line nobody reads.
+
+The lane drains the engine's flow stream immediately and does its artifact writes
+on a worker, so the engine is never back-pressured into dropping flows. The
+worker's backlog is bounded (4096 flows) — an unbounded one is just a memory leak
+with better manners — and overflowing it is reported as two edges:
+
+- `payload.kind: capture-backlog-overflow` — recording started falling behind.
+  Carries `droppedFlowsTotal`; **not** `droppedFlows`, because the episode is still
+  open and the size of the gap is not yet knowable.
+- `payload.kind: capture-backlog-recovered` — it caught up. Carries `droppedFlows`
+  for the episode plus the running `droppedFlowsTotal`.
+
+Two edges rather than one event per dropped flow, so a drop storm does not become
+its own flood. An overflow with no matching recovered event means the session ended
+while still dropping; `droppedFlowsTotal` says how much had been lost by then.
+
+**What this cannot cover:** the engine's own stream buffer. `AsyncStream` gives a
+subscriber no way to learn it dropped something, so if the engine ever drops
+despite being drained immediately, that loss is invisible to Reticle and no
+advisory can be emitted for it. Detecting it would need a dropped-flow counter on
+the engine side.
 
 ### WebSocket frames
 

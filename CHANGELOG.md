@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **The capture lane no longer loses flows quietly.** `handle` — which writes body
+  and frame artifacts to disk — ran inline in the `for await` over Loom's flow
+  stream, making that loop the slow consumer of an `AsyncStream` buffered with
+  `.bufferingOldest(512)`. A traffic burst therefore dropped the *newest* flows, and
+  `AsyncStream` gives a subscriber no way to find out. A gap in the evidence was
+  indistinguishable from traffic that never happened, which is the one thing this
+  lane must never allow.
+
+  The stream is now drained immediately onto a serial worker, so the engine is not
+  back-pressured into dropping anything. The worker's backlog is bounded (4096
+  flows — an unbounded one is a memory leak with better manners) and, unlike the
+  stream, it can count what it drops: a new `network.advisory` event reports
+  `capture-backlog-overflow` when recording starts falling behind and
+  `capture-backlog-recovered`, with the episode's loss count, once it catches up.
+  Two edges rather than one event per dropped flow, so a drop storm does not become
+  its own flood; the overflow edge deliberately omits a count, because while the
+  episode is open the size of the gap is not yet knowable.
+
+  **Still silent, and now written down as such:** if Loom's stream buffer ever drops
+  despite being drained instantly, that loss remains undetectable from this side —
+  `AsyncStream` carries no signal for it. Closing that needs a dropped-flow counter
+  in Loom. Both facts are new rows in the Honest boundaries table, including the
+  unobservable one, which is listed rather than implied by its absence.
+
 - **Three capabilities Loom 0.0.5 opened up: timing splits, WebSocket frames, and
   finding a flow to replay.**
 

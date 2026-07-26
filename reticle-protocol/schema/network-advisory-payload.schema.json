@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reticle.dev/schema/network-advisory-payload.schema.json",
+  "title": "Reticle proxy network.advisory event payload",
+  "description": "The capture lane reporting on its own fidelity. Capture degrading is a fact about the evidence, so it belongs in the evidence rather than in a log line nobody reads. Loss is reported as two edges — overflow when recording starts falling behind, recovered once it catches up — rather than one event per dropped flow, which would make a drop storm its own flood.",
+  "type": "object",
+  "required": ["kind", "message", "droppedFlowsTotal"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "description": "capture-backlog-overflow: the lane started dropping flows it could not process fast enough. capture-backlog-recovered: it caught up, and the size of the gap is now known.",
+      "type": "string",
+      "enum": ["capture-backlog-overflow", "capture-backlog-recovered"]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "droppedFlows": {
+      "description": "Flows lost during the episode that just ended. Present on capture-backlog-recovered; absent on capture-backlog-overflow, where the episode is still open and the total is not yet knowable.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "droppedFlowsTotal": {
+      "description": "Flows lost this session so far, at the moment of the advisory. An overflow with no matching recovered event means the session ended while still dropping, and this is how much had been lost by then.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
