@@ -80,16 +80,30 @@ public struct NetworkReplayDiff: Codable, Equatable {
     public var headersAdded: [String]
     public var headersRemoved: [String]
     public var headersChanged: [String]
+    /// True when at least one of the two bodies was clipped by a capture cap before
+    /// the comparison, so `bodyChanged` was decided on prefixes rather than on the
+    /// whole payloads. `bodyChanged: false` under this flag means "the recorded
+    /// prefixes match", not "the responses match" — two different multi-megabyte
+    /// bodies that agree for their first megabyte land here. Omitted when both
+    /// bodies were captured whole, so the common case stays unqualified.
+    public var bodyComparisonPartial: Bool?
 
     /// Pure comparator over response primitives, so the diff logic is testable
     /// without a live proxy. Header comparison is case-insensitive by name.
+    ///
+    /// `sourceWireBytes`/`replayWireBytes` are the true on-the-wire body sizes when
+    /// the capture engine clipped what it recorded (Loom's `fullBodyBytes`). Passing
+    /// them keeps `bodyBytesFrom`/`bodyBytesTo` honest about the transfer and marks
+    /// the comparison partial; nil means the recorded body is the whole body.
     public static func between(
         sourceStatus: Int?,
         sourceHeaders: [String: String],
         sourceBody: Data?,
+        sourceWireBytes: Int? = nil,
         replayStatus: Int?,
         replayHeaders: [String: String],
-        replayBody: Data?
+        replayBody: Data?,
+        replayWireBytes: Int? = nil
     ) -> NetworkReplayDiff {
         let source = normalize(sourceHeaders)
         let replay = normalize(replayHeaders)
@@ -98,24 +112,35 @@ public struct NetworkReplayDiff: Codable, Equatable {
         let added = replayNames.subtracting(sourceNames)
         let removed = sourceNames.subtracting(replayNames)
         let changed = sourceNames.intersection(replayNames).filter { source[$0] != replay[$0] }
-        let sourceBytes = sourceBody?.count ?? 0
-        let replayBytes = replayBody?.count ?? 0
+        let sourceRecorded = sourceBody?.count ?? 0
+        let replayRecorded = replayBody?.count ?? 0
+        let partial = sourceWireBytes != nil || replayWireBytes != nil
+        // Differing wire sizes are a real difference even when the recorded prefixes
+        // match — that much we can still assert. Equal (or unknown) wire sizes with
+        // matching prefixes is the case `bodyComparisonPartial` refuses to call.
+        let prefixesDiffer = (sourceBody ?? Data()) != (replayBody ?? Data())
+        let wireSizesDiffer = max(sourceWireBytes ?? sourceRecorded, sourceRecorded)
+            != max(replayWireBytes ?? replayRecorded, replayRecorded)
         return NetworkReplayDiff(
             statusFrom: sourceStatus,
             statusTo: replayStatus,
             statusChanged: sourceStatus != replayStatus,
-            bodyBytesFrom: sourceBytes,
-            bodyBytesTo: replayBytes,
-            bodyChanged: (sourceBody ?? Data()) != (replayBody ?? Data()),
+            bodyBytesFrom: max(sourceWireBytes ?? sourceRecorded, sourceRecorded),
+            bodyBytesTo: max(replayWireBytes ?? replayRecorded, replayRecorded),
+            bodyChanged: prefixesDiffer || wireSizesDiffer,
             headersAdded: added.sorted(),
             headersRemoved: removed.sorted(),
-            headersChanged: changed.sorted()
+            headersChanged: changed.sorted(),
+            bodyComparisonPartial: partial ? true : nil
         )
     }
 
     /// True when the replayed response is byte-for-byte identical to the original.
+    /// False when a capture cap means we only ever saw prefixes — an unverifiable
+    /// match is not a match, and this lane emits evidence, not optimistic verdicts.
     public var isIdentical: Bool {
-        !statusChanged && !bodyChanged && headersAdded.isEmpty && headersRemoved.isEmpty && headersChanged.isEmpty
+        bodyComparisonPartial != true
+            && !statusChanged && !bodyChanged && headersAdded.isEmpty && headersRemoved.isEmpty && headersChanged.isEmpty
     }
 
     private static func normalize(_ headers: [String: String]) -> [String: String] {

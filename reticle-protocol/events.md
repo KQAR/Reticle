@@ -289,6 +289,14 @@ replayed response vs the original: `statusFrom`/`statusTo`/`statusChanged`,
 `Authorization` is named without logging the secret. The replayed request/response
 bodies are stored as artifacts under the event's `refs`.
 
+`bodyBytesFrom`/`bodyBytesTo` are on-the-wire sizes. When a body was larger than the
+capture cap, only a prefix was recorded, and the diff says so with
+`payload.diff.bodyComparisonPartial: true` (omitted otherwise). Under that flag
+`bodyChanged: false` means *the recorded prefixes match*, not that the responses
+match — two different bodies agreeing for their first megabyte land here. Differing
+wire sizes still report `bodyChanged: true`, since that much is knowable from a
+prefix. A partial comparison is never reported as identical.
+
 ```bash
 reticle replay flow <request-id> --set-headers '{"X-Debug":"1"}' --remove-headers '["Authorization"]'
 reticle replay flow <request-id> --method POST --body '{"retry":true}'

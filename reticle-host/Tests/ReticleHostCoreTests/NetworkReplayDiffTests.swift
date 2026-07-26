@@ -46,6 +46,61 @@ struct NetworkReplayDiffTests {
         #expect(!encoded.contains("secret-b"))
     }
 
+    @Test func wholeBodyComparisonIsNotMarkedPartial() {
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: 200, sourceHeaders: [:], sourceBody: Data("{}".utf8),
+            replayStatus: 200, replayHeaders: [:], replayBody: Data("{}".utf8)
+        )
+        // Omitted, not `false` — the common case stays unqualified on the wire.
+        #expect(diff.bodyComparisonPartial == nil)
+        #expect(diff.isIdentical)
+    }
+
+    /// Loom's capture cap can clip a body before Reticle ever sees it. Two clipped
+    /// bodies that agree on their recorded prefix are NOT known to be equal, and this
+    /// lane must not launder that into an "identical" verdict.
+    @Test func cappedBodiesWithMatchingPrefixesRefuseToClaimIdentical() {
+        let prefix = Data(repeating: 0x41, count: 1024)
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: 200, sourceHeaders: [:], sourceBody: prefix, sourceWireBytes: 5_000_000,
+            replayStatus: 200, replayHeaders: [:], replayBody: prefix, replayWireBytes: 5_000_000
+        )
+        #expect(diff.bodyComparisonPartial == true)
+        #expect(diff.isIdentical == false)
+        // Prefixes match and the wire sizes agree, so no positive change is asserted
+        // either — the partial flag is what carries the uncertainty.
+        #expect(diff.bodyChanged == false)
+        // Sizes report the transfer, not the clipped artifact.
+        #expect(diff.bodyBytesFrom == 5_000_000)
+        #expect(diff.bodyBytesTo == 5_000_000)
+    }
+
+    /// Differing wire sizes are still a difference we can assert, even from prefixes.
+    @Test func cappedBodiesWithDifferingWireSizesReportAChange() {
+        let prefix = Data(repeating: 0x41, count: 1024)
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: 200, sourceHeaders: [:], sourceBody: prefix, sourceWireBytes: 5_000_000,
+            replayStatus: 200, replayHeaders: [:], replayBody: prefix, replayWireBytes: 9_000_000
+        )
+        #expect(diff.bodyChanged)
+        #expect(diff.bodyComparisonPartial == true)
+        #expect(diff.isIdentical == false)
+    }
+
+    /// Only one side clipped: the comparison is still partial, and the uncapped side
+    /// keeps reporting its real recorded size.
+    @Test func oneSidedCapMarksTheComparisonPartial() {
+        let diff = NetworkReplayDiff.between(
+            sourceStatus: 200, sourceHeaders: [:], sourceBody: Data(repeating: 0x41, count: 1024),
+            sourceWireBytes: 5_000_000,
+            replayStatus: 200, replayHeaders: [:], replayBody: Data("small".utf8)
+        )
+        #expect(diff.bodyComparisonPartial == true)
+        #expect(diff.bodyBytesFrom == 5_000_000)
+        #expect(diff.bodyBytesTo == 5)
+        #expect(diff.bodyChanged)
+    }
+
     @Test func replayRequestBodyInputsAreMutuallyExclusive() throws {
         #expect(throws: NetworkReplayError.self) {
             _ = try NetworkReplayRequest(body: "x", clearBody: true).resolvedBody()
