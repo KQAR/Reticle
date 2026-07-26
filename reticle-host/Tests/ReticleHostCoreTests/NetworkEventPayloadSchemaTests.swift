@@ -100,6 +100,30 @@ struct NetworkEventPayloadSchemaTests {
         #expect(encoded["bodyComparisonPartial"] != nil, "a capped comparison must say so in the emitted diff")
     }
 
+    /// Same pinning for the advisory payload, with both edges exercised: `overflow`
+    /// deliberately omits `droppedFlows`, so only checking `recovered` would leave
+    /// the required-field claim untested for the shape that actually ships first.
+    @Test func emittedAdvisoryPayloadKeysAreAllDeclaredInTheSchema() throws {
+        let (declared, required) = try schemaProperties("network-advisory-payload.schema.json")
+
+        let overflow = NetworkAdvisoryPayload(
+            kind: "capture-backlog-overflow", message: "full", droppedFlowsTotal: 1
+        )
+        var recovered = NetworkAdvisoryPayload(
+            kind: "capture-backlog-recovered", message: "caught up", droppedFlowsTotal: 104
+        )
+        recovered.droppedFlows = 104
+
+        for payload in [overflow, recovered] {
+            let emitted = Set(payload.json.keys)
+            #expect(emitted.subtracting(declared).isEmpty,
+                    "advisory emitter produced undeclared fields: \(emitted.subtracting(declared).sorted())")
+            #expect(required.subtracting(emitted).isEmpty,
+                    "advisory emitter omitted required fields: \(required.subtracting(emitted).sorted())")
+        }
+        #expect(overflow.json["droppedFlows"] == nil)
+    }
+
     /// The frame payload is its own shape with its own schema; pin the emitter to it
     /// the same way, with every optional field populated so nothing escapes unnoticed.
     @Test func emittedWebSocketPayloadKeysAreAllDeclaredInTheSchema() throws {

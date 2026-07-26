@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "evt_0000000000000005",
+  "ts": 1782751907400,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "proxy",
+  "type": "network.advisory",
+  "payload": {
+    "kind": "capture-backlog-recovered",
+    "message": "capture backlog recovered; 104 flow(s) were not recorded during the overflow — 104 dropped so far this session",
+    "droppedFlows": 104,
+    "droppedFlowsTotal": 104
+  },
+  "refs": {}
+}

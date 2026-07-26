@@ -45,6 +45,9 @@ class ProtocolContractTest {
     private fun networkWebSocketPayloadSchema(): JsonSchema =
         schema("schema/network-websocket-payload.schema.json")
 
+    private fun networkAdvisoryPayloadSchema(): JsonSchema =
+        schema("schema/network-advisory-payload.schema.json")
+
     private fun assertValid(schema: JsonSchema, json: String, label: String) {
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
         val node = mapper.readTree(json)
@@ -132,6 +135,7 @@ class ProtocolContractTest {
         assertValid(eventSchema(), resource("fixtures/network-response-event.golden.json"), "network-response event fixture")
         assertValid(eventSchema(), resource("fixtures/network-error-event.golden.json"), "network-error event fixture")
         assertValid(eventSchema(), resource("fixtures/network-websocket-event.golden.json"), "network-websocket event fixture")
+        assertValid(eventSchema(), resource("fixtures/network-advisory-event.golden.json"), "network-advisory event fixture")
     }
 
     @Test
@@ -165,6 +169,19 @@ class ProtocolContractTest {
         val errors = networkWebSocketPayloadSchema().validate(payload)
         if (errors.isNotEmpty()) {
             fail("network-websocket fixture payload did not satisfy its schema:\n" +
+                errors.joinToString("\n") { "  - $it" })
+        }
+    }
+
+    @Test
+    fun advisoryFixturePayloadSatisfiesItsTypedSchema() {
+        // An advisory describes the capture lane's own fidelity rather than an
+        // exchange, so it too gets its own schema instead of loosening the shared one.
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val payload = mapper.readTree(resource("fixtures/network-advisory-event.golden.json")).get("payload")
+        val errors = networkAdvisoryPayloadSchema().validate(payload)
+        if (errors.isNotEmpty()) {
+            fail("network-advisory fixture payload did not satisfy its schema:\n" +
                 errors.joinToString("\n") { "  - $it" })
         }
     }
