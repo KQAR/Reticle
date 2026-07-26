@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+- **Selector resolution was two implementations of one rule, and they had drifted
+  in seven ways. Now there is one table, and both read it.** The action path
+  (`act tap`, and `act wait`'s success test) resolves in Kotlin for Android and in
+  Swift for iOS, because the two hosts are different programs. That is fine; what
+  was not fine is that nothing pinned them together, unlike `act wait`'s outcome
+  table, which has been fixture-driven from both sides for a while. Measured
+  differences, every one of them a case where the same command aimed somewhere else
+  depending on the platform:
+
+  1. **iOS never consulted the semantic tree.** The documented rule is
+     "semantic-first for movement and input, view frames only as a fallback";
+     iOS resolved straight off the view tree.
+  2. **A `--region` miss meant different things.** Android fell through to a
+     whole-node tap; iOS failed. Android's behaviour is now the one that changed:
+     on an agreement row the node's centre is the *checkbox*, so "I could not find
+     the phrase you asked for, so I tapped something else and reported success" is
+     the worst available answer. It now refuses, naming how many regions and
+     whether a char grid exist. `act wait` treats that refusal as an honest
+     negative (the phrase has not rendered yet), never as an ambiguity.
+  3. **Region labels matched case-insensitively on Android, case-sensitively on
+     iOS** — so `--region "terms"` found the span on one platform and fell through
+     to the char grid on the other, landing on a different rect. Canonical:
+     labels case-insensitive (the platform often normalizes them), the char grid
+     verbatim (it maps on-screen text in any language, and case-folding is
+     locale-dependent).
+  4. **Selector precedence differed between the two paths inside the Kotlin
+     resolver**: the region path tried `ref` first, the whole-node path `testId`
+     first, so `--test-id X --ref Y` picked a different node depending on whether
+     `--region` was also passed. One order everywhere now: `testId` →
+     `resourceId` → `cssSelector` → `ref` → `label`.
+  5. **First-match lookups iterated an unordered map.** In Kotlin that is the
+     serializer's key order (not a contract); in Swift a `Dictionary`'s order is
+     hash-seeded **per process**, so an app repeating a `testId` resolved to a
+     different node between two runs of the same command. Both sides now walk the
+     tree in document order (DFS from the root, then orphans sorted).
+  6. **iOS reported `source: "selector"`** where Android reported
+     `semantic:testId` / `region:span` / `charGrid:approx`. The trace lost exactly
+     the distinction an agent needs — a char-grid approximation is not a semantic
+     hit. iOS now emits the shared vocabulary, plus the resolved `ref`.
+  7. **`act wait` on iOS probed a different resolver than `act tap` did**, while
+     the wait's whole contract is "a resolved wait guarantees the next act
+     resolves the same way". Both now call one resolver.
+
+  The new authority is `reticle-protocol/fixtures/selector-resolution.cases.json`
+  — a snapshot plus 22 cases, read by `SelectorResolutionContractTest` (Kotlin) and
+  `SelectorResolutionContractTests` (Swift). iOS's inline walk is replaced by
+  `SelectorResolution` in `ReticleProtocol`, so the Swift host and the iOS agent
+  share it the way they already share the models.
+
 - **The capture lane no longer loses flows quietly.** `handle` — which writes body
   and frame artifacts to disk — ran inline in the `for await` over Loom's flow
   stream, making that loop the slow consumer of an `AsyncStream` buffered with

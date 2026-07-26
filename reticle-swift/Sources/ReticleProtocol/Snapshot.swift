@@ -45,6 +45,28 @@ public struct Snapshot: Codable, Sendable {
 
     public func node(_ ref: String) -> Node? { nodes[ref] }
     public func root() -> Node? { nodes[rootRef] }
+
+    /// First node satisfying `match` in **document order**: depth-first from the
+    /// root, then any unreached ref in sorted order (an orphan window captured out
+    /// of band stays addressable, but never outranks a node that is in the tree).
+    ///
+    /// Deliberately not `nodes.values.first` — a Swift dictionary's iteration
+    /// order is unspecified and hash-seeded per process, so a first-match lookup
+    /// over duplicate ids answered differently between two runs of one command.
+    public func first(where match: (Node) -> Bool) -> Node? {
+        var seen = Set<String>()
+        var found: Node?
+        func visit(_ ref: String) {
+            guard found == nil, !seen.contains(ref) else { return }
+            seen.insert(ref)
+            guard let node = nodes[ref] else { return }
+            if match(node) { found = node; return }
+            for child in node.children { visit(child) }
+        }
+        visit(rootRef)
+        for ref in nodes.keys.sorted() where found == nil { visit(ref) }
+        return found
+    }
     public func children(of ref: String) -> [Node] {
         (nodes[ref]?.children ?? []).compactMap { nodes[$0] }
     }
@@ -153,6 +175,13 @@ public struct Node: Codable, Sendable {
     public func screencapBlank() -> Bool {
         if case .text(let v)? = custom["screencapStatus"] { return v == "blank" }
         return false
+    }
+
+    /// The CSS selector a WebView DOM node was emitted with, the twin of the
+    /// Kotlin `Node.domCssSelector()`. Present only on `NodeKind.domNode`.
+    public func domCssSelector() -> String? {
+        if case .text(let v)? = custom["domCssSelector"] { return v }
+        return nil
     }
 
     public func hasTargetingSignal() -> Bool {
