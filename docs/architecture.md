@@ -608,6 +608,7 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | `pixels:unavailable` | This node's pixels are missing from the **in-process** screenshot |
 | `screencap:blank` | This window blanks a **device-level** screenshot (`FLAG_SECURE`) |
 | `scroll:up,down` | The container has travel left, so an absent row may simply be unbound |
+| `act wait` → `UNKNOWABLE` + `reasons:` | A wait's predicate did not hold **and** one of the markers above made the answer unobservable. Distinct from `ABSENT`, which is an honest negative |
 
 ### The boundaries themselves
 
@@ -623,6 +624,30 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | **DRM / protected video** | Same mechanism as a `SurfaceView`, plus a protected surface the system will not let anyone read | The `pixels:unavailable` treatment above; the player's controls are ordinary views and stay targetable | **Not exercised** — no DRM sample in the repo. Listed because the mechanism is the one already measured |
 | **Non-debuggable release builds without the AAR** | JDWP attach requires a debuggable app; Frida/root are out of scope by design | `app inject` fails loudly with the reason rather than half-attaching | `noagent` flavor covers the debuggable-inject path |
 | **Real-device iOS input** | The simulator HID surface has no device equivalent reachable from the host | `act activate` (in-process, the device analogue of a tap) works; coordinate taps are refused with that guidance | `scripts/e2e-ios-device.sh` |
+
+### How a wait consumes this table
+
+`act wait` is the one command whose whole answer is shaped by the markers above, so
+it is worth stating the mapping once. Its outcome is three-state:
+
+- `resolved` — the predicate held. Occlusion, invisibility and lost focus become
+  **caveats** here, never a downgrade: the success test is resolution through the
+  act's own path, so a `resolved` wait guarantees the next `act` resolves the same
+  way, whether or not a human could see the thing.
+- `absent` — the predicate did not hold and **no** marker above applied. An honest
+  negative a caller may act on.
+- `unknowable` — the predicate did not hold and a marker did apply (lost focus, an
+  unreadable DOM, an unsupported kernel, travel left in the **topmost** window's
+  scroller, a screen that never settled, or a `--label` the resolver refused to
+  disambiguate). Not a negative.
+
+The scroll case is scoped to the topmost window on purpose: a background window's
+scroller can never bring the target into view, and citing it was measured both
+making `absent` nearly unreachable and producing misleading advice
+(`scroll-to --css …` for a DOM element behind a blocking JS modal). `WaitVerdict`
+in `reticle-core`, mirrored in `ReticleProtocol`, owns this mapping for both
+platforms and is pinned by
+`reticle-protocol/fixtures/wait-classification.cases.json`.
 
 Two rules keep this list honest. A boundary earns a row only when the mechanism is
 understood — "not exercised" is written down where it is, rather than implied by a

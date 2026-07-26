@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+- **`act wait`: cross an async boundary without a blind sleep, and get a
+  three-state answer.** The only `act` gesture that dispatches no input. Predicates:
+  `--for <selector>` (appear), `+ --gone`, `+ --text <substring>`, or `--idle` for
+  the screen itself going quiet — the one to use when you do not know the next
+  screen's selectors yet. `--for` reuses `--verify`'s token grammar rather than
+  inventing a second spelling. It refuses `--point` (a raw coordinate always
+  "resolves", so there is nothing to wait for) and `--alias` (an alias describes the
+  screen a wait exists to watch change), each by name. Works on real devices: no HID
+  surface is involved, so it sits beside `hide-keyboard` rather than `tap`.
+
+  **The success test is resolution through the act's own path, not `isVisible`.**
+  An earlier `wait --for appears` proposal was dropped in this repo over exactly
+  that proxy (the reason is recorded on `HelperScrollTo` and `settleInputTarget`),
+  and this one only earns its place by carrying the guarantee the proxy could not:
+  a `resolved` wait means the very next `act` resolves the same way. Visibility and
+  occlusion are reported as **caveats** (`resolved-but-not-visible`,
+  `occluded-by:keyboard` plus the command that clears it), never as a downgrade —
+  "can the next act target it" and "can the user see it" are different questions,
+  and a keyboard-covered submit button is a real answer to the first.
+
+  **Existence is three-state**, which is the part nothing else here could do:
+  `resolved` / `absent` (a miss nothing prevented seeing — a caller may act on it) /
+  `unknowable` (a miss that could not have been observed: lost window focus, a row a
+  recycling list has not bound, an unreadable DOM, an unsupported WebView kernel, a
+  screen that never settled, a `--label` the resolver refused to disambiguate).
+  Collapsing the third into the second is how a runtime observer lies — an agent
+  reads `absent` as "this feature is broken". Measured on the real thing: a genuine
+  app failure (a tap that did not raise its dialog) reports `absent` 3 times out of
+  3, while all four unknowable causes report `unknowable` on both platforms.
+
+  The outcome is a **field**; `--json` stays `{"ok":true}` on a timeout, because a
+  predicate that did not come true is an observation, not a tool failure. Exit codes
+  are an opt-in lossy projection for shell/CI (`--strict`: 3 = absent, 4 =
+  unknowable, deliberately distinct — a non-zero exit otherwise reads as "the
+  command broke" to an agent driving this through a shell). A batch step may set
+  `"strict": true` to become a gate.
+
+  `WaitVerdict.classify` lives in `reticle-core`, mirrored in `ReticleProtocol`, and
+  BOTH platforms' suites are driven by one table —
+  `reticle-protocol/fixtures/wait-classification.cases.json` (26 cases). That is the
+  anti-drift device the feature needed: `scroll-to`'s settle logic is two
+  hand-written implementations of one idea, and it drifted.
+
+  Two defects the e2e caught that the unit tests could not, each now pinned by a
+  regression test: the CLI silently dropped `--point`, making the helper's by-name
+  refusal unreachable; and scroll travel was not scoped to a window, which made
+  `absent` nearly unreachable on any app with a scrolling home screen and produced
+  actively misleading advice (`scroll-to --css …` for a DOM element behind a
+  blocking JS modal). Scroll doubt is now scoped to the **topmost** window, and
+  `next:` lines are ordered most-specific-first.
+
 - **Docs: the roadmap is a roadmap again.** It had grown to ~1000 lines in which
   settled decisions, finished work, design sketches and open items were interleaved,
   so "what is actually left?" could not be answered without reading all of it. Now

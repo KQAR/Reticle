@@ -141,11 +141,15 @@ func cmdLaunch(_ c: HelperCalling, _ args: Args) throws {
     print("runtime live: \(r["packageName"] ?? pkg) pid=\(r["pid"] ?? "?") port=\(r["port"] ?? "?") agent=\(r["agentVersion"] ?? "?")")
 }
 
-func cmdAct(_ c: HelperCalling, _ args: Args) throws {
-    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/type/hide-keyboard)") }
+@discardableResult
+func cmdAct(_ c: HelperCalling, _ args: Args) throws -> Int32 {
+    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/type/hide-keyboard/wait)") }
     if gesture == "batch" {
         try cmdActBatch(c, args)
-        return
+        return 0
+    }
+    if gesture == "wait" {
+        return try cmdActWait(c, args)
     }
     let pkg = try args.require("package")
     var params: [String: Any] = ["gesture": gesture, "package": pkg]
@@ -174,13 +178,90 @@ func cmdAct(_ c: HelperCalling, _ args: Args) throws {
     let r = try c.call("act", params)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(r)
-        return
+        return 0
     }
     print(r.filter { $0.key != "verify" && $0.key != "trace" }.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
     if let verify = r["verify"] as? [String: Any] { printVerify(verify) }
     if let trace = r["trace"] as? [String: Any] {
         printTrace(trace)
         publishTraceIfDaemonIsRunning(trace)
+    }
+    return 0
+}
+
+/// `act wait`: block until a stated predicate holds, then report a three-state
+/// outcome with its evidence.
+///
+/// The outcome is a FIELD (`outcome`), and `--json` carries it under a normal
+/// `{"ok": true, ...}` envelope even on a timeout — a predicate that did not come
+/// true is an observation, not a tool failure. The exit code is an opt-in lossy
+/// projection of that field for shell/CI callers (`--strict`), never the primary
+/// channel: a non-zero exit reads as "the command broke" to an agent driving this
+/// through a shell, which is worse than a clear line on stdout.
+private func cmdActWait(_ c: HelperCalling, _ args: Args) throws -> Int32 {
+    let pkg = try args.require("package")
+    var params: [String: Any] = ["gesture": "wait", "package": pkg]
+    // `point` and `alias` are forwarded even though a wait cannot use them: the
+    // helper refuses each BY NAME ("a coordinate always resolves", "an alias
+    // describes the screen a wait exists to watch change"). Dropping them here
+    // would silently downgrade those to the generic "needs a predicate".
+    for k in ["test-id", "resource-id", "css", "ref", "label", "for", "alias", "point"] {
+        if let v = args.option(k) { params[selectorKey(k)] = v }
+    }
+    if let gone = args.option("gone"), gone != "false" { params["gone"] = true }
+    if let idle = args.option("idle"), idle != "false" { params["idle"] = true }
+    // `--text` on a wait means "contains this substring", not `type`'s "send this
+    // text". Renamed on the wire so a batch step can never be read as a type.
+    if let text = args.option("text") { params["textContains"] = text }
+    if let t = args.option("timeout") { params["timeoutMs"] = Int(t) ?? 10_000 }
+    if let q = args.option("quiet-for") { params["quietMs"] = Int(q) ?? 400 }
+
+    let r = try c.call("act", params)
+    let outcome = (r["outcome"] as? String) ?? "unknown"
+    if JsonEnvelope.enabled(args) {
+        try JsonEnvelope.success(r)
+    } else {
+        printWait(r, outcome: outcome)
+    }
+    guard let strict = args.option("strict"), strict != "false" else { return 0 }
+    switch outcome {
+    case "resolved": return 0
+    case "absent": return 3
+    // Distinct from 3 on purpose: an agent may act on `absent` ("this is not
+    // there"), but must only switch tactics on `unknowable` ("I could not see").
+    case "unknowable": return 4
+    default: return 1
+    }
+}
+
+private func printWait(_ r: [String: Any], outcome: String) {
+    let predicate = (r["predicate"] as? String) ?? "?"
+    let elapsed = intOf(r["elapsedMs"]) ?? 0
+    let polls = intOf(r["polls"]) ?? 0
+    let changes = intOf(r["treeChanges"]) ?? 0
+    let verb = outcome == "resolved" ? "in" : "after"
+    var head = "wait \(predicate): \(outcome.uppercased()) \(verb) \(elapsed)ms (\(polls) polls, \(changes) tree changes)"
+    if let source = r["source"] as? String { head += " source=\(source)" }
+    if let ref = r["ref"] as? String { head += " ref=\(ref)" }
+    print(head)
+    if let text = r["observedText"] as? String { print("  observed: \"\(text)\"") }
+    if let reasons = r["reasons"] as? [Any], !reasons.isEmpty {
+        print("  reasons: \(reasons.map { "\($0)" }.joined(separator: ", "))")
+    }
+    if let caveats = r["caveats"] as? [Any], !caveats.isEmpty {
+        print("  caveats: \(caveats.map { "\($0)" }.joined(separator: ", "))")
+    }
+    if let next = r["next"] as? [Any], !next.isEmpty {
+        for step in next { print("  next: \(step)") }
+    }
+}
+
+private func intOf(_ value: Any?) -> Int? {
+    switch value {
+    case let int as Int: return int
+    case let num as NSNumber: return num.intValue
+    case let str as String: return Int(str)
+    default: return nil
     }
 }
 
@@ -210,6 +291,24 @@ func cmdActBatch(_ c: HelperCalling, _ args: Args) throws {
             params["traceDelayMs"] = Int(delay) ?? 250
         }
         let result = try c.call("act", params)
+        // A `wait` step is the only step that can report a non-fatal
+        // disappointment: it never throws, because a predicate that did not come
+        // true is an observation. But inside a BATCH the usual intent is a gate —
+        // "do not run the next step until the screen is ready" — so a step may opt
+        // into stopping the batch with `"strict": true`. Left off, the batch
+        // continues and the outcome is just recorded in the step's result.
+        if gesture == "wait", batchFlag(rawStep["strict"]) {
+            let outcome = (result["outcome"] as? String) ?? "unknown"
+            if outcome != "resolved" {
+                let predicate = (result["predicate"] as? String) ?? "?"
+                let why = (result["reasons"] as? [Any])?.map { "\($0)" }.joined(separator: ", ")
+                throw HelperError(
+                    "batch step \(index + 1) wait (\(predicate)) ended \(outcome.uppercased())"
+                        + (why?.isEmpty == false ? " — \(why!)" : "")
+                        + ". The step was marked strict, so the batch stops here."
+                )
+            }
+        }
         results.append(["index": index + 1, "gesture": gesture, "result": result])
         if JsonEnvelope.enabled(args) == false {
             print("step \(index + 1) \(gesture): \(compactResultLine(result))")
@@ -242,6 +341,16 @@ private func compactResultLine(_ result: [String: Any]) -> String {
         .map { "\($0)=\($1)" }
         .sorted()
         .joined(separator: " ")
+}
+
+/// Interpret a batch step's boolean (`true`, `"true"`, `1`).
+private func batchFlag(_ value: Any?) -> Bool {
+    switch value {
+    case let b as Bool: return b
+    case let s as String: return s == "true" || s == "1"
+    case let n as NSNumber: return n.boolValue
+    default: return false
+    }
 }
 
 private func batchInt(_ value: Any?) -> Int? {
