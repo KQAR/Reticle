@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The Honest boundaries table is its own document (`docs/boundaries.md`).** It had
+  grown into a third of `architecture.md`, which was therefore three documents in
+  one: a design explanation read once, a tutorial, and a reference table consulted
+  per case. They have different read patterns and different edit patterns — every
+  new boundary appends a row here, and nothing else in the architecture doc changes
+  that often.
+
+  Pure move: the marker vocabulary, the boundary table (what is unreachable, why,
+  what Reticle emits instead, what pins it) and the `act wait` mapping are unchanged.
+  `architecture.md` keeps a pointer plus the one rule the rest of it depends on — an
+  unreachable thing must produce evidence naming itself, never silence — and every
+  cross-reference in README, AGENTS.md and both roadmaps now points at the new file,
+  since that is where a boundary must be recorded.
 - **Selector resolution was two implementations of one rule, and they had drifted
   in seven ways. Now there is one table, and both read it.** The action path
   (`act tap`, and `act wait`'s success test) resolves in Kotlin for Android and in
