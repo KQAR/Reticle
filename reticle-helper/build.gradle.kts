@@ -23,6 +23,18 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// The language-neutral protocol fixtures live in reticle-protocol/ (a sibling
+// directory, not a Gradle module). Expose them as test resources — same wiring as
+// reticle-core — so the selector-resolution contract test reads the SAME file the
+// Swift suite does instead of a copy that can drift.
+sourceSets {
+    test {
+        resources {
+            srcDir(rootProject.layout.projectDirectory.dir("reticle-protocol"))
+        }
+    }
+}
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
