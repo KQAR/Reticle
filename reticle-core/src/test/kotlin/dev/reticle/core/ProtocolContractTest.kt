@@ -42,6 +42,9 @@ class ProtocolContractTest {
 
     private fun networkPayloadSchema(): JsonSchema = schema("schema/network-event-payload.schema.json")
 
+    private fun networkWebSocketPayloadSchema(): JsonSchema =
+        schema("schema/network-websocket-payload.schema.json")
+
     private fun assertValid(schema: JsonSchema, json: String, label: String) {
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
         val node = mapper.readTree(json)
@@ -128,6 +131,7 @@ class ProtocolContractTest {
         assertValid(eventSchema(), resource("fixtures/network-request-event.golden.json"), "network-request event fixture")
         assertValid(eventSchema(), resource("fixtures/network-response-event.golden.json"), "network-response event fixture")
         assertValid(eventSchema(), resource("fixtures/network-error-event.golden.json"), "network-error event fixture")
+        assertValid(eventSchema(), resource("fixtures/network-websocket-event.golden.json"), "network-websocket event fixture")
     }
 
     @Test
@@ -148,6 +152,20 @@ class ProtocolContractTest {
                 fail("$name payload did not satisfy the network payload schema:\n" +
                     errors.joinToString("\n") { "  - $it" })
             }
+        }
+    }
+
+    @Test
+    fun webSocketFixturePayloadSatisfiesItsTypedSchema() {
+        // A frame event carries a different shape from a request/response event —
+        // it describes what happened *inside* a socket, not the exchange itself —
+        // so it has its own typed schema rather than loosening the shared one.
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val payload = mapper.readTree(resource("fixtures/network-websocket-event.golden.json")).get("payload")
+        val errors = networkWebSocketPayloadSchema().validate(payload)
+        if (errors.isNotEmpty()) {
+            fail("network-websocket fixture payload did not satisfy its schema:\n" +
+                errors.joinToString("\n") { "  - $it" })
         }
     }
 

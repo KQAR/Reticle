@@ -95,6 +95,11 @@ let package = Package(
                 "ReticleNetworkLane",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
+                // Lets the capture-lane tests synthesize Loom `Flow`s directly, so the
+                // normalization from flow to `network.*` event is pinned without a live
+                // proxy — the WebSocket frame path especially, which a socket-less
+                // e2e can otherwise only reach by accident.
+                .product(name: "LoomSharedModels", package: "loom"),
             ],
             path: "Tests/ReticleHostCoreTests"
         )

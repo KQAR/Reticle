@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "evt_0000000000000004",
+  "ts": 1782751907100,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "proxy",
+  "type": "network.websocket",
+  "payload": {
+    "requestId": "net-0002",
+    "url": "wss://api.example.test/v1/live",
+    "host": "api.example.test",
+    "frameIndex": 1,
+    "direction": "serverToClient",
+    "kind": "text",
+    "isFinal": true,
+    "bytes": 42,
+    "frameMillis": 1782751907090,
+    "textPreview": "{\"type\":\"tick\",\"cart\":{\"items\":2}}"
+  },
+  "refs": {}
+}

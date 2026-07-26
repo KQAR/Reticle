@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+- **Three capabilities Loom 0.0.5 opened up: timing splits, WebSocket frames, and
+  finding a flow to replay.**
+
+  **`ttfbMs` / `receiveMs` on every response.** "This call is slow" has a different
+  cause depending on which half it lands in, and `durationMs` alone cannot say
+  which. A response event now carries when the head came back (`firstByteMillis`)
+  and the two spans it splits the exchange into — server think-time and body
+  transfer — which sum to `durationMs`. A flow that failed before any head reports
+  neither rather than inventing one from the completion stamp.
+
+  **WebSocket frames are evidence now, not a 101 and a shrug.** An upgraded socket
+  used to leave a `network.request`/`network.response` pair and nothing else, with
+  every frame Loom captured dropped on the floor. Frames now arrive as
+  `network.websocket` events under the socket's `requestId` — one per frame, in
+  order, both directions, with a text preview inline and the whole payload as an
+  artifact only when it is too big to sit there. Emitted as they arrive rather than
+  summarized at close, because a socket may outlive the session and a summary that
+  never comes is not evidence.
+
+  Two caps sit above that and both say so: Reticle stops at 1000 frames per socket
+  so one chatty socket cannot bury the session, and Loom stops at 10k frames / 5 MB.
+  Either way one `capReached` event names what was recorded and what was dropped —
+  **the socket is still open and still talking, and the silence afterwards must not
+  read as a quiet socket.**
+
+  **`GET /sessions/current/flows`** filters the capture engine's retained flows so
+  an agent can name the exchange it means without pulling every summary into
+  context; the scan runs over everything retained and only then applies `limit`, so
+  an older match is still findable. Scoped, deliberately, to what can still be
+  *replayed*: every result is stamped `replayableOnly: true`, because the ring is
+  bounded and `events.jsonl` is the evidence. An empty list means "nothing
+  replayable matches", never "this never happened".
+
+  New Honest boundaries rows for the frame caps and for flows aged out of the replay
+  buffer. `network.websocket` has its own typed payload schema, golden fixture, and
+  Kotlin contract test; the Swift schema-pin test — which had been passing vacuously
+  because it never set the new fields — now covers the nested replay diff too, and
+  caught a real miss: `bodyComparisonPartial` was never being written into the
+  emitted event.
+
 - **Loom 0.0.1 → 0.0.5, and the two behavior changes that came with it.** Loom
   renamed its SPM targets to match its products (`LoomProxyCore` /
   `LoomSharedModels`), so the lane's imports change; nothing else in the engine's
