@@ -44,7 +44,7 @@ input.
 | Selector resolution | Semantic tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
 
 See `docs/architecture.md` for the full design, including the Compose-semantics
-boundary and the injection trade-offs — and its **Honest boundaries** table, which
+boundary and the injection trade-offs — and `docs/boundaries.md`, which
 collects everything an in-process observer cannot reach (closed shadow roots,
 cross-origin frames, third-party WebView kernels, bitmap-baked text, out-of-process
 system UI, the screenshot's blind spots) next to the evidence Reticle emits for each
