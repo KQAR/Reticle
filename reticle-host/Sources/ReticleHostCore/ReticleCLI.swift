@@ -72,80 +72,59 @@ public enum ReticleCLI {
 
     private static func runHelperBacked(command: String, args: Args) -> Int32 {
         let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
-
-        // iOS is handled natively in-host (simctl / DYLD / direct HTTP / CoreSimulator
-        // HID) — no Kotlin helper, no daemon broker. Select it with `--target ios`.
-        if (args.option("target") ?? "android") == "ios" {
-            let client = IosHelperClient(serial: serialArg)
-            do {
-                return try dispatch(command: command, args: args, client: client)
-            } catch {
-                if JsonEnvelope.enabled(args) {
-                    JsonEnvelope.error(error)
-                } else {
-                    writeError("error: \(error)\n")
-                }
-                return 1
-            }
-        }
-
-        if shouldUseDaemonHelper(args) {
-            let client = DaemonHelperClient(serial: serialArg)
-            do {
-                return try dispatch(command: command, args: args, client: client)
-            } catch {
-                if JsonEnvelope.enabled(args) {
-                    JsonEnvelope.error(error)
-                } else {
-                    writeError("error: \(error)\n")
-                }
-                return 1
-            }
-        }
-
-        // Hot path (default): a per-device resident helper behind a Unix
-        // socket. The first command fork-execs the daemon and waits for its
-        // socket (≤5s); later commands reuse the warm helper and skip the
-        // per-command spawn. Opt out with --no-daemon / RETICLE_NO_DAEMON=1;
-        // any bring-up failure falls back to the direct spawn below.
-        if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serialArg) {
-            defer { client.close() }
-            do {
-                return try dispatch(command: command, args: args, client: client)
-            } catch {
-                if JsonEnvelope.enabled(args) {
-                    JsonEnvelope.error(error)
-                } else {
-                    writeError("error: \(error)\n")
-                }
-                return 1
-            }
-        }
-
-        guard let helper = resolveHelper(args) else {
-            writeError("could not find the reticle helper; set RETICLE_HELPER or pass --helper\n")
-            return 2
-        }
-
-        let client = HelperClient(
-            launcher: helper,
-            javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
-            serial: serialArg
-        )
         do {
-            try client.start()
-            let code = try dispatch(command: command, args: args, client: client)
-            client.shutdown()
-            return code
+            let client = try makeClient(args: args, serial: serialArg)
+            defer { client.close() }
+            return try dispatch(command: command, args: args, client: client)
+        } catch let unavailable as HelperUnavailable {
+            // A setup problem, not a failed call: no helper binary means no
+            // command could have run. Exits 2 (like a usage error), and stays
+            // plain text because there is no RPC result to envelope.
+            writeError("\(unavailable.description)\n")
+            return 2
         } catch {
             if JsonEnvelope.enabled(args) {
                 JsonEnvelope.error(error)
             } else {
                 writeError("error: \(error)\n")
             }
-            client.shutdown()
             return 1
         }
+    }
+
+    /// Picks the backend for a helper-backed command and returns it ready to
+    /// call. Four backends, one selection point, in priority order:
+    ///
+    /// 1. **`--target ios`** — natively in-host (simctl / DYLD / direct HTTP /
+    ///    CoreSimulator HID). No Kotlin helper, no daemon broker.
+    /// 2. **`--use-daemon`** — forward every call through a running `reticle
+    ///    serve` (started with `--helper-broker`).
+    /// 3. **the resident per-device helper daemon (default)** — the hot path: the
+    ///    first command fork-execs the daemon and waits for its socket (≤5s),
+    ///    later commands reuse the warm helper and skip the per-command spawn.
+    ///    Opt out with `--no-daemon` / `RETICLE_NO_DAEMON=1`; any bring-up
+    ///    failure falls through to (4) rather than failing the command.
+    /// 4. **a direct helper spawn** — the always-available fallback.
+    private static func makeClient(args: Args, serial: String?) throws -> HelperCalling {
+        if (args.option("target") ?? "android") == "ios" {
+            return IosHelperClient(serial: serial)
+        }
+        if shouldUseDaemonHelper(args) {
+            return DaemonHelperClient(serial: serial)
+        }
+        if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serial) {
+            return client
+        }
+        guard let helper = resolveHelper(args) else {
+            throw HelperUnavailable("could not find the reticle helper; set RETICLE_HELPER or pass --helper")
+        }
+        let client = HelperClient(
+            launcher: helper,
+            javaHome: ProcessInfo.processInfo.environment["JAVA_HOME"],
+            serial: serial
+        )
+        try client.start()
+        return client
     }
 
     /// Returns the process exit code for the command.
@@ -191,6 +170,13 @@ public enum ReticleCLI {
         args.option("use-daemon") == "true"
             || ProcessInfo.processInfo.environment["RETICLE_USE_DAEMON"] == "1"
     }
+}
+
+/// No helper backend could be constructed — distinct from a helper that ran and
+/// failed, and the only condition that exits 2 instead of 1.
+struct HelperUnavailable: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
 }
 
 /// Locates the Kotlin helper executable to spawn.
