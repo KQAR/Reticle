@@ -5,7 +5,8 @@ inspection, diagnostic, and action harness — it inspects the app that is
 actually running, resolves precise selectors and tap regions, and drives real
 input through adb.
 
-Use this file as a map. Deeper architecture lives in `docs/architecture.md`.
+Use this file as a map. Deeper architecture lives in `docs/architecture.md`, and
+what Reticle structurally cannot reach in `docs/boundaries.md`.
 
 ## Current Shape
 
@@ -297,7 +298,7 @@ on-device (the CLI does this) or ART's W^X policy rejects it.
 
 ## Known Boundary
 
-The complete list lives in `docs/architecture.md` -> **Honest boundaries**: every
+The complete list lives in `docs/boundaries.md` (**Honest boundaries**): every
 structurally unreachable case next to the evidence emitted for it and the scenario
 that pins it. Keep it current — a boundary discovered and not written down there is
 one a future contributor re-investigates from scratch. The entries below are the
