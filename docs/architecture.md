@@ -136,7 +136,11 @@ The daemon exposes three route groups:
 
 Network capture runs on Loom's engine (see the network lane above); Reticle
 normalizes its flows into `network.request` / `network.response` / `network.error`
-events. HTTPS traffic is visible as CONNECT tunnels unless `--proxy-mitm` and
+events, and the frames inside an upgraded WebSocket into `network.websocket`
+events under the same `requestId`. Frames are emitted as they arrive rather than
+summarized at close, because a socket may outlive the session; a response event
+also carries `ttfbMs` / `receiveMs`, splitting a slow call into server think-time
+and transfer time. HTTPS traffic is visible as CONNECT tunnels unless `--proxy-mitm` and
 `--proxy-ssl-hosts` admit the host and the app trusts Reticle's local CA. MITM
 still does not bypass certificate pinning or custom trust managers.
 
@@ -627,6 +631,8 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | **DRM / protected video** | Same mechanism as a `SurfaceView`, plus a protected surface the system will not let anyone read | The `pixels:unavailable` treatment above; the player's controls are ordinary views and stay targetable | **Not exercised** — no DRM sample in the repo. Listed because the mechanism is the one already measured |
 | **Non-debuggable release builds without the AAR** | JDWP attach requires a debuggable app; Frida/root are out of scope by design | `app inject` fails loudly with the reason rather than half-attaching | `noagent` flavor covers the debuggable-inject path |
 | **Real-device iOS input** | The simulator HID surface has no device equivalent reachable from the host | `act activate` (in-process, the device analogue of a tap) works; coordinate taps are refused with that guidance | `scripts/e2e-ios-device.sh` |
+| **Flows aged out of the replay buffer** | `replay` re-sends from Loom's bounded in-memory ring (2000), which Reticle deliberately does not persist — `events.jsonl` is the evidence, the ring is only what can still be *acted on*. An older exchange is fully evidenced and no longer replayable | `GET /sessions/current/flows` stamps every result `replayableOnly: true`, so an empty list reads as "nothing replayable matches" rather than "this never happened"; `replay` on an aged-out id fails naming the reason. Without a capture proxy the endpoint 404s instead of returning an empty list | `FlowQueryRouteTests` (scope declared, 404 without a lane); `scripts/e2e-proxy.sh` (found by predicate against a live ring) |
+| **WebSocket frames past the capture cap** | Reticle stops at 1000 frames per socket (an event per frame would let one chatty socket bury the session); Loom stops at 10k frames / 5 MB, which can bite first on a few large ones. The socket stays open and keeps talking either way | One `network.websocket` event with `capReached: true`, `framesRecorded`, and `framesNotRecorded` — emitted the moment the cap is reached, not at close, since the close may never come. Without it the ensuing silence would read as a quiet socket | `LoomCaptureLaneTests` (both caps, announced exactly once); `scripts/e2e-proxy.sh` (real socket, frames in order both directions) |
 | **Bodies past the capture cap** | Two caps sit in the chain — Loom's, while it relays every byte to the peer, then `NetworkBodyStore`'s. Past either, the recorded body is a prefix of what actually flowed; the bytes were never kept, so no offset can page into them | The artifact plus true wire size: `requestBodyBytes`/`responseBodyBytes` + `…BodyTruncated` on a capture event, and `bodyComparisonPartial` on a replay diff — under which a prefix match is never reported as `isIdentical` | `NetworkReplayDiffTests` (partial comparison refuses the identical verdict; differing wire sizes still assert a change) |
 
 ### How a wait consumes this table

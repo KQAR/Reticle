@@ -51,7 +51,11 @@ private final class RuleReportBox: @unchecked Sendable {
     var report: SetRulesReport?
 }
 
-public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
+private final class FlowsBox: @unchecked Sendable {
+    var flows: [Flow] = []
+}
+
+public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuerying {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
     private let ruleStore: NetworkRuleStore?
@@ -68,6 +72,21 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     private var seen = Set<UUID>()
     private var seenOrder: [UUID] = []
     private let seenCapacity = 8192
+    /// Per-socket cursor into Loom's cumulative frame array: how many frames of this
+    /// flow have already been emitted as events. Loom re-sends the whole array on every
+    /// update, so without this every frame would be re-emitted on every update.
+    private var frameCursor: [UUID: Int] = [:]
+    /// Sockets whose cap notice has already gone out, so it is emitted exactly once.
+    private var framesAnnounced = Set<UUID>()
+    /// Frames emitted per socket before this lane stops and says so. Loom's own cap is
+    /// 10k frames / 5 MB; mirroring that 1:1 into `events.jsonl` would let one chatty
+    /// socket bury every other observation in the session.
+    private static let frameCapacity = 1000
+    /// Bytes of a text frame carried inline on its event. Above this the frame's
+    /// payload is written as an artifact and the preview is marked truncated.
+    private static let framePreviewBytes = 512
+    /// Sockets tracked at once, bounded for the same reason `seen` is.
+    private static let frameFlowCapacity = 256
     private var streamTask: Task<Void, Never>?
     private var startBound: Int?
     private var startError: Error?
@@ -274,7 +293,10 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     /// `network.request` on first sighting, then `network.response`/`network.error`
     /// once the exchange completes. Loom yields the same flow id twice (start, then
     /// completion), which maps cleanly onto the two events.
-    private func handle(_ flow: Flow) {
+    /// Internal rather than private so the tests can drive it with a synthesized
+    /// `Flow`: this is the whole flow-to-evidence normalization, and the WebSocket
+    /// path in particular is not reachable from the socket-less proxy e2e.
+    func handle(_ flow: Flow) {
         // A replayed flow is upserted into Loom's store by `replay(...)`, so it also
         // arrives here on the stream. Its evidence (request/response + diff) is owned
         // by the `network.replay` event the replay path emits synchronously, so skip
@@ -291,6 +313,14 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
                           into: &refs, bytes: &payload.requestBodyBytes, truncated: &payload.requestBodyTruncated)
             }
             store.emit(factory.event(.request, payload: payload, refs: refs))
+        }
+
+        // A WebSocket keeps yielding while it is open, carrying the frames recorded so
+        // far. Frames are emitted before the completion guard on purpose: a socket may
+        // stay open for the whole session, so waiting for `completedAt` would mean
+        // holding every frame back until a close that never comes.
+        if flow.webSocketMessages != nil {
+            emitWebSocketFrames(flow)
         }
 
         guard flow.completedAt != nil else { return }
@@ -331,6 +361,9 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
         payload.requestHeaders = NetworkHeaders.redacted(
             pairs: flow.request.headers.map { (name: $0.name, value: $0.value) }
         )
+        if let firstByteAt = flow.firstByteAt {
+            payload.firstByteMillis = Self.millis(firstByteAt)
+        }
         if let completedAt = flow.completedAt {
             payload.endMillis = Self.millis(completedAt)
         }
@@ -355,6 +388,106 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
             }
         }
         return payload
+    }
+
+    // MARK: - WebSocket frames
+
+    /// Emits one `network.websocket` event per frame this lane has not emitted yet,
+    /// then — once, at the moment it becomes true — the notice that recording stopped.
+    ///
+    /// Loom hands over the whole cumulative frame array on every update, so the
+    /// per-flow cursor is what makes this incremental. Two caps sit above it and both
+    /// have to be audible: Reticle's own `frameCapacity` (an event per frame would
+    /// otherwise let one chatty socket dominate `events.jsonl`) and Loom's 10k-frame /
+    /// 5 MB cap, which can bite first on a few large frames. Either way the socket is
+    /// still open and still talking; silence afterwards must not read as a quiet socket.
+    private func emitWebSocketFrames(_ flow: Flow) {
+        let messages = flow.webSocketMessages ?? []
+        let dropped = flow.webSocketDroppedMessages
+        let requestId = flow.id.uuidString
+
+        let (start, alreadyAnnounced) = lock.withLock {
+            (frameCursor[flow.id] ?? 0, framesAnnounced.contains(flow.id))
+        }
+        guard start < messages.count || (dropped != nil && !alreadyAnnounced) else { return }
+
+        let components = URLComponents(string: flow.request.url)
+        let host = components?.host ?? ""
+        let limit = min(messages.count, Self.frameCapacity)
+
+        var emitted = start
+        for index in start..<max(start, limit) {
+            let message = messages[index]
+            var payload = NetworkWebSocketPayload(
+                requestId: requestId,
+                url: flow.request.url,
+                host: host,
+                frameIndex: index,
+                direction: message.direction == .clientToServer ? "clientToServer" : "serverToClient",
+                kind: message.kind.rawValue,
+                isFinal: message.isFinal,
+                bytes: message.payload.count,
+                frameMillis: Self.millis(message.timestamp)
+            )
+            var refs: [String: String] = [:]
+            if message.kind == .text, let text = String(data: message.payload.prefix(Self.framePreviewBytes), encoding: .utf8) {
+                payload.textPreview = text
+                if message.payload.count > Self.framePreviewBytes { payload.textPreviewTruncated = true }
+            }
+            // Small frames live entirely in the event; only what the preview can't hold
+            // becomes a file, so a chatty socket doesn't strew thousands of artifacts.
+            if message.payload.count > Self.framePreviewBytes {
+                do {
+                    if let stored = try bodyStore.storeFrame(message.payload, requestId: requestId, index: index) {
+                        refs[stored.refName] = stored.path
+                    }
+                } catch {
+                    warn("failed to store WebSocket frame \(index) for \(requestId); evidence will omit its payload: \(error)")
+                }
+            }
+            store.emit(factory.event(webSocket: payload, refs: refs))
+            emitted = index + 1
+        }
+
+        let capReached = messages.count >= Self.frameCapacity || dropped != nil
+        let announce: Bool = lock.withLock {
+            frameCursor[flow.id] = emitted
+            trimFrameCursorLocked(keeping: flow.id)
+            guard capReached, !framesAnnounced.contains(flow.id) else { return false }
+            framesAnnounced.insert(flow.id)
+            return true
+        }
+        guard announce else { return }
+
+        var notice = NetworkWebSocketPayload(
+            requestId: requestId,
+            url: flow.request.url,
+            host: host,
+            frameIndex: emitted,
+            direction: "none",
+            kind: "capReached",
+            isFinal: true,
+            bytes: 0,
+            frameMillis: Self.millis(Date())
+        )
+        notice.capReached = true
+        notice.framesRecorded = emitted
+        notice.framesNotRecorded = dropped
+        store.emit(factory.event(webSocket: notice))
+        warn("WebSocket \(requestId) hit a frame capture cap after \(emitted) frame(s); "
+            + "the socket is still open and later frames are NOT recorded")
+    }
+
+    /// Bounds the per-flow frame bookkeeping the same way `seen` is bounded — a daemon
+    /// that outlives many sockets must not accumulate an entry per socket forever.
+    /// Caller must hold `lock`.
+    private func trimFrameCursorLocked(keeping id: UUID) {
+        guard frameCursor.count > Self.frameFlowCapacity else { return }
+        for key in frameCursor.keys where key != id {
+            frameCursor.removeValue(forKey: key)
+            framesAnnounced.remove(key)
+            if frameCursor.count <= Self.frameFlowCapacity { return }
+        }
     }
 
     private static func millis(_ date: Date) -> Int64 {
@@ -414,6 +547,69 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     /// convention. Capture never fails a request just because a side effect did.
     private func warn(_ message: String) {
         FileHandle.standardError.write(Data("warning: reticle capture: \(message)\n".utf8))
+    }
+
+    // MARK: - Flow query
+
+    /// Finds replayable flows matching `filter`. The scan runs inside Loom's store
+    /// over everything retained and only then applies the limit, so a match older
+    /// than the newest `limit` exchanges is still findable — the reason to filter
+    /// here rather than pull summaries and sift them in an agent's context.
+    public func listFlows(matching filter: NetworkFlowFilter) throws -> NetworkFlowQueryResult {
+        let engine = self.engine
+        let query = Self.translateFilter(filter)
+        let box = FlowsBox()
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            // Ask for one more than the limit purely to learn whether the list was
+            // clipped, so `truncatedToLimit` is a fact rather than a guess from a
+            // full page.
+            box.flows = await engine.recentFlows(matching: query, limit: filter.limit + 1)
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 15) == .success else {
+            throw NetworkReplayError.failed("listing flows timed out")
+        }
+
+        let matched = box.flows
+        let clipped = matched.count > filter.limit
+        let page = clipped ? Array(matched.prefix(filter.limit)) : matched
+        return NetworkFlowQueryResult(
+            flows: page.map(Self.summarize),
+            truncatedToLimit: clipped,
+            replayableOnly: true
+        )
+    }
+
+    private static func summarize(_ flow: Flow) -> NetworkFlowSummary {
+        let truncated = flow.request.isBodyTruncated || (flow.response?.isBodyTruncated ?? false)
+        return NetworkFlowSummary(
+            requestId: flow.id.uuidString,
+            method: flow.request.method,
+            url: flow.request.url,
+            host: flow.host ?? "",
+            status: flow.statusCode,
+            error: flow.error,
+            startMillis: millis(flow.startedAt),
+            durationMs: flow.durationMS,
+            ttfbMs: flow.ttfbMS,
+            receiveMs: flow.receiveMS,
+            requestBodyBytes: flow.request.fullBodyBytes ?? flow.request.body?.count,
+            responseBodyBytes: flow.response?.fullBodyBytes ?? flow.response?.body?.count,
+            bodyCaptureTruncated: truncated ? true : nil
+        )
+    }
+
+    private static func translateFilter(_ filter: NetworkFlowFilter) -> FlowQuery {
+        FlowQuery(
+            host: filter.host,
+            methods: filter.methods,
+            urlContains: filter.urlContains,
+            statusMin: filter.statusMin,
+            statusMax: filter.statusMax,
+            onlyErrors: filter.onlyErrors,
+            since: filter.since
+        )
     }
 
     // MARK: - Replay
