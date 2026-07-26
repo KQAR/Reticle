@@ -1,6 +1,7 @@
 package dev.reticle.cli
 
-import dev.reticle.cli.platform.Platforms
+import dev.reticle.cli.platform.DeviceController
+import dev.reticle.cli.platform.android.Adb
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -9,13 +10,13 @@ import kotlinx.serialization.json.put
 /** Android global proxy helpers used by `reticle serve --proxy-device`. */
 internal object HelperProxyCommands {
     fun status(params: JsonObject): JsonElement {
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         return buildJsonObject { put("httpProxy", readProxy(device)) }
     }
 
     fun set(params: JsonObject): JsonElement {
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val previous = readProxy(device)
         val value = params.str("value") ?: proxyValue(params)
@@ -34,7 +35,7 @@ internal object HelperProxyCommands {
     }
 
     fun clear(params: JsonObject): JsonElement {
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val previous = readProxy(device)
         params.intOrNull("port")?.let { device.run("reverse", "--remove", "tcp:$it") }
@@ -47,7 +48,7 @@ internal object HelperProxyCommands {
     }
 
     fun installCa(params: JsonObject): JsonElement {
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val path = params.str("path") ?: throw CliError("proxyInstallCa needs 'path'")
         val name = (params.str("name") ?: "Reticle_CA").replace(Regex("""[^A-Za-z0-9_.-]"""), "_")
@@ -71,7 +72,7 @@ internal object HelperProxyCommands {
         return "$host:$port"
     }
 
-    private fun readProxy(device: dev.reticle.cli.platform.DeviceController): String {
+    private fun readProxy(device: DeviceController): String {
         val result = device.shell("settings get global http_proxy")
         if (!result.ok) return ""
         val value = result.stdout.trim()

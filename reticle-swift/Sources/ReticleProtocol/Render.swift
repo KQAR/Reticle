@@ -158,10 +158,8 @@ public enum Render {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { $0.resourceId == resourceId }) { return n }
         }
         if let css = selector.cssSelector {
-            if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { node in
-                if case .text(let v)? = node.custom["domCssSelector"] { return v == css }
-                return false
-            }) { return n }
+            if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] })
+                .first(where: { $0.domCssSelector() == css }) { return n }
         }
         if let ref = selector.ref { return snapshot.nodes[ref] }
         if let label = selector.label { return try? labelMatch(snapshot, label) }

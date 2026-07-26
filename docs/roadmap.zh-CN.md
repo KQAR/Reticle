@@ -2,9 +2,9 @@
 
 [English](roadmap.md) | **简体中文**
 
-三份文档，三个职责。`README.md` 讲怎么用；`docs/architecture.md` 讲今天它怎么工作
-——包含 **Honest boundaries（诚实边界）** 表，那是"结构上够不着什么"的权威清单；
-**本文讲它往哪走**：还剩什么（按优先级），以及哪些决定已经拍板、不必再讨论。
+四份文档，四个职责。`README.md` 讲怎么用；`docs/architecture.md` 讲今天它怎么工作；
+`docs/boundaries.md` 是 **Honest boundaries（诚实边界）** 表，那是"结构上够不着什么"
+的权威清单；**本文讲它往哪走**：还剩什么（按优先级），以及哪些决定已经拍板、不必再讨论。
 
 状态：2026-07-25，对应 0.9.3。捕获 / 驱动 / 证据这条主干已完成且跨平台；
 **边界能力扫描**（15 个点）于 2026-07-25 收官。剩余工作全部列在
@@ -278,7 +278,7 @@ Loom 的，存储与归一化是 Reticle 的。
 票价——一半的点其实是"失败即静默返回空"的真缺陷，而两个"修复"当场又被套件抓出新问题。
 
 15 个点、PR #107–#121，全部合入。除单点修复之外留下的长期产出：每次捕获都会说的
-**缺席词汇表**，以及 `docs/architecture.md` 里的 **Honest boundaries** 表——下一个这类
+**缺席词汇表**，以及 `docs/boundaries.md` 的 **Honest boundaries** 表——下一个这类
 case 就记到那里。
 
 | 点 | 实测病因 | 结果 |
@@ -296,7 +296,7 @@ case 就记到那里。
 | SwiftUI Text 链接 | markdown `Text` 是**一个**无障碍元素、一个 label：没有 `UILabel`、没有 `.link` run、没有子元素（实测 0）、没有 element count、没有 custom action、没有可用 rotor、没有 `_accessibility*` 访问器。而 `accessibilityAttributedLabel` **带** `UIAccessibilityTokenLink` 分段和每段字体 token | `SwiftUITextRegions`：用各段自己的字体在元素屏幕 frame 内重排 → 每条链接一个 `span` region + 字符网格。几何是重建的，所以断言走**后果**——点每个 rect，看 `openURL` 实际收到哪个 URL |
 | 截图降级 | 两条路径是精确互补，而不是原以为的"进程内两样都缺"：`SurfaceView` 在进程内截图是透明洞（rgba 0,0,0,0）、在 `screencap` 里是洋红；`FLAG_SECURE` 则把**设备级**截图整张涂黑，进程内那张毫发无伤。iOS 是第三种形状：键盘宿主窗拒绝渲染进借来的上下文，捕获早就跳过了它——只是没说 | `pixels:unavailable` / `screencap:blank`，加上 `ui screenshot` 的 `degraded:` 一行，说明**这张**图缺了什么、哪条路径能看到。两端套件同时断言标签**和**背后的像素 |
 | 第三方 WebView 内核 | 由构造即可确认：桥是按 `android.webkit.WebView` 定型的，只是"自称 WebView"的内核在任何层级都拿不到 DOM——而这与空页面无法区分 | 上报而不适配（反射适配器没有真内核样本无法验证）：`dom:unsupported-kernel` + `custom.domKernel`、`--css` 未命中时解释这堵墙，并用一个自绘替身挨着真 WebView，把对比断言下来 |
-| 结构性边界 | 好几条是假设而非实测。写下来的过程逼出两次核对：**闭合** shadow root 只丢内容（宿主元素仍按自身 rect 被捕获），以及跨域那条离线确实没法演练 | `docs/architecture.md` 里的 **Honest boundaries** 表：每条边界挨着"改吐什么证据"和"哪个 scenario 钉住它"，没演练过的地方明写。skill 里放面向 agent 的一半 |
+| 结构性边界 | 好几条是假设而非实测。写下来的过程逼出两次核对：**闭合** shadow root 只丢内容（宿主元素仍按自身 rect 被捕获），以及跨域那条离线确实没法演练 | `docs/boundaries.md` 的 **Honest boundaries** 表：每条边界挨着"改吐什么证据"和"哪个 scenario 钉住它"，没演练过的地方明写。skill 里放面向 agent 的一半 |
 | iOS 失焦证据补断言 | 两个实测原因导致此前无法断言：弹窗无法**重新触发**（`simctl privacy … reset notifications` 直接失败），开着的弹窗也无法从 host **回答**，而卡住的弹窗会静默吞掉之后所有 HID 点击 | 用**重装 bundle** 重新触发；用坐标 HID 点击（屏高 ~57%，宽 ~32% 拒绝 / ~68% 允许，不读文字）在"回答→重试→复检"循环里回答；该段放在最后执行 |
 
 套件抓出来的自伤 bug，作为失败形状值得记住：`act scroll-to` 最初是快滑（列表还在惯性滑动，
