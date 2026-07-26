@@ -100,6 +100,21 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
     /// Serializes full-rule-set syncs so two overlapping rule mutations can't
     /// interleave a delete-all with an add-all.
     private let syncQueue = DispatchQueue(label: "dev.reticle.loom.rule-sync")
+    /// Serial worker that turns flows into events off the stream, so artifact writes
+    /// never back-pressure the engine's `AsyncStream` into silently dropping flows.
+    /// Serial on purpose: event order is evidence.
+    private let drainQueue = DispatchQueue(label: "dev.reticle.loom.capture-drain")
+    /// Flows accepted but not yet processed. Bounded for the same reason Loom bounds
+    /// its stream — an unbounded backlog is just a memory leak with better manners.
+    private var pendingCount = 0
+    private var pendingDropped = 0
+    /// `pendingDropped` as of the end of the last episode, so an episode's own loss
+    /// is a subtraction rather than a second counter that can disagree with the total.
+    private var episodeDroppedBase = 0
+    /// True once the current overflow episode has been announced, cleared when the
+    /// backlog drains under half so a later overflow is announced again.
+    private var dropEpisodeAnnounced = false
+    private static let pendingCapacity = 4096
 
     public private(set) var port: Int
 
@@ -279,12 +294,93 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
         }
     }
 
+    /// Subscribes to the engine's flow stream, doing nothing on the stream itself but
+    /// handing each flow to a worker.
+    ///
+    /// The split is the point. `handle` writes body and frame artifacts to disk, and
+    /// doing that inline made this loop the slow consumer of an `AsyncStream` that
+    /// Loom buffers with `.bufferingOldest(512)` — so a burst of traffic silently
+    /// dropped the *newest* flows, and `AsyncStream` gives a subscriber no way to
+    /// learn it happened. Draining instantly moves the backlog to a queue Reticle
+    /// owns, which is bounded the same way but, unlike the stream, can count what it
+    /// drops and say so.
     private func subscribe(engine: ProxyEngine) {
         streamTask = Task { [weak self] in
             let stream = await engine.flowStream()
             for await flow in stream {
                 if Task.isCancelled { break }
-                self?.handle(flow)
+                self?.enqueue(flow)
+            }
+        }
+    }
+
+    /// Test seams. Overflow is only reachable when the worker is slower than arrival,
+    /// which a test has to stage deliberately rather than hope for; `waitForDrain`
+    /// then makes "the worker has caught up" an assertable fact instead of a sleep.
+    /// Internal, not public — nothing outside the lane's own tests can reach them.
+    func suspendDrainForTesting() { drainQueue.suspend() }
+    func resumeDrainForTesting() { drainQueue.resume() }
+    func waitForDrain() { drainQueue.sync {} }
+
+    /// Takes a flow off the stream and schedules it, never touching the disk here.
+    /// When the backlog is full the flow is dropped and an advisory is emitted — a
+    /// bounded queue is a deliberate memory choice, but a silent one would make a
+    /// gap in the evidence indistinguishable from traffic that never happened.
+    func enqueue(_ flow: Flow) {
+        enum Outcome { case accepted, dropped(total: Int, announce: Bool) }
+
+        let outcome: Outcome = lock.withLock {
+            guard pendingCount < Self.pendingCapacity else {
+                pendingDropped += 1
+                // One advisory per episode: announce when the backlog first overflows,
+                // and re-arm only once it has drained back under half. A drop storm
+                // must not itself become the flood that buries the session.
+                let announce = !dropEpisodeAnnounced
+                dropEpisodeAnnounced = true
+                return .dropped(total: pendingDropped, announce: announce)
+            }
+            pendingCount += 1
+            return .accepted
+        }
+
+        switch outcome {
+        case .dropped(let total, let announce):
+            guard announce else { return }
+            let message = "capture backlog full (\(Self.pendingCapacity) flows); "
+                + "dropping new flows until it drains — \(total) dropped so far this session"
+            warn(message)
+            store.emit(factory.event(advisory: NetworkAdvisoryPayload(
+                kind: "capture-backlog-overflow",
+                message: message,
+                droppedFlowsTotal: total
+            )))
+        case .accepted:
+            drainQueue.async { [weak self] in
+                guard let self else { return }
+                self.handle(flow)
+                // Close the episode only once the backlog is genuinely clear (half the
+                // capacity), not the instant it dips below full — otherwise a queue
+                // hovering at the limit would alternate overflow/recovered forever.
+                let recovered: (episode: Int, total: Int)? = self.lock.withLock {
+                    self.pendingCount -= 1
+                    guard self.dropEpisodeAnnounced,
+                          self.pendingCount <= Self.pendingCapacity / 2 else { return nil }
+                    self.dropEpisodeAnnounced = false
+                    let episode = self.pendingDropped - self.episodeDroppedBase
+                    self.episodeDroppedBase = self.pendingDropped
+                    return (episode, self.pendingDropped)
+                }
+                guard let recovered else { return }
+                let message = "capture backlog recovered; \(recovered.episode) flow(s) were not recorded "
+                    + "during the overflow — \(recovered.total) dropped so far this session"
+                self.warn(message)
+                var payload = NetworkAdvisoryPayload(
+                    kind: "capture-backlog-recovered",
+                    message: message,
+                    droppedFlowsTotal: recovered.total
+                )
+                payload.droppedFlows = recovered.episode
+                self.store.emit(self.factory.event(advisory: payload))
             }
         }
     }
