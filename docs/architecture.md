@@ -148,7 +148,10 @@ these translate 1:1 onto Loom's `RuleActions` in `LoomCaptureLane`. When a rule
 acts, the captured response event carries `ruleApplied`, `ruleId`, `ruleAction`,
 and (for a mock route) `mockValueId`. If a mock rule points at a missing value,
 Reticle records `network.error` and returns 502 rather than silently falling
-through. Rules can optionally narrow by host wildcard and query key/value
+through. A rule the engine rejects at sync time (Loom validates each one and
+applies the rest, rather than failing the whole set) is named on stderr as NOT
+active — an agent that adds a mock and gets no error must not then be surprised by
+live traffic. Rules can optionally narrow by host wildcard and query key/value
 predicates; value bodies can be imported/exported as base64 while remaining
 stored as separate body files on disk.
 
@@ -624,6 +627,7 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | **DRM / protected video** | Same mechanism as a `SurfaceView`, plus a protected surface the system will not let anyone read | The `pixels:unavailable` treatment above; the player's controls are ordinary views and stay targetable | **Not exercised** — no DRM sample in the repo. Listed because the mechanism is the one already measured |
 | **Non-debuggable release builds without the AAR** | JDWP attach requires a debuggable app; Frida/root are out of scope by design | `app inject` fails loudly with the reason rather than half-attaching | `noagent` flavor covers the debuggable-inject path |
 | **Real-device iOS input** | The simulator HID surface has no device equivalent reachable from the host | `act activate` (in-process, the device analogue of a tap) works; coordinate taps are refused with that guidance | `scripts/e2e-ios-device.sh` |
+| **Bodies past the capture cap** | Two caps sit in the chain — Loom's, while it relays every byte to the peer, then `NetworkBodyStore`'s. Past either, the recorded body is a prefix of what actually flowed; the bytes were never kept, so no offset can page into them | The artifact plus true wire size: `requestBodyBytes`/`responseBodyBytes` + `…BodyTruncated` on a capture event, and `bodyComparisonPartial` on a replay diff — under which a prefix match is never reported as `isIdentical` | `NetworkReplayDiffTests` (partial comparison refuses the identical verdict; differing wire sizes still assert a change) |
 
 ### How a wait consumes this table
 

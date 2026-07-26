@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Loom 0.0.1 → 0.0.5, and the two behavior changes that came with it.** Loom
+  renamed its SPM targets to match its products (`LoomProxyCore` /
+  `LoomSharedModels`), so the lane's imports change; nothing else in the engine's
+  surface broke. The two changes worth more than a version bump:
+
+  **A capped body no longer reads as a whole one.** Loom now reports the true wire
+  size when its own capture cap clipped a body before Reticle ever saw it
+  (`fullBodyBytes`) — previously it stopped recording without recording that it had
+  stopped, and Reticle, whose cap is not the only one in the chain, dutifully
+  reported the prefix length with `truncated: false`. Capture events now carry the
+  real transfer size, and the replay diff carries `bodyComparisonPartial`: under it,
+  `bodyChanged: false` means the recorded prefixes match, not that the responses do,
+  and `isIdentical` refuses to fire at all. Differing wire sizes still assert a
+  change, since that much is knowable from a prefix. A false "nothing changed" on a
+  replay is the worst thing this lane could emit; it now says "I could only see the
+  first megabyte" instead. New row in the Honest boundaries table.
+
+  **A rejected rule is named instead of dropped.** `setRules` used to be atomic and
+  throw; it now applies every rule that validates and reports the rest. Reticle was
+  discarding that report, which would have let an agent add a mock, get no error,
+  and watch live traffic sail past. Each rejected rule is now named on stderr, with
+  the engine's reason, as NOT active.
+
 - **`act wait`: cross an async boundary without a blind sleep, and get a
   three-state answer.** The only `act` gesture that dispatches no input. Predicates:
   `--for <selector>` (appear), `+ --gone`, `+ --text <substring>`, or `--idle` for

@@ -1,10 +1,10 @@
 import Foundation
 import ReticleHostShared
 // Loom's SPM library products `LoomProxyCore` / `LoomSharedModels` expose the
-// modules under their target names (`ProxyCore` / `SharedModels`) — that's what
-// `import` resolves. No collision with Reticle's own module names.
-import ProxyCore
-import SharedModels
+// modules under their target names, which since Loom 0.0.5 carry the `Loom`
+// prefix. No collision with Reticle's own module names.
+import LoomProxyCore
+import LoomSharedModels
 
 /// The host capture lane, backed by Loom's `ProxyEngine`. It runs the engine,
 /// subscribes to its flow stream, and republishes each exchange as `network.*`
@@ -47,8 +47,8 @@ private final class FlowBox: @unchecked Sendable {
 private final class ReplayResultBox: @unchecked Sendable {
     var result: Result<Flow, Error>?
 }
-private final class ErrorBox: @unchecked Sendable {
-    var error: Error?
+private final class RuleReportBox: @unchecked Sendable {
+    var report: SetRulesReport?
 }
 
 public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
@@ -241,18 +241,21 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
             }
             let translated = LoomCaptureLane.translate(export)
             let done = DispatchSemaphore(value: 0)
-            let errorBox = ErrorBox()
+            let reportBox = RuleReportBox()
             Task {
-                do { try await engine.setRules(translated) }
-                catch { errorBox.error = error }
+                reportBox.report = await engine.setRules(translated)
                 done.signal()
             }
             if done.wait(timeout: .now() + 30) == .timedOut {
                 self?.warn("rule sync timed out after 30s; the engine may be stalled")
                 return
             }
-            if let error = errorBox.error {
-                self?.warn("rule sync failed to apply \(translated.count) rule(s): \(error)")
+            // Since Loom 0.0.5 `setRules` degrades instead of throwing: it applies every
+            // rule that validates and reports the rest. Silence here would mean an agent
+            // adds a mock, gets no error, and sees live traffic anyway — so name each
+            // rule that did not make it in.
+            for rejection in reportBox.report?.rejected ?? [] {
+                self?.warn("rule \(rejection.name) was rejected by the engine and is NOT active: \(rejection.reason)")
             }
         }
     }
@@ -284,7 +287,7 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
             var payload = makePayload(flow)
             var refs: [String: String] = [:]
             if let body = flow.request.body {
-                storeBody(body, requestId: requestId, role: "request",
+                storeBody(body, wireBytes: flow.request.fullBodyBytes, requestId: requestId, role: "request",
                           into: &refs, bytes: &payload.requestBodyBytes, truncated: &payload.requestBodyTruncated)
             }
             store.emit(factory.event(.request, payload: payload, refs: refs))
@@ -294,8 +297,8 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
 
         var payload = makePayload(flow)
         var refs: [String: String] = [:]
-        if let body = flow.response?.body {
-            storeBody(body, requestId: requestId, role: "response",
+        if let response = flow.response, let body = response.body {
+            storeBody(body, wireBytes: response.fullBodyBytes, requestId: requestId, role: "response",
                       into: &refs, bytes: &payload.responseBodyBytes, truncated: &payload.responseBodyTruncated)
         }
         let type: NetworkEventType = flow.error == nil ? .response : .error
@@ -375,8 +378,15 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     /// Persists a captured body as an artifact and records its ref/size on the
     /// payload. A store failure is logged (not swallowed) so missing body evidence
     /// is distinguishable from a genuinely empty body.
+    ///
+    /// `wireBytes` is Loom's `fullBodyBytes`: non-nil only when Loom's own capture
+    /// cap already clipped `body` before we saw it. Reticle's cap is not the only
+    /// one in the chain, so it has to be carried — otherwise a body Loom clipped
+    /// reports its prefix length as the size and `truncated: false`, and an agent
+    /// reading that concludes the server returned malformed JSON.
     private func storeBody(
         _ body: Data,
+        wireBytes: Int?,
         requestId: String,
         role: String,
         into refs: inout [String: String],
@@ -384,7 +394,14 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
         truncated: inout Bool?
     ) {
         do {
-            guard let stored = try bodyStore.store(body, requestId: requestId, role: role) else { return }
+            let stored: NetworkBodyStore.StoredBody?
+            if let wireBytes {
+                stored = try bodyStore.store(
+                    prefix: body, totalBytes: max(wireBytes, body.count), requestId: requestId, role: role)
+            } else {
+                stored = try bodyStore.store(body, requestId: requestId, role: role)
+            }
+            guard let stored else { return }
             refs[stored.refName] = stored.path
             bytes = stored.bytes
             truncated = stored.truncated
@@ -455,20 +472,22 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
         var payload = makePayload(replayed)
         var refs: [String: String] = [:]
         if let body = replayed.request.body {
-            storeBody(body, requestId: newId, role: "request",
+            storeBody(body, wireBytes: replayed.request.fullBodyBytes, requestId: newId, role: "request",
                       into: &refs, bytes: &payload.requestBodyBytes, truncated: &payload.requestBodyTruncated)
         }
-        if let body = replayed.response?.body {
-            storeBody(body, requestId: newId, role: "response",
+        if let response = replayed.response, let body = response.body {
+            storeBody(body, wireBytes: response.fullBodyBytes, requestId: newId, role: "response",
                       into: &refs, bytes: &payload.responseBodyBytes, truncated: &payload.responseBodyTruncated)
         }
         let diff = NetworkReplayDiff.between(
             sourceStatus: source.statusCode,
             sourceHeaders: Self.headerMap(source.response?.headers),
             sourceBody: source.response?.body,
+            sourceWireBytes: source.response?.fullBodyBytes,
             replayStatus: replayed.statusCode,
             replayHeaders: Self.headerMap(replayed.response?.headers),
-            replayBody: replayed.response?.body
+            replayBody: replayed.response?.body,
+            replayWireBytes: replayed.response?.fullBodyBytes
         )
         payload.replayedFrom = source.id.uuidString
         payload.diff = diff
@@ -506,6 +525,7 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
             sourceStatus: source.statusCode,
             sourceHeaders: Self.headerMap(source.response?.headers),
             sourceBody: source.response?.body,
+            sourceWireBytes: source.response?.fullBodyBytes,
             replayStatus: nil,
             replayHeaders: [:],
             replayBody: nil
@@ -551,8 +571,9 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying {
     /// rule name carries the Reticle rule id so an applied rule is attributable back on
     /// the captured flow. Rules are ordered by descending priority to match Reticle's
     /// precedence (Loom applies the first matching rule). No-op rules (passthrough with
-    /// no modifiers) are dropped so they can't fail Loom's "rule has no actions"
-    /// validation and poison the whole atomic set. A `mock` route whose referenced
+    /// no modifiers) are dropped here rather than handed over to fail Loom's "rule has
+    /// no actions" validation — they carry no behavior either way, and dropping them
+    /// keeps the engine's rejection report meaningful. A `mock` route whose referenced
     /// value is missing is dropped for the same reason.
     private static func translate(_ export: NetworkRuleExport?) -> [TrafficRule] {
         guard let export else { return [] }
