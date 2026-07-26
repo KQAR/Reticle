@@ -235,6 +235,66 @@ struct LoomCaptureLaneTests {
         #expect(event!.payload["textPreview"] == nil)
     }
 
+    // MARK: - Capture backlog
+
+    /// The stream loop must not do the work. Artifact writes happen on the worker,
+    /// so the engine's bounded `AsyncStream` is drained immediately and never gets
+    /// the chance to drop flows the subscriber can't detect.
+    @Test func enqueuedFlowsAreProcessedOffTheStream() {
+        let sink = RecordingSink()
+        defer { sink.cleanUp() }
+        let lane = makeLane(sink)
+
+        lane.enqueue(Flow(
+            request: CapturedRequest(method: "GET", url: "https://api.example.com/a", headers: []),
+            startedAt: epoch,
+            outcome: .completed(CapturedResponse(statusCode: 200, headers: []), at: epoch.addingTimeInterval(0.1))
+        ))
+        // Nothing was emitted synchronously on the caller's thread; the worker owns it.
+        lane.waitForDrain()
+
+        #expect(sink.ofType("network.request").count == 1)
+        #expect(sink.ofType("network.response").count == 1)
+    }
+
+    /// A full backlog drops flows — a bounded queue is a deliberate memory choice.
+    /// What it must never do is drop them quietly: a gap in the evidence would
+    /// otherwise be indistinguishable from traffic that never happened.
+    @Test func aFullBacklogAnnouncesItselfInTheEvidence() {
+        let sink = RecordingSink()
+        defer { sink.cleanUp() }
+        let lane = makeLane(sink)
+
+        lane.suspendDrainForTesting()
+        for index in 0..<4_200 {
+            lane.enqueue(Flow(
+                request: CapturedRequest(method: "GET", url: "https://api.example.com/\(index)", headers: []),
+                startedAt: epoch,
+                outcome: .completed(CapturedResponse(statusCode: 200, headers: []), at: epoch)
+            ))
+        }
+
+        let opening = sink.ofType("network.advisory")
+        #expect(opening.count == 1, "one advisory per overflow episode, not one per dropped flow")
+        #expect(string(opening[0], "kind") == "capture-backlog-overflow")
+        // The size of the gap is not knowable yet — the episode is still open — and
+        // guessing a final number here would be worse than saying "at least this".
+        #expect(opening[0].payload["droppedFlows"] == nil)
+        #expect(number(opening[0], "droppedFlowsTotal") == 1)
+
+        lane.resumeDrainForTesting()
+        lane.waitForDrain()
+
+        // Recovery is where the extent becomes a fact: 4200 offered, 4096 accepted.
+        let advisories = sink.ofType("network.advisory")
+        #expect(advisories.count == 2)
+        #expect(string(advisories[1], "kind") == "capture-backlog-recovered")
+        #expect(number(advisories[1], "droppedFlows") == 104)
+        #expect(number(advisories[1], "droppedFlowsTotal") == 104)
+        // Every accepted flow still produced its evidence; only the overflow was lost.
+        #expect(sink.ofType("network.request").count == 4_096)
+    }
+
     // MARK: - Fixtures
 
     private func frame(

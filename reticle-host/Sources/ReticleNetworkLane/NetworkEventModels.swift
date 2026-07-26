@@ -12,6 +12,41 @@ enum NetworkEventType: String {
     /// recorded. A socket's upgrade is still an ordinary `network.request`/`.response`
     /// pair (status 101) — these carry what happened *inside* it.
     case webSocket = "network.websocket"
+    /// The capture lane reporting on itself — currently only that it had to drop
+    /// flows. Capture degrading is a fact about the evidence, so it belongs in the
+    /// evidence rather than in a log line nobody reads.
+    case advisory = "network.advisory"
+}
+
+/// The capture lane saying something about its own fidelity.
+///
+/// Loss is reported as two edges rather than one event per dropped flow, which would
+/// make a drop storm its own flood: `capture-backlog-overflow` the moment recording
+/// starts falling behind, and `capture-backlog-recovered` once it catches up, which
+/// is the first point at which the size of the gap is actually known. A session that
+/// ends mid-episode therefore has an overflow with no recovery — the honest reading
+/// of that is "still dropping when the session ended", and the running total says how
+/// much had been lost by then.
+struct NetworkAdvisoryPayload {
+    /// `capture-backlog-overflow` | `capture-backlog-recovered`. A closed set, so a
+    /// consumer can switch on it.
+    let kind: String
+    let message: String
+    /// Flows lost during the episode that just ended. Present on `recovered`, absent
+    /// on `overflow`, where it is not yet knowable.
+    var droppedFlows: Int?
+    /// Flows lost this session so far, at the moment of the advisory.
+    let droppedFlowsTotal: Int
+
+    var json: [String: JSONValue] {
+        var values: [String: JSONValue] = [
+            "kind": .string(kind),
+            "message": .string(message),
+            "droppedFlowsTotal": .number(Double(droppedFlowsTotal))
+        ]
+        if let droppedFlows { values["droppedFlows"] = .number(Double(droppedFlows)) }
+        return values
+    }
 }
 
 /// Normalized network transaction metadata stored in `network.*` payloads.
@@ -184,6 +219,17 @@ struct NetworkEventFactory {
             type: type.rawValue,
             payload: payload.json,
             refs: refs
+        )
+    }
+
+    /// Creates a daemon event request for a capture-fidelity advisory.
+    func event(advisory payload: NetworkAdvisoryPayload) -> EventPostRequest {
+        EventPostRequest(
+            target: target,
+            source: "proxy",
+            type: NetworkEventType.advisory.rawValue,
+            payload: payload.json,
+            refs: [:]
         )
     }
 
