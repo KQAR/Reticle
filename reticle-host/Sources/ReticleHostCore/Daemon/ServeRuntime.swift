@@ -1,6 +1,9 @@
 import Foundation
 import Dispatch
 import Darwin
+// Only for the two capabilities `serve` genuinely needs from a simulator:
+// resolving a udid to attribute captured traffic, and trusting the MITM CA.
+import ReticleHostIos
 
 /// Options for running the local Reticle daemon.
 public struct ServeOptions {
@@ -268,11 +271,7 @@ public final class ServeRuntime {
                 return
             }
             let udid = try Simctl.resolveUdid(options.serial)
-            let r = try Simctl.run(["keychain", udid, "add-root-cert", derPath])
-            if r.code != 0 {
-                throw HelperError("could not trust the MITM CA in simulator \(udid): "
-                    + (r.err.isEmpty ? r.out : r.err))
-            }
+            try Simctl.trustRootCertificate(derPath: derPath, udid: udid)
             print("reticle serve: trusted MITM CA in simulator \(udid)")
             return
         }

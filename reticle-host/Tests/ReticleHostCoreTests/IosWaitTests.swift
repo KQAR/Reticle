@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ReticleProtocol
-@testable import ReticleHostCore
+@testable import ReticleHostIos
 
 /// The iOS `act wait` poll loop, driven with an injected clock and snapshot source
 /// so the timing behaviour is pinned without a simulator.

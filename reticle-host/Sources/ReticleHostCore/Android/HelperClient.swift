@@ -1,26 +1,5 @@
 import Foundation
 
-/// Minimal call surface shared by local helper processes and daemon-forwarded RPC.
-public protocol HelperCalling: AnyObject, Sendable {
-    @discardableResult
-    func call(_ method: String, _ params: [String: Any]) throws -> [String: Any]
-
-    /// Releases whatever transport this client holds. Every backend has one
-    /// caller-visible lifecycle so command dispatch can `defer` it uniformly
-    /// instead of knowing which of `shutdown()` / `close()` / nothing applies.
-    /// Default no-op: an in-host or request-per-call backend owns nothing.
-    func close()
-}
-
-public extension HelperCalling {
-    @discardableResult
-    func call(_ method: String) throws -> [String: Any] {
-        try call(method, [:])
-    }
-
-    func close() {}
-}
-
 /// A long-lived client over the Kotlin helper's JSONL stdio RPC.
 final class HelperClient: HelperCalling, @unchecked Sendable {
     private let process = Process()

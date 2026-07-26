@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **The iOS platform backend is its own target, so the layering below
+  `ReticleHostCore` is now the layering above it too.** `ReticleHostShared` →
+  `ReticleNetworkLane` → `ReticleHostCore` was split apart precisely so the capture
+  engine could not reach up into the daemon, and the compiler enforces it. Above
+  that line, one 6.7k-line target still held the CLI, the daemon, four route
+  groups, the panel, and the entire iOS platform implementation — the discipline
+  was real but rested on habit.
+
+  `ReticleHostIos` now holds the six `Ios*` files and depends on **nothing above
+  it**: shared types, the protocol, and the HID C target. Two consequences the
+  compiler now guarantees rather than the reader hoping: the daemon cannot reach
+  into platform code, and a platform backend cannot reach up into the CLI. The two
+  places that legitimately crossed the line are now explicit — `HelperCalling` and
+  the version constant moved down into `ReticleHostShared` (a backend must be able
+  to implement the call surface and name itself without importing the CLI), and
+  `serve --proxy-install-ca`, which used to assemble `["keychain", udid,
+  "add-root-cert", …]` inside the daemon, now asks for the capability
+  (`Simctl.trustRootCertificate`) and lets the platform own the argv. Exactly two
+  symbols are public upward. `ReticleHostCore` `@_exported`s the new target, so
+  every `import ReticleHostCore` is unchanged.
+
+  What is left in `ReticleHostCore` is grouped by concern —
+  `Daemon/`, `CLI/`, `Android/` — and the two files that had grown past reading
+  size are split along the seams their own `// MARK`s already drew:
+  `IosHelperClient` 956 → 614 lines plus `IosScrollTo` / `IosVerify` / `IosParams`,
+  and `LoomCaptureLane` 981 → 849 plus `LoomRuleTranslation` (the lane's one
+  genuinely pure part: a total function from Reticle's rule/filter model to Loom's,
+  and the part with unit tests).
 - **One selection point for the four helper backends, instead of four copies of the
   same error handling.** `runHelperBacked` had a branch per backend (iOS in-host,
   `--use-daemon` broker, the resident helperd hot path, a direct spawn), and each

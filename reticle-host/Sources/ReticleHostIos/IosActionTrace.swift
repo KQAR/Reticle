@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import ReticleProtocol
 
 /// Writes the per-action evidence package for iOS actions — the Swift analogue

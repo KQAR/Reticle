@@ -1,5 +1,5 @@
 import Testing
-@testable import ReticleHostCore
+@testable import ReticleHostIos
 
 @Suite("iOS text typeability gate")
 struct IosTextTests {
