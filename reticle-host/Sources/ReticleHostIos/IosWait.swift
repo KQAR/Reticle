@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import ReticleProtocol
 
 // `Selector` is spelled out in full throughout this file: the bare name is

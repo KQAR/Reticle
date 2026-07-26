@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostShared
 import ReticleProtocol
 
 /// Direct loopback HTTP to the in-process iOS agent — the Swift analogue of the

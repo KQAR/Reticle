@@ -1,8 +1,9 @@
 import Foundation
+import ReticleHostShared
 
 /// Thin wrapper over `xcrun simctl` — the iOS device-control seam (the analogue
 /// of Android's `Adb`). Shells out; owns no long-lived state.
-struct Simctl {
+public struct Simctl {
     struct Device {
         let udid: String
         let name: String
@@ -90,11 +91,28 @@ struct Simctl {
     }
 
     /// Resolve a device: an explicit udid, else the (single) booted simulator.
-    static func resolveUdid(_ serial: String?) throws -> String {
+    /// Public because the daemon needs to attribute captured traffic to a booted
+    /// simulator. One of exactly two entry points this target exposes upward.
+    public static func resolveUdid(_ serial: String?) throws -> String {
         if let serial, !serial.isEmpty { return serial }
         let booted = try listDevices().filter { $0.state == "Booted" }
         guard let first = booted.first else { throw SimctlError.noBootedDevice }
         return first.udid
+    }
+
+    /// Trusts a DER-encoded root certificate in a simulator's keychain, so the
+    /// MITM CA is accepted by apps on that device.
+    ///
+    /// Public, and phrased as a capability rather than as argv: `serve
+    /// --proxy-install-ca` used to assemble `["keychain", udid, "add-root-cert", …]`
+    /// itself, which put simulator command syntax inside the daemon. The daemon now
+    /// states the intent and this target owns the how.
+    public static func trustRootCertificate(derPath: String, udid: String) throws {
+        let r = try run(["keychain", udid, "add-root-cert", derPath])
+        if r.code != 0 {
+            throw HelperError("could not trust the MITM CA in simulator \(udid): "
+                + (r.err.isEmpty ? r.out : r.err))
+        }
     }
 
     static func terminate(udid: String, bundleId: String) {

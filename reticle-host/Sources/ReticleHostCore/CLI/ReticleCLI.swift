@@ -2,7 +2,8 @@ import Foundation
 
 /// Reticle host command-line entry point.
 public enum ReticleCLI {
-    public static let version = "0.9.3"
+    /// The shared release constant; `ReticleVersion.current` is the source.
+    public static let version = ReticleVersion.current
     public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|rule|replay|serve|version> [--serial <id>] [options]"
 
     /// Runs the Reticle CLI and returns a process exit code.
