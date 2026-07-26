@@ -1,16 +1,16 @@
 package dev.reticle.cli
 
-import dev.reticle.cli.platform.Platforms
+import dev.reticle.cli.platform.android.Adb
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
+import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.io.File
 
 /** Local snapshot rendering commands; no device I/O unless `live` is requested. */
 internal object HelperRenderCommands {
@@ -30,7 +30,7 @@ internal object HelperRenderCommands {
     private fun snapshotFor(params: JsonObject): Snapshot {
         if (params["live"]?.jsonPrimitive?.content == "true") {
             val pkg = params.str("package") ?: throw CliError("live render needs 'package'")
-            val device = Platforms.current().device(params.str("serial"))
+            val device = Adb.forSerial(params.str("serial"))
             device.ensureDeviceReady()
             val client = runtimeClientFor(device, pkg, params)
             assertHealthy(client, pkg)
