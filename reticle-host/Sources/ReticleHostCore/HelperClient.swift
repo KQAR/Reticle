@@ -4,6 +4,12 @@ import Foundation
 public protocol HelperCalling: AnyObject, Sendable {
     @discardableResult
     func call(_ method: String, _ params: [String: Any]) throws -> [String: Any]
+
+    /// Releases whatever transport this client holds. Every backend has one
+    /// caller-visible lifecycle so command dispatch can `defer` it uniformly
+    /// instead of knowing which of `shutdown()` / `close()` / nothing applies.
+    /// Default no-op: an in-host or request-per-call backend owns nothing.
+    func close()
 }
 
 public extension HelperCalling {
@@ -11,6 +17,8 @@ public extension HelperCalling {
     func call(_ method: String) throws -> [String: Any] {
         try call(method, [:])
     }
+
+    func close() {}
 }
 
 /// A long-lived client over the Kotlin helper's JSONL stdio RPC.
@@ -132,7 +140,14 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
         return .eof
     }
 
-    /// Closes stdin so the helper exits its serve loop.
+    /// Closes stdin so the helper exits its serve loop. Idempotent: closing an
+    /// already-closed handle is ignored, and `waitUntilExit` on an exited process
+    /// returns at once — so a `defer`-ed `close()` after an explicit shutdown is
+    /// harmless.
+    func close() {
+        shutdown()
+    }
+
     func shutdown() {
         try? stdinPipe.fileHandleForWriting.close()
         process.waitUntilExit()
