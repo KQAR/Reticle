@@ -30,8 +30,9 @@ import kotlinx.serialization.json.put
  *
  * This is the spike surface: ping (proves the pipe, no device), listDevices
  * (proves we reach real adb across the boundary), inject and uiReport (the real
- * high-value paths). It reuses the existing Platform SPI and RuntimeClient
- * verbatim — the helper is today's Android host layer behind an RPC seam.
+ * high-value paths). It drives `Adb` / `Injector` / `RuntimeClient` directly —
+ * the helper is the Android host layer behind an RPC seam, and Android is the
+ * only platform it will ever serve (iOS is native in the Swift host).
  */
 object Helper {
 
