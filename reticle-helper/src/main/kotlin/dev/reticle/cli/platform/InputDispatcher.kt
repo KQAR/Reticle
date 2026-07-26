@@ -1,9 +1,11 @@
 package dev.reticle.cli.platform
 
 /**
- * Synthesizes real user input on the device. Android backs this with
- * `adb shell input`; `isAsciiTypeable` gates whether text can go through the
- * native typing path or must be staged via the agent clipboard.
+ * Synthesizes real user input on the device, backed by `adb shell input`;
+ * `isAsciiTypeable` gates whether text can go through the native typing path or
+ * must be staged via the agent clipboard. An internal seam of the Android
+ * helper, like [DeviceController] — iOS synthesizes input in the Swift host
+ * (CoreSimulator HID) and never reaches this code.
  */
 interface InputDispatcher {
     fun tap(x: Int, y: Int): CommandResult

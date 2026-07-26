@@ -2,9 +2,10 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Three docs, three jobs. `README.md` is how to use Reticle; `docs/architecture.md`
-is how it works today — including the **Honest boundaries** table, the canonical
-list of what is structurally unreachable; **this file is where it is going**: what
+Four docs, four jobs. `README.md` is how to use Reticle; `docs/architecture.md`
+is how it works today; `docs/boundaries.md` is the **Honest boundaries** table, the
+canonical list of what is structurally unreachable; **this file is where it is
+going**: what
 is left, in priority order, and which decisions are already settled so they are not
 re-litigated.
 
@@ -348,7 +349,7 @@ immediately.
 
 Fifteen points, PRs #107–#121, all merged. The durable output beyond the individual
 fixes: the **absence vocabulary** every capture now speaks, and the **Honest
-boundaries** table in `docs/architecture.md` — which is where the next such case
+boundaries** table in `docs/boundaries.md` — which is where the next such case
 gets recorded.
 
 | Point | Verified cause | Outcome |
@@ -366,7 +367,7 @@ gets recorded.
 | SwiftUI Text links | A markdown `Text` is ONE accessibility element with one label: no `UILabel`, no `.link` run, no child element (probed: 0), no element count, no custom actions, no usable rotor, no `_accessibility*` accessor. `accessibilityAttributedLabel` DOES carry `UIAccessibilityTokenLink` runs + per-run font tokens | `SwiftUITextRegions`: re-lay the runs out with their own fonts inside the element's screen frame -> per-link `span` regions + char grid. Geometry is reconstructed, so the suite asserts by CONSEQUENCE — tap each rect, check which URL `openURL` received |
 | Screenshot degrade | The two paths are exact complements, not "in-process misses both": a `SurfaceView` is a transparent hole (rgba 0,0,0,0) in-process but magenta in `screencap`, while `FLAG_SECURE` blanks the DEVICE capture and leaves the in-process one untouched. iOS has a third shape: the keyboard host window refuses to render into a borrowed context, and the capture already skipped it — silently | `pixels:unavailable` / `screencap:blank` + a `degraded:` line on `ui screenshot` naming what THIS picture is missing and which path would show it. Both suites assert the labels AND the pixels behind them |
 | Third-party WebView kernels | Confirmed by construction: the bridge is typed on `android.webkit.WebView`, so a kernel that only calls itself a WebView gets no DOM at any level — indistinguishable from an empty page | Reported, not adapted (a reflective adapter cannot be verified without a real kernel sample): `dom:unsupported-kernel` + `custom.domKernel`, a `--css` miss that explains the wall, and a stand-in beside a real WebView so the contrast is asserted |
-| Structural boundaries | Several were assumed rather than measured. Writing them down forced two checks: a CLOSED shadow root drops only its content (the host element is captured at its own rect), and the cross-origin case genuinely cannot be exercised offline | The **Honest boundaries** table in `docs/architecture.md`, each case beside the evidence emitted for it and the scenario that pins it, with "not exercised" written where true. Agent-facing half in the skill |
+| Structural boundaries | Several were assumed rather than measured. Writing them down forced two checks: a CLOSED shadow root drops only its content (the host element is captured at its own rect), and the cross-origin case genuinely cannot be exercised offline | The **Honest boundaries** table in `docs/boundaries.md`, each case beside the evidence emitted for it and the scenario that pins it, with "not exercised" written where true. Agent-facing half in the skill |
 | iOS focus evidence, asserted | Unassertable for two measured reasons: the prompt could not be **re-armed** (`simctl privacy … reset notifications` fails outright) and an open alert could not be **answered** from the host, while a stuck one silently swallows every later HID tap | Re-arm by re-INSTALLING the bundle; answer with a coordinate HID tap at the alert's fixed layout position (~57% height, ~32% deny / ~68% allow — no text read) inside an answer→retry→re-check loop, in a section that runs LAST |
 
 Self-inflicted bugs the suites caught, worth remembering as failure shapes:

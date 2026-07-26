@@ -1,11 +1,18 @@
 package dev.reticle.cli.platform
 
 /**
- * Controls a single device/emulator and the host<->device transport. Mirrors the
- * capability surface the CLI uses today; the Android implementation backs it with
- * `adb`. Method names still carry adb-isms (`shell`, `run`, `runAs`) because the
- * interface is extracted from the Android implementation — a second platform is
- * what will tell us which of these generalize and which are Android-only.
+ * Controls a single device/emulator and the host<->device transport.
+ *
+ * This is an **internal seam of the Android helper**, not a multi-platform SPI.
+ * Platform selection happens one level up, in the Swift host (`--target`), and by
+ * the recorded decision a helper exists only where a platform's dirty-work lives
+ * outside the host's ecosystem — Android (JDWP/adb) does, iOS does not. So the
+ * only implementation is [dev.reticle.cli.platform.android.Adb] and the method
+ * names keep their adb-isms (`shell`, `run`, `runAs`) on purpose: naming them
+ * generically would advertise a portability this interface does not have.
+ *
+ * Construct one through `Adb.forSerial(serial)`, the helper's single
+ * device-construction point.
  */
 interface DeviceController {
     /** Run a raw device tool subcommand (Android: `adb <args>`). */
@@ -54,3 +61,14 @@ interface DeviceController {
     /** The agent's own runtime log lines (Android: logcat tag `Reticle`). */
     fun agentLog(maxLines: Int = 40): List<String>
 }
+
+/** Result of a host->device command: exit code + captured streams. */
+data class CommandResult(val exitCode: Int, val stdout: String, val stderr: String) {
+    val ok: Boolean get() = exitCode == 0
+}
+
+/** An attached device and its raw readiness state ("device"/"offline"/...). */
+data class DeviceState(val serial: String, val state: String)
+
+/** A device-readiness problem (offline / unauthorized / absent), with guidance. */
+class DeviceError(message: String) : RuntimeException(message)

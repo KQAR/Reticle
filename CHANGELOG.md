@@ -62,6 +62,101 @@
   and `LoomCaptureLane` 981 → 849 plus `LoomRuleTranslation` (the lane's one
   genuinely pure part: a total function from Reticle's rule/filter model to Loom's,
   and the part with unit tests).
+- **One selection point for the four helper backends, instead of four copies of the
+  same error handling.** `runHelperBacked` had a branch per backend (iOS in-host,
+  `--use-daemon` broker, the resident helperd hot path, a direct spawn), and each
+  branch carried its own `do/catch` with the same `JsonEnvelope.enabled` fork — four
+  chances for one of them to drift. Worse, client teardown was per-branch and
+  differently named (`shutdown()` / `close()` / nothing), so only two of the four
+  released anything.
+
+  `HelperCalling` now declares `close()` with a default no-op, so a backend that
+  owns no transport says so by inheriting it, and the CLI can `defer { client.close() }`
+  once without knowing which backend it got. Backend choice moves into
+  `makeClient(args:serial:)` — the priority order (iOS → broker → helperd → direct
+  spawn, with helperd bring-up failure falling through rather than failing the
+  command) is now readable in one place instead of inferred from nesting. The
+  no-helper-binary case keeps its distinct exit code 2 and plain-text message via a
+  `HelperUnavailable` error, because a missing helper is a setup problem rather than
+  a call that failed — there is no RPC result to envelope.
+- **The Honest boundaries table is its own document (`docs/boundaries.md`).** It had
+  grown into a third of `architecture.md`, which was therefore three documents in
+  one: a design explanation read once, a tutorial, and a reference table consulted
+  per case. They have different read patterns and different edit patterns — every
+  new boundary appends a row here, and nothing else in the architecture doc changes
+  that often.
+
+  Pure move: the marker vocabulary, the boundary table (what is unreachable, why,
+  what Reticle emits instead, what pins it) and the `act wait` mapping are unchanged.
+  `architecture.md` keeps a pointer plus the one rule the rest of it depends on — an
+  unreachable thing must produce evidence naming itself, never silence — and every
+  cross-reference in README, AGENTS.md and both roadmaps now points at the new file,
+  since that is where a boundary must be recorded.
+- **Selector resolution was two implementations of one rule, and they had drifted
+  in seven ways. Now there is one table, and both read it.** The action path
+  (`act tap`, and `act wait`'s success test) resolves in Kotlin for Android and in
+  Swift for iOS, because the two hosts are different programs. That is fine; what
+  was not fine is that nothing pinned them together, unlike `act wait`'s outcome
+  table, which has been fixture-driven from both sides for a while. Measured
+  differences, every one of them a case where the same command aimed somewhere else
+  depending on the platform:
+
+  1. **iOS never consulted the semantic tree.** The documented rule is
+     "semantic-first for movement and input, view frames only as a fallback";
+     iOS resolved straight off the view tree.
+  2. **A `--region` miss meant different things.** Android fell through to a
+     whole-node tap; iOS failed. Android's behaviour is now the one that changed:
+     on an agreement row the node's centre is the *checkbox*, so "I could not find
+     the phrase you asked for, so I tapped something else and reported success" is
+     the worst available answer. It now refuses, naming how many regions and
+     whether a char grid exist. `act wait` treats that refusal as an honest
+     negative (the phrase has not rendered yet), never as an ambiguity.
+  3. **Region labels matched case-insensitively on Android, case-sensitively on
+     iOS** — so `--region "terms"` found the span on one platform and fell through
+     to the char grid on the other, landing on a different rect. Canonical:
+     labels case-insensitive (the platform often normalizes them), the char grid
+     verbatim (it maps on-screen text in any language, and case-folding is
+     locale-dependent).
+  4. **Selector precedence differed between the two paths inside the Kotlin
+     resolver**: the region path tried `ref` first, the whole-node path `testId`
+     first, so `--test-id X --ref Y` picked a different node depending on whether
+     `--region` was also passed. One order everywhere now: `testId` →
+     `resourceId` → `cssSelector` → `ref` → `label`.
+  5. **First-match lookups iterated an unordered map.** In Kotlin that is the
+     serializer's key order (not a contract); in Swift a `Dictionary`'s order is
+     hash-seeded **per process**, so an app repeating a `testId` resolved to a
+     different node between two runs of the same command. Both sides now walk the
+     tree in document order (DFS from the root, then orphans sorted).
+  6. **iOS reported `source: "selector"`** where Android reported
+     `semantic:testId` / `region:span` / `charGrid:approx`. The trace lost exactly
+     the distinction an agent needs — a char-grid approximation is not a semantic
+     hit. iOS now emits the shared vocabulary, plus the resolved `ref`.
+  7. **`act wait` on iOS probed a different resolver than `act tap` did**, while
+     the wait's whole contract is "a resolved wait guarantees the next act
+     resolves the same way". Both now call one resolver.
+
+  The new authority is `reticle-protocol/fixtures/selector-resolution.cases.json`
+  — a snapshot plus 22 cases, read by `SelectorResolutionContractTest` (Kotlin) and
+  `SelectorResolutionContractTests` (Swift). iOS's inline walk is replaced by
+  `SelectorResolution` in `ReticleProtocol`, so the Swift host and the iOS agent
+  share it the way they already share the models.
+- **The Kotlin `Platform` SPI is gone — it was an extension point its own decision
+  record had already closed.** `Platforms.current(target)` accepted a `--target` /
+  `RETICLE_TARGET` selector so "the selection point exists before a second platform
+  lands". A second platform landed, and it went somewhere else: iOS is native in the
+  Swift host (`ReticleCLI.swift` picks the target), because a helper exists **only**
+  where a platform's dirty-work lives outside the host's ecosystem — JDWP does, and
+  `simctl`/DYLD do not. Every one of the 20+ call sites passed no target and no code
+  ever read `RETICLE_TARGET`, so the parameter was dead and the abstraction was
+  advertising a portability it will never have.
+
+  Deleted `Platform`, `Platforms` and `AndroidPlatform`; device construction is now
+  the single `Adb.forSerial(serial)` (which keeps the `$ANDROID_SERIAL` fallback),
+  so a call site reads `Adb.forSerial(...)` instead of `Platforms.current().device(...)`.
+  `DeviceController` / `InputDispatcher` / `AppInjector` stay — they name real seams
+  and carry the KDoc — but they now say what they are: internal seams of the Android
+  helper, adb-shaped on purpose. A retired extension point is worse than none,
+  because the next contributor plans against it.
 
 - **The capture lane no longer loses flows quietly.** `handle` — which writes body
   and frame artifacts to disk — ran inline in the `for await` over Loom's flow
