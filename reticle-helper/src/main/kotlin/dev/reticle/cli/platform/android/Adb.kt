@@ -222,6 +222,16 @@ class Adb(
         /** The logcat tag the in-app agent uses for its own lifecycle lines. */
         const val LOG_TAG = "Reticle"
 
+        /**
+         * The helper's single device-construction point. An explicit serial (from
+         * the RPC's `serial` param, originally `--serial`) wins; otherwise fall
+         * back to `$ANDROID_SERIAL`, the same variable plain `adb` honors — so a
+         * user who already exports it to pick among several devices needs no
+         * extra flag.
+         */
+        fun forSerial(serial: String?): Adb =
+            Adb(serial = serial ?: System.getenv("ANDROID_SERIAL")?.ifBlank { null })
+
         fun resolveAdbPath(): String {
             System.getenv("RETICLE_ADB")?.let { if (it.isNotBlank()) return it }
             val sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")

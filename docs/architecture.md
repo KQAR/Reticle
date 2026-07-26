@@ -504,8 +504,10 @@ reticle act tap --package <pkg> --test-id agreement.span     --region "《Terms�
 reticle act tap --package <pkg> --test-id agreement.markdown --region "《Privacy》"
 ```
 
-`SelectorResolver` tries a discovered region whose label matches the substring
-first (real hit-rect), then the char grid (substring → character range → rect).
+The resolver tries a discovered region whose label matches the substring first
+(real hit-rect), then the char grid (substring → character range → rect), and
+**fails loudly if neither matches** rather than tapping the row's centre — which,
+on an agreement row, is the checkbox rather than the link.
 
 ### What this does and doesn't solve
 
@@ -521,20 +523,42 @@ first (real hit-rect), then the char grid (substring → character range → rec
 
 ## Selector resolution order
 
-This applies to the **action** path only (`act tap`, and the resolve step
-shared by selector-driven commands). The rule is "use the semantic tree
-first for movement and input; fall back to view frames only when no
-semantic match exists" — see `SelectorResolver`:
+This applies to the **action** path only (`act tap`, `act wait`'s success test,
+and the resolve step shared by selector-driven commands). The rule is "use the
+semantic tree first for movement and input; fall back to view frames only when no
+semantic match exists":
 
-0. `--region "substr"` within the selected node (discovered region rect, then
-   char-grid substring) — the multi-region case above
-1. Explicit `--point x,y`
-2. Semantic tree by `testId` → `resourceId` → `ref`
-3. View-tree frame by `testId` → `resourceId` → `ref`
+0. Explicit `--point x,y` — the escape hatch for when resolution cannot work, so
+   nothing overrides it, not even a `--region` needle passed alongside
+1. `--region "substr"` within the selected node: a discovered region whose label
+   contains the needle (case-insensitively), then a region named by its `source`
+   (`--region touchDelegate`), then the char grid (substring matched **verbatim**)
+   — the multi-region case above
+2. Semantic tree by `testId` → `resourceId` → `cssSelector` → `ref` → `label`
+3. View-tree frame by the **same** precedence, for a node the semantic projection
+   dropped
+
+Every first-match lookup walks the tree in **document order** (DFS from the root,
+then any orphan ref in sorted order), so an app that repeats a `testId` resolves
+to the same node on both platforms and across runs.
+
+A `--region` that matches nothing is an **error**, never a fall-through to the
+whole node: on an agreement row the node's centre toggles the checkbox instead of
+opening the terms, so a silent downgrade there is a successful-looking tap on the
+wrong target. A `--label` matching two visible nodes in different subtrees is an
+error for the same reason; nested duplicates (a row repeating its child's text)
+resolve to the innermost.
 
 Note this is the *opposite default* from inspection: actions prefer the
 semantic tree (it's the honest input surface, and the only one Compose
 exposes), while `ui node` always returns the richer view-tree node.
+
+**Two implementations, one table.** Android resolves in `SelectorResolver`
+(Kotlin, in the helper) and iOS in `SelectorResolution` (Swift, in
+`ReticleProtocol`), because the two hosts are different programs. Both are pinned
+by `reticle-protocol/fixtures/selector-resolution.cases.json`, which is the
+authority for every rule above — the file exists because the two had silently
+drifted on all of them.
 
 ## Module layout
 

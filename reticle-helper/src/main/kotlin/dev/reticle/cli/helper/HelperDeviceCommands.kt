@@ -1,25 +1,27 @@
 package dev.reticle.cli
 
+import dev.reticle.cli.platform.DeviceController
 import dev.reticle.cli.platform.InputDispatcher
-import dev.reticle.cli.platform.Platforms
+import dev.reticle.cli.platform.android.Adb
+import dev.reticle.cli.platform.android.Injector
 import dev.reticle.cli.platform.android.InputBackend
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
+import java.util.Base64
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.util.Base64
 
 /** Device/runtime-backed helper RPC commands. */
 internal object HelperDeviceCommands {
     fun listDevices(): JsonElement {
-        val states = Platforms.current().device(null).listDeviceStates()
+        val states = Adb.forSerial(null).listDeviceStates()
         return buildJsonObject {
             put("devices", buildJsonArray {
                 states.forEach { s ->
@@ -34,7 +36,7 @@ internal object HelperDeviceCommands {
 
     fun status(params: JsonObject): JsonElement {
         val pkg = params.str("package")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         val states = device.listDeviceStates()
         return buildJsonObject {
             put("devices", buildJsonArray {
@@ -60,9 +62,9 @@ internal object HelperDeviceCommands {
     fun inject(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("inject needs 'package'")
         params.str("payloadDex")?.let { System.setProperty("reticle.payloadDex", it) }
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
-        val injected = Platforms.current().injector().inject(device, pkg)
+        val injected = Injector.inject(device, pkg)
         val info = awaitRuntime(runtimeClientFor(device, pkg, params), pkg)
         return buildJsonObject {
             put("pid", info.pid)
@@ -75,7 +77,7 @@ internal object HelperDeviceCommands {
 
     fun uiReport(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("uiReport needs 'package'")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val client = runtimeClientFor(device, pkg, params)
         assertHealthy(client, pkg)
@@ -85,7 +87,7 @@ internal object HelperDeviceCommands {
 
     fun launch(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("launch needs 'package'")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         var r = device.shell("monkey -p $pkg -c android.intent.category.LAUNCHER 1")
         if (!r.ok) {
@@ -105,9 +107,9 @@ internal object HelperDeviceCommands {
     fun act(params: JsonObject): JsonElement {
         val sub = params.str("gesture") ?: throw CliError("act needs 'gesture'")
         val pkg = params.str("package") ?: throw CliError("act needs 'package'")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
-        val input = Platforms.current().input(device)
+        val input = InputBackend(device)
 
         val verifySel = HelperVerify.watchSelectorFrom(params)
         val traceRequested = params.str("traceOutput") != null
@@ -201,7 +203,7 @@ internal object HelperDeviceCommands {
         val pkg = params.str("package") ?: throw CliError("mutate needs 'package'")
         val property = params.str("property") ?: throw CliError("mutate needs 'property'")
         val rawValue = params.str("value") ?: throw CliError("mutate needs 'value'")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val client = runtimeClientFor(device, pkg, params)
         assertHealthy(client, pkg)
@@ -216,7 +218,7 @@ internal object HelperDeviceCommands {
 
     fun logs(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("logs needs 'package'")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val client = runtimeClientFor(device, pkg, params)
         assertHealthy(client, pkg)
@@ -230,7 +232,7 @@ internal object HelperDeviceCommands {
     }
 
     fun logcat(params: JsonObject): JsonElement {
-        val lines = Platforms.current().device(params.str("serial")).agentLog()
+        val lines = Adb.forSerial(params.str("serial")).agentLog()
         return buildJsonObject {
             put("lines", buildJsonArray { lines.forEach { add(it) } })
         }
@@ -238,7 +240,7 @@ internal object HelperDeviceCommands {
 
     fun screenshot(params: JsonObject): JsonElement {
         val pkg = params.str("package")
-        val device = Platforms.current().device(params.str("serial"))
+        val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         var via = "adb screencap"
         val agentBytes = pkg?.let {
@@ -276,7 +278,7 @@ internal object HelperDeviceCommands {
      * picture itself is already written.
      */
     private fun screenshotDegrades(
-        device: dev.reticle.cli.platform.DeviceController,
+        device: DeviceController,
         pkg: String,
         params: JsonObject,
         viaAgent: Boolean,
@@ -309,7 +311,7 @@ internal object HelperDeviceCommands {
 
     private fun typeText(
         input: InputDispatcher,
-        device: dev.reticle.cli.platform.DeviceController,
+        device: DeviceController,
         pkg: String,
         params: JsonObject,
     ): JsonObject {
@@ -357,7 +359,7 @@ internal object HelperDeviceCommands {
      */
     private fun submitAfterType(
         input: InputDispatcher,
-        device: dev.reticle.cli.platform.DeviceController,
+        device: DeviceController,
         pkg: String,
         params: JsonObject,
     ): JsonObject {
@@ -389,7 +391,7 @@ internal object HelperDeviceCommands {
      * optional status field.
      */
     private fun keyboardVisibleAfterType(
-        device: dev.reticle.cli.platform.DeviceController,
+        device: DeviceController,
         pkg: String,
         params: JsonObject,
     ): Boolean? = runCatching {
@@ -405,7 +407,7 @@ internal object HelperDeviceCommands {
      */
     private fun hideKeyboard(
         input: InputDispatcher,
-        device: dev.reticle.cli.platform.DeviceController,
+        device: DeviceController,
         pkg: String,
         params: JsonObject,
     ): JsonObject {
