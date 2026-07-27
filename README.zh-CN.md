@@ -2,14 +2,15 @@
 
 [English](README.md) | **简体中文**
 
-Reticle 帮助 AI 编码 agent 在 **Android** 上构建并验证原生应用界面——它检查的是
-**正在运行**的应用本身,而不是源码或一张截图。
+Reticle 帮助 AI 编码 agent 在 **Android 与 iOS** 上构建并验证原生应用界面——它检查
+的是**正在运行**的应用本身,而不是源码或一张截图。
 
 Reticle 的职责是*定位并度量*屏幕上的内容:从实时的 view / 无障碍 /
-Compose-semantics 树中解析出稳定的选择器和精确坐标,让 agent 能有把握地对正确的
-元素执行操作。
+Compose-semantics / SwiftUI 树中解析出稳定的选择器和精确坐标,让 agent 能有把握地
+对正确的元素执行操作。一个 CLI、一份 wire 协议、一套命令面:用 `--target ios`
+切换平台(默认 `android`)。
 
-`adb`、Espresso、UiAutomator 这类工具能构建、启动或驱动应用。Reticle 补上的是
+`adb`、Espresso、UiAutomator、XCUITest 这类工具能构建、启动或驱动应用。Reticle 补上的是
 **运行时 UI 层**:来自正在运行的应用的结构化证据,让 agent 能检查、探查并验证
 原生界面的实现。
 
@@ -29,15 +30,24 @@ Reticle 在应用进程**内部**跑一个绑定到 loopback 的微型 HTTP serv
 CLI 通过 `adb forward` 与之通信。agent 在进程内捕获实时 UI 树;CLI 解析选择器
 并派发真实输入。
 
-| 关注点 | 机制 |
-| --- | --- |
-| 把代码送进进程 | 链接 `reticle-agent` AAR——一个空操作的 `ContentProvider` 自动启动 server,无需改应用代码。对于**可调试**但未链接 AAR 的应用:`reticle app inject` 通过 JDWP 加载一个 payload dex 并启动运行时——无需重打包、无需 root(即使在 `wrap.sh` 被禁的锁定 `user` 构建上也可用)。不可调试的 release 构建仍需 Frida/root。 |
-| 与运行中的应用通信 | 进程内 `ReticleServer` 监听 `127.0.0.1`,CLI 经 `adb forward` 抵达。端口按 `applicationId` 逐应用派生(agent 与 CLI 算出同一个值),因此多个已链接应用绝不会在某个固定端口上冲突。 |
-| 捕获 UI | 遍历 `WindowManagerGlobal` 根 + 反射 View 属性;合并 Compose **semantics** 树(选择器只来自 semantics,绝不取私有内部实现)。 |
-| 合成输入 | `adb shell input`(tap / swipe / drag / type)——公开且稳定。 |
-| 选择器解析 | 语义树优先,view 树 frame 兜底;`testId` / `resourceId` / `ref` / 原始坐标点。 |
+| 关注点 | Android | iOS |
+| --- | --- | --- |
+| 把代码送进进程 | 链接 `reticle-agent` AAR——空操作 `ContentProvider` 自动启动 server,无需改应用代码。**可调试**但未链接 AAR 时,`reticle app inject` 经 JDWP 加载 payload dex:无需重打包、无需 root,连 `wrap.sh` 被禁的锁定 `user` 构建也可用。不可调试的 release 仍需 Frida/root。 | 链接 `ReticleKit` 并调 `Reticle.start()`(或交给 DYLD 构造器)。`app inject` 在模拟器上用 `DYLD_INSERT_LIBRARIES`;自签名的 debug 构建也能在真机上注入(`scripts/inject-ios-device.sh`)。 |
+| 与运行中的应用通信 | 进程内 `ReticleServer` 监听 `127.0.0.1`,经 `adb forward` 抵达。 | 同一个 loopback server,模拟器直连、真机走 `iproxy`。 |
+| 捕获 UI | `WindowManagerGlobal` 根 + 反射 View 属性,合并 Compose **semantics** 树。 | `UIWindow` + 反射 UIKit 属性,合并 SwiftUI 的**无障碍**元素(`axElement`)。 |
+| 读嵌入式 Web 内容 | `android.webkit.WebView` 上的只读 DOM 桥。**第三方内核**(X5/TBS、UC)根本无法桥接——标记为 `dom:unsupported-kernel`,而不是报成一个空页面。 | `WKWebView` 上同一套桥;iOS 只有一个 web 引擎,内核那种情况不会出现。 |
+| 合成输入 | `adb shell input`(tap / swipe / drag / type)——公开且稳定。 | 模拟器用 CoreSimulator HID;真机没有 host 可达的 HID 面,用进程内 `act activate`。 |
+| 选择器解析 | 语义树优先、view 树 frame 兜底;`testId` / `resourceId` / `css` / `ref` / `label` / 原始坐标点——两端同一套顺序。 | 同上,由 `reticle-protocol/fixtures/selector-resolution.cases.json` 从两种语言双向钉住。 |
 
-完整设计见 `docs/architecture.md`,包括 Compose-semantics 边界与注入权衡。
+两条规则在两个平台都成立:loopback 端口按 bundle id / `applicationId` 逐应用派生、
+两端算法一致,所以已链接的应用不会在固定端口上冲突;选择器只来自
+语义/无障碍面,绝不取私有框架内部——没有无障碍身份的元素被明确记为"不可寻址",
+而不是靠猜。
+
+完整设计见 `docs/architecture.md`(含 Compose-semantics / SwiftUI 边界与注入权衡);
+`docs/boundaries.md` 收齐了进程内观察者结构上够不着的所有情况(闭合 shadow root、
+跨域 iframe、第三方 WebView 内核、烘进位图的文字、跨进程系统 UI、截图的盲区),
+每条边界都挨着 Reticle 改吐什么证据——而不是回一个看起来合理的"空"。
 
 ## 多区域控件
 
@@ -80,9 +90,10 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
 
 这会把 `reticle` CLI 放到 Bash PATH 上,并添加:
 
-- **`reticle`** skill——教 agent 何时以及如何检查/驱动一个运行中的 Android 应用;
+- **`reticle`** skill——教 agent 何时以及如何检查/驱动一个运行中的应用;
 - **`/reticle:report`**——捕获一份运行时 UI 报告并概括当前屏幕;
-- **`/reticle:tap`**——按选择器(或通过 `--region` 按短语)点击某元素并验证结果。
+- **`/reticle:tap`**——按选择器(或通过 `--region` 按短语)点击某元素并验证结果;
+- **`/reticle:inject`**——在未链接 agent 的可调试应用里启动运行时。
 
 ### 在 Cursor 中安装
 
@@ -117,32 +128,34 @@ host 侧要求:Apple Silicon macOS 14+、一台通过 `adb` 连接的 Android �
 
 要在不安装的情况下本地开发或测试:在仓库根目录运行 `claude --plugin-dir ./`。
 
-### 发布
-
-推送一个 `v*` tag 会触发 `.github/workflows/release.yml`(在 macOS arm64 runner
-上),它会构建并附加到一个 GitHub Release:
-
-- `reticle-macos-arm64.zip`——host + 原生 helper 发行包(启动器下载的就是它;运行
-  时无需 JDK);
-- `reticle-agent-android.aar`——供链接进 host 应用构建的 agent 库;
-- `SHA256SUMS`——用于校验的校验和。
+发布就是推一个 `v*` tag:`.github/workflows/release.yml` 在 macOS arm64 runner 上构建
+`reticle-macos-arm64.zip` 发行包、agent AAR 与 `SHA256SUMS`。打包与版本一致性规则见
+`AGENTS.md`。
 
 ## 模块
 
-- `reticle-core`——纯 JVM 的 snapshot / 语义 / 紧凑观察模型与 wire 协议。无
-  Android 依赖。
-- `reticle-agent/android`(`:reticle-agent:android`)——Android 库(AAR)。进程内
-  HTTP server + view 与 Compose-semantics 捕获、区域检测、运行时变更、截图,由一个
-  空操作 `ContentProvider` 自动启动。(`reticle-agent/` 是为未来逐平台 agent
-  预留的分组目录;目前只有 Android 子项是 Gradle 模块。)
-- `reticle-helper`——Kotlin 的 Android host 层:`adb forward` + loopback 证据 + 一个
-  `adb input` 动作后端 + JDWP 注入。**不是面向用户的 CLI**——它以无 JDK 的原生
-  `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host
-  驱动的 RPC server。
-- `reticle-host`——**Swift host CLI**(SwiftPM,macOS 14+ arm64)。面向用户的 `reticle`;
-  不持有任何设备代码——设备命令通过 helper RPC 执行,而 `reticle serve` 持有本机
-  daemon 的 session / event surface,该本地 REST/SSE 服务由 Hummingbird 2.25.0 承载。
-- `sample-app`——端到端链接 agent 的演示应用。
+- `reticle-protocol`——与语言无关的 wire 契约:JSON Schema 加 golden fixture,两种
+  语言的实现都要对着它跑测试。不是构建模块。
+- `reticle-core`(Kotlin)与 `reticle-swift`(`ReticleProtocol`)——该契约的两个实现:
+  snapshot / 语义 / 紧凑观察模型、派生逻辑、host 侧渲染器。`reticle-core` 无 Android
+  依赖;`ReticleProtocol` 由 iOS agent 与 Swift host 共用,谁都不用重新移植协议。
+- `reticle-agent/android`(`:reticle-agent:android`)——Android 库(AAR):进程内 HTTP
+  server、view + Compose-semantics 捕获、区域检测、运行时变更、截图,由空操作
+  `ContentProvider` 自动启动。
+- `reticle-agent/ios`(`ReticleKit` + `ReticleInjection`)——iOS 孪生体,由 SwiftPM 构建、
+  对 Gradle 不可见:同一套 server 与捕获,建在 UIKit 上并带 SwiftUI 无障碍桥,支持
+  链接式与 DYLD 构造器两种自启动。
+- `reticle-helper`——Kotlin 的 **Android** host 层:`adb forward`、loopback 证据、
+  `adb input` 动作后端、JDWP 注入。**不是面向用户的 CLI**——以无 JDK 的原生
+  `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host 驱动的
+  RPC server。它存在的唯一理由是 JDWP 注入天然属于 JVM;iOS 不需要 helper。
+- `reticle-host`——**Swift host CLI**(SwiftPM,macOS 14+ arm64),面向用户的 `reticle`。
+  Android 设备命令走 helper RPC;**iOS 在 host 内原生处理**(`simctl`/`devicectl`、
+  loopback HTTP、CoreSimulator HID)。`reticle serve` 持有本机 daemon 的 session /
+  event surface(Hummingbird 2.25.0),捕获代理在独立的 `ReticleNetworkLane` target 里,
+  iOS 后端在 `ReticleHostIos` 里。
+- `sample-app` / `sample-app-ios`——端到端链接各自 agent 的演示应用,各带一个无 agent
+  的 flavor 用于测试注入路径。
 
 ## 快速开始
 
@@ -247,18 +260,46 @@ HTTPS,需显式开启 `--proxy-mitm --proxy-ssl-hosts <host[,host]>`。Reticle �
 Android 安全设置;Android 11+ 仍必须由用户在设置中确认 CA 信任。未信任用户 CA、未在
 Network Security Config 中信任用户 CA,或启用证书 pinning 的 app 仍无法解密。
 
+被代理的请求 body 在转发上游前先缓冲在内存里,因此默认封顶 64 MiB;更大的上传会以
+`413` + 一条 `network.error` 事件被拒,而不是把 daemon 的内存吃掉。上下调这个上限用
+`--proxy-max-request-body-mb <n>`。
+
 现有一次性命令在 daemon 不运行时仍按原样工作。daemon 运行时,
 `reticle act ...` 会自动把 trace 包写入当前 session,并 best-effort 发布一条
 `action.trace` 事件;snapshot 和 screenshot 通过 `refs` 引用,不会内联进事件。
-面板带 session picker,可以在当前 live session 和
-`~/.reticle/sessions` 下的历史 session 之间切换。单个 action trace 会展开为
-纵向证据时间线:screenshot/snapshot 证据、action 和 diff 会按时间顺序平铺展示。
-网络请求会显示在时间轴另一侧的 network lane,并按 request id 聚合展示 method、URL、
-status、耗时、请求/响应 headers、body artifact 链接以及文本 body 预览。Cookie、
-Authorization 等敏感 header 值会在进入事件日志前脱敏。
+面板把每条 action trace 平铺成纵向证据时间线——screenshot 证据、action、screenshot
+证据、diff——网络请求按 request id 聚合在中轴另一侧,Cookie / Authorization 这类
+敏感 header 值在进入事件日志前就脱敏,picker 可在 live session 与
+`~/.reticle/sessions` 下的历史 session 间切换。它只展示:既不驱动输入也不改应用状态。
 需要把 trace 额外复制到 session 之外时,再显式传 `--trace-output <dir>`。
 
-REST/SSE surface 与事件信封见 `reticle-protocol/events.md`。
+面板的完整能力(过滤、rule 分组、copy-as-rule)与 REST/SSE surface、事件信封一起写在
+`reticle-protocol/events.md`。
+
+### 热路径与命令路由
+
+一次性命令默认走热路径:第一条 helper 命令会 fork-exec 一个按设备划分的
+`reticle helper-daemon`(socket 在 `~/.reticle/helperd/` 下),之后每条命令复用这个常驻
+helper,不再逐命令拉起进程。daemon 空闲 600s 后自行退出并删掉 socket;用
+`--no-daemon` / `RETICLE_NO_DAEMON=1` 关掉,任何拉起失败都会静默回退到直接 spawn。
+
+另一种路由是:`reticle serve` 已经在跑时,让命令走它的 helper broker:
+
+```bash
+reticle serve --session demo --helper-broker
+RETICLE_USE_DAEMON=1 reticle status --package dev.reticle.sample
+reticle act tap --use-daemon --package dev.reticle.sample --test-id checkout.payButton
+```
+
+`--helper-broker` 让一个 `reticle-helper` 进程常驻在 daemon 的 localhost HTTP 面之后,
+`--use-daemon`(或 `RETICLE_USE_DAEMON=1`)把同一批命令 RPC 转发过去,短命令序列因此
+不用反复启动 helper。设备选择仍遵循 `--serial` 规则,单条命令上的 `--serial` 会覆盖
+broker 的默认设备。
+
+`reticle status --package <pkg>` 另外维护一份本机基线 `~/.reticle/process-state.json`。
+若后续 status 发现进程 PID 变了、进程消失,或运行时从 healthy 跌到不健康状态,文本输出
+会多一行 `advisory:`,JSON 输出会多一个 `advisory` 对象;`serve` 在跑时同一条会以
+`runtime.advisory` 事件发布。
 
 ## 流量规则与 flow replay
 
@@ -289,6 +330,45 @@ CONNECT tunnel 与启用 pinning / 未信任 HTTPS 的流量无法改写。
 
 ```bash
 reticle replay flow <request-id> --set-headers '{"X-Debug":"1"}' --remove-headers '["Authorization"]'
+```
+
+replay 是从捕获引擎的有界内存 ring 里重发的,所以更早的交换在 `events.jsonl` 里证据
+完整、但已经不能再重放;`GET /sessions/current/flows` 会给每个结果打上
+`replayableOnly`,让"空列表"读作"没有可重放的匹配项",而不是"这事没发生过"。
+
+## 批量动作与快速冒烟
+
+用链接了 agent 的示例应用跑一遍:
+
+```bash
+reticle app launch --package dev.reticle.sample
+reticle act tap --package dev.reticle.sample --test-id scenario.checkout
+reticle act tap --package dev.reticle.sample --test-id checkout.payButton \
+  --verify '#checkout.status'
+```
+
+确定性的短流程可以写成 JSON 文件按序执行。Swift host 把每一步展开成同一个单动作
+helper RPC,遇到第一个失败就停。step 的键就是协议字段名,所以单条 `act` 支持的每个
+选择器在这里都能用——`testId`、`resourceId`、`css`、`ref`、`point`、`alias`、`region`
+——外加 type 的 `text`/`submit`、swipe/drag 的 `from`/`to`/`duration`:
+
+```json
+[
+  { "gesture": "tap", "testId": "scenario.checkout" },
+  { "gesture": "tap", "resourceId": "btnWithdraw" },
+  { "gesture": "type", "testId": "login.codeField", "text": "123456", "submit": true },
+  { "gesture": "tap", "point": "540,1600" },
+  { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
+]
+```
+
+```bash
+reticle act batch --package dev.reticle.sample --file steps.json \
+  --trace-output reticle-batch
+
+# 把录到的流程拼成带设备边框的 GIF:手势画在它真正落下的位置,前后各一帧。
+# 纯 host 本地;Android 与 iOS 的 trace 都支持。
+reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 ```
 
 ## 工具链
