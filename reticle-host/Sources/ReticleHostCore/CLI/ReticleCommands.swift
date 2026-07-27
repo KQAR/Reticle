@@ -425,9 +425,41 @@ private func publishRuntimeAdvisoryIfDaemonIsRunning(package: String, target: St
     }
 }
 
-func automaticSessionTraceOutput(discovery: DaemonDiscovery = DaemonDiscovery()) -> String? {
-    guard let info = discovery.readLive() else { return nil }
-    return discovery.traceDirectory(for: info).path
+/// Where an action records when the caller did not pass `--trace-output`.
+///
+/// A live `reticle serve` session wins, so traces keep landing beside that
+/// session's events and reaching its panel. With no daemon this falls back to an
+/// auto session instead of recording nothing — the ad-hoc runs were the ones
+/// leaving no evidence behind, and they are the ones most worth reconstructing.
+///
+/// Set `RETICLE_NO_AUTO_TRACE=1` to opt out and go back to recording only when
+/// asked. Nothing here can fail an action: on any error the action still
+/// dispatches, just unrecorded.
+func automaticSessionTraceOutput(
+    discovery: DaemonDiscovery = DaemonDiscovery(),
+    autoSession: AutoSession = AutoSession(),
+    environment: [String: String] = ProcessInfo.processInfo.environment
+) -> String? {
+    if let info = discovery.readLive() {
+        return discovery.traceDirectory(for: info).path
+    }
+    if isTruthyEnvironmentFlag(environment["RETICLE_NO_AUTO_TRACE"]) { return nil }
+    guard let dir = autoSession.currentTraceDirectory() else { return nil }
+    // Prune after choosing, and never the session just chosen.
+    let current = dir.deletingLastPathComponent().lastPathComponent
+    let removed = autoSession.prune(excluding: current)
+    if !removed.isEmpty {
+        // Evidence disappearing quietly is its own small dishonesty.
+        FileHandle.standardError.write(Data(
+            "note: pruned \(removed.count) old auto-recorded session(s): \(removed.joined(separator: ", "))\n".utf8
+        ))
+    }
+    return dir.path
+}
+
+private func isTruthyEnvironmentFlag(_ value: String?) -> Bool {
+    guard let value = value?.lowercased() else { return false }
+    return value == "1" || value == "true" || value == "yes"
 }
 
 private func serialOption(_ args: Args) -> String? {

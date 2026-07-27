@@ -6,8 +6,10 @@ import dev.reticle.core.Snapshot
 import dev.reticle.core.trace.ActionTrace
 import dev.reticle.core.trace.ActionTraceArtifacts
 import dev.reticle.core.trace.ActionTraceDiff
+import dev.reticle.core.trace.ActionTraceParams
 import dev.reticle.core.trace.ActionTraceTarget
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -21,6 +23,13 @@ internal class HelperActionTrace private constructor(
     private val root: File,
     private val packageName: String,
     private val client: RuntimeClient,
+    /**
+     * The gesture-shaping inputs, captured at construction from the RPC request.
+     * Held here rather than passed to [write] because by write time the request
+     * has already been reduced to a result, which is exactly how `type` ended up
+     * recording `chars: 6` and never the text.
+     */
+    private val recordedParams: Map<String, String>,
 ) {
     data class Capture(val snapshot: Snapshot, val screenshotPng: ByteArray?)
 
@@ -65,6 +74,7 @@ internal class HelperActionTrace private constructor(
             platform = before.snapshot.platform.ifEmpty { "android" },
             recordedAtMillis = System.currentTimeMillis(),
             gesture = gesture,
+            params = recordedParams,
             selector = selector,
             target = target?.let {
                 ActionTraceTarget(point = it.point, source = it.source, ref = it.ref)
@@ -109,7 +119,12 @@ internal class HelperActionTrace private constructor(
         fun from(params: JsonObject, packageName: String, client: RuntimeClient?): HelperActionTrace? {
             val output = params.str("traceOutput") ?: return null
             val runtimeClient = client ?: throw CliError("trace capture needs a runtime client")
-            return HelperActionTrace(File(output).absoluteFile, packageName, runtimeClient)
+            return HelperActionTrace(
+                File(output).absoluteFile,
+                packageName,
+                runtimeClient,
+                recordedParams = params.recordedGestureParams(),
+            )
         }
     }
 }
@@ -127,6 +142,22 @@ internal fun selectorOrNull(params: JsonObject): Selector? {
 
 private fun JsonObject.scalarMap(): Map<String, String> =
     entries.associate { (key, value) -> key to value.traceString() }
+
+/**
+ * The gesture inputs from an act request, in [ActionTraceParams.RECORDED] order
+ * so two traces of the same gesture read the same way. Absent keys are skipped
+ * rather than written as null — a manifest should not carry a field per gesture
+ * the action was not.
+ */
+private fun JsonObject.recordedGestureParams(): Map<String, String> {
+    val out = LinkedHashMap<String, String>()
+    for (key in ActionTraceParams.RECORDED) {
+        val value = this[key] ?: continue
+        if (value is JsonNull) continue
+        out[key] = value.traceString()
+    }
+    return out
+}
 
 private fun JsonElement.traceString(): String =
     (this as? JsonPrimitive)?.jsonPrimitive?.contentOrNull ?: toString()

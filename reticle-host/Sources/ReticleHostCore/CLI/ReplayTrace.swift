@@ -56,31 +56,36 @@ enum ReplayTraceDiscovery {
     /// subdirectory per action (the shape `act --trace-output` produces).
     /// Steps come back in recording order.
     static func steps(at root: URL) throws -> [ReplayStep] {
+        let steps = try directories(at: root).map { try step(at: $0) }
+        return steps.sorted {
+            ($0.recordedAtMillis, $0.directory.lastPathComponent)
+                < ($1.recordedAtMillis, $1.directory.lastPathComponent)
+        }
+    }
+
+    /// The trace directories under `root`, which is either a single trace
+    /// directory (contains `trace.json`) or a trace-output root holding one
+    /// subdirectory per action. Shared with `reticle trace log`, so the reader
+    /// and the renderer can never disagree about what counts as a recording.
+    static func directories(at root: URL) throws -> [URL] {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: root.path, isDirectory: &isDir), isDir.boolValue else {
             throw HelperError("trace directory not found: \(root.path)")
         }
 
-        var traceDirs: [URL] = []
         if fm.fileExists(atPath: root.appendingPathComponent("trace.json").path) {
-            traceDirs = [root]
-        } else {
-            let children = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
-            traceDirs = children.filter {
-                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                    && fm.fileExists(atPath: $0.appendingPathComponent("trace.json").path)
-            }
+            return [root]
+        }
+        let children = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+        let traceDirs = children.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                && fm.fileExists(atPath: $0.appendingPathComponent("trace.json").path)
         }
         guard !traceDirs.isEmpty else {
             throw HelperError("no trace.json found under \(root.path) — record one with `act … --trace-output <dir>`")
         }
-
-        let steps = try traceDirs.map { try step(at: $0) }
-        return steps.sorted {
-            ($0.recordedAtMillis, $0.directory.lastPathComponent)
-                < ($1.recordedAtMillis, $1.directory.lastPathComponent)
-        }
+        return traceDirs
     }
 
     static func step(at directory: URL) throws -> ReplayStep {
