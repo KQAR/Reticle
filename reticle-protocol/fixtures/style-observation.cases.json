@@ -1,0 +1,367 @@
+{
+  "$comment": "Authoritative cases for the style projection (`reticle ui style`), read by BOTH the Kotlin (reticle-core StyleObservationTest) and Swift (ReticleProtocol StyleObservationTests) suites, so the Android helper and the iOS host cannot render the same snapshot differently. Each case is a snapshot plus the exact lines StyleObservation.render() must produce. The projection is evidence, never a verdict: it reports magnitudes, the channel each came through, and the properties no channel can read — what the values ought to be, what tolerance counts and which regions are exempt are the consumer's policy. Note what the cases pin: Android lengths are physical pixels and convert to dp; iOS lengths are points and must NOT be divided again (the density-double-scaling trap); an sp figure needs fontScale and says so when it is missing; a value whose unit is unknown (computed CSS) passes through verbatim; and a gap is rendered by name with its reason rather than being absent.",
+  "cases": [
+    {
+      "name": "android: px lengths convert to dp, and to sp once fontScale is known (and alpha=1.0 is dropped as saying nothing)",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Pay now",
+            "testId": "checkout.payButton",
+            "frame": { "x": 24, "y": 1800, "width": 1032, "height": 120 },
+            "custom": {
+              "textSize": { "_type": "real", "value": 42.0 },
+              "textColor": { "_type": "text", "value": "#FF202124" },
+              "fontWeight": { "_type": "int", "value": 600 },
+              "paddingLeft": { "_type": "real", "value": 48.0 },
+              "cornerRadius": { "_type": "real", "value": 24.0 },
+              "alpha": { "_type": "real", "value": 1.0 },
+              "tag": { "_type": "text", "value": "not-style" }
+            },
+            "styleChannels": {
+              "textSize": "viewField",
+              "textColor": "viewField",
+              "fontWeight": "viewField",
+              "paddingLeft": "viewField",
+              "cornerRadius": "drawableReflect",
+              "alpha": "viewField"
+            }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1 -> 360x800dp",
+        "#checkout.payButton button \"Pay now\"",
+        "    frame  24,1800 1032x120px | 8,600 344x40dp | 95.6%x5% of screen",
+        "    cornerRadius  24px | 8dp  [drawableReflect]",
+        "    fontWeight    600  [viewField]",
+        "    paddingLeft   48px | 16dp  [viewField]",
+        "    textColor     #FF202124  [viewField]",
+        "    textSize      42px | 14dp | 14sp  [viewField]"
+      ]
+    },
+    {
+      "name": "android: an enlarged system font is visible as dp != sp, not as a wrong size",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.3 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.TextView",
+            "role": "text",
+            "text": "Total",
+            "resourceId": "cart_total",
+            "custom": { "textSize": { "_type": "real", "value": 54.6 } },
+            "styleChannels": { "textSize": "viewField" }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1.3 -> 360x800dp",
+        "@cart_total text \"Total\"",
+        "    textSize  54.6px | 18.2dp | 14sp  [viewField]"
+      ]
+    },
+    {
+      "name": "android: no fontScale in the capture means sp is refused, not assumed",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.TextView",
+            "role": "text",
+            "custom": { "textSize": { "_type": "real", "value": 42.0 } },
+            "styleChannels": { "textSize": "viewField" }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=unprobed -> 360x800dp",
+        "r1 text",
+        "    textSize  42px | 14dp | sp:unprobed (no fontScale in this capture)  [viewField]"
+      ]
+    },
+    {
+      "name": "ios: points are already density-independent (never divided again), while font scaling still divides out to sp",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "ios",
+        "screen": { "size": { "width": 393, "height": 852 }, "density": 3.0, "fontScale": 1.2 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "UIApplication",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "UILabel",
+            "role": "text",
+            "text": "Total",
+            "testId": "cart.total",
+            "frame": { "x": 16, "y": 100, "width": 200, "height": 22 },
+            "custom": {
+              "textSize": { "_type": "real", "value": 20.4 },
+              "lineHeight": { "_type": "real", "value": 24.0 },
+              "fontFamily": { "_type": "text", "value": "SF Pro Text" },
+              "cornerRadius": { "_type": "real", "value": 8.0 }
+            },
+            "styleChannels": {
+              "textSize": "viewField",
+              "lineHeight": "viewField",
+              "fontFamily": "viewField",
+              "cornerRadius": "viewField"
+            }
+          }
+        }
+      },
+      "expect": [
+        "screen: 393x852pt density=3 fontScale=1.2",
+        "#cart.total text \"Total\"",
+        "    frame  16,100 200x22pt | 50.9%x2.6% of screen",
+        "    cornerRadius  8pt  [viewField]",
+        "    fontFamily    SF Pro Text  [viewField]",
+        "    lineHeight    24pt | 20sp  [viewField]",
+        "    textSize      20.4pt | 17sp  [viewField]"
+      ]
+    },
+    {
+      "name": "a node with nothing but platform defaults is dropped, while a kept node prints its zeros",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1", "r2", "r3"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.LinearLayout",
+            "role": "container",
+            "custom": {
+              "alpha": { "_type": "real", "value": 0.5 },
+              "visibility": { "_type": "text", "value": "visible" },
+              "paddingTop": { "_type": "real", "value": 0.0 },
+              "cornerRadius": { "_type": "real", "value": 0.0 }
+            },
+            "styleChannels": {
+              "alpha": "viewField",
+              "visibility": "viewField",
+              "paddingTop": "viewField",
+              "cornerRadius": "drawableReflect"
+            }
+          },
+          "r2": {
+            "ref": "r2",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.FrameLayout",
+            "role": "container",
+            "custom": {
+              "backgroundColor": { "_type": "text", "value": "#FFFFFFFF" },
+              "paddingTop": { "_type": "real", "value": 0.0 }
+            },
+            "styleChannels": {
+              "backgroundColor": "viewField",
+              "paddingTop": "viewField"
+            }
+          },
+          "r3": {
+            "ref": "r3",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "android.widget.FrameLayout",
+            "role": "container",
+            "frame": { "x": 0, "y": 0, "width": 1080, "height": 100 },
+            "custom": {
+              "alpha": { "_type": "real", "value": 1.0 },
+              "elevation": { "_type": "real", "value": 0.0 },
+              "paddingTop": { "_type": "real", "value": 0.0 },
+              "visibility": { "_type": "text", "value": "visible" }
+            },
+            "styleChannels": {
+              "alpha": "viewField",
+              "elevation": "viewField",
+              "paddingTop": "viewField",
+              "visibility": "viewField"
+            }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1 -> 360x800dp",
+        "r1 container",
+        "    alpha         0.5  [viewField]",
+        "    cornerRadius  0px | 0dp  [drawableReflect]",
+        "    paddingTop    0px | 0dp  [viewField]",
+        "r2 container",
+        "    backgroundColor  #FFFFFFFF  [viewField]",
+        "    paddingTop       0px | 0dp  [viewField]"
+      ]
+    },
+    {
+      "name": "gaps are rendered by name with a reason, so an unreadable property never looks absent",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "composeSemantics",
+            "typeName": "ComposeSemanticsNode",
+            "role": "text",
+            "text": "Pay",
+            "testId": "compose.pay",
+            "custom": { "textSize": { "_type": "real", "value": 42.0 } },
+            "styleChannels": { "textSize": "textLayout" },
+            "styleGaps": {
+              "cornerRadius": "compose-draw-modifier",
+              "backgroundColor": "compose-draw-modifier"
+            }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1 -> 360x800dp",
+        "#compose.pay text \"Pay\"",
+        "    textSize  42px | 14dp | 14sp  [textLayout]",
+        "    ! backgroundColor  unreadable: compose-draw-modifier",
+        "    ! cornerRadius  unreadable: compose-draw-modifier"
+      ]
+    },
+    {
+      "name": "computed CSS passes through verbatim: a page's zoom is not observable, so no conversion is invented",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": ["r1"]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "button",
+            "text": "Pay in WebView",
+            "custom": {
+              "domStyleFontSize": { "_type": "text", "value": "14px" },
+              "domStyleLineHeight": { "_type": "text", "value": "1.5" },
+              "domCssSelector": { "_type": "text", "value": "#web-pay" }
+            },
+            "styleChannels": {
+              "domStyleFontSize": "computedStyle",
+              "domStyleLineHeight": "computedStyle"
+            }
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1 -> 360x800dp",
+        "r1 button \"Pay in WebView\"",
+        "    domStyleFontSize    14px  [computedStyle]",
+        "    domStyleLineHeight  1.5  [computedStyle]"
+      ]
+    },
+    {
+      "name": "a snapshot with no style at all says so rather than returning an empty body",
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": { "size": { "width": 1080, "height": 2400 }, "density": 3.0, "fontScale": 1.0 },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application"
+          }
+        }
+      },
+      "expect": [
+        "screen: 1080x2400px density=3 fontScale=1 -> 360x800dp",
+        "(no style-bearing nodes in this snapshot)"
+      ]
+    }
+  ]
+}

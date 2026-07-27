@@ -81,4 +81,122 @@ object ReticleReflect {
 
     fun colorHex(color: Int): String =
         String.format("#%08X", color)
+
+    /**
+     * Call a public no-arg method whose name is `prefix` or `prefix-<hash>`.
+     *
+     * Kotlin mangles the JVM name of a function whose signature involves an inline
+     * value class (`Dp`, `TextUnit`, `Color`), so `getFontSize` can be on the class
+     * as `getFontSize-XSAIIZE`. Matching by prefix reads the same public API
+     * without hard-coding a mangling that differs between Compose builds.
+     */
+    fun invokeNoArgByPrefix(target: Any, prefix: String): Any? {
+        return try {
+            target.javaClass.methods
+                .firstOrNull {
+                    it.parameterTypes.isEmpty() &&
+                        (it.name == prefix || it.name.startsWith("$prefix-"))
+                }
+                ?.invoke(target)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Shape metrics of a View's background: corner radius, stroke width, stroke
+     * colour — the properties a design specifies and no `View` getter exposes.
+     *
+     * Read through PUBLIC getters only, on whichever drawable is actually there:
+     * `GradientDrawable.getCornerRadius()` for an XML `<shape>`, and Material's
+     * `MaterialShapeDrawable.getStrokeWidth()` / `getStrokeColor()` /
+     * `getShapeAppearanceModel()` for a Material component. A `RippleDrawable` or
+     * `InsetDrawable` wrapper is unwrapped first, since a Material button's real
+     * background usually sits one layer down.
+     *
+     * No private-field reflection: `GradientDrawable`'s stroke lives in a hidden
+     * `GradientState` field, and reading it would be a value that cannot be
+     * verified against a public contract. Where a value is known to EXIST but is
+     * shaped so it cannot be read as a length (a `RelativeCornerSize` is a
+     * fraction of a rect this call does not have), the caller records a gap
+     * instead — see [ShapeMetrics.cornerRadiusGap].
+     */
+    data class ShapeMetrics(
+        val cornerRadiusPx: Float? = null,
+        val cornerRadiusGap: String? = null,
+        val strokeWidthPx: Float? = null,
+        val strokeColorHex: String? = null,
+        val fillColorHex: String? = null,
+    ) {
+        val isEmpty: Boolean
+            get() = cornerRadiusPx == null && cornerRadiusGap == null &&
+                strokeWidthPx == null && strokeColorHex == null && fillColorHex == null
+
+        companion object {
+            val EMPTY = ShapeMetrics()
+        }
+    }
+
+    fun shapeMetrics(view: View): ShapeMetrics {
+        val drawable = unwrapBackground(view.background) ?: return ShapeMetrics.EMPTY
+        var radius: Float? = null
+        var radiusGap: String? = null
+        if (drawable is android.graphics.drawable.GradientDrawable) {
+            // API 24+. A per-corner radii array reports -1 here; that is a real
+            // shape with four different radii, not an absent one.
+            radius = runCatching { drawable.cornerRadius }.getOrNull()?.takeIf { it >= 0f }
+            if (radius == null) radiusGap = "gradient-drawable-per-corner-radii"
+        } else {
+            val model = invokeNoArg(drawable, "getShapeAppearanceModel")
+            val corner = model?.let { invokeNoArg(it, "getTopLeftCornerSize") }
+            if (corner != null) {
+                // AbsoluteCornerSize exposes a no-arg getCornerSize(); a
+                // RelativeCornerSize only answers against a RectF, so it is a gap.
+                radius = (invokeNoArg(corner, "getCornerSize") as? Number)?.toFloat()
+                if (radius == null) radiusGap = "relative-corner-size-needs-bounds"
+            }
+        }
+        val stroke = (invokeNoArg(drawable, "getStrokeWidth") as? Number)?.toFloat()
+        val strokeColor = colorStateListHex(invokeNoArg(drawable, "getStrokeColor"))
+        val fill = colorStateListHex(invokeNoArg(drawable, "getFillColor"))
+            ?: colorStateListHex(invokeNoArg(drawable, "getColor"))
+        return ShapeMetrics(
+            cornerRadiusPx = radius,
+            cornerRadiusGap = radiusGap,
+            strokeWidthPx = stroke,
+            strokeColorHex = strokeColor,
+            fillColorHex = fill,
+        )
+    }
+
+    /** A `ColorStateList`'s (or plain Integer's) default colour as hex. */
+    private fun colorStateListHex(value: Any?): String? = when (value) {
+        null -> null
+        is android.content.res.ColorStateList -> colorHex(value.defaultColor)
+        is Int -> colorHex(value)
+        else -> null
+    }
+
+    /**
+     * Peel `RippleDrawable` / `InsetDrawable` / `LayerDrawable` wrappers down to
+     * the drawable that actually carries the shape. Bounded to a few levels — a
+     * cyclic or pathological stack must not spin the capture.
+     */
+    private fun unwrapBackground(root: android.graphics.drawable.Drawable?): android.graphics.drawable.Drawable? {
+        var current = root ?: return null
+        repeat(4) {
+            val next = when (current) {
+                is android.graphics.drawable.InsetDrawable -> current.drawable
+                is android.graphics.drawable.RippleDrawable -> {
+                    val layers = current as android.graphics.drawable.LayerDrawable
+                    (0 until layers.numberOfLayers)
+                        .mapNotNull { i -> layers.getDrawable(i) }
+                        .firstOrNull { it is android.graphics.drawable.GradientDrawable }
+                }
+                else -> null
+            } ?: return current
+            current = next
+        }
+        return current
+    }
 }

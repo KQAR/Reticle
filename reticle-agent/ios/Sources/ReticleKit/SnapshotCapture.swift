@@ -123,6 +123,14 @@ struct SnapshotCapture {
         return ScreenInfo(
             size: Size(width: Double(bounds.width), height: Double(bounds.height)),
             density: Double(screen.scale),
+            // The Dynamic Type analogue of Android's Configuration.fontScale: how
+            // much larger a body-sized font renders at the user's current setting.
+            // Without it a text size cannot be split into "the app asked for the
+            // wrong size" and "the user enlarged text".
+            fontScale: Double(
+                UIFontMetrics(forTextStyle: .body)
+                    .scaledValue(for: 17.0, compatibleWith: screen.traitCollection) / 17.0
+            ),
             interfaceStyle: style,
             keyboard: KeyboardMonitor.shared.status(),
             // A system alert (permission, biometric) is presented by another
@@ -153,7 +161,8 @@ struct SnapshotCapture {
         }
 
         let testId = view.accessibilityIdentifier.flatMap { $0.isEmpty ? nil : $0 }
-        var custom = scalarProperties(view)
+        let style = scalarProperties(view)
+        var custom = style.values
         // SwiftUI evidence, if this is a hosting surface.
         if !hostingEvidence.isEmpty {
             custom["swiftUIHostingEvidence"] = .text(hostingEvidence.joined(separator: ","))
@@ -219,6 +228,8 @@ struct SnapshotCapture {
             isEnabled: isEnabled(view),
             isInteractive: isInteractive(view),
             custom: custom,
+            styleChannels: style.channels,
+            styleGaps: style.gaps,
             children: children,
             regions: probed.regions + lottieRegions,
             suspectedMultiRegion: probed.suspectedMultiRegion,
@@ -440,22 +451,158 @@ struct SnapshotCapture {
         return traits.contains(.button) || traits.contains(.link)
     }
 
-    private func scalarProperties(_ view: UIView) -> [String: MetadataValue] {
-        var out: [String: MetadataValue] = [:]
-        out["alpha"] = .real(Double(view.alpha))
+    /// A view's scalar properties, split three ways: the values, which channel
+    /// each STYLE value was read through, and the style properties this view is
+    /// known to have but which no channel can read.
+    ///
+    /// The split is the point. A consumer holding these up against a design has to
+    /// tell "the app set no font weight" from "Reticle cannot see the font weight",
+    /// and a bare map of values makes those two look identical. Non-style entries
+    /// get no channel, so `styleChannels` doubles as the answer to "which of these
+    /// keys are style".
+    ///
+    /// Every length here is in POINTS, UIKit's own unit, which is already
+    /// density-independent — the projection knows this from `platform` and does not
+    /// divide by `density` a second time.
+    struct ViewStyle {
+        var values: [String: MetadataValue] = [:]
+        var channels: [String: StyleChannel] = [:]
+        var gaps: [String: String] = [:]
+
+        mutating func put(_ name: String, _ value: MetadataValue, _ channel: StyleChannel = .viewField) {
+            values[name] = value
+            channels[name] = channel
+        }
+    }
+
+    private func scalarProperties(_ view: UIView) -> ViewStyle {
+        var out = ViewStyle()
+        out.put("alpha", .real(Double(view.alpha)))
         if let bg = view.backgroundColor {
-            out["backgroundColor"] = .text(hex(bg, in: view.traitCollection))
+            out.put("backgroundColor", .text(hex(bg, in: view.traitCollection)))
         }
         // tintColor is an implicitly-unwrapped optional and is genuinely nil for
         // some views — guard it, never force-unwrap.
-        if let tint = view.tintColor {
-            out["tintColor"] = .text(hex(tint, in: view.traitCollection))
+        //
+        // Only report it where it is actually SET on this view. UIKit resolves
+        // tintColor up the hierarchy, so every view answers with the window's tint;
+        // reporting all of them put an identical `tintColor` line on every node of a
+        // real screen (measured: 40 nodes, 40 copies) and buried the few that had
+        // style of their own. Differing from the superview is the exact test for
+        // "specified here", not a heuristic.
+        if let tint = view.tintColor, tint != view.superview?.tintColor {
+            out.put("tintColor", .text(hex(tint, in: view.traitCollection)))
+        }
+        // Shape lives on the layer, which UIKit exposes directly — no reflection
+        // needed here, unlike the Android background-Drawable case.
+        if view.layer.cornerRadius > 0 {
+            out.put("cornerRadius", .real(Double(view.layer.cornerRadius)))
+        }
+        if view.layer.borderWidth > 0 {
+            out.put("borderWidth", .real(Double(view.layer.borderWidth)))
+            if let border = view.layer.borderColor {
+                out.put("borderColor", .text(hex(UIColor(cgColor: border), in: view.traitCollection)))
+            }
         }
         if let label = view as? UILabel {
-            out["textColor"] = .text(hex(label.textColor, in: view.traitCollection))
-            out["textSize"] = .real(Double(label.font.pointSize))
+            out.put("textColor", .text(hex(label.textColor, in: view.traitCollection)))
+            out.put("textSize", .real(Double(label.font.pointSize)))
+            // Only a REAL limit: UILabel spells "no limit" as 0, which would render
+            // as `maxLines 0` and read as "this label shows no lines".
+            if label.numberOfLines > 0 {
+                out.put("maxLines", .integer(Int64(label.numberOfLines)))
+            }
+            out.put("textAlign", .text(Self.alignName(label.textAlignment)))
+            out.put("lineHeight", .real(Double(Self.lineHeight(of: label))))
+            fontStyle(of: label.font, into: &out)
+            // Kerning is only knowable when the label carries attributed text; a
+            // plain string renders at the font's own spacing, which is not a
+            // separately specified value, so nothing is claimed for it.
+            if let kern = Self.kern(of: label.attributedText) {
+                out.put("letterSpacing", .real(Double(kern)))
+            }
+        } else if let field = view as? UITextField, let font = field.font {
+            out.put("textSize", .real(Double(font.pointSize)))
+            out.put("textAlign", .text(Self.alignName(field.textAlignment)))
+            if let color = field.textColor {
+                out.put("textColor", .text(hex(color, in: view.traitCollection)))
+            }
+            fontStyle(of: font, into: &out)
+        }
+        // Content insets are the padding analogue, and only some controls have one.
+        // A view with no inset API is not claimed to have zero padding.
+        if let textView = view as? UITextView {
+            let inset = textView.textContainerInset
+            out.put("paddingTop", .real(Double(inset.top)))
+            out.put("paddingBottom", .real(Double(inset.bottom)))
+            out.put("paddingLeft", .real(Double(inset.left)))
+            out.put("paddingRight", .real(Double(inset.right)))
+        } else if let button = view as? UIButton, let insets = button.configuration?.contentInsets {
+            out.put("paddingTop", .real(Double(insets.top)))
+            out.put("paddingBottom", .real(Double(insets.bottom)))
+            out.put("paddingLeft", .real(Double(insets.leading)))
+            out.put("paddingRight", .real(Double(insets.trailing)))
         }
         return out
+    }
+
+    /// Family, weight and slant off a `UIFont`.
+    private func fontStyle(of font: UIFont, into out: inout ViewStyle) {
+        out.put("fontFamily", .text(font.familyName))
+        out.put("fontWeight", .integer(Int64(Self.numericWeight(of: font))))
+        out.put(
+            "fontStyle",
+            .text(font.fontDescriptor.symbolicTraits.contains(.traitItalic) ? "italic" : "normal")
+        )
+    }
+
+    /// UIKit's weight trait is a float around 0 (regular); a design states 100-900.
+    /// Snap to the nearest of Apple's documented `UIFont.Weight` raw values so the
+    /// figure is comparable with the Android side and with a design token, rather
+    /// than emitting a scale only UIKit understands.
+    private static func numericWeight(of font: UIFont) -> Int {
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+        let raw = (traits?[.weight] as? NSNumber)?.doubleValue ?? 0.0
+        let scale: [(Double, Int)] = [
+            (UIFont.Weight.ultraLight.rawValue, 100),
+            (UIFont.Weight.thin.rawValue, 200),
+            (UIFont.Weight.light.rawValue, 300),
+            (UIFont.Weight.regular.rawValue, 400),
+            (UIFont.Weight.medium.rawValue, 500),
+            (UIFont.Weight.semibold.rawValue, 600),
+            (UIFont.Weight.bold.rawValue, 700),
+            (UIFont.Weight.heavy.rawValue, 800),
+            (UIFont.Weight.black.rawValue, 900),
+        ]
+        return scale.min { abs($0.0 - raw) < abs($1.0 - raw) }?.1 ?? 400
+    }
+
+    /// The line height this label actually renders at: an explicit paragraph style
+    /// wins, then a multiple of the font's own, then the font's own. Android's
+    /// `TextView.lineHeight` is the same rendered figure, so the two are comparable.
+    private static func lineHeight(of label: UILabel) -> CGFloat {
+        let style = label.attributedText?
+            .attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        if let style {
+            if style.minimumLineHeight > 0 { return style.minimumLineHeight }
+            if style.lineHeightMultiple > 0 { return label.font.lineHeight * style.lineHeightMultiple }
+        }
+        return label.font.lineHeight
+    }
+
+    private static func kern(of text: NSAttributedString?) -> CGFloat? {
+        guard let text, text.length > 0 else { return nil }
+        return (text.attribute(.kern, at: 0, effectiveRange: nil) as? NSNumber).map { CGFloat($0.doubleValue) }
+    }
+
+    private static func alignName(_ alignment: NSTextAlignment) -> String {
+        switch alignment {
+        case .center: return "center"
+        case .right: return "right"
+        case .justified: return "justify"
+        case .natural: return "start"
+        default: return "left"
+        }
     }
 
     private func hex(_ color: UIColor, in traits: UITraitCollection) -> String {

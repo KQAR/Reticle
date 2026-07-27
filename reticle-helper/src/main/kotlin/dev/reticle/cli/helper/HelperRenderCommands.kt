@@ -5,6 +5,7 @@ import dev.reticle.core.CompactObservation
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
+import dev.reticle.core.StyleObservation
 import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -49,6 +50,7 @@ internal object HelperRenderCommands {
         "outline" -> OutlineRenderer.render(snapshot).first
         "node" -> renderNode(snapshot, params)
         "regions" -> renderRegions(snapshot)
+        "style" -> renderStyle(snapshot)
         else -> throw CliError("unknown render view '$view'")
     }
 
@@ -112,6 +114,17 @@ internal object HelperRenderCommands {
             .map { it.ref }
         if (roots.isEmpty()) append("(no semantic nodes)") else roots.forEach { walk(it, 0) }
     }.trimEnd()
+
+    /**
+     * Geometry + style + provenance for every node that has any, in units a
+     * consumer can compare.
+     *
+     * Deliberately NOT a comparison: what the values ought to be, what tolerance
+     * counts and which regions are exempt are the caller's policy, not an
+     * observation. Kept identical to `Render.style` in ReticleProtocol.
+     */
+    private fun renderStyle(snapshot: Snapshot): String =
+        StyleObservation.from(snapshot).render()
 
     private fun renderRegions(snapshot: Snapshot): String = buildString {
         var any = false
