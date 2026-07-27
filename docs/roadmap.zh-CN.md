@@ -158,10 +158,12 @@ no-hook 底线：绕过证书绑定、运行时注入 CA 信任、hook 采集管
 
 ### 8. 文档欠债 — S
 
-- **中文 README** 落后于英文：缺 `act batch` 的 JSON flow、helper-daemon 热路径 /
-  `--helper-broker`、`reticle status` advisories、`--proxy-max-request-body-mb`。
-- `Injector.kt` 中一处 **KDoc 锚点错位**：本该注释 `connectWithHandshake` 的块与函数脱节，
-  读起来像没有文档。
+原有两条已关闭（两个方向的 README 都补齐了，`connectWithHandshake` 也在函数处有了文档）。
+剩下的是结构性的：
+
+- **两份全量 README 是一笔常驻成本。** 至今已经补过两次、且是双向补的——这本身就是信号：
+  一个功能落地要写两遍，否则某一边会静默丢掉它。如果第三次再漂移，就把中文 README 砍成
+  一页定位说明、深度内容指向英文，而不是再同步 400 行。
 
 ### 未解 flake（软件 GPU 模拟器）
 
@@ -183,6 +185,13 @@ no-hook 底线：绕过证书绑定、运行时注入 CA 信任、hook 采集管
 - **协议代码生成统一。** Kotlin 与 Swift 的模型 / 渲染 / 选择器 / trace diff / WebView
   脚本是 1:1 手写，靠对同一份 schema 的测试防漂移。codegen 是大工程、回报慢。
   *触发条件：* 出现一个 schema 测试没抓住的漂移 bug。
+
+  **这个触发条件已经响过一次，答案是加 fixture 而不是 codegen。** 两个手写的 host 侧
+  selector 解析器之间漂了七处——其中一处让 Swift 侧的查找每进程随机——而 schema 测试
+  一条都抓不到，因为这些全不是 wire 形状。修法是 `selector-resolution.cases.json`：
+  两端共读的决策表，和 `wait-classification.cases.json` 是同一个手法。在漂移面是
+  **行为表**而不是**模型**时，这是更便宜的答案。等模型本身出现漂移（fixture 描述不了
+  的那种契约）再回来看 codegen。
 
 ---
 

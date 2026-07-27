@@ -8,6 +8,11 @@ single place they are collected, so an agent stops guessing and a contributor st
 re-investigating. **The rule for all of them: an unreachable thing must produce
 evidence naming itself, never silence.**
 
+Platform mechanism detail lives one level down: [ios.md](ios.md) explains *why*
+each iOS-specific row is unreachable (real-device input, DYLD injection, SwiftUI
+accessibility, the HID surface) including the routes that were tried and rejected.
+This file is the index of facts; that one is the evidence behind them.
+
 It lives apart from [architecture.md](architecture.md) because the two answer
 different questions. That document explains how Reticle works and is read once;
 this one is a reference table, consulted per case — and it is the file a new

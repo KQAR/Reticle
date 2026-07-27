@@ -191,11 +191,14 @@ reversing. Do **B2** first — it fits the deterministic-drive + mock shape best
 
 ### 8. Docs debt — S
 
-- The **Chinese README** lags the English one: missing the `act batch` JSON flow,
-  the helper-daemon hot path / `--helper-broker`, `reticle status` advisories, and
-  `--proxy-max-request-body-mb`.
-- A **misanchored KDoc block in `Injector.kt`** documents `connectWithHandshake`
-  but is detached from it, so the function reads as undocumented.
+Both prior items are closed (README parity restored in both directions, and
+`connectWithHandshake` documented at the function). What remains is structural:
+
+- **Two full READMEs stay a standing cost.** Parity was restored twice now, in both
+  directions, which is the signal: a feature landing has to be written up twice or
+  one side silently loses it. If it drifts a third time, cut the Chinese README to
+  an orientation page that points at the English one for depth rather than
+  re-syncing 400 lines again.
 
 ### Open flakes (software-GPU emulator)
 
@@ -223,6 +226,16 @@ reversing. Do **B2** first — it fits the deterministic-drive + mock shape best
   trace-diff / WebView scripts are hand-written 1:1, drift-guarded by tests against
   the shared schema. Codegen is a large project with slow payoff. *Trigger:* a drift
   bug that the schema tests fail to catch.
+
+  **The trigger has fired once, and was answered with a fixture instead.** Selector
+  resolution had drifted seven ways between the two hand-written host-side
+  resolvers — including one that made a lookup nondeterministic per process on the
+  Swift side — and no schema test could have caught any of them, because none of it
+  is wire shape. The fix was `selector-resolution.cases.json`, a shared decision
+  table both suites read, which is the same device `wait-classification.cases.json`
+  already was. That is the cheaper answer while the drifting surfaces are *behaviour
+  tables* rather than *models*. Revisit codegen if a drift appears in the models
+  themselves, where a fixture cannot describe the contract.
 
 ---
 
