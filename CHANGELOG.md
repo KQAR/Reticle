@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
+  the one picker shape the sample apps had no coverage for, and it behaves unlike the
+  two they did have: a `Spinner` dropdown materialises real row nodes in a popup, and
+  a recycling list binds a row once scrolled, but an Android `NumberPicker` paints its
+  unselected values onto the wheel canvas and materialises nothing, ever. So the new
+  `scenario.wheelPicker` is deliberately the place the two platforms report
+  *different* amounts rather than parity: only the selection is a node on Android,
+  while a `UIPickerView` builds a real subview per visible row, so its neighbours are
+  nodes a label tap can select and each component's current value comes through as an
+  `a11yVirtual` region. Three boundaries went into docs/boundaries.md with it,
+  including the one that matters most in practice: `act type` into a `NumberPicker`
+  succeeds and *lies* — the tree reads the typed text while the widget's value stays
+  put until it validates on focus change, so a wheel must be driven with `swipe`.
+
+  **The crash:** `UIPickerView`'s hidden scroll indicators carry `CGRectInfinite` as
+  their frame, and the capture put it on the wire verbatim. Formatting it aborted the
+  host process with SIGTRAP (`Int(_:)` traps out of range), so `act swipe` on the
+  scenario killed the CLI *after* dispatching the gesture — the report that carried
+  the bad frame was lost along with it. Two fixes, because either alone leaves a hole:
+  the iOS capture now drops a frame it cannot represent (a 1.8e308-wide rect claims to
+  contain every tap coordinate, which is worse evidence than no frame at all, and
+  `frame` is already optional on the wire), and every rect formatter in
+  `ReticleProtocol` and the host goes through a saturating conversion so a snapshot
+  from an older agent cannot kill a renderer either. The guard tests representability,
+  **not** `isFinite` — those sentinel components are perfectly finite doubles, which
+  is exactly why the obvious check would not have caught this.
+
 ## 0.11.0 - 2026-07-27
 
 - **Recording: on by default, and readable.** An action trace already held good

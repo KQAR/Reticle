@@ -215,13 +215,11 @@ public struct WaitProbe: Codable, Sendable {
         var sb = ""
         sb.reserveCapacity(compact.items.count * 48)
         for item in compact.items {
-            let frame = item.frame.map {
-                "\(Int($0.x)),\(Int($0.y)),\(Int($0.width))x\(Int($0.height))"
-            } ?? ""
+            let frame = item.frame.map(\.commaIntDescription) ?? ""
             sb += "\(item.ref)|\(item.role)|\(item.label ?? "")|\(frame)|\(item.isEnabled)|\(item.occludedBy ?? "")\n"
         }
         if let kb = compact.screen.keyboard {
-            let frame = kb.frame.map { "\(Int($0.y))x\(Int($0.height))" } ?? ""
+            let frame = kb.frame.map { "\(Rect.whole($0.y))x\(Rect.whole($0.height))" } ?? ""
             sb += "kb:\(kb.visible)|\(frame)\n"
         }
         sb += "focus:\(compact.screen.windowFocused.map { String($0) } ?? "?")"

@@ -3,6 +3,8 @@
 # protocol, the in-process agent, the sample apps, installs them, and exercises
 # the full round trip through `reticle --target ios`: linked launch + inject,
 # ui report, compact, screenshot, a mutate, an `act --verify` node-state diff,
+# the wheel picker (a UIPickerView's rows ARE nodes, unlike Android's — and the
+# CGRectInfinite frames its scroll indicators carry),
 # the system dialog (UIAlertController content recognition), the native Lottie
 # dialog, the web Lottie modal, the web-component (shadow DOM) modal, the
 # Lottie-only dialog (recovering elements baked into one Lottie), and — last, for
@@ -311,6 +313,64 @@ sleep 1
 NOPE="$("$HOST" --target ios --serial "$UDID" act scroll-to --package "$LINKED_ID" --test-id list.item999 2>&1 || true)"
 echo "$NOPE" | grep -qE "reached the end|gave up after" \
   || { echo "FAIL: scroll-to must report exhaustion for an absent row: $NOPE"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+
+echo "== WHEEL PICKER (the asymmetric twin of Android's) =="
+# The one scenario that measures a DIFFERENCE between the platforms rather than
+# parity. Android's `NumberPicker` paints its unselected values onto the wheel
+# canvas, so only the selection is a node. `UIPickerView` builds a real subview
+# per visible row, so its neighbours ARE nodes and a label tap on one selects it;
+# on top of that the picker exposes each component's current value as an
+# `a11yVirtual` region, so "which wheel is on what" is readable without parsing
+# rows. Both facts are asserted here, because losing either would make the iOS
+# side silently as blind as the Android one.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=wheelPicker
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/wheel"
+WHEEL_COMPACT="$("$HOST" --target ios ui compact "$TMP/wheel/snapshot.json")"
+echo "$WHEEL_COMPACT"
+# The selection of each component, as a region on the picker node itself.
+WHEEL_REGIONS="$("$HOST" --target ios ui regions "$TMP/wheel/snapshot.json")"
+echo "$WHEEL_REGIONS" | grep -q 'a11yVirtual "09"' \
+  || { echo "FAIL: the picker must expose each component's value as a region, got: $WHEEL_REGIONS"; exit 1; }
+# A `UIPickerView`'s hidden scroll indicators carry CGRectInfinite as their frame.
+# Those components are FINITE doubles (~1.8e308), so an `isFinite` guard waves
+# them through while `Int(_:)` traps on them — formatting one used to abort the
+# whole host with SIGTRAP while writing an action trace. The capture now drops a
+# frame it cannot represent, which is why this assertion is here and not a unit
+# test: the sentinel only exists on a real UIKit view.
+/usr/bin/python3 - "$TMP/wheel/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+bad = [(n.get("ref"), n.get("typeName"), n["frame"]) for n in nodes
+       if n.get("frame") and any(abs(n["frame"].get(k, 0)) > 1e6 for k in ("x", "y", "width", "height"))]
+if bad:
+    print(f"FAIL: unrepresentable frames reached the wire: {bad[:3]}"); sys.exit(1)
+PY
+# Unlike Android, a neighbouring row IS a node here — tapping one selects it, and
+# the app's committed state is the proof. Row 13 is three below the initial 09,
+# inside the ~6 rows a picker renders.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "13"
+sleep 1
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id wheel.confirm \
+  --verify 'testId=wheel.status' | tee "$TMP/wheel-confirm.txt"
+grep -q "Time: 13:" "$TMP/wheel-confirm.txt" \
+  || { echo "FAIL: a tap on a picker row must change the committed value to 13"; exit 1; }
+# A swipe along the wheel must land too — the gesture Android is limited to, so
+# both platforms are driven the same way at least once. This is also the command
+# that crashed the host before the rect fix, so a clean exit is part of the test.
+"$HOST" --target ios --serial "$UDID" act swipe --package "$LINKED_ID" \
+  --from 115,530 --to 115,455 --duration 300 --trace-output "$TMP/wheel-trace"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/wheel-swiped"
+"$HOST" --target ios ui regions "$TMP/wheel-swiped/snapshot.json" | grep -q 'a11yVirtual "13"' \
+  && { echo "FAIL: the swipe did not move the hour wheel off 13"; exit 1; }
+WHEEL_LOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$WHEEL_LOGS" | grep -q "wheel_hour_changed" \
+  || { echo "FAIL: expected wheel_hour_changed in the app log bridge"; exit 1; }
+echo "$WHEEL_LOGS" | grep -q "wheel_confirmed" \
+  || { echo "FAIL: expected wheel_confirmed in the app log bridge"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== CANVAS CONTROL regions (accessibility sub-elements) =="

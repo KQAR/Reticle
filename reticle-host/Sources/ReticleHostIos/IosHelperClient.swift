@@ -159,7 +159,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         guard let snapshot = try? fetchSnapshot(pkg) else { return [] }
         return snapshot.nodes.values.filter { $0.pixelsUnavailable() }.map { node in
             let id = node.testId ?? node.ref
-            let where_ = node.frame.map { " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? ""
+            let where_ = node.frame.map { " [\($0.intDescription)]" } ?? ""
             return "\(id)\(where_) is not in this picture: \(node.typeName ?? "this window") "
                 + "does not render into an in-process context. A device-level capture "
                 + "(`xcrun simctl io <udid> screenshot`) shows it."

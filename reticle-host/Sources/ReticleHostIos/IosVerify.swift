@@ -67,7 +67,7 @@ extension IosHelperClient {
         guard let snapshot = try? fetchSnapshot(pkg), let node = Render.findNode(snapshot, selector) else {
             return VerifyState(found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil, custom: [:])
         }
-        let frame = node.frame.map { "\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))" }
+        let frame = node.frame.map(\.intDescription)
         return VerifyState(
             found: true,
             text: node.text,

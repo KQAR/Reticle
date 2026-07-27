@@ -1,4 +1,5 @@
 import Foundation
+import ReticleProtocol
 
 /// One action step recovered from a `trace.json` evidence package, reduced to
 /// what the replay renderer needs: the screenshots, the caption ingredients
@@ -46,7 +47,7 @@ struct ReplayStep {
     }
 
     private static func pointString(_ p: CGPoint) -> String {
-        "(\(Int(p.x)),\(Int(p.y)))"
+        "(\(Rect.whole(Double(p.x))),\(Rect.whole(Double(p.y))))"
     }
 }
 
@@ -137,7 +138,7 @@ enum ReplayTraceDiscovery {
         if let v = selector["cssSelector"] as? String { return "css=\(v)" }
         if let v = selector["region"] as? String { return "region=\(v)" }
         if let v = selector["ref"] as? String { return "ref=\(v)" }
-        if let p = point(from: selector["point"]) { return "point=(\(Int(p.x)),\(Int(p.y)))" }
+        if let p = point(from: selector["point"]) { return "point=(\(Rect.whole(Double(p.x))),\(Rect.whole(Double(p.y))))" }
         return nil
     }
 

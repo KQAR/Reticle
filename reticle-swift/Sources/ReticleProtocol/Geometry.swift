@@ -41,6 +41,53 @@ public struct Rect: Codable, Equatable, Sendable {
     public func contains(_ px: Double, _ py: Double) -> Bool {
         px >= x && px <= x + width && py >= y && py <= y + height
     }
+
+    /// Whether this is a rectangle a screen could actually have: every component
+    /// real, finite, and inside the whole-number range a rect is rendered in.
+    ///
+    /// UIKit uses `CGRectInfinite` / `CGRectNull` as sentinels for "no geometry"
+    /// (a `UIScrollView`'s hidden scroll indicator is one), and a capture can pick
+    /// one up as a view frame. Note that those sentinels are **finite** doubles —
+    /// ±`CGFloat.greatestFiniteMagnitude`, around 1.8e308 — so `Double.isFinite`
+    /// says yes to them while `Int(_:)` still traps. That gap is exactly the bug
+    /// this guards: the check has to be about the representable range, not about
+    /// infinity. The agent drops such a frame rather than reporting it, but a
+    /// snapshot written by an older agent may still carry one, so every renderer
+    /// must survive reading it.
+    public var isRepresentable: Bool {
+        Rect.representable(x) && Rect.representable(y)
+            && Rect.representable(width) && Rect.representable(height)
+    }
+
+    private static func representable(_ value: Double) -> Bool {
+        value.isFinite && value > Double(Int.min) && value < Double(Int.max)
+    }
+
+    /// `x,y WxH` with whole-number components — the one spelling every renderer
+    /// uses for a rect.
+    ///
+    /// Rounding goes through a saturating conversion because `Int(someDouble)`
+    /// **traps** on a value outside `Int`'s range: formatting a `CGRectInfinite`
+    /// frame used to abort the whole host process (SIGTRAP) while printing an
+    /// action trace. A sentinel rect is bad evidence; it is not a reason to lose
+    /// the report that carries it.
+    public var intDescription: String {
+        "\(Rect.whole(x)),\(Rect.whole(y)) \(Rect.whole(width))x\(Rect.whole(height))"
+    }
+
+    /// A comma-joined variant (`x,y,WxH`) for the wait-predicate evidence lines.
+    public var commaIntDescription: String {
+        "\(Rect.whole(x)),\(Rect.whole(y)),\(Rect.whole(width))x\(Rect.whole(height))"
+    }
+
+    /// `Int` if the value fits, clamped to the representable range otherwise, and
+    /// `0` for NaN. Never traps.
+    public static func whole(_ value: Double) -> Int {
+        guard !value.isNaN else { return 0 }
+        if value >= Double(Int.max) { return Int.max }
+        if value <= Double(Int.min) { return Int.min }
+        return Int(value)
+    }
 }
 
 public struct ScreenInfo: Codable, Equatable, Sendable {

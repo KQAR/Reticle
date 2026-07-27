@@ -391,20 +391,39 @@ struct SnapshotCapture {
 
     private func screenFrame(_ view: UIView) -> Rect? {
         guard let window = view.window else {
-            return rect(view.frame)
+            return finite(rect(view.frame))
         }
         let inWindow = view.convert(view.bounds, to: nil)
         let screenOrigin = window.frame.origin
-        return Rect(
+        return finite(Rect(
             x: Double(inWindow.origin.x + screenOrigin.x),
             y: Double(inWindow.origin.y + screenOrigin.y),
             width: Double(inWindow.size.width),
             height: Double(inWindow.size.height)
-        )
+        ))
     }
 
     private func rect(_ r: CGRect) -> Rect {
         Rect(x: Double(r.origin.x), y: Double(r.origin.y), width: Double(r.size.width), height: Double(r.size.height))
+    }
+
+    /// Drops a frame that isn't a real rectangle.
+    ///
+    /// UIKit's "no geometry" sentinels (`CGRectInfinite`, `CGRectNull`) reach the
+    /// capture as ±`CGFloat.greatestFiniteMagnitude` components — a
+    /// `UIScrollView`'s hidden `_UIScrollViewScrollIndicator` carries one, so any
+    /// scrolling container can produce it, and `scenario.wheelPicker` (a
+    /// `UIPickerView`, four such indicators) is where it first showed up. Reporting
+    /// it verbatim was worse than reporting nothing: a 1.8e308-wide rect claims to
+    /// occupy the whole plane, which makes it "contain" every tap coordinate, and
+    /// rendering it aborted the host outright (`Int(_:)` traps out of range). A
+    /// node with no frame is the honest shape and one every consumer already
+    /// handles (`frame` is optional on the wire).
+    ///
+    /// The test is representability, NOT `isFinite`: those sentinel components are
+    /// perfectly finite doubles, just ~1.8e308 of them.
+    private func finite(_ r: Rect) -> Rect? {
+        r.isRepresentable ? r : nil
     }
 
     private func role(for view: UIView) -> String {
