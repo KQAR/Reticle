@@ -47,6 +47,16 @@ public struct ScreenInfo: Codable, Equatable, Sendable {
     public var size: Size
     /// Display density. On iOS this is `UIScreen.scale`.
     public var density: Double
+    /// System font-scale multiplier at capture time (Android
+    /// `Configuration.fontScale`; on iOS the Dynamic Type scale of a body font),
+    /// or nil when the platform did not probe it.
+    ///
+    /// Without it a raw text size cannot be split into the two questions a
+    /// consumer actually asks: *is this the size the design specifies* (compare in
+    /// dp, which divides out `density` only) and *is the user scaling text right
+    /// now* (compare in sp, which divides out both). Guessing 1.0 turns "the user
+    /// enlarged text" into "the app got the font size wrong".
+    public var fontScale: Double?
     /// "light" | "dark".
     public var interfaceStyle: String?
     /// System keyboard (IME) state at capture time, or nil when the platform
@@ -67,12 +77,14 @@ public struct ScreenInfo: Codable, Equatable, Sendable {
     public init(
         size: Size,
         density: Double,
+        fontScale: Double? = nil,
         interfaceStyle: String? = nil,
         keyboard: KeyboardInfo? = nil,
         windowFocused: Bool? = nil
     ) {
         self.size = size
         self.density = density
+        self.fontScale = fontScale
         self.interfaceStyle = interfaceStyle
         self.keyboard = keyboard
         self.windowFocused = windowFocused

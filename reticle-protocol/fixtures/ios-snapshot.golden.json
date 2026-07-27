@@ -5,6 +5,7 @@
   "screen": {
     "size": { "width": 393.0, "height": 852.0 },
     "density": 3.0,
+    "fontScale": 1.2,
     "interfaceStyle": "dark"
   },
   "rootRef": "r0",
@@ -39,7 +40,16 @@
       "custom": {
         "alpha": { "_type": "real", "value": 1.0 },
         "backgroundColor": { "_type": "text", "value": "#FF007AFF" },
-        "tintColor": { "_type": "text", "value": "#FFFFFFFF" }
+        "tintColor": { "_type": "text", "value": "#FFFFFFFF" },
+        "cornerRadius": { "_type": "real", "value": 12.0 },
+        "paddingLeft": { "_type": "real", "value": 16.0 }
+      },
+      "styleChannels": {
+        "alpha": "viewField",
+        "backgroundColor": "viewField",
+        "tintColor": "viewField",
+        "cornerRadius": "viewField",
+        "paddingLeft": "viewField"
       }
     },
     "r3": {

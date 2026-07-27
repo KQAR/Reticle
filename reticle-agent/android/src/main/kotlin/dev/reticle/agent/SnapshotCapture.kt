@@ -2,6 +2,7 @@ package dev.reticle.agent
 
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -18,6 +19,7 @@ import dev.reticle.core.Rect
 import dev.reticle.core.ScreenInfo
 import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
+import dev.reticle.core.StyleChannel
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -180,6 +182,7 @@ class SnapshotCapture(private val context: Context) {
         val text = (view as? TextView)?.text?.toString()
         val isInteractive = view.isClickable || view.isLongClickable || view.isFocusable
 
+        val style = scalarProperties(view)
         // Discover sub-regions within this single View (span links, virtual
         // a11y nodes, touch-delegate), plus a char grid for substring targeting.
         val region = RegionProbe.probe(view)
@@ -201,9 +204,11 @@ class SnapshotCapture(private val context: Context) {
             isVisible = view.visibility == View.VISIBLE && view.width > 0 && view.height > 0,
             isEnabled = view.isEnabled,
             isInteractive = isInteractive,
-            custom = scalarProperties(view) +
+            custom = style.values +
                 screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
                 foreignWebKernel(view),
+            styleChannels = style.channels,
+            styleGaps = style.gaps,
             children = childRefs,
             regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
@@ -334,33 +339,131 @@ class SnapshotCapture(private val context: Context) {
         else -> if (view is ViewGroup) "container" else "view"
     }
 
-    private fun scalarProperties(view: View): Map<String, MetadataValue> {
+    /**
+     * A view's scalar properties, split three ways: the values, which channel each
+     * STYLE value was read through, and the style properties this view is known to
+     * have but which no channel can read.
+     *
+     * The split is the point. A consumer holding these up against a design has to
+     * tell "the app set no font weight" from "Reticle cannot see the font weight",
+     * and a bare map of values makes those two look identical. Non-style entries
+     * (`tag`, app-authored metadata) get no channel, so `styleChannels` doubles as
+     * the answer to "which of these keys are style".
+     */
+    private data class ViewStyle(
+        val values: Map<String, MetadataValue>,
+        val channels: Map<String, StyleChannel>,
+        val gaps: Map<String, String>,
+    )
+
+    private fun scalarProperties(view: View): ViewStyle {
         val map = LinkedHashMap<String, MetadataValue>()
-        map["alpha"] = MetadataValue.Real(view.alpha.toDouble())
-        map["elevation"] = MetadataValue.Real(view.elevation.toDouble())
-        map["visibility"] = MetadataValue.Text(
-            when (view.visibility) {
-                View.VISIBLE -> "visible"
-                View.INVISIBLE -> "invisible"
-                else -> "gone"
-            }
+        val channels = LinkedHashMap<String, StyleChannel>()
+        val gaps = LinkedHashMap<String, String>()
+
+        fun put(name: String, value: MetadataValue, channel: StyleChannel) {
+            map[name] = value
+            channels[name] = channel
+        }
+
+        put("alpha", MetadataValue.Real(view.alpha.toDouble()), StyleChannel.viewField)
+        put("elevation", MetadataValue.Real(view.elevation.toDouble()), StyleChannel.viewField)
+        put(
+            "visibility",
+            MetadataValue.Text(
+                when (view.visibility) {
+                    View.VISIBLE -> "visible"
+                    View.INVISIBLE -> "invisible"
+                    else -> "gone"
+                }
+            ),
+            StyleChannel.viewField,
         )
+        // Padding, not the gap between two frames: a frame-to-frame measurement
+        // cannot say whether the space belongs to this view, its neighbour or their
+        // parent, which is exactly what a spacing spec states.
+        put("paddingLeft", MetadataValue.Real(view.paddingLeft.toDouble()), StyleChannel.viewField)
+        put("paddingTop", MetadataValue.Real(view.paddingTop.toDouble()), StyleChannel.viewField)
+        put("paddingRight", MetadataValue.Real(view.paddingRight.toDouble()), StyleChannel.viewField)
+        put("paddingBottom", MetadataValue.Real(view.paddingBottom.toDouble()), StyleChannel.viewField)
+
         view.tag?.let { map["tag"] = MetadataValue.Text(it.toString()) }
-        ReticleReflect.backgroundColorHex(view)?.let { map["backgroundColor"] = MetadataValue.Text(it) }
+
+        ReticleReflect.backgroundColorHex(view)?.let {
+            put("backgroundColor", MetadataValue.Text(it), StyleChannel.viewField)
+        }
+        // Shape lives on the background Drawable, which no View getter exposes.
+        val shape = ReticleReflect.shapeMetrics(view)
+        shape.cornerRadiusPx?.let { put("cornerRadius", MetadataValue.Real(it.toDouble()), StyleChannel.drawableReflect) }
+        shape.cornerRadiusGap?.let { gaps["cornerRadius"] = it }
+        shape.strokeWidthPx?.let { put("borderWidth", MetadataValue.Real(it.toDouble()), StyleChannel.drawableReflect) }
+        shape.strokeColorHex?.let { put("borderColor", MetadataValue.Text(it), StyleChannel.drawableReflect) }
+        if (!map.containsKey("backgroundColor")) {
+            shape.fillColorHex?.let { put("backgroundColor", MetadataValue.Text(it), StyleChannel.drawableReflect) }
+        }
+
         if (view is TextView) {
-            map["textColor"] = MetadataValue.Text(ReticleReflect.colorHex(view.currentTextColor))
-            map["textSize"] = MetadataValue.Real(view.textSize.toDouble())
+            put("textColor", MetadataValue.Text(ReticleReflect.colorHex(view.currentTextColor)), StyleChannel.viewField)
+            put("textSize", MetadataValue.Real(view.textSize.toDouble()), StyleChannel.viewField)
+            put("lineHeight", MetadataValue.Real(view.lineHeight.toDouble()), StyleChannel.viewField)
+            // Only a REAL limit. An unset maxLines reads back as Integer.MAX_VALUE,
+            // which rendered as `maxLines 2147483647` — a number that looks like a
+            // finding and means "no limit".
+            view.maxLines.takeIf { it in 1 until Int.MAX_VALUE }?.let {
+                put("maxLines", MetadataValue.Integer(it.toLong()), StyleChannel.viewField)
+            }
+            put("textAlign", MetadataValue.Text(textAlign(view)), StyleChannel.viewField)
+            // Android states letter spacing in ems; every other length here is a
+            // device length, so convert once at the source rather than leaving two
+            // incompatible units under one name.
+            runCatching { view.letterSpacing * view.textSize }.getOrNull()?.let {
+                put("letterSpacing", MetadataValue.Real(it.toDouble()), StyleChannel.viewField)
+            }
+            view.typeface?.let { typeface ->
+                val weight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    typeface.weight
+                } else {
+                    if (typeface.isBold) 700 else 400
+                }
+                put("fontWeight", MetadataValue.Integer(weight.toLong()), StyleChannel.viewField)
+                put(
+                    "fontStyle",
+                    MetadataValue.Text(if (typeface.isItalic) "italic" else "normal"),
+                    StyleChannel.viewField,
+                )
+                // A Typeface names no family: the platform exposes weight and slant
+                // and nothing else, so the one text property a design always states
+                // by name is structurally unreadable here. Compose text DOES carry
+                // it (see ComposeTextStyle), which is why this is a gap on this
+                // channel rather than a boundary for the whole platform.
+                gaps["fontFamily"] = "android-typeface-exposes-no-family"
+            }
             // The tint clickable spans render with (android:textColorLink). A
             // run drawn in this color is very likely a tappable link.
             runCatching { view.linkTextColors?.defaultColor }.getOrNull()?.let {
-                map["linkTextColor"] = MetadataValue.Text(ReticleReflect.colorHex(it))
+                put("linkTextColor", MetadataValue.Text(ReticleReflect.colorHex(it)), StyleChannel.viewField)
             }
         }
-        // Merge app-attached metadata addressed by testId.
+        // Merge app-attached metadata addressed by testId. Deliberately untagged:
+        // the app can publish anything here, and Reticle cannot know which of its
+        // keys are style without being told.
         ReticleReflect.testTag(view)?.let { tag ->
             ReticleRuntime.shared.metadata(tag).forEach { (k, v) -> map[k] = v }
         }
-        return map
+        return ViewStyle(map, channels, gaps)
+    }
+
+    /** Horizontal gravity as a design-facing keyword. */
+    private fun textAlign(view: TextView): String {
+        val horizontal = view.gravity and android.view.Gravity.HORIZONTAL_GRAVITY_MASK
+        val relative = view.gravity and android.view.Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK
+        return when {
+            relative and android.view.Gravity.END == android.view.Gravity.END -> "end"
+            relative and android.view.Gravity.START == android.view.Gravity.START -> "start"
+            horizontal == android.view.Gravity.CENTER_HORIZONTAL -> "center"
+            horizontal == android.view.Gravity.RIGHT -> "right"
+            else -> "left"
+        }
     }
 
     private fun screenInfo(): ScreenInfo {
@@ -373,6 +476,10 @@ class SnapshotCapture(private val context: Context) {
         return ScreenInfo(
             size = Size(metrics.widthPixels.toDouble(), metrics.heightPixels.toDouble()),
             density = metrics.density.toDouble(),
+            // Without this a text size cannot be split into "the app asked for the
+            // wrong size" (compare in dp) and "the user enlarged text" (compare in
+            // sp). Assuming 1.0 silently merges the two.
+            fontScale = context.resources.configuration.fontScale.toDouble(),
             interfaceStyle = if (night) "dark" else "light",
             // captureLocked already runs on the main thread, which the probe needs.
             keyboard = KeyboardProbe.probe(context),

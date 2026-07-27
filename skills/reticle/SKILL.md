@@ -153,6 +153,7 @@ reticle ui outline  --live --package <pkg>       # numbered agent-facing outline
 reticle ui node     reticle-report/snapshot.json --test-id <id>   # full node
 reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM node
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
+reticle ui style    reticle-report/snapshot.json # geometry + style per node, in px/dp/sp, with provenance
 ```
 
 Use `--json` when another tool or script will parse the result. Helper-backed
@@ -202,7 +203,7 @@ the new one. The `item i/n` text is a hint, not a selector. Stable automation
 should still prefer `--test-id`, `--resource-id`, `--css`, or `--ref`.
 
 **`--live` — inspect the running app without writing a report.** Any `ui` view
-(`node`/`compact`/`tree`/`regions`) takes `--live --package <pkg>` instead of a
+(`node`/`compact`/`tree`/`regions`/`style`) takes `--live --package <pkg>` instead of a
 snapshot path: it pulls the CURRENT tree straight from the runtime and prints it,
 writing nothing to disk. Use it for the cheap "what does that one node say right
 now?" check — no 300-node report to grep:
@@ -211,6 +212,35 @@ now?" check — no 300-node report to grep:
 reticle ui node    --live --package <pkg> --resource-id rata   # one node, live
 reticle ui compact --live --package <pkg>                      # whole screen, live
 ```
+
+## Style evidence (`ui style`)
+
+When the task is "does this match the design", "did the spacing drift", or "does
+this hold up on a smaller screen", read `ui style`. It gives, per node: the frame
+in raw units AND dp AND a share of the screen; padding, colours, font
+size/weight/family/style, line height, letter spacing, text alignment, corner
+radius, border; and text sizes additionally in **sp**, which divides out the system
+font scale.
+
+```bash
+reticle ui style --live --package <pkg>
+```
+
+Two things to relay rather than smooth over:
+
+- **`[channel]`** after each value is where it was read (`viewField`,
+  `textLayout`, `computedStyle`, `drawableReflect`). A `drawableReflect` value came
+  from a background `Drawable` and is the weakest of the four.
+- **`! <property> unreadable: <reason>`** means that node HAS the property and no
+  channel can read it — NOT that the app left it unset. Reporting it as "not set"
+  is the specific mistake this line exists to prevent. Today: Compose
+  `background`/`clip`/`border` (`compose-draw-modifier`) and an Android
+  `Typeface`'s family name.
+
+**Reticle does not compare.** It emits magnitudes; deciding what they ought to be,
+what tolerance passes, and which regions are exempt (status bar, toolbar) is YOUR
+call as the caller — state your tolerance and your exemptions explicitly in the
+verdict you write, rather than presenting them as something Reticle found.
 
 ## Embedded WebView DOM
 

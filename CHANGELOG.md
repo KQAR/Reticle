@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+- **Style evidence (`ui style`): the values, their units, their provenance, and the
+  properties no channel can read.** The question behind it is "does this screen
+  match the design" — spacing, colours, font properties, and whether proportions
+  hold on a smaller phone. Reticle answers none of those, on purpose, and the
+  roadmap's `diff design` item is **dropped as specified** rather than built: reading
+  a design imports an external truth and makes Reticle the arbiter of correct, a
+  delta needs a tolerance, and "ignore the status bar" needs an exemption list. All
+  three are the consumer's policy; the earlier "no letter grade" caveat only blocked
+  the third of the three. A `diff responsive` was considered and rejected for the
+  same reason even though it imports no external truth — deciding that a width
+  *should* scale proportionally rather than stay a fixed dp IS the design intent. So
+  the deliverable is the capability half, and it is the same shape whether the caller
+  compares against a design frame, a previous build, or a second device.
+
+  Four things had to be true for that to be useful. **Breadth:** the capture read
+  five style properties on a native view and none at all on a Compose node, so a
+  Compose screen — where new Android UI is written — answered nothing a design asks
+  while the identical `TextView` screen answered everything. Text style now comes
+  from the `GetTextLayoutResult` action's `TextStyle`, the same public channel
+  `ComposeTextRegions` already used for link geometry, reached by name-prefix
+  reflection because a getter returning an inline value class (`TextUnit`, `Color`)
+  carries a mangled JVM name. Verified against Material 3's published type scale on
+  a live emulator: `bodyLarge` reports 16sp / 24sp line height / 0.5sp tracking and a
+  Button's `labelLarge` reports 14sp / weight 500 — the numbers match the spec, which
+  is what proves the value-class unpacking is right rather than merely non-null.
+  Padding joined too, because a frame-to-frame gap cannot say whether the space
+  belongs to this view, its neighbour or their parent, which is exactly what a
+  spacing spec states.
+
+  **Units**, and this is where the silent bug lived. The Android view tree measures
+  in physical pixels; UIKit measures in points, which are already
+  density-independent. Dividing an iOS point by `density` again would halve every
+  length while looking perfectly plausible, so `StyleUnits.lengthsAreDensityIndependent`
+  is the one place that difference is decided and the shared fixture pins both
+  directions. Text additionally renders in sp, which divides out the new
+  `ScreenInfo.fontScale` — without it "the app asked for the wrong size" and "the
+  user enlarged text" are one observation, and an unprobed font scale says
+  `sp:unprobed` rather than assuming 1.0.
+
+  **Provenance:** `Node.styleChannels` names the channel per property, because a
+  live `viewField` read and a value reflected out of a background `Drawable` are not
+  equally trustworthy, and it doubles as the allowlist of which `custom` keys are
+  style at all. **Gaps:** `Node.styleGaps` lists properties a node HAS and no
+  channel can read, with a reason — the boundary rule at property granularity, since
+  a missing key otherwise reads as "the app set nothing". Two exist today and both
+  are in `docs/boundaries.md`: Compose `background`/`clip`/`border` are draw
+  modifiers with no semantics projection (reflecting the `LayoutNode` modifier chain
+  was rejected as unverifiable against a public contract), and an Android `Typeface`
+  names no family.
+
+  **The DOM is the third channel**, tagged `computedStyle` by both bridges so a
+  WKWebView and an `android.webkit.WebView` answer alike. It behaves deliberately
+  unlike the native two: values pass through verbatim with their own suffixes,
+  because a CSS `px` is neither a device pixel nor a UIKit point and a page's zoom is
+  not observable from in-process, so converting would be arithmetic on an assumption.
+  And because `getComputedStyle` answers for every property whether or not the page
+  stated it, a computed value equal to its CSS initial (`auto`/`none`/`0px`/`static`)
+  is dropped — the exact analogue of a null Android background emitting no key. That
+  is the difference between 26 lines per DOM node and 6. Inherited values are
+  deliberately NOT suppressed even though typography repeats down a subtree: a design
+  states "this button's label is 14px", and a button inheriting 14px from `body`
+  would then show nothing on the very node being asked about.
+
+  `StyleObservation` in `reticle-core`, mirrored in `ReticleProtocol`, owns the
+  derivation AND its text rendering — both host renderers just call `render()`, so
+  the Kotlin helper and the Swift host cannot format one snapshot two ways, which is
+  how the two `compact` renderers drifted before. Pinned by
+  `reticle-protocol/fixtures/style-observation.cases.json` from both languages, plus
+  new e2e assertions on both platforms.
+
+  One altitude decision is worth naming because it looks like data loss and is not.
+  A node whose every style property sits at its platform default is skipped by the
+  **text** view: an Android `ViewGroup` reports four paddings and an elevation
+  whether or not anyone set them, and on a real screen that produced a seven-line
+  block per wrapper and buried everything real (iOS was worse — `alpha 1.0` on all
+  40 nodes). But once a node has any style, all of its properties print, zeros
+  included, because "the app sets padding 0 and the design says 16" is precisely the
+  finding this exists to support; a declared gap always keeps a node; and the
+  structured `items` keep every value regardless, as does `ui node`.
+
 - **Four stale surfaces and two duplications, all the same shape as the README
   ones.** All four plugin manifests still sold "a runtime UI evidence + action
   harness for **Android** apps", with `ios` missing even from the keyword list —

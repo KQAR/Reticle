@@ -7,6 +7,7 @@ import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
+import dev.reticle.core.StyleChannel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
@@ -128,6 +129,7 @@ object WebViewBridge {
         val disabled = element.optBoolean("disabled", false)
         val frame = fold.rectFor(element)
 
+        val metadata = metadataFor(element, selector, fold)
         nodes[ref] = Node(
             ref = ref,
             parentRef = parentRef,
@@ -141,7 +143,15 @@ object WebViewBridge {
             isVisible = frame.width > 0.0 && frame.height > 0.0,
             isEnabled = !disabled,
             isInteractive = !disabled && element.optBoolean("interactive", false),
-            custom = metadataFor(element, selector, fold),
+            custom = metadata,
+            // Computed CSS is the DOM's style channel. The values keep their own
+            // suffixes ("14px", "1.5") and are NOT converted: a page's zoom and
+            // viewport scaling are not observable from here, so a px->dp division
+            // would be arithmetic on an assumption. The projection passes them
+            // through verbatim (StyleUnit.opaque).
+            styleChannels = metadata.keys
+                .filter { it.startsWith("domStyle") }
+                .associateWith { StyleChannel.computedStyle },
             children = childRefs,
         )
         return ref

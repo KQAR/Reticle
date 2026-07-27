@@ -59,6 +59,41 @@ cross-origin frames, third-party WebView kernels, bitmap-baked text, out-of-proc
 system UI, the screenshot's blind spots) next to the evidence Reticle emits for each
 instead of returning a plausible-looking nothing.
 
+## Style evidence
+
+`ui style` reports every node's geometry and style properties — spacing, colours,
+font size/weight/family/line height, corner radius, borders — each value in the
+units a comparison needs and each labelled with the channel it was read through:
+
+```
+screen: 1080x2400px density=3 fontScale=1 -> 360x800dp
+#checkout.payButton button "Pay now"
+    frame  24,1800 1032x120px | 8,600 344x40dp | 95.6%x5% of screen
+    cornerRadius  24px | 8dp  [drawableReflect]
+    paddingLeft   48px | 16dp  [viewField]
+    textSize      42px | 14dp | 14sp  [viewField]
+    ! fontFamily  unreadable: android-typeface-exposes-no-family
+```
+
+Three things it does that a screenshot cannot. Lengths come out in **dp** as well
+as raw pixels, so the same screen on a 320dp and a 411dp device is directly
+comparable, and text also comes out in **sp**, which divides out the system font
+scale — separating "the app asked for the wrong size" from "the user enlarged
+text". A property Reticle cannot read is **named with a reason** instead of being
+absent, so "the app sets no font family" and "there is no channel to it" stop
+looking identical. And every value carries its **channel**, because a live view
+field and a reflected `Drawable` are not equally trustworthy.
+
+It is deliberately not a comparison. What the values ought to be, what tolerance
+counts, and which regions are exempt are the caller's policy — so the same output
+serves a design-fidelity check, a cross-build diff, or the same screen on two
+devices, and Reticle does not need to know which.
+
+```bash
+reticle ui style snapshot.json
+reticle ui style --live --package <pkg>
+```
+
 ## Multi-region controls
 
 A single View can carry several tap targets — the classic case is an agreement

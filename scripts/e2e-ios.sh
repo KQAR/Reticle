@@ -86,6 +86,25 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
 "$HOST" --target ios ui compact "$TMP/checkout/snapshot.json"
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
+# Style evidence. Two things are asserted because both were silent when wrong:
+# UIKit lengths are POINTS, already density-independent, so the projection must
+# NOT print a dp figure for them (dividing by `density` again would halve every
+# length while looking perfectly plausible); and `fontScale` must be probed, or a
+# text size cannot be split into "wrong size" and "user enlarged text".
+STYLE="$("$HOST" --target ios ui style "$TMP/checkout/snapshot.json")"
+echo "$STYLE" | head -20
+echo "$STYLE" | grep -q "pt density=" \
+  || { echo "FAIL: expected the screen line to report points, not px, on iOS"; exit 1; }
+echo "$STYLE" | grep -q "fontScale=[0-9]" \
+  || { echo "FAIL: expected a probed fontScale on iOS (got 'unprobed')"; exit 1; }
+echo "$STYLE" | grep -q "textSize .*pt" \
+  || { echo "FAIL: expected a textSize in points from a UILabel"; exit 1; }
+echo "$STYLE" | grep -qE "^ +frame .*pt \| [0-9.]+%x" \
+  || { echo "FAIL: a frame must render as points + a share of the screen, never pt->dp"; exit 1; }
+echo "$STYLE" | grep -q "dp" \
+  && { echo "FAIL: an iOS length was converted to dp — points are already density-independent"; exit 1; }
+echo "$STYLE" | grep -q "\[viewField\]" \
+  || { echo "FAIL: expected style values to carry their channel"; exit 1; }
 # HID tap must LAND on a native control, not merely send without error. Tapping
 # the Pay button flips checkout.status to "Paid!" — observable proof the
 # synthesized touch reached UIKit. This is the regression guard for the silent
@@ -337,6 +356,20 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview"
 "$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.title" \
   || { echo "FAIL: expected folded domNodes (complex.title) from the WKWebView"; exit 1; }
+# Computed CSS is the DOM's style channel on BOTH platforms — a WKWebView and an
+# android.webkit.WebView must answer `ui style` alike. The values keep their own
+# suffixes and are NOT converted: a page's zoom and viewport scaling are not
+# observable from in-process, so a CSS px is not a UIKit point and must never be
+# rendered as one. A computed value at its CSS initial is dropped, since
+# getComputedStyle answers for every property whether or not the page stated it.
+WEB_STYLE="$("$HOST" --target ios ui style "$TMP/webview/snapshot.json")"
+echo "$WEB_STYLE" | grep -A 8 computedStyle | head -12
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\[computedStyle\\]" \
+  || { echo "FAIL: expected a domStyleFontSize via computedStyle on iOS"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\| " \
+  && { echo "FAIL: a computed CSS length was converted — a CSS px is not a UIKit point"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyle\\w+ +(auto|none|static|visible|0px) " \
+  && { echo "FAIL: a computed style at its CSS initial value must be dropped, not printed"; exit 1; }
 # CSS selector resolution: node lookup and a tap point from the dom frame.
 # (#role-button sits above the fold regardless of fixture growth; below-fold
 # elements are intentionally not captured.)

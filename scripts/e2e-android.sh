@@ -142,6 +142,21 @@ HOME_COMPACT="$(R ui compact "$TMP/home/snapshot.json")"
 echo "$HOME_COMPACT"
 echo "$HOME_COMPACT" | grep -q "scenario.checkout" \
   || { echo "FAIL: home snapshot missing the scenario rows"; exit 1; }
+# Style evidence on the classic View path: Android lengths are physical pixels, so
+# every length must also come out in dp (a design states dp) and text also in sp
+# (which divides out the system font scale). The Typeface gap is asserted too: a
+# Typeface names no family, and that has to say so rather than look like a font the
+# app never set.
+HOME_STYLE="$(R ui style "$TMP/home/snapshot.json")"
+echo "$HOME_STYLE" | head -25
+echo "$HOME_STYLE" | grep -qE "^screen: [0-9.]+x[0-9.]+px density=[0-9.]+ fontScale=[0-9.]+ -> [0-9.]+x[0-9.]+dp$" \
+  || { echo "FAIL: screen line must carry px, density, a probed fontScale and the dp size"; exit 1; }
+echo "$HOME_STYLE" | grep -qE "textSize +[0-9.]+px \| [0-9.]+dp \| [0-9.]+sp +\[viewField\]" \
+  || { echo "FAIL: expected a TextView textSize in px|dp|sp via viewField"; exit 1; }
+echo "$HOME_STYLE" | grep -qE "paddingLeft +[0-9.]+px \| [0-9.]+dp" \
+  || { echo "FAIL: expected padding in px|dp — a frame gap cannot say whose padding it is"; exit 1; }
+echo "$HOME_STYLE" | grep -q "! fontFamily  unreadable: android-typeface-exposes-no-family" \
+  || { echo "FAIL: the Typeface family gap must declare itself"; exit 1; }
 
 echo "== CHECKOUT: tap + verify + trace =="
 R act tap --package "$PKG" --test-id scenario.checkout >/dev/null
@@ -416,6 +431,25 @@ for n in tagged:
     if not f or f["width"] <= 0 or f["height"] <= 0:
         print(f"FAIL: composeSemantics node {n['testId']} has no usable frame: {f}"); sys.exit(1)
 PY
+# Style evidence, and specifically the Compose half of it. Semantics carries NO
+# style of its own, so a Compose screen used to answer none of the questions a
+# design asks while the identical View screen answered all of them. Text style now
+# comes from the GetTextLayoutResult action's TextStyle — reflective, so a Compose
+# release that renames or re-mangles a getter breaks it silently unless asserted
+# here. `textLayout` in the output is the proof that path ran, and the
+# draw-modifier gap is the proof the unreadable half declares itself.
+COMPOSE_STYLE="$(R ui style "$TMP/compose/snapshot.json")"
+echo "$COMPOSE_STYLE" | head -30
+echo "$COMPOSE_STYLE" | grep -q "\[textLayout\]" \
+  || { echo "FAIL: no textLayout channel — the Compose TextStyle reflection produced nothing"; exit 1; }
+echo "$COMPOSE_STYLE" | grep -qE "textSize +[0-9.]+px \| [0-9.]+dp \| [0-9.]+sp +\[textLayout\]" \
+  || { echo "FAIL: expected a Compose textSize in px|dp|sp via textLayout"; exit 1; }
+echo "$COMPOSE_STYLE" | grep -qE "fontWeight +[0-9]+ +\[textLayout\]" \
+  || { echo "FAIL: expected a Compose fontWeight via textLayout"; exit 1; }
+echo "$COMPOSE_STYLE" | grep -q "! backgroundColor  unreadable: compose-draw-modifier" \
+  || { echo "FAIL: a Compose draw-modifier gap must declare itself, not be absent"; exit 1; }
+echo "$COMPOSE_STYLE" | grep -q "fontScale=[0-9]" \
+  || { echo "FAIL: expected a probed fontScale (got 'unprobed')"; exit 1; }
 # A testTag must resolve to a tap that lands (state flips Idle -> Paid!).
 R act tap --package "$PKG" --test-id compose.payButton >/dev/null
 wait_compact "$PKG" "Paid!"
@@ -513,6 +547,21 @@ echo "$WEB_COMPACT" | grep -q "web.payButton" \
   || { echo "FAIL: expected folded domNodes (web.payButton) from the WebView"; exit 1; }
 echo "$WEB_COMPACT" | grep -q "web.status" \
   || { echo "FAIL: expected the web.status domNode"; exit 1; }
+# Computed CSS is the DOM's style channel, and it must behave DIFFERENTLY from a
+# native one: the values keep their own suffixes and are NOT converted, because a
+# page's zoom and viewport scaling are not observable from in-process — a px->dp
+# division here would be arithmetic on an assumption. Also asserted: a computed
+# value sitting at its CSS initial ("auto"/"none"/"0px") is dropped, since
+# getComputedStyle answers for every property whether or not the page stated it and
+# one node otherwise printed 26 lines that say nothing.
+WEB_STYLE="$(R ui style "$TMP/webview/snapshot.json")"
+echo "$WEB_STYLE" | grep -A 8 computedStyle | head -12
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\[computedStyle\\]" \
+  || { echo "FAIL: expected a domStyleFontSize via computedStyle"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9.]+px \\| [0-9.]+dp" \
+  && { echo "FAIL: a computed CSS length was converted to dp — the page's zoom is not observable"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyle\\w+ +(auto|none|static|visible|0px) " \
+  && { echo "FAIL: a computed style at its CSS initial value must be dropped, not printed"; exit 1; }
 # CSS selector resolution against a folded domNode.
 R ui node "$TMP/webview/snapshot.json" --css "#web-pay" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }

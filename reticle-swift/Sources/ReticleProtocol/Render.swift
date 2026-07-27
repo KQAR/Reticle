@@ -8,7 +8,7 @@ import Foundation
 /// `outline` (the `@N` alias cache) is intentionally not yet ported; it is a
 /// convenience layer tracked as a follow-up.
 public enum Render {
-    /// Render one of: tree / semantics / compact / node / regions.
+    /// Render one of: tree / semantics / compact / node / regions / style.
     /// `node` requires `selector`. Returns rendered text.
     public static func view(
         _ view: String,
@@ -22,6 +22,7 @@ public enum Render {
         case "compact": return compact(snapshot)
         case "node": return try node(snapshot, selector: selector)
         case "regions": return regions(snapshot)
+        case "style": return style(snapshot)
         default: throw RenderError.unknownView(view)
         }
     }
@@ -116,6 +117,14 @@ public enum Render {
         }
         let data = try ReticleJSON.encodePretty(match)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Geometry + style + provenance for every node that has any, in units a
+    /// consumer can compare. Deliberately not a comparison: what the values ought
+    /// to be, what tolerance counts, and which regions are exempt are the caller's
+    /// policy. Matches the Kotlin helper's `renderStyle`.
+    static func style(_ snapshot: Snapshot) -> String {
+        StyleObservation.from(snapshot).render()
     }
 
     static func regions(_ snapshot: Snapshot) -> String {
