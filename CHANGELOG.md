@@ -52,6 +52,19 @@
   was rejected as unverifiable against a public contract), and an Android `Typeface`
   names no family.
 
+  **The DOM is the third channel**, tagged `computedStyle` by both bridges so a
+  WKWebView and an `android.webkit.WebView` answer alike. It behaves deliberately
+  unlike the native two: values pass through verbatim with their own suffixes,
+  because a CSS `px` is neither a device pixel nor a UIKit point and a page's zoom is
+  not observable from in-process, so converting would be arithmetic on an assumption.
+  And because `getComputedStyle` answers for every property whether or not the page
+  stated it, a computed value equal to its CSS initial (`auto`/`none`/`0px`/`static`)
+  is dropped — the exact analogue of a null Android background emitting no key. That
+  is the difference between 26 lines per DOM node and 6. Inherited values are
+  deliberately NOT suppressed even though typography repeats down a subtree: a design
+  states "this button's label is 14px", and a button inheriting 14px from `body`
+  would then show nothing on the very node being asked about.
+
   `StyleObservation` in `reticle-core`, mirrored in `ReticleProtocol`, owns the
   derivation AND its text rendering — both host renderers just call `render()`, so
   the Kotlin helper and the Swift host cannot format one snapshot two ways, which is

@@ -314,6 +314,18 @@ derivation AND its text rendering — both host renderers just call `render()`, 
 the Kotlin helper and the Swift host cannot format one snapshot two ways. Pinned
 for both by `reticle-protocol/fixtures/style-observation.cases.json`.
 
+The DOM channel behaves deliberately differently from the native ones. Both bridges
+(Android `WebViewBridge`, iOS the WKWebView twin) tag their 26 `domStyle*` keys
+`computedStyle`, and the values pass through **verbatim** with their own suffixes —
+a CSS `px` is neither a device pixel nor a UIKit point, and a page's zoom and
+viewport scaling are not observable from in-process, so converting would be
+arithmetic on an assumption. `StyleUnit.opaque` is what that looks like on the wire.
+The other DOM-specific rule: `getComputedStyle` answers for every property whether
+or not the page stated it, so a computed value equal to its CSS initial
+(`auto`/`none`/`0px`/`static`) is dropped — the exact analogue of a null Android
+background emitting no key. Measured on the sample fixture, that is the difference
+between 26 lines per DOM node and 6.
+
 One capture asymmetry is worth knowing. Compose semantics carries no style of its
 own — it is an accessibility surface — so text style comes from the
 `GetTextLayoutResult` action's `TextLayoutResult.layoutInput.style`, the same

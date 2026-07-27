@@ -356,6 +356,20 @@ unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview"
 "$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.title" \
   || { echo "FAIL: expected folded domNodes (complex.title) from the WKWebView"; exit 1; }
+# Computed CSS is the DOM's style channel on BOTH platforms — a WKWebView and an
+# android.webkit.WebView must answer `ui style` alike. The values keep their own
+# suffixes and are NOT converted: a page's zoom and viewport scaling are not
+# observable from in-process, so a CSS px is not a UIKit point and must never be
+# rendered as one. A computed value at its CSS initial is dropped, since
+# getComputedStyle answers for every property whether or not the page stated it.
+WEB_STYLE="$("$HOST" --target ios ui style "$TMP/webview/snapshot.json")"
+echo "$WEB_STYLE" | grep -A 8 computedStyle | head -12
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\[computedStyle\\]" \
+  || { echo "FAIL: expected a domStyleFontSize via computedStyle on iOS"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\| " \
+  && { echo "FAIL: a computed CSS length was converted — a CSS px is not a UIKit point"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyle\\w+ +(auto|none|static|visible|0px) " \
+  && { echo "FAIL: a computed style at its CSS initial value must be dropped, not printed"; exit 1; }
 # CSS selector resolution: node lookup and a tap point from the dom frame.
 # (#role-button sits above the fold regardless of fixture growth; below-fold
 # elements are intentionally not captured.)
