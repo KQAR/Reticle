@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-07-27
 
 - **Recording: on by default, and readable.** An action trace already held good
   evidence — two snapshots, two screenshots, a diff — and it was close to unusable.

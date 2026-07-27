@@ -28,7 +28,8 @@ several visible nodes, and a `--region` matching no phrase, both stop instead of
 guessing and both name what they did see. Narrow the selector rather than falling
 back to coordinates.
 
-Add `--trace-output reticle-traces` for durable evidence (a per-action directory
-with `trace.json`, before/after snapshots and screenshots). `--target ios` selects
-an iOS simulator or device; a real iOS device has no coordinate tap — use
-`act activate` with a selector there.
+The tap is recorded either way — a per-action directory with `trace.json`,
+before/after snapshots and screenshots. `reticle trace log` reads it back in a
+few lines; add `--trace-output reticle-traces` only to put the artifacts
+somewhere specific. `--target ios` selects an iOS simulator or device; a real iOS
+device has no coordinate tap — use `act activate` with a selector there.

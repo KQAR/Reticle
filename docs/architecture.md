@@ -804,6 +804,24 @@ events, body artifacts, mock config, and action traces under the session
 directory. This keeps token cost low while preserving full fidelity for when
 it's needed.
 
+Action traces follow the same split, and it took two changes to actually hold.
+The manifest's diff is the compact layer, but it cited bare refs — so reading it
+meant loading the 100KB+ snapshot next to it, and the split silently collapsed.
+Each change now carries the changed node's identity (once per ref), which is
+what makes the compact layer answerable on its own. And because the diff is
+capped, **rank decides what survives**: by field (appearance and text before the
+geometry tail), then by how addressable the node is. Ordering by ref instead —
+which is what it did — let a scrolling list's frame churn evict the one node that
+appeared, i.e. the cap silently chose the least useful hundred.
+
+`reticle trace log` is the run-level analogue of `ui compact`: a few lines per
+action instead of a directory per action. Every loss is stated (`…N more` for
+the digest, `truncated` in the manifest for the capture), so a short read is
+never mistaken for a quiet screen. Recording is on by default and lands in an
+auto session when no daemon owns one; pruning is gated on a marker file Reticle
+writes, never on the directory's name, so it can only ever delete its own.
+Both diff ports are pinned by `reticle-protocol/fixtures/action-trace-diff.cases.json`.
+
 ## Honest boundaries: what Reticle cannot reach
 
 Collected in **[boundaries.md](boundaries.md)** — the marker vocabulary
