@@ -28,6 +28,19 @@ data class ScreenInfo(
     val size: Size,
     /** Display density (dpi / 160). Android analogue of UIScreen.scale. */
     val density: Double,
+    /**
+     * System font-scale multiplier at capture time (Android
+     * `Configuration.fontScale`; on iOS the Dynamic Type scale of a body font),
+     * or null when the platform did not probe it.
+     *
+     * Without it a raw text size cannot be split into the two questions a
+     * consumer actually asks: *is this the size the design specifies* (compare in
+     * dp, which divides out [density] only) and *is the user scaling text right
+     * now* (compare in sp, which divides out both). One number cannot answer
+     * both, and guessing 1.0 turns "the user enlarged text" into "the app got the
+     * font size wrong".
+     */
+    val fontScale: Double? = null,
     /** "light" | "dark" — Ui mode night flag. */
     val interfaceStyle: String? = null,
     /**

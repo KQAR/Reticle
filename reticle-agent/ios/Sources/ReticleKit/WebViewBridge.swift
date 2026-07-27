@@ -107,6 +107,7 @@ enum WebViewBridge {
         let disabled = bool(element["disabled"])
         let frame = fold.rect(for: element)
 
+        let domMetadata = metadata(for: element, tag: tag, fold: fold)
         nodes[ref] = Node(
             ref: ref,
             parentRef: parentRef,
@@ -120,7 +121,17 @@ enum WebViewBridge {
             isVisible: frame.width > 0 && frame.height > 0,
             isEnabled: !disabled,
             isInteractive: !disabled && bool(element["interactive"]),
-            custom: metadata(for: element, tag: tag, fold: fold),
+            custom: domMetadata,
+            // Computed CSS is the DOM's style channel — the same tagging the Android
+            // bridge applies, so a WKWebView and an android.webkit.WebView answer
+            // `ui style` alike. The values keep their own suffixes ("14px", "1.5")
+            // and are NOT converted: a page's zoom and viewport scaling are not
+            // observable from here, so a px->pt division would be arithmetic on an
+            // assumption. The projection passes them through verbatim
+            // (StyleUnit.opaque).
+            styleChannels: domMetadata.keys
+                .filter { $0.hasPrefix("domStyle") }
+                .reduce(into: [String: StyleChannel]()) { $0[$1] = .computedStyle },
             children: childRefs
         )
         return ref

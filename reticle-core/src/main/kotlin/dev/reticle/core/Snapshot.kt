@@ -70,6 +70,31 @@ data class Snapshot(
     }
 }
 
+/**
+ * The channel a style property was read through — the provenance half of
+ * [Node.styleChannels].
+ *
+ * Channels differ in what they can be trusted for, so collapsing them would hide
+ * the difference: a `viewField` read is the live value the platform will render,
+ * while a `drawableReflect` read walked a private `Drawable` field and can be
+ * stale on a themed or animated background. A consumer that compares against a
+ * design needs to know which it is holding.
+ */
+@Serializable
+enum class StyleChannel {
+    /** A public field/getter on the platform view or its layer. */
+    viewField,
+
+    /** Compose: the `TextStyle` behind a laid-out `Text`, via `GetTextLayoutResult`. */
+    textLayout,
+
+    /** WebView: `getComputedStyle` on the DOM element. */
+    computedStyle,
+
+    /** Reflected out of an Android background `Drawable` — see the caveat above. */
+    drawableReflect,
+}
+
 @Serializable
 enum class NodeKind {
     application,
@@ -111,6 +136,28 @@ data class Node(
     val isInteractive: Boolean = false,
     /** Scalar reflected properties, e.g. alpha, backgroundColor, elevation. */
     val custom: Map<String, MetadataValue> = emptyMap(),
+    /**
+     * Where each style-bearing entry of [custom] was read from. Keyed by the same
+     * property name; absent for properties that are not style (ids, DOM
+     * bookkeeping, app-authored metadata).
+     *
+     * This exists because "the design says 600, the app has nothing" has two very
+     * different causes — the app really did not set a weight, or Reticle has no
+     * channel to that weight — and a consumer comparing against a design cannot
+     * tell them apart from a missing key. Naming the channel makes the value
+     * checkable rather than believed, the same rule `custom.domKernel` follows.
+     */
+    val styleChannels: Map<String, StyleChannel> = emptyMap(),
+    /**
+     * Style properties this node is known to HAVE but which no channel can read,
+     * keyed by property name with a short reason as the value (e.g.
+     * `backgroundColor` -> `compose-draw-modifier`).
+     *
+     * The boundary rule at property granularity: an unreachable thing must
+     * produce evidence naming itself, never silence. A key here is never also a
+     * key of [custom] or [styleChannels].
+     */
+    val styleGaps: Map<String, String> = emptyMap(),
     val children: List<String> = emptyList(),
     /**
      * Discovered sub-regions within this single node (ClickableSpan ranges,
