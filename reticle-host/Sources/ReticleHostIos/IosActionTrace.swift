@@ -349,6 +349,6 @@ enum ActionTraceDiff {
     }
 
     private static func rectString(_ r: Rect) -> String {
-        "\(Int(r.x)),\(Int(r.y)) \(Int(r.width))x\(Int(r.height))"
+        r.intDescription
     }
 }

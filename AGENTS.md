@@ -208,7 +208,10 @@ scenario (checkout tap + `--verify` + `--trace-output`, ASCII/non-ASCII type,
 mutation, agreement regions, the system permission prompt (out-of-process window ->
 `window: UNFOCUSED`), the web JS dialog (alert() blocking the page's JS
 thread -> `dom:unavailable`), the popup windows (PopupWindow / Spinner dropdown /
-PopupMenu + `--label`), the long list (recycling boundary + scroll evidence), the
+PopupMenu + `--label`), the wheel picker (a `NumberPicker`'s unselected values are
+canvas paint, not nodes — the one scenario where the two platforms deliberately
+report different amounts, since a `UIPickerView`'s rows ARE nodes),
+the long list (recycling boundary + scroll evidence), the
 Compose semantics screen, the canvas control
 (virtual a11y sub-nodes under both id conventions + a touch-delegate rect),
 WebView DOM, same-origin iframe geometry (chained selector + a coordinate tap into
