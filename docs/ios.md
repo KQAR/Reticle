@@ -211,6 +211,11 @@ analogue of linking the Android AAR:
 
 ## Honest boundaries
 
+The cross-platform table — every structurally unreachable case next to the
+evidence Reticle emits instead — is [boundaries.md](boundaries.md). What follows is
+the iOS **mechanism** detail behind the rows that are platform-specific: why the
+limit exists, what was measured, and which route was tried and rejected.
+
 - **`act` on a real device uses in-process activation, not HID.** The host cannot
   synthesize hardware input to a physical device, so `act tap --test-id X` (and
   `act activate`) resolve the control in the linked agent and fire it in-process

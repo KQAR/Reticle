@@ -1,31 +1,36 @@
 ---
-description: Capture a Reticle runtime UI report from a running Android app and summarize what's on screen.
+description: Capture a Reticle runtime UI report from a running app (Android or iOS) and summarize what's on screen.
+argument-hint: <package> [--target ios]  e.g. dev.reticle.sample
 ---
 
-Use the bundled `reticle` CLI to capture a runtime UI report for the Android app
-identified by `$ARGUMENTS` (a package name; if empty, use `dev.reticle.sample`,
-the bundled demo).
+Capture a runtime UI report for the app named by `$ARGUMENTS` and summarize the
+screen. Default package: `dev.reticle.sample`, or `dev.reticle.sampleios` when
+`--target ios` is passed.
 
-Steps:
-1. Run `reticle doctor` to confirm adb and a connected device/emulator. If no
-   device, stop and tell the user.
-2. Run `reticle app launch --package <pkg>` to launch + forward + wait for the
-   in-process runtime. If it fails or times out, run `reticle status --package
-   <pkg>` to classify why (UNREACHABLE = agent not linked / app not running;
-   UNRESPONSIVE = stale socket, force-stop + relaunch; CONFLICT = another app
-   holds the port). If the app is debuggable but doesn't link the agent
-   (UNREACHABLE with no Reticle logcat lines), try `reticle app inject --package
-   <pkg>` (the app must be running) to start the runtime over JDWP, then continue.
-   Otherwise report that honestly instead of fabricating output.
-3. Run `reticle ui report --package <pkg> --output reticle-report`.
-4. Run `reticle ui compact reticle-report/snapshot.json` and summarize the
-   interactive/labelled elements on screen, including embedded WebView DOM nodes.
-5. Run `reticle ui regions reticle-report/snapshot.json` and call out any
-   multi-region controls (agreement rows, link runs) and how to target them.
-6. For WebView nodes that matter, run
-   `reticle ui node reticle-report/snapshot.json --css '<selector>'` to inspect
-   DOM metadata such as computed styles, margins, image URLs, and natural image
-   size.
+Follow the **`reticle` skill** for the full workflow — the health-check decision
+table, the evidence-reading rules, and what each marker means. This command is
+that workflow applied to one screen:
 
-Report the on-screen elements, any multi-region nodes, relevant WebView DOM
-selectors/metadata, and the report path.
+1. `reticle doctor` — if no device, stop and say so.
+2. Bring the runtime up: `reticle app launch --package <pkg>`. On failure use
+   `reticle status --package <pkg>` to classify why; the skill maps UNREACHABLE /
+   UNRESPONSIVE / CONFLICT / FOREIGN to its fix. A debuggable Android app that
+   does not link the AAR needs `reticle app inject` instead — see
+   `/reticle:inject`. Report a failure honestly rather than fabricating output.
+3. `reticle ui report --package <pkg> --output reticle-report`.
+4. `reticle ui compact reticle-report/snapshot.json` — summarize the interactive
+   and labelled elements, including embedded WebView DOM nodes.
+5. `reticle ui regions reticle-report/snapshot.json` — call out multi-region
+   controls (agreement rows, link runs) and how to target each phrase.
+6. For a WebView target that matters: `reticle ui node
+   reticle-report/snapshot.json --css '<selector>'` for computed styles, margins,
+   image URLs and natural size.
+
+Report the on-screen elements, any multi-region nodes, relevant DOM metadata, and
+the report path. **Relay the evidence markers instead of smoothing them over**:
+`window: UNFOCUSED` means nothing in this tree is tappable right now,
+`dom:unavailable` / `dom:unsupported-kernel` mean the web content was not read,
+`scroll:up,down` means a missing row may simply be unbound. `docs/boundaries.md`
+says what each marker means and whether a retry can help.
+
+Every command above accepts `--target ios` for an iOS simulator or device.
