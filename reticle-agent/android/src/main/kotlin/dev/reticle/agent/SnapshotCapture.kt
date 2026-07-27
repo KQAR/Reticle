@@ -212,6 +212,7 @@ class SnapshotCapture(private val context: Context) {
             children = childRefs,
             regions = region.regions + lottieRegions,
             suspectedMultiRegion = region.suspectedMultiRegion,
+            suspectedWheel = suspectedWheel(view),
             charGrid = region.charGrid,
             scroll = scrollInfo(view),
         )
@@ -329,6 +330,25 @@ class SnapshotCapture(private val context: Context) {
             null
         }
     }
+
+    /**
+     * Does this view look like a WHEEL column?
+     *
+     * By widget FAMILY, which is all that is knowable from outside: a wheel paints
+     * its candidate values onto its own canvas, so there is no item, no adapter and
+     * no accessibility surface to probe — a self-drawn one is byte-for-byte
+     * indistinguishable from a decorative empty view, which is exactly why an agent
+     * needs to be told. `NumberPicker` is matched by type; third-party wheels
+     * (`WheelView`, `LoopView`, `PickerView`, `WheelPicker`) by class name, since
+     * they share no supertype.
+     *
+     * Deliberately NOT matching `DatePicker`/`TimePicker`: in calendar/clock mode
+     * those materialise real, tappable day and hour nodes, and marking them
+     * "unreachable values" would be a wrong claim in the opposite direction. The
+     * wheel-mode ones contain a `NumberPicker`, which this catches on its own.
+     */
+    private fun suspectedWheel(view: View): Boolean =
+        view is android.widget.NumberPicker || WHEEL_CLASS_NAME.containsMatchIn(view.javaClass.name)
 
     private fun roleFor(view: View): String = when (view) {
         is android.widget.Button -> "button"
@@ -511,5 +531,10 @@ class SnapshotCapture(private val context: Context) {
         error?.let { throw it }
         @Suppress("UNCHECKED_CAST")
         return result as T
+    }
+
+    private companion object {
+        /** Third-party wheel families, which share no supertype with each other. */
+        val WHEEL_CLASS_NAME = Regex("(?i)(wheelview|wheelpicker|loopview|pickerview|numberpicker)")
     }
 }

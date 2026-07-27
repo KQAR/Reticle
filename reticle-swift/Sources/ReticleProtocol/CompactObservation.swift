@@ -43,6 +43,22 @@ public struct CompactObservation: Codable, Sendable {
             return nil
         }
 
+        /// How much of a wheel column is readable, or nil when this is not one.
+        /// `selection-only` when the current value survives as a child node (an
+        /// Android `NumberPicker`), `opaque` when the control publishes nothing at
+        /// all. Either way its unselected values are pixels and the control must be
+        /// driven with `swipe`. Kept identical to the Kotlin twin.
+        func wheelMarker(_ node: Node) -> String? {
+            guard node.suspectedWheel else { return nil }
+            var seen = Set<String>()
+            func hasTextInside(_ ref: String) -> Bool {
+                guard let child = snapshot.nodes[ref], seen.insert(ref).inserted else { return false }
+                if ref != node.ref, !(child.text ?? "").isEmpty { return true }
+                return child.children.contains(where: hasTextInside)
+            }
+            return hasTextInside(node.ref) ? "selection-only" : "opaque"
+        }
+
         var items: [CompactItem] = []
         func visit(_ ref: String, _ windowRef: String?) {
             guard let node = snapshot.nodes[ref] else { return }

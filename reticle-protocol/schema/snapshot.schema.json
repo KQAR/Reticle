@@ -266,6 +266,7 @@
           "items": { "$ref": "#/$defs/InteractionRegion" }
         },
         "suspectedMultiRegion": { "type": "boolean" },
+        "suspectedWheel": { "type": "boolean" },
         "charGrid": {
           "oneOf": [{ "$ref": "#/$defs/CharGrid" }, { "type": "null" }]
         },

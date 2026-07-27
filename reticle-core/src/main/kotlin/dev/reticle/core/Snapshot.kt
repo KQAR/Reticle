@@ -172,6 +172,24 @@ data class Node(
      * pair with [charGrid] to target a substring by coordinate.
      */
     val suspectedMultiRegion: Boolean = false,
+    /**
+     * True when this node looks like a WHEEL column — a control that paints its
+     * candidate values onto its own canvas instead of materialising them as nodes.
+     *
+     * A hint from the widget's class family, not a claim, and the reason it exists
+     * is that a wheel is otherwise indistinguishable from a decorative empty view:
+     * three rectangles, no items, no selected value, no `scroll:` travel, no
+     * regions. A caller reading that has no cue to switch tactics and ends up
+     * measuring row pitch off a screenshot — four screenshot round-trips and a
+     * hand-derived pixel constant for what is semantically "select 1995".
+     *
+     * What the marker says is exactly what is true: the values are pixels, so
+     * reaching another one is a `swipe` along the column and the evidence it
+     * worked is the app's own committed state, never a node appearing.
+     * `scroll-to` cannot help — no selector for an unselected value can ever
+     * resolve. See docs/boundaries.md.
+     */
+    val suspectedWheel: Boolean = false,
     /** Character-position grid for text nodes; enables substring targeting. */
     val charGrid: CharGrid? = null,
     /**
