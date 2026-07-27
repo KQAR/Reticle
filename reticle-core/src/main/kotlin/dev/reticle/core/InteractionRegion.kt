@@ -100,7 +100,10 @@ data class InteractionRegion(
  *
  * Derived from android.text.Layout, which is the same geometry the framework
  * uses to draw text, so it is accurate for the common single-line/LTR case and
- * honestly degrades (see `approximate`) for wrapped/BiDi text.
+ * honestly degrades (see `approximate`) for bidirectional or not-yet-measured
+ * text. Wrapping is NOT one of those cases and must not be listed as one: a
+ * wrapped phrase yields one exact rect per visual line, so calling it
+ * approximate would understate a grid that is precise.
  */
 @Serializable
 data class CharGrid(
