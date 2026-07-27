@@ -124,6 +124,11 @@ public struct Node: Codable, Sendable {
     public var children: [String]
     public var regions: [InteractionRegion]
     public var suspectedMultiRegion: Bool
+    /// True when this node looks like a WHEEL column — a control that paints its
+    /// candidate values onto its own canvas instead of materialising them as nodes.
+    /// A hint from the widget's class family, not a claim: without it a wheel is
+    /// indistinguishable from a decorative empty view. See the Kotlin twin.
+    public var suspectedWheel: Bool
     public var charGrid: CharGrid?
     /// Scroll capability, when this node is a scrollable container; nil otherwise.
     public var scroll: ScrollInfo?
@@ -148,6 +153,7 @@ public struct Node: Codable, Sendable {
         children: [String] = [],
         regions: [InteractionRegion] = [],
         suspectedMultiRegion: Bool = false,
+        suspectedWheel: Bool = false,
         charGrid: CharGrid? = nil,
         scroll: ScrollInfo? = nil
     ) {
@@ -170,6 +176,7 @@ public struct Node: Codable, Sendable {
         self.children = children
         self.regions = regions
         self.suspectedMultiRegion = suspectedMultiRegion
+        self.suspectedWheel = suspectedWheel
         self.charGrid = charGrid
         self.scroll = scroll
     }
@@ -233,7 +240,7 @@ public struct Node: Codable, Sendable {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
         case text, testId, frame, isVisible, isEnabled, isInteractive, custom
         case styleChannels, styleGaps
-        case children, regions, suspectedMultiRegion, charGrid, scroll
+        case children, regions, suspectedMultiRegion, suspectedWheel, charGrid, scroll
     }
 
     // Custom encode to reproduce reticle-core's omit-defaults JSON: a field
@@ -262,6 +269,7 @@ public struct Node: Codable, Sendable {
         if !children.isEmpty { try c.encode(children, forKey: .children) }
         if !regions.isEmpty { try c.encode(regions, forKey: .regions) }
         if suspectedMultiRegion { try c.encode(suspectedMultiRegion, forKey: .suspectedMultiRegion) }
+        if suspectedWheel { try c.encode(suspectedWheel, forKey: .suspectedWheel) }
         try c.encodeIfPresent(charGrid, forKey: .charGrid)
         try c.encodeIfPresent(scroll, forKey: .scroll)
     }
@@ -287,6 +295,7 @@ public struct Node: Codable, Sendable {
         children = try c.decodeIfPresent([String].self, forKey: .children) ?? []
         regions = try c.decodeIfPresent([InteractionRegion].self, forKey: .regions) ?? []
         suspectedMultiRegion = try c.decodeIfPresent(Bool.self, forKey: .suspectedMultiRegion) ?? false
+        suspectedWheel = try c.decodeIfPresent(Bool.self, forKey: .suspectedWheel) ?? false
         charGrid = try c.decodeIfPresent(CharGrid.self, forKey: .charGrid)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
     }

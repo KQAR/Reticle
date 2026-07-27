@@ -328,6 +328,27 @@ transform/alpha — an iOS `UIAlertController`, whose accessibility frame is fin
 immediately — reports `settled` at once while still not being hit-testable. There,
 wait (or `--verify` and retry); no position signal can tell you.
 
+**Wheel columns (`wheel:opaque` / `wheel:selection-only`).** A wheel paints its
+candidate values onto its own canvas, so "1995" exists as pixels and nowhere else:
+there is no node to tap, no `scroll:` travel, and `scroll-to` can never converge
+because no selector for an unselected value will ever resolve. The marker on the
+compact line is the cue to switch tactics — without it three rectangles read as
+decorative empty views. `selection-only` (an Android `NumberPicker`) means the
+CURRENT value is readable as a node and its neighbours are not; `opaque` (a
+self-drawn/third-party wheel) means nothing inside it is readable at all. Either
+way the recipe is the same:
+
+1. `swipe` along the column's centre, endpoints derived from its frame — not a
+   hardcoded distance, which is device- and widget-specific;
+2. take the **app's own committed state** as the verdict (`ui compact` on the
+   status/summary the app renders, or `debug logs`), never the wheel's own node;
+3. repeat until it reads what you want. Do **not** `act type` into a wheel — on
+   Android that succeeds and lies (the `EditText` shows the typed text while the
+   widget's value stays put until it validates on focus change).
+
+iOS is the asymmetric twin: `UIPickerView` builds a real subview per visible row,
+so its neighbours ARE nodes and a `--label` tap on one selects it.
+
 A recycling / lazy list binds only its visible window, so a far-down row has **no
 node at all** — `tap` can never reach it and a "not found" there does not mean the
 app lacks the element. Scrollable containers report their remaining travel

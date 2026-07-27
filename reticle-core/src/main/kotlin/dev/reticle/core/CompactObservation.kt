@@ -49,6 +49,28 @@ data class CompactObservation(
                 return null
             }
 
+            /**
+             * How much of a wheel column is readable, or null when this is not one.
+             *
+             * Two shapes, and collapsing them would be a lie in one direction or the
+             * other: an Android `NumberPicker` keeps its SELECTION as a child node
+             * (`selection-only` — the current value is readable, the neighbours are
+             * pixels), while a self-drawn wheel publishes nothing at all (`opaque`).
+             * Either way the unselected values are unreachable and the control must
+             * be driven with `swipe`.
+             */
+            fun wheelMarkerFor(snapshot: Snapshot, node: Node): String? {
+                if (!node.suspectedWheel) return null
+                val seen = HashSet<String>()
+                fun hasTextInside(ref: String): Boolean {
+                    val child = snapshot.nodes[ref] ?: return false
+                    if (!seen.add(ref)) return false
+                    if (ref != node.ref && !child.text.isNullOrBlank()) return true
+                    return child.children.any(::hasTextInside)
+                }
+                return if (hasTextInside(node.ref)) "selection-only" else "opaque"
+            }
+
             val items = ArrayList<CompactItem>()
             fun visit(ref: String, windowRef: String?) {
                 val node = snapshot.nodes[ref] ?: return
@@ -70,6 +92,7 @@ data class CompactObservation(
                             isInteractive = node.isInteractive,
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
+                            wheel = wheelMarkerFor(snapshot, node),
                             domUnavailable = node.domUnavailable(),
                             domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
@@ -113,6 +136,12 @@ data class CompactItem(
      */
     val scroll: ScrollInfo? = null,
     /**
+     * `"opaque"` / `"selection-only"` when this item is a wheel column, else null.
+     * Rendered as `wheel:<value>` — the honest-boundary marker for a control whose
+     * candidate values exist only as pixels. See [Node.suspectedWheel].
+     */
+    val wheel: String? = null,
+    /**
      * True when this node hosts a web view whose DOM could not be read at capture
      * time (a JS modal blocking the page's thread, JS disabled, or a read that
      * outran its budget). Without it, "no DOM nodes" and "this web view is empty"
@@ -150,6 +179,7 @@ data class CompactItem(
             if (isInteractive) append(" tappable")
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
+            wheel?.let { append(" wheel:").append(it) }
             if (domUnavailable) append(" dom:unavailable")
             if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")

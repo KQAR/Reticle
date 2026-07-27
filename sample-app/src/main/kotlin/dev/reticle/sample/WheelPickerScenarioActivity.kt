@@ -66,9 +66,22 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
             }
         }
 
+        // A THIRD column that is not a NumberPicker at all: a self-drawn wheel, the
+        // shape most third-party date pickers use. It publishes nothing — no child,
+        // no adapter, no accessibility surface — so it is where `wheel:opaque` has
+        // to carry the whole message.
+        val yearWheel = SelfDrawnWheelView(this).apply {
+            tag = "wheel.year"
+            values = YEARS
+            onValueChanged = { value ->
+                Reticle.log("wheel_year_changed", mapOf("value" to value))
+            }
+        }
+
         val wheels = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            addView(yearWheel)
             addView(hourPicker)
             addView(TextView(this@WheelPickerScenarioActivity).apply {
                 text = ":"
@@ -109,5 +122,70 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
     private companion object {
         val HOURS = Array(24) { "%02d".format(it) }
         val MINUTES = arrayOf("00", "15", "30", "45")
+        val YEARS = List(40) { (1980 + it).toString() }
+    }
+}
+
+/**
+ * A wheel that owns everything: it paints its values onto its own canvas, handles
+ * its own drags, and exposes no child view, no adapter and no accessibility node.
+ *
+ * This is the shape a third-party date/region picker actually has, and it is the
+ * hard case for an observer: from outside it is byte-for-byte a plain empty
+ * `View`. Reticle marks it `wheel:opaque` from the widget family — the honest
+ * "screenshots and swipes are the only way in", rather than the silence that used
+ * to read as a decorative rectangle.
+ */
+class SelfDrawnWheelView(context: android.content.Context) : android.view.View(context) {
+
+    var values: List<String> = emptyList()
+    var onValueChanged: ((String) -> Unit)? = null
+
+    /** The value at the centre of the wheel — readable by the app, never by the tree. */
+    val selected: String? get() = values.getOrNull(index)
+
+    private var index = 0
+    private var dragStartY = 0f
+    private var dragStartIndex = 0
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 44f
+    }
+
+    /** Row pitch in pixels: the constant a caller otherwise measures off a screenshot. */
+    private val rowHeight = 120f
+
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        setMeasuredDimension(resolveSize(300, widthSpec), resolveSize((rowHeight * 5).toInt(), heightSpec))
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        val centre = height / 2f
+        for (offset in -2..2) {
+            val value = values.getOrNull(index + offset) ?: continue
+            paint.alpha = if (offset == 0) 255 else 90
+            canvas.drawText(value, width / 2f, centre + offset * rowHeight + paint.textSize / 3f, paint)
+        }
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                dragStartY = event.y
+                dragStartIndex = index
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_UP -> {
+                val steps = ((dragStartY - event.y) / rowHeight).toInt()
+                val next = (dragStartIndex + steps).coerceIn(0, (values.size - 1).coerceAtLeast(0))
+                if (next != index) {
+                    index = next
+                    invalidate()
+                    selected?.let { onValueChanged?.invoke(it) }
+                }
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
     }
 }
