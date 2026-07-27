@@ -26,6 +26,62 @@ class OutlineRendererTest {
     }
 
     @Test
+    fun groupsAStackedScreenByWindow_topmostFirst() {
+        // A form pushed over a still-live host page. Flattened by geometry alone the
+        // two interleave, and the fields being driven end up scattered among nodes
+        // the caller will never act on.
+        val (text, entries) = OutlineRenderer.render(stackedSnapshot())
+
+        val lines = text.lines()
+        val headers = lines.filter { it.startsWith("window ") }
+        assertEquals(2, headers.size, text)
+        assertContains(headers[0], "[top]")
+        assertContains(headers[1], "[behind the top window]")
+        // Numbering starts in the window the user is looking at, rather than being
+        // dominated by the background screen.
+        assertEquals(listOf("form.a", "form.b", "host.a", "host.b"), entries.map { it.ref })
+        assertEquals("@1", entries.first { it.ref == "form.a" }.alias)
+        assertEquals("w2", entries.first { it.ref == "form.a" }.windowRef)
+    }
+
+    @Test
+    fun aSingleWindowOutlineHasNoHeaders() {
+        // Headers on an unstacked screen would be pure noise; the output stays as
+        // it was.
+        val (text, _) = OutlineRenderer.render(sampleSnapshot())
+        assertEquals(emptyList(), text.lines().filter { it.startsWith("window ") })
+    }
+
+    /** Two live windows, whose nodes interleave when sorted by geometry alone. */
+    private fun stackedSnapshot(): Snapshot {
+        fun content(ref: String, window: String, y: Double, id: String) = Node(
+            ref = ref, parentRef = window, kind = NodeKind.view,
+            typeName = "android.widget.TextView", role = "text",
+            testId = id, text = id, frame = Rect(0.0, y, 1000.0, 100.0), isInteractive = true,
+        )
+        return Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1000.0, 2000.0), density = 3.0),
+            rootRef = "app",
+            nodes = linkedMapOf(
+                "app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("w1", "w2")),
+                "w1" to Node(
+                    ref = "w1", parentRef = "app", kind = NodeKind.window, typeName = "DecorView",
+                    frame = Rect(0.0, 0.0, 1000.0, 2000.0), children = listOf("host.a", "host.b"),
+                ),
+                "w2" to Node(
+                    ref = "w2", parentRef = "app", kind = NodeKind.window, typeName = "DecorView",
+                    frame = Rect(0.0, 0.0, 1000.0, 2000.0), children = listOf("form.a", "form.b"),
+                ),
+                "host.a" to content("host.a", "w1", 150.0, "loanCard"),
+                "form.a" to content("form.a", "w2", 100.0, "firstName"),
+                "host.b" to content("host.b", "w1", 400.0, "ivBg"),
+                "form.b" to content("form.b", "w2", 300.0, "lastName"),
+            ),
+        )
+    }
+
+    @Test
     fun writesAndResolvesAliasCache() {
         val home = Files.createTempDirectory("reticle-alias-home").toFile()
         val oldHome = System.getProperty("user.home")

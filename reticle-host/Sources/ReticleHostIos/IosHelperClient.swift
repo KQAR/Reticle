@@ -167,7 +167,16 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     }
 
     public func render(_ request: RenderRequest) throws -> RenderResult {
-        let snapshot = try loadSnapshotForRender(request)
+        var snapshot = try loadSnapshotForRender(request)
+        if let window = request.window {
+            guard let scoped = snapshot.scopedToWindow(window) else {
+                let refs = snapshot.windowRefs()
+                throw HelperError("no window '\(window)' in this capture. Windows here (bottom to top): "
+                    + (refs.isEmpty ? "(none — this capture has no window nodes)" : refs.joined(separator: ", "))
+                    + ". Use `--window top` for whichever is on top.")
+            }
+            snapshot = scoped
+        }
         let text = try Render.view(
             request.view,
             snapshot: snapshot,

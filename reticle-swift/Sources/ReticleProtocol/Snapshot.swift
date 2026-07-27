@@ -92,6 +92,60 @@ public struct Snapshot: Codable, Sendable {
 }
 
 /// A single node in the unified UI tree.
+public extension Snapshot {
+    /// The in-app windows of this capture, bottom-most first — the root's `window`
+    /// children in the platform's stacking order. The Swift twin of reticle-core's
+    /// `Snapshot.windowRefs()`.
+    func windowRefs() -> [String] {
+        (root()?.children ?? []).filter { nodes[$0]?.kind == .window }
+    }
+
+    /// The window on top, or nil when this capture has no window nodes.
+    func topWindowRef() -> String? {
+        windowRefs().last { nodes[$0]?.isVisible != false }
+    }
+
+    /// The nearest `window` ancestor of a node, or nil outside any window.
+    func windowRefOf(_ ref: String) -> String? {
+        var current = nodes[ref]
+        var seen = Set<String>()
+        while let node = current, seen.insert(node.ref).inserted {
+            if node.kind == .window { return node.ref }
+            current = node.parentRef.flatMap { nodes[$0] }
+        }
+        return nil
+    }
+
+    /// This capture narrowed to ONE window (`"top"` for the topmost), keeping the
+    /// application root above it; nil when the argument names no window here.
+    ///
+    /// Scoping the SNAPSHOT rather than each renderer is what makes every view —
+    /// tree, compact, outline, style — narrow identically. See the Kotlin twin for
+    /// the full rationale.
+    func scopedToWindow(_ window: String) -> Snapshot? {
+        let refs = windowRefs()
+        let targetRef = window == Snapshot.topWindow ? topWindowRef() : (refs.contains(window) ? window : nil)
+        guard let targetRef, let target = nodes[targetRef] else { return nil }
+        var kept: [String: Node] = [:]
+        if var rootNode = root() {
+            rootNode.children = [target.ref]
+            kept[rootNode.ref] = rootNode
+        }
+        func visit(_ ref: String) {
+            guard let node = nodes[ref], kept[ref] == nil else { return }
+            kept[ref] = node
+            node.children.forEach(visit)
+        }
+        visit(target.ref)
+        var scoped = self
+        scoped.nodes = kept
+        return scoped
+    }
+
+    /// `scopedToWindow` argument for "whatever window is on top right now".
+    static var topWindow: String { "top" }
+}
+
 public struct Node: Codable, Sendable {
     public var ref: String
     public var parentRef: String?

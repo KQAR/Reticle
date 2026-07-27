@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Stacked screens read as two screens now, not one shuffled list.** A capture holds
+  every live window of the process, and on Android a form pushed over a still-alive
+  host page is the common case rather than the exception. `ui compact` and `ui outline`
+  flattened both windows into one geometry-sorted list, so they interleaved: the two
+  `#action_bar_root` / `#content` roots appeared twice, `#etContent` four times, and the
+  form's own fields sat 12 aliases apart with unrelated content wedged between them —
+  on the reported screen the relevant nodes were about a third of a 99-line outline.
+  The information was technically present as a per-node `occluded-by:rN` suffix, but
+  that marker is overloaded (it also means "under the keyboard" and "under a popup in
+  the SAME window") and recovering "just the top window" meant filtering text by an
+  occluder ref you had to identify first. Now: `CompactItem` carries `windowRef`; with
+  more than one window in the capture both views group their lines under a `window
+  <ref> <what> [top]` / `[behind the top window]` header, topmost first, dropping
+  nothing; and **`--window top`** (or `--window <ref>`) on any `ui` view narrows the
+  capture before rendering. The narrowing is done to the SNAPSHOT
+  (`Snapshot.scopedToWindow`), so `tree`, `compact`, `outline`, `style` and the `@N`
+  alias numbering all scope together and no renderer has to learn about windows. Outline
+  numbering also now starts in the top window, so `@1` is a node you might actually act
+  on. A single-window screen is byte-identical to before.
+
 - **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
   the one picker shape the sample apps had no coverage for, and it behaves unlike the
   two they did have: a `Spinner` dropdown materialises real row nodes in a popup, and
