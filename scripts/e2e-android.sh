@@ -338,6 +338,110 @@ POPUP_LOGS="$(R debug logs --package "$PKG")"
 echo "$POPUP_LOGS" | grep -q "popup_menu_picked" \
   || { echo "FAIL: expected popup_menu_picked in the app log bridge"; exit 1; }
 
+echo "== WHEEL PICKER (only the selected value is a node) =="
+# The picker shape neither the Spinner dropdown nor the long list covers. A
+# `NumberPicker` in spinner mode draws its neighbouring values onto the wheel
+# canvas, so the ONLY child view it owns is the EditText holding the selection:
+# there is no node for "10" to tap and none ever appears, however far you scroll.
+# Reaching a value is a swipe, and the evidence is the selection's text changing.
+open_scenario scenario.wheelPicker "wheel.status"
+WHEEL="$(R ui compact --live --package "$PKG")"
+echo "$WHEEL"
+# Two wheels, both `numberpicker_input`, both `scroll:up,down`. The container
+# marker is what tells an agent the wheel has travel rather than being inert.
+echo "$WHEEL" | grep -q "#wheel.hour container .* scroll:up,down" \
+  || { echo "FAIL: the wheel must report its scroll travel, got: $WHEEL"; exit 1; }
+[ "$(echo "$WHEEL" | grep -c '#numberpicker_input')" = "2" ] \
+  || { echo "FAIL: expected exactly one value node per wheel"; exit 1; }
+# The boundary, asserted as an absence: a value the wheel is not on has no node.
+echo "$WHEEL" | grep -qE '#numberpicker_input textField "(20|21)"' \
+  && { echo "FAIL: an unselected wheel value must not appear as a node"; exit 1; }
+# `scroll-to` is deliberately not attempted: it waits for a SELECTOR to resolve
+# inside a container, and an unselected wheel value has no selector to name — the
+# two wheels' only ids are `numberpicker_input`, which already resolves. So the
+# primitive that rescues an unbound list row structurally cannot reach a wheel.
+# Drive it the only way that works, and take the verdict from the app's own
+# COMMITTED state rather than from the wheel's text. Two reasons, both measured:
+# once the wheel has been scrolled the widget paints the value itself and marks its
+# EditText INVISIBLE — permanently, on an API 36 emulator — so the value node drops
+# out of `compact` while staying in the snapshot (asserted below); and the text can
+# disagree with the value outright (see the `type` note further down). Committing
+# before and after and requiring the two to differ is the assertion that cannot be
+# satisfied by a no-op.
+HOUR_BEFORE="$(echo "$WHEEL" | sed -nE 's/^#numberpicker_input textField "([0-9]+)".*/\1/p' | head -1)"
+[ -n "$HOUR_BEFORE" ] \
+  || { echo "FAIL: could not read the hour wheel's value from: $WHEEL"; exit 1; }
+R act tap --package "$PKG" --test-id wheel.confirm >/dev/null
+wait_compact "$PKG" "Time: "
+TIME_BEFORE="$(R ui compact --live --package "$PKG" | grep -m1 '#wheel.status')"
+# The swipe runs up the hour wheel's centre column — the only way to move a wheel.
+# Its endpoints are DERIVED from the reported frame rather than hardcoded: the
+# wheel's rect differs between a phone and an emulator, and a fixed coordinate
+# would silently swipe empty background on the other one (a gesture that reports
+# clean and does nothing is the failure this suite exists to catch).
+read -r WHEEL_X WHEEL_FROM_Y WHEEL_TO_Y <<EOF
+$(echo "$WHEEL" | sed -nE 's/^#wheel\.hour container .*\[([0-9]+),([0-9]+) ([0-9]+)x([0-9]+)\].*/\1 \2 \3 \4/p' \
+   | awk '{ printf "%d %d %d\n", $1 + $3 / 2, $2 + $4 * 0.8, $2 + $4 * 0.2 }')
+EOF
+[ -n "${WHEEL_TO_Y:-}" ] \
+  || { echo "FAIL: could not read the hour wheel's frame from: $WHEEL"; exit 1; }
+R act swipe --package "$PKG" --from "$WHEEL_X,$WHEEL_FROM_Y" --to "$WHEEL_X,$WHEEL_TO_Y" --duration 300 >/dev/null
+R act wait --package "$PKG" --idle >/dev/null
+R act tap --package "$PKG" --test-id wheel.confirm >/dev/null
+# Poll for the committed value to differ. A deadline rather than a fixed sleep:
+# the confirm may land while the wheel is still settling, in which case the app
+# commits the value it is on and the next confirm carries the final one.
+WHEEL_DEADLINE=$(( $(date +%s) + 30 ))
+TIME_AFTER="$TIME_BEFORE"
+while [ "$(date +%s)" -lt "$WHEEL_DEADLINE" ]; do
+  TIME_AFTER="$(R ui compact --live --package "$PKG" | grep -m1 '#wheel.status')"
+  [ "$TIME_AFTER" != "$TIME_BEFORE" ] && break
+  R act tap --package "$PKG" --test-id wheel.confirm >/dev/null
+  sleep 1
+done
+[ "$TIME_AFTER" != "$TIME_BEFORE" ] \
+  || { echo "FAIL: the swipe never moved the wheel's committed value (still $TIME_BEFORE)"; exit 1; }
+echo "wheel: $TIME_BEFORE -> $TIME_AFTER"
+# A scrolled wheel's value must stay READABLE even when it stops being *visible*.
+# Measured on an API 36 emulator: after the swipe, `NumberPicker` leaves its
+# CustomEditText INVISIBLE for good (it paints the value itself from then on), so
+# `compact` — the projection an agent actually reads — shows a wheel with no value
+# at all, while the node is still in the snapshot carrying the right text and still
+# resolves by selector. On a real device (ColorOS, API 35) it stayed visible, so
+# neither behaviour may be assumed. What is asserted is therefore the guarantee
+# that holds either way: the full snapshot still answers "what is this wheel on",
+# and the answer is the value the swipe moved it to.
+R ui report --package "$PKG" --output "$TMP/wheel-settled" >/dev/null
+/usr/bin/python3 - "$TMP/wheel-settled/snapshot.json" "$HOUR_BEFORE" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"]
+nodes = nodes.values() if isinstance(nodes, dict) else nodes
+# Document order is not guaranteed by the map, so pick the LEFTMOST wheel by frame.
+inputs = sorted((n for n in nodes if n.get("resourceId") == "numberpicker_input"),
+                key=lambda n: (n.get("frame") or {}).get("x", 0))
+if len(inputs) != 2:
+    print(f"FAIL: both wheel value nodes must stay in the snapshot, got {len(inputs)}")
+    sys.exit(1)
+hour = inputs[0]
+if not hour.get("text"):
+    print(f"FAIL: the scrolled wheel's node carries no value: {hour}"); sys.exit(1)
+if hour["text"] == sys.argv[2]:
+    print(f"FAIL: the hour wheel still reads {sys.argv[2]} after the swipe"); sys.exit(1)
+print(f"wheel value node: {sys.argv[2]} -> {hour['text']} "
+      f"(isVisible={hour.get('isVisible')}, so it may be absent from compact)")
+PY
+# NOTE on the gesture chosen above: `act type` into `numberpicker_input` is
+# deliberately NOT used to set a wheel. It succeeds and is a lie — the EditText
+# shows the typed text while the widget's value stays put until it validates on
+# focus change (measured: typing 17 left the tree reading 17, the canvas
+# neighbours reading 10/12, and `wheel.status` reading Time: 11:00). Recorded in
+# docs/boundaries.md; a swipe is the honest driver.
+WHEEL_LOGS="$(R debug logs --package "$PKG")"
+echo "$WHEEL_LOGS" | grep -q "wheel_hour_changed" \
+  || { echo "FAIL: expected wheel_hour_changed in the app log bridge"; exit 1; }
+echo "$WHEEL_LOGS" | grep -q "wheel_confirmed" \
+  || { echo "FAIL: expected wheel_confirmed in the app log bridge"; exit 1; }
+
 echo "== LONG LIST (recycling boundary + scroll evidence) =="
 # The commonest E2E dead end: a RecyclerView binds only its visible window, so a
 # far-down row has NO node, frame, or selector — it is absent, not off-screen.

@@ -36,7 +36,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|list|canvasControl|webview|swiftui|tabbar|login|permission|overlayWindow|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|wheelPicker|list|canvasControl|webview|swiftui|tabbar|login|permission|overlayWindow|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -58,6 +58,8 @@ private let scenarioEntries: [ScenarioEntry] = [
                   subtitle: "Button tap, status mutation, text input, and app logs"),
     ScenarioEntry(tag: "agreements", title: "Agreement regions",
                   subtitle: "Link attribute, text markers, char grid, and color runs"),
+    ScenarioEntry(tag: "wheelPicker", title: "Wheel picker",
+                  subtitle: "A two-component UIPickerView exposed through accessibility"),
     ScenarioEntry(tag: "list", title: "Long list",
                   subtitle: "60 lazy rows; far-down rows are absent until scrolled"),
     ScenarioEntry(tag: "canvasControl", title: "Canvas control regions",
@@ -97,6 +99,8 @@ private func scenarioDestination(_ tag: String) -> some View {
         ScenarioScreen { CheckoutViewController() }.navigationTitle("Checkout")
     case "agreements":
         ScenarioScreen { AgreementViewController() }.navigationTitle("Agreements")
+    case "wheelPicker":
+        ScenarioScreen { WheelPickerViewController() }.navigationTitle("Wheel picker")
     case "list":
         ListScenarioView().navigationTitle("Long list")
     case "canvasControl":

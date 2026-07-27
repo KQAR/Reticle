@@ -154,9 +154,7 @@ public struct CompactItem: Codable, Sendable {
         else if let resourceId { selector = "@\(resourceId)" }
         else { selector = ref }
         let labelPart = label.map { " \"\(String($0.prefix(40)))\"" } ?? ""
-        let framePart = frame.map {
-            " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]"
-        } ?? ""
+        let framePart = frame.map { " [\($0.intDescription)]" } ?? ""
         var state = ""
         if !isEnabled { state += " disabled" }
         if isInteractive { state += " tappable" }
