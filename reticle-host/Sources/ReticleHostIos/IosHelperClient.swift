@@ -248,7 +248,16 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         // before/after evidence package — the same trace shape Android emits, so
         // `reticle serve` and the panel ingest an iOS action identically.
         let tracer = (params["traceOutput"] as? String).map {
-            IosActionTrace(root: URL(fileURLWithPath: $0), packageName: pkg, http: IosAgentHTTP(bundleId: pkg))
+            IosActionTrace(
+                root: URL(fileURLWithPath: $0),
+                packageName: pkg,
+                http: IosAgentHTTP(bundleId: pkg),
+                // Captured here, from the request, for the same reason the Kotlin
+                // helper captures at construction: by the time the trace is written
+                // the request has been reduced to a result, and a `type`'s text is
+                // no longer recoverable from it.
+                recordedParams: ActionTraceParamNames.capture(from: params)
+            )
         }
         let settleMs = (params["traceDelayMs"] as? Int) ?? 250
         let selector = selectorForTrace(params)

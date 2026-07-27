@@ -358,10 +358,62 @@ it is capped at 64 MiB by default; a larger upload is rejected with `413` and a
 cap with `--proxy-max-request-body-mb <n>`.
 
 Existing one-shot commands still work without the daemon. When `serve` is
-running, `reticle act ...` automatically writes a trace package under the current
-session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
-`action.trace` event on a best-effort basis. Pass `--trace-output <dir>` when you
-want to copy trace artifacts somewhere outside the session.
+running, `reticle act ...` writes a trace package under the current session
+(`~/.reticle/sessions/<session>/traces`) and publishes it as an `action.trace`
+event on a best-effort basis. Pass `--trace-output <dir>` when you want to copy
+trace artifacts somewhere outside the session.
+
+### Recording, and reading it back
+
+**Recording is on by default, daemon or not.** With no `serve` running, actions
+record into an auto session (`~/.reticle/sessions/auto-<timestamp>/traces`);
+commands within 15 minutes of each other join the same one. Reticle prunes only
+the sessions it created — eligibility is a marker file it writes, not the name,
+so a session you named is never a candidate — keeping the 20 most recent within
+a 2 GB budget and saying on stderr what it removed. `RETICLE_NO_AUTO_TRACE=1`
+turns auto-recording off; explicit `--trace-output` is unaffected.
+
+`reticle trace log` renders a recorded run as a few lines per action, so
+reconstructing a session does not mean opening every 100KB+ snapshot:
+
+```bash
+reticle trace log                       # the current recording
+reticle trace log reticle-batch         # or any trace directory
+reticle trace log --changes 12 --json   # more detail / machine-readable
+```
+
+```
+recording /Users/you/.reticle/sessions/auto-20260727-190522/traces
+ios · dev.reticle.sampleios · 3 actions · 19:05:23 → 19:05:25
+
+1  19:05:23  tap  testId=scenario.checkout  →201,220 semantic:testId
+    + r100 [testId=Checkout role=container]
+    + r101 [testId=BackButton label="Reticle Sample" role=button]
+    …94 more (present 46, label 21, text 20, visible 7)
+    ! manifest kept 100 of 517 changes (dropped by field: frame 86, role 52, …)
+    evidence 1785150323632-tap/, 2 snapshots, 2 screenshots
+
+2  19:05:24  type  testId=checkout.nameField  →201,557 selector  text="Ada Lovelace"
+    …
+
+3  19:05:25  tap  testId=checkout.payButton  →201,349 semantic:testId
+    ~ r13 text "Cart: 3 items" → "Paid!" [testId=checkout.status label="Paid!" role=text]
+    evidence 1785150325765-tap/, 2 snapshots, 2 screenshots
+```
+
+Three properties make this readable rather than merely short. Each change
+**names the node it is about** (`[testId=…]`), attached once per ref, so a bare
+`r13` never sends you to the snapshot. The diff is **ranked before it is capped**
+— appearances and text ahead of pixel-level `frame` churn, addressable nodes
+ahead of anonymous layout containers — so what survives a cap is what mattered.
+And every loss is **counted, not silent**: `…N more` for the render, `! manifest
+kept X of Y` for the capture. An action that changed nothing says
+`(no observable change between before and after)`, which is a finding, not a
+blank.
+
+`trace log` only reads. It is not a replay script and asserts nothing: whether a
+run passed is the reader's call, and `--verify` / `act wait --strict` remain the
+places to state an expectation.
 
 ### Warm paths and command routing
 

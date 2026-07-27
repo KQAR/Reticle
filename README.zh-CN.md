@@ -276,6 +276,53 @@ Network Security Config 中信任用户 CA,或启用证书 pinning 的 app 仍�
 面板的完整能力(过滤、rule 分组、copy-as-rule)与 REST/SSE surface、事件信封一起写在
 `reticle-protocol/events.md`。
 
+### 录制与回读
+
+**录制默认常开,不依赖 daemon。** 没有 `serve` 时,动作录进自动 session
+(`~/.reticle/sessions/auto-<时间戳>/traces`);15 分钟内相邻的命令归入同一个。清理只
+针对 Reticle 自己创建的 session——判定依据是它写入的标记文件而非名字,所以你手工命名的
+session 永远不在候选内——保留最近 20 个、总量不超过 2 GB,删了什么会打到 stderr。
+`RETICLE_NO_AUTO_TRACE=1` 关掉自动录制;显式 `--trace-output` 不受影响。
+
+`reticle trace log` 把一次录制渲染成每个动作几行,回溯一整段会话不必再打开每份
+100KB+ 的 snapshot:
+
+```bash
+reticle trace log                       # 当前这次录制
+reticle trace log reticle-batch         # 或任意 trace 目录
+reticle trace log --changes 12 --json   # 更详细 / 机器可读
+```
+
+```
+recording /Users/you/.reticle/sessions/auto-20260727-191146/traces
+android · dev.reticle.sample · 3 actions · 19:11:47 → 19:11:55
+
+1  19:11:47  tap  testId=scenario.checkout  →540,241 semantic:testId
+    + r36 [testId=checkout.status role=text]
+    + r37 [testId=checkout.payButton role=button]
+    …7 more (present 5, children 1, nodeCount 1)
+    evidence 1785150707495-tap/, 2 snapshots, 2 screenshots
+
+2  19:11:48  tap  testId=checkout.payButton  →540,1176 semantic:testId
+    ~ r36 text "Cart: 3 items" → "Paid!" [testId=checkout.status role=text]
+    evidence 1785150708052-tap/, 2 snapshots, 2 screenshots
+
+3  19:11:55  tap  testId=scenario.login  →540,2320 semantic:testId
+    (no observable change between before and after)
+    evidence 1785150715273-tap/, 2 snapshots, 2 screenshots
+```
+
+让它可读而不只是变短的是三件事。每条变更**说出它讲的是哪个节点**(`[testId=…]`),
+同一个 ref 只标一次,于是一个光秃秃的 `r36` 不会再把你打发去翻 snapshot。diff **先排序
+再截断**——出现与文案变化排在像素级 `frame` 抖动之前,可寻址的节点排在匿名布局容器之前
+——所以截断后留下的是真正要紧的那些。而每一次丢弃都**有计数、不静默**:渲染层是
+`…N more`,捕获层是 `! manifest kept X of Y`。什么都没变的动作会明说
+`(no observable change between before and after)`——上面第 3 步就是:tap 派发成功了,
+但屏幕没有任何反应。这是一条结论,不是一片空白。
+
+`trace log` 只读。它不是回放脚本,也不做任何断言:一次运行算不算通过由读的人判断,
+要表达预期仍然用 `--verify` 和 `act wait --strict`。
+
 ### 热路径与命令路由
 
 一次性命令默认走热路径:第一条 helper 命令会 fork-exec 一个按设备划分的

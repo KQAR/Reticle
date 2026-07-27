@@ -112,6 +112,10 @@ let package = Package(
                 "ReticleHostIos",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
+                // Lets the action-trace diff contract test build `Snapshot`s from the
+                // shared fixture, so the Swift port is pinned against the same table
+                // the Kotlin port reads.
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
                 // Lets the capture-lane tests synthesize Loom `Flow`s directly, so the
                 // normalization from flow to `network.*` event is pinned without a live
                 // proxy — the WebSocket frame path especially, which a socket-less
