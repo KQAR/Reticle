@@ -260,6 +260,39 @@ reflectively in `ComposeSemanticsBridge`, with no hard Compose dependency
 `AndroidComposeView`, Reticle emits nothing rather than inventing selectors from
 private internals.
 
+## The declarative-UI boundary: SwiftUI (iOS)
+
+The iOS analogue of the Compose rule above. Reticle does **not** synthesize a
+SwiftUI view tree or invent selectors from SwiftUI's private backing views
+(`_UIGraphicsView`, `CGDrawingView`, …). A SwiftUI element is a valid
+movement/input target only when it is exposed through the platform
+**accessibility** tree — the hosting view's `accessibilityElements` (read in one
+pass via the private `_accessibilityElements` accessor to stay O(N) on large
+hosting containers, with a guard for `CGDrawingView` returning `NSNotFound` from
+`accessibilityElementCount()`). Each such element becomes a `NodeKind.axElement`
+node. A SwiftUI element with no `.accessibilityIdentifier()` is therefore not
+addressable — this is a documented contract, not a bug. An optional, default-off
+`Mirror`-based reflection of a user `View`'s scalar `@State` (env
+`RETICLE_SWIFTUI_REFLECT=1`) is surfaced as evidence-tagged metadata, never as a
+selector.
+
+**Links inside one `Text` are sub-regions of that element**, the same shape the
+Compose bridge handles on Android. A markdown `Text` ("Read the \[Terms]\(…) and
+\[Privacy]\(…)") is ONE accessibility element with one label: no `UILabel`, no
+`NSAttributedString.link` run, no child element, and no view to measure, so every
+`RegionProbe` channel comes up empty. The one surface that does exist — measured,
+after the alternatives (child elements, element count, custom actions, custom
+rotors, `_accessibility*` link accessors) all returned nothing — is
+`accessibilityAttributedLabel`, which splits the label into runs carrying
+`UIAccessibilityTokenLink` on the link ranges plus per-run font tokens. Those are
+system-emitted attributes on a public property, not SwiftUI internals.
+`SwiftUITextRegions` re-lays those runs out with their own fonts inside the
+element's screen frame (the `TextLayoutStack` reconstruction, anchored to a screen
+rect instead of a view) and emits per-link `span` regions plus a char grid.
+Geometry is therefore **reconstructed, not read** — pinned end to end by the iOS
+suite, which taps each recovered rect and checks which URL the app's `openURL`
+handler actually received.
+
 ## The embedded-Web boundary: WebView DOM
 
 An `android.webkit.WebView` remains a real View node, but Reticle now also reads
@@ -485,8 +518,8 @@ paired bracket or markdown link — but no spans and no child views), Reticle do
 **not** invent regions. It sets `suspectedMultiRegion = true`, emits one
 `textMarker` region per detected link (each with its own Layout-derived rect),
 and attaches a `CharGrid` so an agent can also target an arbitrary substring by
-coordinate — `CharGrid.approximate` is set true for BiDi/wrapped text rather
-than silently returning a wrong rect. Detection is structural, not lexical: it
+coordinate — `CharGrid.approximate` is set true for bidirectional or unmeasured
+text rather than silently returning a wrong rect. Detection is structural, not lexical: it
 keys on the markup, never on natural-language keywords, so the probe stays
 language- and domain-neutral (a general-purpose tool must not assume an app's
 locale).
@@ -616,9 +649,9 @@ Three sources of a region's color, by recoverability:
   `getLinkTextColors()` and attaches it to the span region's `color`. Verified:
   the span case reported `color=#FF008577` (the theme link color).
 - **Self-drawn `onDraw` color** — a control that paints colored text itself
-  exposes no span and no API; this color is **not** recoverable. Honest limit:
-  Reticle reports nothing rather than guessing, and the run is still targetable
-  by substring via the char grid.
+  exposes no span and no API; this color is **not** recoverable. Reticle reports
+  nothing rather than guessing, and the run stays targetable by substring via the
+  char grid. Row in [boundaries.md](boundaries.md).
 
 Caveat: color is a *heuristic* link signal, not proof — a non-tappable word can
 be colored for emphasis. So `colorSpan` regions are candidates an agent weighs
@@ -667,16 +700,15 @@ height **by construction**, because every coordinate is read from the laid-out
 - **Scroll/padding:** offsets add `getLocationOnScreen` + `totalPaddingLeft/Top`
   − `scrollX/scrollY`, so scrolled or padded text stays accurate.
 
-Honest limits, all flagged via `CharGrid.approximate = true` rather than
-returning a confidently-wrong rect:
+Where it is only a best effort, the grid says so with
+`CharGrid.approximate = true` rather than returning a confidently-wrong rect:
+bidirectional text, and text not yet measured. Both are rows in
+[boundaries.md](boundaries.md) — that file, not this one, is where the complete
+list lives.
 
-- **BiDi / RTL lines:** `getPrimaryHorizontal` is still per-offset correct, but a
-  single logical substring can map to a *non-contiguous* visual span, so a
-  per-line rect may over- or under-cover; the grid is marked approximate.
-- **`getLayout() == null`** (text not yet measured): grid has no lines and is
-  marked approximate.
-- A phrase spanning a soft wrap yields one rect per line (`rangeRects` returns a
-  list); the CLI taps the first rect, which is the correct on-screen start.
+One shape worth knowing here because it is not a limit: a phrase spanning a soft
+wrap yields one rect **per line** (`rangeRects` returns a list), and the CLI taps
+the first, which is the correct on-screen start.
 
 Targeting a region from the CLI:
 
@@ -702,6 +734,8 @@ on an agreement row, is the checkbox rather than the link.
   and hands over a char grid; the agent targets the substring by coordinate.
   This is the documented ceiling of node-based UI forensics: when a control
   draws itself and hit-tests privately, no static tree can recover the boundary.
+  Its row in [boundaries.md](boundaries.md) is **Pure-Canvas controls with no
+  accessibility surface**, which is the same mechanism at its extreme.
 
 ## Selector resolution order
 
@@ -761,39 +795,6 @@ Which box in the [first diagram](#the-shape-of-the-system) each module is:
 `ios/` agent is a sibling of `android/`, built by SwiftPM (`harmony/` by hvigor
 when it lands) and invisible to Gradle.)
 
-## The declarative-UI boundary: SwiftUI (iOS)
-
-The iOS analogue of the Compose rule above. Reticle does **not** synthesize a
-SwiftUI view tree or invent selectors from SwiftUI's private backing views
-(`_UIGraphicsView`, `CGDrawingView`, …). A SwiftUI element is a valid
-movement/input target only when it is exposed through the platform
-**accessibility** tree — the hosting view's `accessibilityElements` (read in one
-pass via the private `_accessibilityElements` accessor to stay O(N) on large
-hosting containers, with a guard for `CGDrawingView` returning `NSNotFound` from
-`accessibilityElementCount()`). Each such element becomes a `NodeKind.axElement`
-node. A SwiftUI element with no `.accessibilityIdentifier()` is therefore not
-addressable — this is a documented contract, not a bug. An optional, default-off
-`Mirror`-based reflection of a user `View`'s scalar `@State` (env
-`RETICLE_SWIFTUI_REFLECT=1`) is surfaced as evidence-tagged metadata, never as a
-selector.
-
-**Links inside one `Text` are sub-regions of that element**, the same shape the
-Compose bridge handles on Android. A markdown `Text` ("Read the \[Terms]\(…) and
-\[Privacy]\(…)") is ONE accessibility element with one label: no `UILabel`, no
-`NSAttributedString.link` run, no child element, and no view to measure, so every
-`RegionProbe` channel comes up empty. The one surface that does exist — measured,
-after the alternatives (child elements, element count, custom actions, custom
-rotors, `_accessibility*` link accessors) all returned nothing — is
-`accessibilityAttributedLabel`, which splits the label into runs carrying
-`UIAccessibilityTokenLink` on the link ranges plus per-run font tokens. Those are
-system-emitted attributes on a public property, not SwiftUI internals.
-`SwiftUITextRegions` re-lays those runs out with their own fonts inside the
-element's screen frame (the `TextLayoutStack` reconstruction, anchored to a screen
-rect instead of a view) and emits per-link `span` regions plus a char grid.
-Geometry is therefore **reconstructed, not read** — pinned end to end by the iOS
-suite, which taps each recovered rect and checks which URL the app's `openURL`
-handler actually received.
-
 ## What stays on disk vs. what goes to the agent
 
 Full snapshots are written to disk (`ui report` → `snapshot.json`), and agents
@@ -807,9 +808,16 @@ it's needed.
 
 Collected in **[boundaries.md](boundaries.md)** — the marker vocabulary
 (`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`,
-`pixels:unavailable`, `screencap:blank`, `scroll:up,down`, `act wait` →
-`UNKNOWABLE`), the boundary table with what each one emits instead and what pins
-it, and how `act wait` consumes that table.
+`pixels:unavailable`, `screencap:blank`, `scroll:up,down`,
+`! <property> unreadable`, `act wait` → `UNKNOWABLE`), the boundary table with
+what each one emits instead and what pins it, and how `act wait` consumes that
+table.
+
+That file is the **complete** list, and this one deliberately keeps none of its
+own: where a section above hits a limit it states the mechanism and links the row,
+rather than half-repeating the table. A limit discovered and written down only
+here would make `boundaries.md` read as complete while being wrong — which is the
+reason the two documents were split.
 
 The rule, restated here because everything above depends on it: **an unreachable
 thing must produce evidence naming itself, never silence.** A boundary earns a row
