@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-07-27
 
 - **Style evidence (`ui style`): the values, their units, their provenance, and the
   properties no channel can read.** The question behind it is "does this screen
