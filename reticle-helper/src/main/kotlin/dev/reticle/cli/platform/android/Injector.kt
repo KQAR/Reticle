@@ -97,6 +97,11 @@ object Injector : AppInjector {
                     "  Only debuggable builds expose JDWP. A release/user build cannot be injected this way."
             )
         }
+        // Tell AMS this app is being debugged BEFORE we suspend its main thread.
+        // The nudge below queues a MotionEvent that stays unconsumed for the whole
+        // suspension, which on a physical device outruns the 5s input-dispatch
+        // timeout and gets the process ANR-killed mid-injection. See [InjectAnrGuard].
+        val anrGuard = InjectAnrGuard.install(adb, packageName)
         try {
             val client = connectWithHandshake(adb, jdwpHostPort, pid)
             client.use { jdwp ->
@@ -124,7 +129,16 @@ object Injector : AppInjector {
                 }
                 return AppInjector.InjectResult(pid, reported)
             }
+        } catch (error: Throwable) {
+            // A channel that dies mid-injection is usually not a JDWP fault: the
+            // system killed the app under us. Say which, with the system's own
+            // exit record as the evidence — a bare `EOFException` reads like a
+            // transient glitch and invites a retry that reproduces it.
+            InjectAnrGuard.explainKill(adb, packageName, pid, anrGuard.active)
+                ?.let { throw CliError(it) }
+            throw error
         } finally {
+            anrGuard.restore()
             adb.removeForward(jdwpHostPort)
         }
     }
