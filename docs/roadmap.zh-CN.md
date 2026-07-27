@@ -6,7 +6,7 @@
 `docs/boundaries.md` 是 **Honest boundaries（诚实边界）** 表，那是"结构上够不着什么"
 的权威清单；**本文讲它往哪走**：还剩什么（按优先级），以及哪些决定已经拍板、不必再讨论。
 
-状态：2026-07-25，对应 0.9.3。捕获 / 驱动 / 证据这条主干已完成且跨平台；
+状态：2026-07-27，对应 0.11.0。捕获 / 驱动 / 证据这条主干已完成且跨平台；
 **边界能力扫描**（15 个点）于 2026-07-25 收官。剩余工作全部列在
 [还剩什么](#还剩什么)——本文除该节外，没有任何一节是待办清单。
 
@@ -48,7 +48,7 @@
 | **观察**（Android） | View 树 + Compose semantics + WebView DOM 合并进同一张扁平 `ref → Node`；语义树与 compact 在进程内派生；多目标控件有 regions / 字符网格 |
 | **观察**（iOS） | UIKit 树 + SwiftUI `axElement` 桥（含单个 `Text` 内部的链接）+ `WKWebView` DOM；同一套协议 JSON |
 | **驱动** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`，选择器优先，支持 `--region`、`--label`、`@N` 别名、`--settle`、`--verify`、`act batch`。Android 与 iOS 模拟器上是真实 HID；iOS 真机用进程内 activation |
-| **证据** | 操作 trace（前后快照 + 截图 + diff）、`replay gif`、session 时间线，以及"说出缺席"的词汇表（`window: UNFOCUSED`、`dom:unavailable`、`dom:unsupported-kernel`、`pixels:unavailable`、`screencap:blank`、`occluded-by:*`、`scroll:*`） |
+| **证据** | 操作 trace（前后快照 + 截图 + 排过序、自描述的 diff），默认录制；`trace log` 摘要、`replay gif`、session 时间线，以及"说出缺席"的词汇表（`window: UNFOCUSED`、`dom:unavailable`、`dom:unsupported-kernel`、`pixels:unavailable`、`screencap:blank`、`occluded-by:*`、`scroll:*`） |
 | **网络** | `reticle serve` 抓包线跑在 Loom 的 `ProxyEngine` 上，HTTPS MITM + CA 签发，session 级流量规则（`mock`/`block`/`mapRemote`/`passthrough` + 修饰符），flow replay + diff。Android 与 iOS（模拟器与真机）均可用 |
 | **面板** | 本地只读证据面板：trace、产物、网络卡片（过滤、按规则分组、"copy as rule"）。设计上只展示 |
 | **协议** | `reticle-protocol/` 内的 JSON Schema(2020-12) 为权威，附 golden fixtures；Kotlin 与 Swift 是手写实现，两侧同时对 schema 校验 |
