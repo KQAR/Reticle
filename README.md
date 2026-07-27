@@ -3,16 +3,18 @@
 **English** | [简体中文](README.zh-CN.md)
 
 Reticle helps AI coding agents build and verify native app interfaces on
-**Android** by inspecting the app that is actually running — not just the source
-code or a screenshot.
+**Android and iOS** by inspecting the app that is actually running — not just the
+source code or a screenshot.
 
 Reticle's job is to *locate and measure* what's on screen: resolve stable
 selectors and precise coordinates from the live view / accessibility /
-Compose-semantics tree so an agent can act on the right element with confidence.
+Compose-semantics / SwiftUI tree so an agent can act on the right element with
+confidence. One CLI, one wire protocol, one command surface: `--target ios`
+selects the platform (default `android`).
 
-Tools like `adb`, Espresso, and UiAutomator can build, launch, or drive an app.
-Reticle adds the runtime UI layer: structured evidence from the app that is
-actually running, so agents can inspect, probe, and verify native interface
+Tools like `adb`, Espresso, UiAutomator and XCUITest can build, launch, or drive
+an app. Reticle adds the runtime UI layer: structured evidence from the app that
+is actually running, so agents can inspect, probe, and verify native interface
 work.
 
 ## Why use Reticle
@@ -34,14 +36,21 @@ and a host-side CLI talks to it over `adb forward`. The agent captures the live
 UI tree from inside the process; the CLI resolves selectors and dispatches real
 input.
 
-| Concern | Mechanism |
-| --- | --- |
-| Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For a **debuggable** app without the AAR: `reticle app inject` loads a payload dex over JDWP and starts the runtime — no repackage, no root (works even on locked `user` builds where `wrap.sh` is blocked). Non-debuggable release builds still need Frida/root. |
-| Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached by the CLI via `adb forward`. The port is derived per-app from the `applicationId` (agent and CLI compute the same value), so multiple linked apps never collide on one fixed port. |
-| Capture the UI | Walk `WindowManagerGlobal` roots + reflect View properties; merge the Compose **semantics** tree (selectors only from semantics, never private internals). |
-| Read embedded web content | A read-only DOM bridge on `android.webkit.WebView` / `WKWebView`. A **third-party Android kernel** (X5/TBS, UC) cannot be bridged at all — that view is marked `dom:unsupported-kernel` rather than reported as an empty page. |
-| Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. |
-| Selector resolution | Semantic tree first, view-tree frames as fallback; `testId` / `resourceId` / `ref` / raw point. |
+| Concern | Android | iOS |
+| --- | --- | --- |
+| Get code into the process | Link the `reticle-agent` AAR — a no-op `ContentProvider` auto-starts the server, no app code changes. For a **debuggable** app without the AAR, `reticle app inject` loads a payload dex over JDWP: no repackage, no root, works even on locked `user` builds where `wrap.sh` is blocked. Non-debuggable release builds still need Frida/root. | Link `ReticleKit` and call `Reticle.start()` (or let the DYLD constructor do it). `app inject` uses `DYLD_INSERT_LIBRARIES` on the simulator; a self-signed debug build can also be injected on a device (`scripts/inject-ios-device.sh`). |
+| Talk to the running app | In-process `ReticleServer` on `127.0.0.1`, reached via `adb forward`. | Same loopback server, reached directly (simulator) or over `iproxy` (device). |
+| Capture the UI | `WindowManagerGlobal` roots + reflected View properties, merged with the Compose **semantics** tree. | `UIWindow`s + reflected UIKit properties, merged with SwiftUI's **accessibility** elements (`axElement`). |
+| Read embedded web content | Read-only DOM bridge on `android.webkit.WebView`. A **third-party kernel** (X5/TBS, UC) cannot be bridged at all — marked `dom:unsupported-kernel` rather than reported as an empty page. | Same bridge on `WKWebView`; iOS has one web engine, so the kernel case cannot arise. |
+| Synthesize input | `adb shell input` (tap / swipe / drag / type) — public and stable. | CoreSimulator HID on the simulator; in-process `act activate` on a device, which has no host-reachable HID surface. |
+| Selector resolution | Semantic tree first, view-tree frames as fallback; `testId` / `resourceId` / `css` / `ref` / `label` / raw point — one order for both platforms. | Same, pinned from both languages by `reticle-protocol/fixtures/selector-resolution.cases.json`. |
+
+Two rules hold on both platforms. The loopback port is derived per-app from the
+bundle id / `applicationId` and computed identically on both ends, so linked apps
+never collide on a fixed port. And selectors come only from the
+semantics/accessibility surface, never from private framework internals — an
+element with no accessibility identity is documented as unaddressable rather than
+guessed at.
 
 See `docs/architecture.md` for the full design, including the Compose-semantics
 boundary and the injection trade-offs — and `docs/boundaries.md`, which
@@ -98,7 +107,9 @@ This makes the `reticle` CLI available on the Bash PATH and adds:
   running Android app;
 - **`/reticle:report`** — capture a runtime UI report and summarize the screen;
 - **`/reticle:tap`** — tap an element by selector (or by phrase via `--region`)
-  and verify the result.
+  and verify the result;
+- **`/reticle:inject`** — start the runtime inside a debuggable app that does not
+  link the agent.
 
 ### Install in Cursor
 
@@ -138,34 +149,38 @@ device/emulator with `adb`, and network for the prebuilt download (or
 To develop or test locally without installing: `claude --plugin-dir ./` from the
 repo root.
 
-### Releases
-
-Pushing a `v*` tag runs `.github/workflows/release.yml` (on a macOS arm64
-runner), which builds and attaches to a GitHub Release:
-
-- `reticle-macos-arm64.zip` — the host + native helper distribution (what the
-  launcher downloads; no JDK needed to run);
-- `reticle-agent-android.aar` — the agent library to link into a host app build;
-- `SHA256SUMS` — checksums for verification.
+Releasing is a `v*` tag: `.github/workflows/release.yml` builds the
+`reticle-macos-arm64.zip` distribution, the agent AAR, and `SHA256SUMS` on a macOS
+arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
 
 ## Modules
 
-- `reticle-core` — pure JVM snapshot / semantic / compact-observation
-  models and the wire protocol. No Android dependency.
-- `reticle-agent/android` (`:reticle-agent:android`) — Android library (AAR). In-process
-  HTTP server + view and Compose-semantics capture, region detection, runtime
+- `reticle-protocol` — the language-neutral wire contract: JSON Schema plus golden
+  fixtures both language implementations are tested against. Not a build module.
+- `reticle-core` (Kotlin) and `reticle-swift` (`ReticleProtocol`) — the two
+  implementations of that contract: snapshot / semantic / compact models, the
+  derivations, and the host-side renderers. `reticle-core` has no Android
+  dependency; `ReticleProtocol` is shared by the iOS agent and the Swift host so
+  neither re-ports the protocol.
+- `reticle-agent/android` (`:reticle-agent:android`) — Android library (AAR): in-process
+  HTTP server, view + Compose-semantics capture, region detection, runtime
   mutation, screenshots, auto-started by a no-op `ContentProvider`.
-  (`reticle-agent/` is a grouping directory reserved for future per-platform
-  agents; only the Android child is a Gradle module today.)
-- `reticle-helper` — the Kotlin Android host layer: `adb forward` + loopback
-  evidence + an `adb input` action backend + JDWP injection. **Not a user-facing
+- `reticle-agent/ios` (`ReticleKit` + `ReticleInjection`) — the iOS twin, built by
+  SwiftPM and invisible to Gradle: same server and capture over UIKit plus the
+  SwiftUI accessibility bridge, with linked and DYLD-constructor auto-start.
+- `reticle-helper` — the Kotlin **Android** host layer: `adb forward`, loopback
+  evidence, an `adb input` action backend, JDWP injection. **Not a user-facing
   CLI** — it ships as the no-JDK native `reticle-helper` (GraalVM native-image)
-  whose `helper` subcommand is the RPC server the Swift host drives.
-- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS 14+ arm64). The user-facing
-  `reticle`; owns no device code — device commands are RPC calls to the helper,
-  while `reticle serve` owns the local daemon session/event surface via
-  Hummingbird 2.25.0.
-- `sample-app` — demo app that links the agent end to end.
+  whose `helper` subcommand is the RPC server the Swift host drives. It exists
+  only because JDWP injection is irreducibly JVM-shaped; iOS needs no helper.
+- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS 14+ arm64), the
+  user-facing `reticle`. Android device commands are RPC calls to the helper;
+  **iOS is handled natively in-host** (`simctl`/`devicectl`, loopback HTTP,
+  CoreSimulator HID). `reticle serve` owns the local daemon session/event surface
+  via Hummingbird 2.25.0, with the capture proxy in its own `ReticleNetworkLane`
+  target and the iOS backend in `ReticleHostIos`.
+- `sample-app` / `sample-app-ios` — demo apps that link each agent end to end,
+  each with an agent-free flavor for testing the injection path.
 
 ## Quick Start
 
@@ -176,18 +191,16 @@ runner), which builds and attaches to a GitHub Release:
 # Install the linked sample app on a booted emulator/device
 adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# The `reticle` launcher builds + runs the Swift host and native helper from
-# source when you opt in (needs the Swift toolchain + a GraalVM). It is the
-# user-facing CLI; `reticle-host` / `reticle-helper` are the binaries it drives.
+# `bin/reticle` is the launcher; RETICLE_FROM_SOURCE=1 opts into a source build
+# (needs the Swift toolchain + a GraalVM) instead of a prebuilt release.
 export RETICLE_FROM_SOURCE=1
 CLI="bin/reticle"
 
 # Launch + forward + wait for the in-app runtime (apps that LINK the agent)
 $CLI app launch --package dev.reticle.sample
 
-# Or, for a DEBUGGABLE app that does NOT link the agent: start it, then inject
-# the runtime over JDWP — no repackage, no root. After this, every command below
-# works against it unchanged. (See the `noagent` sample flavor.)
+# Or, for a DEBUGGABLE app without the agent: start it, then inject over JDWP.
+# Every command below then works against it unchanged (see the `noagent` flavor).
 $CLI app inject --package dev.reticle.sample.noagent
 
 # Capture the sample home report and choose a scenario row
@@ -195,9 +208,8 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
-# For agent-facing ad-hoc flows, outline numbers visible targets and caches
-# short-lived aliases for the current package. Repeated rows show item i/n.
-# Re-run outline after navigation; item i/n is a hint, not a selector.
+# `ui outline` numbers visible targets and caches short-lived aliases. Re-run it
+# after navigation; the item i/n hint on repeated rows is not a selector.
 $CLI ui outline --live --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --alias @1
 
@@ -206,9 +218,8 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 
-# If a selector misses, Reticle reports same-kind candidates from the current
-# snapshot (test ids, resource ids, DOM CSS selectors, or refs) so you can
-# re-target with a stable handle before falling back to coordinates.
+# A selector miss reports same-kind candidates from the current snapshot, so you
+# can re-target with a stable handle instead of falling back to coordinates.
 
 # Embedded WebView DOM: inspect by CSS selector, tap, verify, and keep a trace
 $CLI act tap --package dev.reticle.sample --test-id scenario.webview
@@ -218,9 +229,8 @@ $CLI act tap --package dev.reticle.sample --css '#style-target' \
     --verify 'css=#style-target' \
     --trace-output reticle-traces
 
-# Stitch the recorded traces into a device-framed animated GIF: before-frames
-# draw the gesture where it landed (tap ring / swipe arrow), after-frames show
-# the result. Host-local; Android and iOS traces alike.
+# Stitch the recorded traces into a device-framed GIF: the gesture is drawn where
+# it landed, before/after. Host-local; Android and iOS traces alike.
 $CLI replay gif reticle-traces          # => reticle-traces/replay.gif
 
 # Multi-region controls: one View, several click targets (agreement rows etc.)
@@ -231,32 +241,22 @@ $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
 
-# A recycling / lazy list binds only its visible window, so a far-down row has no
-# node at all — `tap` can never reach it, and blind swipes have no termination
-# condition. Every scrollable container reports its remaining travel
-# (`scroll:up,down` in compact), and `act scroll-to` drags one until the selector
-# resolves inside it, confirms the position stopped moving (`settled=1`), and
-# reports the point the next command can use. Running out of travel is a loud
-# failure: "nothing under that selector came into view".
+# A lazy list binds only its visible window, so a far-down row has NO node to tap.
+# `act scroll-to` drags until the selector resolves inside the container, then
+# confirms the position stopped moving; running out of travel fails loudly.
 $CLI act tap       --package dev.reticle.sample --test-id scenario.list
 $CLI act scroll-to --package dev.reticle.sample --test-id list.item40
 $CLI act tap       --package dev.reticle.sample --test-id list.item40
 
-# A target that is still MOVING has the same problem one step earlier: a popup row
-# captured while the popup slides in has a rect that is stale by the time the touch
-# is synthesized, and the tap lands on its neighbour (measured). `tap --settle`
-# re-resolves until the point repeats, then dispatches, and reports `settled=1`. It
-# watches the position only — a view animating in place with a transform (an iOS
-# UIAlertController) reports settled at once while not yet hit-testable.
+# A target still MOVING is the same problem one step earlier: a rect captured mid
+# animation is stale by the time the touch lands. `tap --settle` re-resolves until
+# the point repeats, then dispatches (position only — see docs/architecture.md).
 $CLI act tap --package dev.reticle.sample --test-id popup.menuTrigger
 $CLI act tap --package dev.reticle.sample --label "Delete item" --settle
 
-# The system keyboard is another process's window — it never appears in the
-# node tree, so a covered submit button still looks tappable. Snapshots carry
-# screen.keyboard, `ui compact` leads with a keyboard header, covered items are
-# marked occluded-by:keyboard (a dialog covering a background page likewise
-# marks items occluded-by:<windowRef>), and hide-keyboard dismisses it
-# in-process. Works the same with --target ios.
+# The keyboard is another process's window: never a node, so a covered submit
+# button still looks tappable. Snapshots carry screen.keyboard, compact marks
+# covered items occluded-by:keyboard, and hide-keyboard dismisses it in-process.
 $CLI act tap  --package dev.reticle.sample --test-id scenario.login
 $CLI act type --package dev.reticle.sample --test-id login.codeField --text "123456"
 $CLI ui compact --live --package dev.reticle.sample   # keyboard: visible … occluded-by:keyboard
@@ -328,6 +328,8 @@ session (`~/.reticle/sessions/<session>/traces`) and publishes it as an
 `action.trace` event on a best-effort basis. Pass `--trace-output <dir>` when you
 want to copy trace artifacts somewhere outside the session.
 
+### Warm paths and command routing
+
 One-shot commands take a warm path by default: the first helper-backed command
 fork-execs a small per-device `reticle helper-daemon` (Unix socket under
 `~/.reticle/helperd/`), and every later command reuses its resident helper —
@@ -359,21 +361,15 @@ state, text output includes an `advisory:` line and JSON output includes an
 `runtime.advisory` event.
 
 Snapshots and screenshots are referenced from `refs` instead of inlined. The
-panel consumes each action trace as a vertical evidence timeline:
-screenshot/snapshot evidence nodes, the action, and the compact diff are
-flattened into time-ordered cards. Large diffs show a short high-signal preview
-first, with text/label/state changes ranked ahead of structural churn and the
-full table available on demand. Missing screenshot artifacts render an inline
-failure state. The axis is centered so UI evidence can sit on one side while
-network request spans occupy the other. Network requests are grouped by request
-id with method, URL, status, timing, request/response headers, body artifact
-links, and small text previews for captured bodies. Sensitive header values such
-as cookies and authorization are redacted. Rule-applied responses are labeled
-with the rule id and action that produced them. Runtime advisories appear as first-class
-timeline cards, and action cards expose copyable selector/target chips for quick
-follow-up commands. The session picker can switch between the live current
-session and static historical sessions under `~/.reticle/sessions`. It is
-display-only: it does not drive input or mutate app state.
+panel flattens each action trace into a vertical evidence timeline — screenshot
+evidence, the action, screenshot evidence, the diff — with network requests
+grouped by request id on the other side of a centered axis, sensitive header
+values redacted, and a picker that switches between the live session and
+historical ones under `~/.reticle/sessions`. It is display-only: it never drives
+input or mutates app state. `reticle-protocol/events.md` documents the panel's
+full surface (filters, rule groups, copy-as-rule) alongside the REST/SSE contract.
+
+## Traffic rules and flow replay
 
 While `serve` is running, `reticle rule` can reshape traffic in the host proxy
 without touching the app. A rule matches traffic and applies an action —
@@ -397,6 +393,23 @@ HTTP rules apply directly. HTTPS rules require MITM decryption and app trust in
 the Reticle CA; opaque CONNECT tunnels and pinned/untrusted HTTPS traffic remain
 unmodifiable by design. `prefix` is a raw string prefix, so prefer `exact` for
 short paths such as `/sa` that could also match unrelated paths like `/sample`.
+
+`reticle replay flow <request-id>` re-sends a captured exchange with optional
+overrides (`--method` / `--url` / `--set-headers` / `--remove-headers` / `--body`
+/ `--clear-body`). It emits a `network.replay` event and returns the diff against
+the original — status, body size, and which header *names* were added, removed or
+changed, never their values, so a replay report leaks no credentials:
+
+```bash
+reticle replay flow <request-id> --set-headers '{"X-Debug":"1"}' --remove-headers '["Authorization"]'
+```
+
+Replay re-sends from the capture engine's bounded in-memory ring, so an older
+exchange stays fully evidenced in `events.jsonl` while no longer being replayable;
+`GET /sessions/current/flows` stamps every result `replayableOnly` so an empty
+list reads as "nothing replayable matches" rather than "this never happened".
+
+## Batching and quick smoke
 
 Quick smoke with the linked sample app:
 
