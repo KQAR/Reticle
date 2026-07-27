@@ -1,0 +1,590 @@
+{
+  "meta": {
+    "name": "Reticle",
+    "version": "0.11.0",
+    "tagline": "Inspects the app that is actually running, resolves precise selectors, and drives real input.",
+    "generatedFrom": ["AGENTS.md", "docs/architecture.md", "docs/boundaries.md", "docs/ios.md"],
+    "invariants": [
+      "The agent observes; it never synthesizes input. Taps and text come from the host.",
+      "The loopback port is derived from applicationId by PortMap.derivePort, shared verbatim by agent and host.",
+      "reticle serve owns all session state. The agent and helper own none.",
+      "Android device work goes out through a separate native helper; iOS device work happens inside the host.",
+      "Every projection is a pure function of one Snapshot, so no two can describe different frames.",
+      "Each derivation exists exactly twice (Kotlin + Swift) and is pinned by shared fixtures.",
+      "An unreachable thing must produce evidence naming itself, never silence."
+    ],
+    "layers": {
+      "host": "macOS 14+ arm64 host process",
+      "shared": "protocol implementations and the fixtures that pin them",
+      "wire": "the channel between host and device",
+      "device": "inside the target app's own process",
+      "external": "third-party dependency"
+    }
+  },
+
+  "nodes": [
+    {
+      "id": "cli",
+      "label": "reticle",
+      "kind": "executable",
+      "layer": "host",
+      "sub": "the one user-facing binary",
+      "detail": "The Swift host CLI (ReticleHost, SwiftPM, macOS 14+ arm64). Owns no device code. Selects a platform with --target (default android) behind the typed HostBackend interface — one method per capability, typed requests and results, never stringly RPC. Command surface: doctor · devices · status · app launch|inject · act · mutate · debug · ui · trace · rule · replay · serve · version.",
+      "x": 470, "y": 58, "w": 300, "h": 56
+    },
+    {
+      "id": "host-core",
+      "label": "ReticleHostCore",
+      "kind": "swift-target",
+      "layer": "host",
+      "sub": "Daemon/ · CLI/ · Android/",
+      "detail": "The daemon, the CLI, the read-only panel, and the Android helper clients. AndroidBackend is the single place the helper's JSONL method names and parameter keys are spelled, so a rename has one edit site. @_exports the three targets below it, so the split is an internal boundary rather than an API change.",
+      "x": 300, "y": 162, "w": 240, "h": 56
+    },
+    {
+      "id": "host-ios",
+      "label": "ReticleHostIos",
+      "kind": "swift-target",
+      "layer": "host",
+      "sub": "iOS has no helper",
+      "detail": "The iOS platform backend, in-host: simctl / devicectl, direct loopback HTTP, private CoreSimulator HID, and its own wait / scroll-to / verify loops. Depends on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI.",
+      "x": 760, "y": 162, "w": 240, "h": 56
+    },
+    {
+      "id": "host-shared",
+      "label": "ReticleHostShared",
+      "kind": "swift-target",
+      "layer": "host",
+      "sub": "dependency-free base",
+      "detail": "JSONValue, the event envelope/post models, epoch-millis, HelperError, the HelperCalling call surface, and the version constant. Deliberately depends on nothing, so both the network lane and the host can sit on it without pulling each other in.",
+      "x": 565, "y": 162, "w": 170, "h": 56
+    },
+    {
+      "id": "serve",
+      "label": "reticle serve",
+      "kind": "daemon",
+      "layer": "host",
+      "sub": "host-owned session state",
+      "detail": "A localhost Hummingbird 2.25.0 REST/SSE event bus with an append-only ~/.reticle/sessions/<session>/events.jsonl. Three route groups: session (health, events, action-trace ingestion, artifact reads), rules (traffic rules, mock values, flow replay), and stream (the read-only panel + SSE). Recording is on by default and lands in an auto session when no daemon owns one.",
+      "x": 40, "y": 162, "w": 210, "h": 56
+    },
+    {
+      "id": "net-lane",
+      "label": "ReticleNetworkLane",
+      "kind": "swift-target",
+      "layer": "host",
+      "sub": "capture · rules · replay",
+      "detail": "LoomCaptureLane, NetworkRuleStore, NetworkBodyStore, the event models and the replay path. Reaches the session store only through the NetworkEventSink protocol (emit + sessionDirectory), so it builds and tests without the daemon. Carries no SwiftNIO of its own — transport, MITM and CA are Loom's.",
+      "x": 40, "y": 258, "w": 210, "h": 56
+    },
+    {
+      "id": "loom",
+      "label": "Loom ProxyEngine",
+      "kind": "dependency",
+      "layer": "external",
+      "sub": "LoomProxyCore 0.0.5",
+      "detail": "The SwiftNIO proxy, HTTPS MITM (per-host leaf certs off an on-demand CA) and upstream forwarding. Run with persistFlows: false because Reticle owns storage; the lane subscribes to flowStream() and sees only completed or errored flows.",
+      "x": 40, "y": 352, "w": 210, "h": 48
+    },
+    {
+      "id": "helper",
+      "label": "reticle-helper",
+      "kind": "executable",
+      "layer": "host",
+      "sub": "GraalVM native · no JDK",
+      "detail": "The Android host layer, in Kotlin: adb wrapper, JDWP injector (Injector.kt + Jdwp.kt, a dependency-free JDWP client), input backend, loopback client and selector resolution. NOT a user-facing CLI — its only entry points are helper (a long-lived JSONL RPC server), version and help. The three platform seams sit behind the dev.reticle.cli.platform SPI.",
+      "x": 300, "y": 258, "w": 240, "h": 56
+    },
+    {
+      "id": "proto-core",
+      "label": "reticle-core",
+      "kind": "kotlin-module",
+      "layer": "shared",
+      "sub": "pure JVM · no Android",
+      "detail": "Snapshot / semantic / region models, the wire protocol, selectors, WaitVerdict.classify, CharGrid, and the compact/style derivations. One implementation of reticle-protocol; shared by the helper and the in-app Android agent.",
+      "x": 300, "y": 352, "w": 240, "h": 48
+    },
+    {
+      "id": "proto-swift",
+      "label": "ReticleProtocol",
+      "kind": "swift-package",
+      "layer": "shared",
+      "sub": "the parallel implementation",
+      "detail": "reticle-swift: Codable models with omit-defaults JSON, the SemanticTree / CompactObservation derivations, SelectorResolution, PortMap, and the host-side tree/compact/node renderers. Depended on by BOTH the iOS agent and the Swift host, so the protocol is never re-ported a third time.",
+      "x": 760, "y": 258, "w": 240, "h": 48
+    },
+    {
+      "id": "fixtures",
+      "label": "reticle-protocol/fixtures",
+      "kind": "contract",
+      "layer": "shared",
+      "sub": "the anti-drift device",
+      "detail": "Language-neutral JSON cases read by both test suites: selector-resolution.cases.json, wait-classification.cases.json, style-observation.cases.json, action-trace-diff.cases.json. Each exists because the two implementations had already silently drifted — a rule added on one side only ships unpinned.",
+      "x": 555, "y": 352, "w": 190, "h": 48
+    },
+
+    {
+      "id": "wire-android",
+      "label": "adb",
+      "kind": "channel",
+      "layer": "wire",
+      "sub": "forward · shell input",
+      "detail": "Two separate channels over one transport. Observation: adb forward tcp:<host> tcp:<device> onto the agent's loopback port. Input: adb shell input tap|swipe|text|keyevent — public, documented, stable. drag is a long-duration swipe; pinch would need sendevent multi-touch and is reserved but not implemented.",
+      "x": 300, "y": 505, "w": 240, "h": 52
+    },
+    {
+      "id": "wire-ios",
+      "label": "loopback + HID",
+      "kind": "channel",
+      "layer": "wire",
+      "sub": "simctl · CoreSimulator",
+      "detail": "Observation goes over plain loopback HTTP (host and simulator share the network stack, so no forward is needed). Input is a digitizer IOHIDEvent through SimDeviceLegacyHIDClient — a capability, not a version cutoff, verified on iOS 26.2 and 26.3. A real device has no host-reachable HID surface, so coordinate taps are refused there and act activate drives controls in-process instead.",
+      "x": 760, "y": 505, "w": 240, "h": 52
+    },
+
+    {
+      "id": "agent-android",
+      "label": "reticle-agent/android",
+      "kind": "aar",
+      "layer": "device",
+      "sub": "in-process, Android",
+      "detail": "The AAR: an in-process loopback HTTP server, view-tree + Compose-semantics capture (reflective, accessibility-backed only), region detection, allowlisted runtime mutation, in-process screenshot, an app-authored log/metadata bridge, and an auto-start ContentProvider.",
+      "x": 300, "y": 614, "w": 240, "h": 56
+    },
+    {
+      "id": "agent-ios",
+      "label": "reticle-agent/ios",
+      "kind": "swift-package",
+      "layer": "device",
+      "sub": "ReticleKit + ReticleInjection",
+      "detail": "The same shape as the Android agent: loopback server, UIKit view-tree capture, a SwiftUI bridge that emits axElement nodes only from natively-exposed accessibility elements (never private SwiftUI internals), allowlist mutation, in-process screenshot, the Reticle facade, and dual auto-start (a DYLD-constructor bootstrap for injection plus a linked Reticle.start()). Emits platform=\"ios\" protocol JSON.",
+      "x": 760, "y": 614, "w": 240, "h": 56
+    },
+    {
+      "id": "endpoints",
+      "label": "ReticleServer",
+      "kind": "http",
+      "layer": "device",
+      "sub": "127.0.0.1:PortMap.derivePort(applicationId)",
+      "detail": "A hand-rolled HTTP server on a raw ServerSocket, no third-party dependency. GET /runtime /snapshot /semantics /compact /report /logs /screenshot · POST /mutate /clipboard /activate /keyboard-hide. The port is derived per-app from the applicationId so two linked apps never collide; RETICLE_PORT and --port override it, and changing the hash desynchronizes both sides at once (pinned by PortMapTest).",
+      "x": 500, "y": 712, "w": 300, "h": 60
+    },
+    {
+      "id": "app-android",
+      "label": "sample-app",
+      "kind": "app",
+      "layer": "device",
+      "sub": "linked · noagent flavors",
+      "detail": "The demo that proves the round trip. Two flavors differing ONLY in whether the agent is linked: linked (the demo) and noagent (no agent, no runtime classes, its own applicationId) — the honest test target for app inject. Its scenario rows are the on-device coverage for every boundary in boundaries.md.",
+      "x": 300, "y": 806, "w": 240, "h": 52
+    },
+    {
+      "id": "app-ios",
+      "label": "sample-app-ios",
+      "kind": "app",
+      "layer": "device",
+      "sub": "SampleApp · SampleAppNoAgent",
+      "detail": "The iOS twin, with the same linked/noagent split. Scenarios are routed directly by RETICLE_SAMPLE_SCENARIO rather than by synthesizing a navigation tap, because SwiftUI's List renders lazily and a row below the fold never activates.",
+      "x": 760, "y": 806, "w": 240, "h": 52
+    }
+  ],
+
+  "edges": [
+    { "id": "e-cli-core",       "from": "cli",           "to": "host-core",     "kind": "depends", "label": "HostBackend" },
+    { "id": "e-cli-ios",        "from": "cli",           "to": "host-ios",      "kind": "depends", "label": "--target ios" },
+    { "id": "e-core-shared",    "from": "host-core",     "to": "host-shared",   "kind": "depends", "label": "" },
+    { "id": "e-ios-shared",     "from": "host-ios",      "to": "host-shared",   "kind": "depends", "label": "" },
+    { "id": "e-core-serve",     "from": "host-core",     "to": "serve",         "kind": "owns",    "label": "owns the daemon" },
+    { "id": "e-serve-lane",     "from": "serve",         "to": "net-lane",      "kind": "depends", "label": "NetworkEventSink" },
+    { "id": "e-lane-loom",      "from": "net-lane",      "to": "loom",          "kind": "depends", "label": "flowStream()" },
+    { "id": "e-core-helper",    "from": "host-core",     "to": "helper",        "kind": "rpc",     "label": "JSONL RPC" },
+    { "id": "e-helper-core",    "from": "helper",        "to": "proto-core",    "kind": "depends", "label": "" },
+    { "id": "e-ios-swift",      "from": "host-ios",      "to": "proto-swift",   "kind": "depends", "label": "" },
+    { "id": "e-core-swift",     "from": "host-core",     "to": "proto-swift",   "kind": "depends", "label": "renderers" },
+    { "id": "e-pcore-fix",      "from": "proto-core",    "to": "fixtures",      "kind": "pins",    "label": "pinned by" },
+    { "id": "e-pswift-fix",     "from": "proto-swift",   "to": "fixtures",      "kind": "pins",    "label": "pinned by" },
+
+    { "id": "e-helper-wire",    "from": "helper",        "to": "wire-android",  "kind": "drives",  "label": "" },
+    { "id": "e-wire-agentA",    "from": "wire-android",  "to": "agent-android", "kind": "http",    "label": "adb forward" },
+    { "id": "e-wire-appA",      "from": "wire-android",  "to": "app-android",   "kind": "input",   "label": "shell input" },
+    { "id": "e-iosbe-wire",     "from": "host-ios",      "to": "wire-ios",      "kind": "drives",  "label": "" },
+    { "id": "e-wire-agentI",    "from": "wire-ios",      "to": "agent-ios",     "kind": "http",    "label": "loopback HTTP" },
+    { "id": "e-wire-appI",      "from": "wire-ios",      "to": "app-ios",       "kind": "input",   "label": "HID (simulator)" },
+
+    { "id": "e-agentA-ep",      "from": "agent-android", "to": "endpoints",     "kind": "serves",  "label": "" },
+    { "id": "e-agentI-ep",      "from": "agent-ios",     "to": "endpoints",     "kind": "serves",  "label": "" },
+    { "id": "e-agentA-appA",    "from": "agent-android", "to": "app-android",   "kind": "injects", "label": "ContentProvider · JDWP dex" },
+    { "id": "e-agentI-appI",    "from": "agent-ios",     "to": "app-ios",       "kind": "injects", "label": "DYLD ctor · Reticle.start()" },
+    { "id": "e-agentA-pcore",   "from": "agent-android", "to": "proto-core",    "kind": "depends", "label": "" },
+    { "id": "e-agentI-pswift",  "from": "agent-ios",     "to": "proto-swift",   "kind": "depends", "label": "" },
+
+    { "id": "e-appA-lane",      "from": "app-android",   "to": "net-lane",      "kind": "proxies", "label": "HTTP(S) traffic" },
+    { "id": "e-appI-lane",      "from": "app-ios",       "to": "net-lane",      "kind": "proxies", "label": "HTTP(S) traffic" }
+  ],
+
+  "edgeKinds": {
+    "depends": "compile-time dependency",
+    "owns":    "owns the lifecycle and the state",
+    "rpc":     "typed JSONL RPC over stdio",
+    "drives":  "issues device operations",
+    "http":    "observation over loopback HTTP",
+    "input":   "synthesized real input",
+    "serves":  "serves the protocol endpoints",
+    "injects": "gets code into the process",
+    "pins":    "pinned by a shared fixture",
+    "proxies": "captured through the proxy"
+  },
+
+  "flows": [
+    {
+      "id": "ui-report-android",
+      "title": "ui report (Android)",
+      "summary": "One capture becomes three artifacts, all describing the same frame.",
+      "steps": [
+        {
+          "title": "The CLI picks a backend",
+          "detail": "reticle ui report --package … resolves --target (default android) to AndroidBackend behind the typed HostBackend interface. No device code lives here.",
+          "nodes": ["cli", "host-core"], "edges": ["e-cli-core"]
+        },
+        {
+          "title": "Host calls the helper over JSONL RPC",
+          "detail": "The host spawns the native reticle-helper and calls one typed method. AndroidBackend is the only place the method name and parameter keys are spelled.",
+          "nodes": ["host-core", "helper"], "edges": ["e-core-helper"]
+        },
+        {
+          "title": "The helper resolves the device and the port",
+          "detail": "adb picks the device (--serial, else $ANDROID_SERIAL, else refuse and name the candidates), then adb forward tcp:<host> tcp:<device> onto PortMap.derivePort(applicationId).",
+          "nodes": ["helper", "wire-android"], "edges": ["e-helper-wire"]
+        },
+        {
+          "title": "The agent captures ONE Snapshot",
+          "detail": "SnapshotCapture walks the WindowManagerGlobal roots, folding in Compose semantics (reflective, accessibility-backed only), WebView DOM (injected JS), and app-authored probes — one frame, one ref space.",
+          "nodes": ["wire-android", "agent-android", "endpoints"], "edges": ["e-wire-agentA", "e-agentA-ep"]
+        },
+        {
+          "title": "Derivations happen on that exact frame",
+          "detail": "GET /report returns Snapshot + SemanticTree + CompactObservation together. A separate /semantics or /compact round-trip could observe the UI mid-change and yield trees that disagree, which is why report is one call.",
+          "nodes": ["agent-android", "proto-core"], "edges": ["e-agentA-pcore"]
+        },
+        {
+          "title": "Full fidelity to disk, compact to the agent",
+          "detail": "snapshot.json + semantics.json are written out; the compact observation is what an AI agent reads by default, then it queries specific refs with ui node. Refs are shared across every projection, so a style finding can be tapped without a second capture.",
+          "nodes": ["cli", "host-core"], "edges": ["e-cli-core"]
+        }
+      ]
+    },
+    {
+      "id": "act-tap-verify",
+      "title": "act tap --verify --trace-output",
+      "summary": "The evidence package: resolve, dispatch real input, diff two snapshots, state what changed.",
+      "steps": [
+        {
+          "title": "Resolve the selector, semantic tree first",
+          "detail": "Movement and input use the semantic tree and fall back to view frames only when no semantic match exists. The report says HOW it resolved (semantic:testId, region:span, charGrid:approx) — a char-grid approximation is not a semantic hit.",
+          "nodes": ["helper", "proto-core"], "edges": ["e-helper-core"]
+        },
+        {
+          "title": "Capture BEFORE",
+          "detail": "The tracer takes a snapshot (and a screenshot where the agent's path is available) before anything is dispatched.",
+          "nodes": ["agent-android", "endpoints"], "edges": ["e-wire-agentA", "e-agentA-ep"]
+        },
+        {
+          "title": "Dispatch real input from the host",
+          "detail": "adb shell input tap at the resolved point. The agent never synthesizes input — this is the whole reason the two responsibilities are split across the wire.",
+          "nodes": ["wire-android", "app-android"], "edges": ["e-wire-appA"]
+        },
+        {
+          "title": "Capture AFTER and diff",
+          "detail": "The diff is RANKED before it is capped: by field (appearance, then what a user would see, then identity, then the geometry tail), then by how addressable the node is. Ordering by ref instead let a scrolling list's frame churn evict the one node that appeared.",
+          "nodes": ["agent-android", "proto-core"], "edges": ["e-agentA-pcore"]
+        },
+        {
+          "title": "Every change names its node",
+          "detail": "ActionTraceChange.node carries testId/resourceId/label/role — or clipped text when there is no other handle — read from whichever side the node exists on, so a node that VANISHED is still named. Attached once per ref.",
+          "nodes": ["proto-core", "fixtures"], "edges": ["e-pcore-fix"]
+        },
+        {
+          "title": "--verify states an expectation",
+          "detail": "The only places an expectation is stated are --verify and act wait --strict. Everything else emits evidence and lets the agent assert. --verify re-reads the named node and reports its changed fields.",
+          "nodes": ["host-core", "helper"], "edges": ["e-core-helper"]
+        },
+        {
+          "title": "Published to the session if one is live",
+          "detail": "Recording is on by default and lands in an auto session when no daemon owns one. Pruning is gated on a marker file Reticle writes, never on the directory's name, so it can only ever delete its own.",
+          "nodes": ["serve", "host-core"], "edges": ["e-core-serve"]
+        }
+      ]
+    },
+    {
+      "id": "app-inject",
+      "title": "app inject — JDWP, no AAR, no root",
+      "summary": "Getting the runtime into a debuggable app you did not build.",
+      "steps": [
+        {
+          "title": "Stage the payload dex, read-only",
+          "detail": "adb push to /data/local/tmp then run-as <pkg> cp into the app's private code_cache, chmod 0444. ART's W^X policy (API 26+) REFUSES to load a dex writable by the loading uid, so the read-only bit is load-bearing.",
+          "nodes": ["helper", "wire-android"], "edges": ["e-helper-wire"]
+        },
+        {
+          "title": "Open the debugger channel",
+          "detail": "adb forward tcp:<host> jdwp:<pid>, then handshake + IDSizes. Every debuggable process exposes JDWP — even on a locked ro.debuggable=0 user build where setprop wrap.<pkg> is rejected by the kernel.",
+          "nodes": ["wire-android", "app-android"], "edges": ["e-wire-appA"]
+        },
+        {
+          "title": "Arm a one-shot breakpoint",
+          "detail": "A BREAKPOINT at android.os.Handler.dispatchMessage with Count(1) — the chokepoint every main-looper message runs through — so it fires once and ART drops the instrumentation.",
+          "nodes": ["helper", "app-android"], "edges": ["e-wire-appA"]
+        },
+        {
+          "title": "Invoke on the suspended thread",
+          "detail": "PathClassLoader(dexPath, getSystemClassLoader()) → loadClass → Bootstrap.start() → ReticleRuntime.start(ActivityThread.currentApplication()). No ContentProvider needed.",
+          "nodes": ["app-android", "agent-android"], "edges": ["e-agentA-appA"]
+        },
+        {
+          "title": "Success is the server ANSWERING",
+          "detail": "The host verifies over HTTP with the same probe()/waitForRuntime() gate every other command uses — not the fact that the invoke returned. Non-debuggable release builds still need Frida/root, and fail loudly saying so.",
+          "nodes": ["agent-android", "endpoints", "helper"], "edges": ["e-agentA-ep", "e-wire-agentA"]
+        }
+      ]
+    },
+    {
+      "id": "ios-input",
+      "title": "iOS input — no helper in the path",
+      "summary": "The asymmetry worth seeing: iOS device work happens inside the host itself.",
+      "steps": [
+        {
+          "title": "--target ios routes in-host",
+          "detail": "There is no iOS helper. ReticleHostIos does simctl/devicectl, loopback HTTP, HID, and its own wait / scroll-to / verify loops. It depends on nothing above it, so the daemon cannot reach into platform code.",
+          "nodes": ["cli", "host-ios"], "edges": ["e-cli-ios"]
+        },
+        {
+          "title": "Resolve through the Swift protocol",
+          "detail": "SelectorResolution in ReticleProtocol — the twin of the helper's Kotlin SelectorResolver. Both are pinned by selector-resolution.cases.json, which exists because the two had silently drifted on every rule.",
+          "nodes": ["host-ios", "proto-swift", "fixtures"], "edges": ["e-ios-swift", "e-pswift-fix"]
+        },
+        {
+          "title": "Fetch the snapshot over plain loopback",
+          "detail": "Host and simulator share the network stack, so no forward is needed — the host talks straight to 127.0.0.1 on the derived port.",
+          "nodes": ["wire-ios", "agent-ios", "endpoints"], "edges": ["e-wire-agentI", "e-agentI-ep"]
+        },
+        {
+          "title": "Synthesize a real touch",
+          "detail": "A digitizer IOHIDEvent through SimDeviceLegacyHIDClient. HID is a CAPABILITY, not a version cutoff — verified on iOS 26.2 and 26.3 — so the e2e runs it unconditionally and asserts an observable side effect: a tap that sends cleanly yet never reaches UIKit is the exact failure this guards.",
+          "nodes": ["wire-ios", "app-ios"], "edges": ["e-wire-appI"]
+        },
+        {
+          "title": "On a real device there is no HID surface",
+          "detail": "A structural boundary, not a gap to work around: coordinate taps are refused with guidance, and act activate drives the control in-process instead — the device analogue of a tap, which also works on runtimes below the HID-supported ones.",
+          "nodes": ["host-ios", "agent-ios"], "edges": ["e-wire-agentI"]
+        }
+      ]
+    },
+    {
+      "id": "selector-order",
+      "title": "Selector resolution order",
+      "summary": "The action path only. Ambiguity is an error, never a guess.",
+      "steps": [
+        {
+          "title": "0 — explicit --point is absolute",
+          "detail": "The escape hatch for when resolution cannot work, so nothing overrides it — not even a --region needle passed alongside.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "1 — --region inside the selected node",
+          "detail": "A discovered region whose label contains the needle (case-insensitively), then a region named by its source (--region touchDelegate), then the char grid, substring matched VERBATIM. A --region that matches nothing is an ERROR: on an agreement row the node's centre toggles the checkbox instead of opening the terms, so a silent downgrade is a successful-looking tap on the wrong target.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "2 — the semantic tree",
+          "detail": "testId → resourceId → cssSelector → ref → label, walked in document order (DFS from the root, then orphan refs sorted) so an app that repeats a testId resolves to the same node on both platforms and across runs.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "3 — view-tree frames, same precedence",
+          "detail": "For a node the semantic projection dropped. Note this is the OPPOSITE default from inspection: actions prefer the semantic tree, while ui node always returns the richer view-tree node.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "Ambiguity refuses to guess",
+          "detail": "A --label matching two visible nodes in different subtrees is an error; nested duplicates (a row repeating its child's text) resolve to the innermost. Silently taking the first of several matches is how a tap lands on the wrong row while looking like it worked.",
+          "nodes": ["fixtures"], "edges": ["e-pcore-fix", "e-pswift-fix"]
+        },
+        {
+          "title": "Two implementations, one table",
+          "detail": "Android resolves in SelectorResolver (Kotlin, in the helper), iOS in SelectorResolution (Swift, in ReticleProtocol). selector-resolution.cases.json is the authority for every rule above.",
+          "nodes": ["helper", "host-ios", "fixtures"], "edges": ["e-helper-core", "e-ios-swift", "e-pcore-fix", "e-pswift-fix"]
+        }
+      ]
+    },
+    {
+      "id": "two-trees",
+      "title": "One capture, four sources, several projections",
+      "summary": "Every projection is a pure function of the same Snapshot, so no two can describe different frames.",
+      "steps": [
+        {
+          "title": "Four sources, one frame",
+          "detail": "The View/UIView tree, Compose semantics (reflective, accessibility-backed only), the WebView DOM (injected JS), and app-authored probes all fold into ONE Snapshot with ONE ref space.",
+          "nodes": ["agent-android", "agent-ios"], "edges": []
+        },
+        {
+          "title": "SemanticTree → act",
+          "detail": "Only nodes carrying a targeting signal (label, id, interactive), flattened to a label/role/frame summary. DERIVED from the view tree — it is NOT the platform/uiautomator accessibility tree. The view tree is the source of truth.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "CompactObservation → ui compact",
+          "detail": "One line per interactive or labelled item, and the default an AI agent reads. This is also where the marker vocabulary surfaces: window: UNFOCUSED, occluded-by:, dom:unavailable, pixels:unavailable, scroll:up,down.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "StyleObservation → ui style",
+          "detail": "Geometry and style per node, each value in raw/dp/sp units and TAGGED with the channel it came through. A property the node has but no channel can read is printed as ! <property> unreadable: <reason> — an absent key would read as 'the app sets no corner radius'.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "Raw nodes → ui tree · ui node · mutate",
+          "detail": "The inspection path is ALWAYS the view tree: ui node --test-id returns the concrete android.widget.Button with its alpha, elevation, background colour and app-attached metadata, not the trimmed semantic node.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "Refs are shared, twins are pinned",
+          "detail": "A ref from any projection re-resolves to the same node — on Android to the same live View, because viewByRef replays the identical walk with the identical numbering. And each derivation exists exactly twice, Kotlin and Swift, because the Android helper and the iOS host are different binaries. CompactObservation drifted before the fixtures existed.",
+          "nodes": ["proto-core", "proto-swift", "fixtures"], "edges": ["e-pcore-fix", "e-pswift-fix"]
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "title": "Network capture → rule → replay",
+      "summary": "The write actions are the differentiator: capture, modify, replay, diff.",
+      "steps": [
+        {
+          "title": "serve creates the session",
+          "detail": "An EventStore under ~/.reticle/sessions/<session>/ with an append-only events.jsonl, plus the Hummingbird localhost server and, optionally, the capture proxy.",
+          "nodes": ["serve", "host-core"], "edges": ["e-core-serve"]
+        },
+        {
+          "title": "The lane runs Loom's engine",
+          "detail": "persistFlows: false, because Reticle owns storage. Transport, HTTPS MITM (per-host leaf certs off an on-demand CA) and upstream forwarding are all Loom's, so a slow or failing upstream is Loom's concern and the lane sees only completed or errored flows.",
+          "nodes": ["net-lane", "loom"], "edges": ["e-lane-loom"]
+        },
+        {
+          "title": "The app's traffic arrives",
+          "detail": "HTTPS is visible as CONNECT tunnels unless --proxy-mitm and --proxy-ssl-hosts admit the host AND the app trusts Reticle's local CA. MITM still does not bypass certificate pinning or custom trust managers.",
+          "nodes": ["app-android", "app-ios", "net-lane"], "edges": ["e-appA-lane", "e-appI-lane"]
+        },
+        {
+          "title": "Flows normalize into events",
+          "detail": "network.request / network.response / network.error, plus network.websocket per frame under the same requestId. Frames are emitted as they ARRIVE rather than summarized at close, because a socket may outlive the session. A response carries ttfbMs / receiveMs, splitting a slow call into server think-time and transfer.",
+          "nodes": ["net-lane", "serve"], "edges": ["e-serve-lane"]
+        },
+        {
+          "title": "A rule acts, and says so",
+          "detail": "actions.route is mock / block / mapRemote / passthrough with orthogonal modifiers (delayMs, header rewrites, find/replace), translating 1:1 onto Loom's RuleActions. The captured response then carries ruleApplied, ruleId, ruleAction and, for a mock, mockValueId. A mock pointing at a missing value records network.error and returns 502 rather than silently falling through.",
+          "nodes": ["net-lane"], "edges": ["e-serve-lane"]
+        },
+        {
+          "title": "Replay is scoped and honest",
+          "detail": "Replay re-sends from Loom's bounded in-memory ring (2000), which Reticle deliberately does not persist: events.jsonl is the evidence, the ring is only what can still be ACTED on. Flow queries stamp replayableOnly: true so an empty list reads as 'nothing replayable matches' rather than 'this never happened'.",
+          "nodes": ["net-lane", "cli"], "edges": ["e-serve-lane"]
+        }
+      ]
+    },
+    {
+      "id": "wait-three-state",
+      "title": "act wait — and why the third state is the point",
+      "summary": "The only act gesture that dispatches no input. It exists because nothing else can express 'act, then a NEW screen appears'.",
+      "steps": [
+        {
+          "title": "It dispatches nothing",
+          "detail": "--verify can only watch a node that ALREADY resolves, and --settle only watches whether a point stopped moving. wait polls until a stated predicate holds: --for <selector>, + --gone, + --text <substring>, or --idle for the screen going quiet.",
+          "nodes": ["host-core", "host-ios"], "edges": []
+        },
+        {
+          "title": "Success is resolution, never isVisible",
+          "detail": "The test is resolution through the act's own path, so a resolved wait guarantees the very next act resolves the same way. An earlier 'appears' proposal was dropped over exactly that proxy. Visibility and occlusion are reported as CAVEATS, not as the verdict.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "resolved / absent / unknowable",
+          "detail": "absent is a miss nothing prevented seeing. unknowable is a miss that COULD NOT have been seen — lost window focus, an unbound list row, an unreadable DOM, a screen that never settled, an ambiguous label. Collapsing unknowable into absent is how an observer lies: an agent reads absent as 'the feature is broken'.",
+          "nodes": ["proto-core", "proto-swift"], "edges": []
+        },
+        {
+          "title": "One classifier, pinned on both sides",
+          "detail": "WaitVerdict.classify in reticle-core, mirrored in ReticleProtocol, decides this for both platforms — pinned by wait-classification.cases.json. Add a branch there or it ships unpinned on one side.",
+          "nodes": ["fixtures", "proto-core", "proto-swift"], "edges": ["e-pcore-fix", "e-pswift-fix"]
+        },
+        {
+          "title": "The outcome is a FIELD, not an exit code",
+          "detail": "--json stays {\"ok\":true} on a timeout, because a predicate that did not come true is an observation, not a tool failure. Exit codes are an opt-in lossy projection for shell/CI: --strict gives 3 = absent, 4 = unknowable, kept distinct on purpose.",
+          "nodes": ["cli"], "edges": ["e-cli-core", "e-cli-ios"]
+        }
+      ]
+    },
+    {
+      "id": "type-text",
+      "title": "act type — the one case adb cannot do",
+      "summary": "Split by content, because input text silently drops everything outside printable ASCII.",
+      "steps": [
+        {
+          "title": "Focus the named field first",
+          "detail": "With a targeting selector the host taps the resolved field and waits a short settle, so the text lands in THAT field rather than whatever happened to hold focus. With no selector it types into the current focus. Either way the text is inserted at the cursor — type never clears the field.",
+          "nodes": ["helper", "wire-android"], "edges": ["e-helper-wire", "e-wire-appA"]
+        },
+        {
+          "title": "ASCII goes straight through",
+          "detail": "adb shell input text — which works even on an app with no agent at all.",
+          "nodes": ["wire-android", "app-android"], "edges": ["e-wire-appA"]
+        },
+        {
+          "title": "Non-ASCII is staged BY the agent",
+          "detail": "CJK, accented Latin and emoji are silently dropped by input text, and host-side adb shell cmd clipboard is unavailable on many OEM builds. Android 10+ only lets the FOREGROUND app write the clipboard — which the agent is. So: POST /clipboard → ClipboardManager.setPrimaryClip, then KEYCODE_PASTE.",
+          "nodes": ["endpoints", "agent-android"], "edges": ["e-wire-agentA", "e-agentA-ep"]
+        },
+        {
+          "title": "This is the ONE place the agent touches input",
+          "detail": "And it is a permission constraint, not a design preference. The non-ASCII path therefore needs a reachable runtime and a focused field; the ASCII path needs neither.",
+          "nodes": ["agent-android", "app-android"], "edges": ["e-agentA-appA"]
+        },
+        {
+          "title": "iOS mirrors it exactly",
+          "detail": "The HID keyboard covers 0x20..0x7E; anything outside routes through the agent's clipboard endpoint and Cmd+V. The typeable gate is that exact range on both sides, so neither can silently drop a glyph.",
+          "nodes": ["host-ios", "agent-ios", "wire-ios"], "edges": ["e-wire-appI", "e-wire-agentI"]
+        }
+      ]
+    },
+    {
+      "id": "boundary-evidence",
+      "title": "How a boundary becomes evidence",
+      "summary": "An unreachable thing must produce evidence naming itself, never silence. Worked through on the wheel picker.",
+      "steps": [
+        {
+          "title": "A scenario reproduces the shape",
+          "detail": "scenario.wheelPicker: two NumberPicker wheels on Android, one two-component UIPickerView on iOS. A boundary earns a row in boundaries.md only when the mechanism is understood, and a scenario is how it stays understood.",
+          "nodes": ["app-android", "app-ios"], "edges": []
+        },
+        {
+          "title": "Android: the values are paint, not nodes",
+          "detail": "NumberPicker draws its neighbouring values onto the wheel canvas, so the only child view it owns is the EditText holding the selection. Unlike a Spinner dropdown (real row nodes in a popup) or a recycling list (binds once scrolled), a wheel materialises NOTHING, ever — so scroll-to structurally cannot reach '20'.",
+          "nodes": ["agent-android", "app-android"], "edges": ["e-agentA-appA"]
+        },
+        {
+          "title": "iOS is the asymmetric twin",
+          "detail": "UIPickerView builds a real subview per visible row, so its neighbours ARE nodes a label tap can select, and each component's current value comes through as an a11yVirtual region. The same on-screen control yields different amounts of readable evidence per platform, and the scenario exists to MEASURE that rather than to make one side match the other.",
+          "nodes": ["agent-ios", "app-ios"], "edges": ["e-agentI-appI"]
+        },
+        {
+          "title": "The reading that lies gets named",
+          "detail": "act type into a NumberPicker succeeds and is a lie: the tree reads 17 while the widget stays at 11 until it validates on focus change. And after a drag the value node may go invisible for good, so compact shows a wheel with no value while the full snapshot still carries the right text. Both are rows in boundaries.md; the honest driver is swipe.",
+          "nodes": ["proto-core", "agent-android"], "edges": ["e-agentA-pcore"]
+        },
+        {
+          "title": "Then it gets pinned",
+          "detail": "Both e2e scripts drive the scenario and assert an observable side effect. The iOS section also guards the crash the scenario found: UIPickerView's hidden scroll indicators carry CGRectInfinite, whose components are FINITE doubles (~1.8e308) — so an isFinite guard waves them through while Int(_:) still traps, which is exactly why the obvious check would not have caught it.",
+          "nodes": ["fixtures", "proto-swift", "agent-ios"], "edges": ["e-pswift-fix", "e-agentI-pswift"]
+        }
+      ]
+    }
+  ]
+}
