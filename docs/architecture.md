@@ -6,6 +6,70 @@ talking to it over a loopback channel, and synthesizing real input from the
 host. This document describes each, then the UI-tree model, selectors, and the
 multi-region detection that targets a specific phrase inside a single View.
 
+Three diagrams carry the shape of it, and everything else here is commentary on
+them: the two processes and the Android/iOS split (below), the one capture and the
+projections derived from it (**Two trees**), and the channels style is read through
+(**Style evidence**).
+
+## The shape of the system
+
+Two processes on two machines, and one asymmetry that is worth seeing before
+reading any of the prose: **Android device work goes out through a separate
+native helper; iOS device work happens inside the host itself.**
+
+```
+┌─ host (macOS 14+ arm64) ─────────────────────────────────────────────────┐
+│                                                                          │
+│  reticle — the one user-facing binary        --target android | ios      │
+│     │                                                                    │
+│     │  HostBackend: one typed method per capability, not stringly RPC    │
+│     ├──────────────────────────────┐                                     │
+│     ▼                              ▼                                     │
+│  AndroidBackend                 ReticleHostIos                           │
+│  the ONE place the helper's     iOS has NO helper: simctl / devicectl,   │
+│  JSONL method names are         loopback HTTP, CoreSimulator HID, and    │
+│  spelled                        its own wait / scroll-to / verify loops  │
+│     │                              │                                     │
+│     ▼                              │                                     │
+│  reticle-helper (GraalVM native, no JDK on the user's machine)           │
+│  adb · JDWP injector · input backend · selector resolution               │
+│     │                              │                                     │
+│  ┌──┴──────────────────────────────┴────────────────────────────────┐    │
+│  │ reticle serve — host-owned; the agent owns no session state      │    │
+│  │ events.jsonl · SSE · read-only panel · ReticleNetworkLane        │──▶ device
+│  │ (Loom capture engine + traffic rules + flow replay)              │    traffic
+│  └──────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└─────┼──────────────────────────────┼─────────────────────────────────────┘
+      │ adb forward tcp:<port>       │ loopback HTTP
+      │ adb shell input tap|swipe    │ CoreSimulator HID (simulator only)
+      ▼                              ▼
+┌─ inside the app's OWN process (device / simulator) ──────────────────────┐
+│                                                                          │
+│  ReticleServer, bound to 127.0.0.1:PortMap.derivePort(applicationId)     │
+│    GET /snapshot /semantics /compact /screenshot /logs · POST /mutate …  │
+│                                                                          │
+│  got there by: a linked AAR ContentProvider · a JDWP payload dex · a     │
+│  DYLD constructor (iOS injection) · a plain Reticle.start()              │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+Four things this picture is meant to settle:
+
+- **The agent observes; it never synthesizes input.** Taps and text come down the
+  left-hand path from the host. The only reason the agent touches input at all is
+  the clipboard staging for non-ASCII text (mechanism 3), which Android only
+  permits from inside the foreground app.
+- **The port is derived, not fixed.** `PortMap.derivePort(applicationId)` is shared
+  verbatim by agent and host, so two linked apps never collide — and changing that
+  hash desynchronizes both sides at once.
+- **`reticle serve` is host-owned state.** The agent and helper supply device
+  operations and runtime observations; session events, artifacts, traffic rules and
+  the panel never live on the device.
+- **The helper is not a CLI.** Its only entry points are `helper` (the JSONL RPC
+  server the Swift host spawns), `version` and `help`. Users never invoke it.
+
 ## The three mechanisms
 
 ### 1. Getting observation code into the target process
@@ -227,6 +291,37 @@ so this cannot arise there.
 
 ## Two trees, and which command uses which
 
+One capture, four sources, then several projections over it — and every
+projection is a pure function of the same `Snapshot`, which is why no two of them
+can describe different frames:
+
+```
+   in the app's process                          on the host (pure derivations)
+   ────────────────────                          ──────────────────────────────
+   View / UIView tree ──┐
+                        │                       ┌─ SemanticTree ······· act (movement/input:
+   Compose semantics ───┤                       │                       semantic first)
+   (reflective, a11y-   │                       │
+    backed only)        ├──▶  Snapshot  ──▶─────┼─ CompactObservation ·· ui compact  (what an
+                        │     ONE frame,        │                        agent gets by default)
+   WebView DOM ─────────┤     ONE ref space     │
+   (injected JS)        │                       ├─ StyleObservation ···· ui style
+                        │                       │
+   app-authored probes ─┘                       └─ the raw nodes ······· ui tree · ui node ·
+                                                                         mutate · act (fallback)
+```
+
+Two rules hold this together. **Refs are shared**: a `ref` from any projection
+re-resolves to the same node — and on Android to the same live `View`, since
+`viewByRef` replays the identical walk with the identical numbering. So a style
+finding can be tapped, and a tapped node can be inspected, without a second
+capture. And **each derivation exists exactly twice** — Kotlin in `reticle-core`,
+Swift in `ReticleProtocol` — because the Android helper and the iOS host are
+different binaries. Twins are pinned by shared fixtures under
+`reticle-protocol/fixtures/`, which is the only thing stopping them from slowly
+answering differently; `CompactObservation` drifted that way before the fixtures
+existed.
+
 Reticle maintains **two separate trees** from a single capture. Confusing them
 is the most common mistake when reading the output, so this is explicit:
 
@@ -280,7 +375,37 @@ intentionally use different trees.
 The question behind it is "does this screen match the design" — spacing between
 elements, colours, font properties, and whether proportions hold across screen
 sizes. Reticle answers **none** of those. It emits what only an in-process
-observer can know and stops there:
+observer can know and stops there.
+
+Four channels reach style, they are not equally trustworthy, and the fifth row is
+the one that makes the other four safe to believe:
+
+```
+  where the value came from                 tag                 typical properties
+  ─────────────────────────                 ───                 ──────────────────
+  a public field/getter on the           ─▶ [viewField]         textSize, textColor,
+  view or its layer                                             padding, layer corners
+
+  reflected out of a background          ─▶ [drawableReflect]   cornerRadius, borderWidth,
+  Drawable — Android only, and can                              borderColor
+  be stale on a themed/animated
+  background: the weakest of the four
+
+  Compose GetTextLayoutResult →          ─▶ [textLayout]        the whole text style of
+  TextStyle (the action TalkBack                                one Compose Text
+  invokes)
+
+  WebView getComputedStyle               ─▶ [computedStyle]     domStyle*, verbatim and
+                                                                never converted
+  ───────────────────────────────────────────────────────────────────────────────────
+  NOTHING can read it                    ─▶ styleGaps           ! backgroundColor
+                                                                  unreadable: <reason>
+```
+
+Without the last row a missing key means either "the app set nothing" or "Reticle
+cannot see it", and a consumer comparing against a design has no way to tell —
+which is how an observer lies by omission. The four things `ui style` therefore
+emits:
 
 - **The values.** Padding rather than the gap between two frames, because a
   frame-to-frame measurement cannot say whether the space belongs to this view,
@@ -293,10 +418,8 @@ observer can know and stops there:
   twice, and the shared fixture pins against exactly that. Text also renders in
   sp, which divides out `ScreenInfo.fontScale` as well and so separates "the app
   asked for the wrong size" from "the user enlarged text".
-- **The provenance.** `Node.styleChannels` names the channel per property
-  (`viewField`, `textLayout`, `computedStyle`, `drawableReflect`) because they are
-  not equally trustworthy — a `viewField` read is the live value the platform will
-  render, a `drawableReflect` read walked a background `Drawable`.
+- **The provenance.** `Node.styleChannels` carries the channel above per property,
+  and doubles as the allowlist of which `custom` keys count as style at all.
 - **The gaps.** `Node.styleGaps` lists properties this node HAS and no channel can
   read, with a reason. Without it "the design says 600, the app has nothing" and
   "Reticle cannot see the weight" are the same observation. See
@@ -620,6 +743,8 @@ authority for every rule above — the file exists because the two had silently
 drifted on all of them.
 
 ## Module layout
+
+Which box in the [first diagram](#the-shape-of-the-system) each module is:
 
 | Module | Kind | Contents |
 | --- | --- | --- |
