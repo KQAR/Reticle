@@ -23,6 +23,12 @@ import dev.reticle.core.Rect
  */
 object ComposeSemanticsBridge {
 
+    /** Style a Compose draw modifier owns, which no channel can read. */
+    private val DRAW_MODIFIER_GAPS = mapOf(
+        "backgroundColor" to "compose-draw-modifier",
+        "cornerRadius" to "compose-draw-modifier",
+    )
+
     // Scanning javaClass.methods on every capture is a full array walk per
     // Compose host; resolve once per (class, name), like SemanticsReflect does.
     private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
@@ -69,7 +75,15 @@ object ComposeSemanticsBridge {
             val offsetX = (onScreen[0] - inWindow[0]).toDouble()
             val offsetY = (onScreen[1] - inWindow[1]).toDouble()
 
-            val ref = visit(rootNode, parentRef, nodes, offsetX, offsetY, makeRef)
+            // Compose states type in sp; the TextView path reports rendered px.
+            // Normalising here keeps `textSize` meaning one thing across channels.
+            val metrics = view.resources.displayMetrics
+            val ref = visit(
+                rootNode, parentRef, nodes, offsetX, offsetY,
+                densityScale = metrics.density,
+                fontScale = view.resources.configuration.fontScale,
+                makeRef = makeRef,
+            )
             if (ref != null) listOf(ref) else emptyList()
         } catch (_: Throwable) {
             emptyList()
@@ -82,6 +96,8 @@ object ComposeSemanticsBridge {
         nodes: MutableMap<String, Node>,
         offsetX: Double,
         offsetY: Double,
+        densityScale: Float,
+        fontScale: Float,
         makeRef: () -> String,
     ): String? {
         val ref = makeRef()
@@ -95,7 +111,8 @@ object ComposeSemanticsBridge {
 
         val childRefs = ArrayList<String>()
         for (child in SemanticsReflect.children(semanticsNode)) {
-            visit(child, ref, nodes, offsetX, offsetY, makeRef)?.let(childRefs::add)
+            visit(child, ref, nodes, offsetX, offsetY, densityScale, fontScale, makeRef)
+                ?.let(childRefs::add)
         }
 
         // Sub-regions inside one text node: a Compose Text carries its links as
@@ -103,6 +120,12 @@ object ComposeSemanticsBridge {
         // Compose text is unaddressable while the same ClickableSpan row on a View
         // is not.
         val textRegions = ComposeTextRegions.probe(semanticsNode, frame)
+
+        // Text style off the same GetTextLayoutResult action. Semantics carries no
+        // style of its own, so without this a Compose screen answered none of the
+        // questions a design asks while the identical View screen answered all of
+        // them.
+        val textStyle = ComposeTextStyle.probe(semanticsNode, densityScale, fontScale)
 
         nodes[ref] = Node(
             ref = ref,
@@ -120,10 +143,18 @@ object ComposeSemanticsBridge {
             charGrid = textRegions.charGrid,
             scroll = SemanticsReflect.scrollInfo(semanticsNode),
             custom = buildMap {
+                putAll(textStyle.values)
                 testTag?.let { tag ->
                     ReticleRuntime.shared.metadata(tag).forEach { (k, v) -> put(k, v) }
                 }
             } as Map<String, MetadataValue>,
+            styleChannels = textStyle.channels,
+            // Every composable's background, clip and border are draw modifiers:
+            // draw operations with no semantics projection and no public runtime
+            // handle, so they are unreadable on EVERY compose node, not only text
+            // ones. Declared here rather than left silent — an absent key would read
+            // as "unstyled". See docs/boundaries.md.
+            styleGaps = textStyle.gaps + DRAW_MODIFIER_GAPS,
             children = childRefs,
         )
         return ref

@@ -12,6 +12,25 @@ public enum NodeKind: String, Codable, Sendable {
     case probe
 }
 
+/// The channel a style property was read through — the provenance half of
+/// `Node.styleChannels`, the twin of reticle-core's `StyleChannel`.
+///
+/// Channels differ in what they can be trusted for, so collapsing them would
+/// hide the difference: a `viewField` read is the live value the platform will
+/// render, while a `drawableReflect` read walked a private `Drawable` field and
+/// can be stale on a themed or animated background. A consumer comparing against
+/// a design needs to know which it is holding.
+public enum StyleChannel: String, Codable, Sendable {
+    /// A public field/getter on the platform view or its layer.
+    case viewField
+    /// Compose: the `TextStyle` behind a laid-out `Text`, via `GetTextLayoutResult`.
+    case textLayout
+    /// WebView: `getComputedStyle` on the DOM element.
+    case computedStyle
+    /// Reflected out of an Android background `Drawable` — see the caveat above.
+    case drawableReflect
+}
+
 /// The view-tree snapshot: a flat map of ref -> node plus a root ref.
 ///
 /// On iOS the tree is rooted at a synthetic application node, then each
@@ -88,6 +107,20 @@ public struct Node: Codable, Sendable {
     public var isEnabled: Bool
     public var isInteractive: Bool
     public var custom: [String: MetadataValue]
+    /// Where each style-bearing entry of `custom` was read from, keyed by the same
+    /// property name. Absent for non-style properties, so it doubles as the
+    /// allowlist of which `custom` keys are style.
+    ///
+    /// It exists because "the design says 600, the app has nothing" has two very
+    /// different causes — the app really set no weight, or Reticle has no channel
+    /// to that weight — and a missing key alone cannot tell them apart.
+    public var styleChannels: [String: StyleChannel]
+    /// Style properties this node is known to HAVE but which no channel can read,
+    /// keyed by property name with a short reason (e.g. `backgroundColor` ->
+    /// `compose-draw-modifier`). The boundary rule at property granularity: an
+    /// unreachable thing names itself rather than looking absent. A key here is
+    /// never also a key of `custom` or `styleChannels`.
+    public var styleGaps: [String: String]
     public var children: [String]
     public var regions: [InteractionRegion]
     public var suspectedMultiRegion: Bool
@@ -110,6 +143,8 @@ public struct Node: Codable, Sendable {
         isEnabled: Bool = true,
         isInteractive: Bool = false,
         custom: [String: MetadataValue] = [:],
+        styleChannels: [String: StyleChannel] = [:],
+        styleGaps: [String: String] = [:],
         children: [String] = [],
         regions: [InteractionRegion] = [],
         suspectedMultiRegion: Bool = false,
@@ -130,6 +165,8 @@ public struct Node: Codable, Sendable {
         self.isEnabled = isEnabled
         self.isInteractive = isInteractive
         self.custom = custom
+        self.styleChannels = styleChannels
+        self.styleGaps = styleGaps
         self.children = children
         self.regions = regions
         self.suspectedMultiRegion = suspectedMultiRegion
@@ -195,6 +232,7 @@ public struct Node: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
         case text, testId, frame, isVisible, isEnabled, isInteractive, custom
+        case styleChannels, styleGaps
         case children, regions, suspectedMultiRegion, charGrid, scroll
     }
 
@@ -219,6 +257,8 @@ public struct Node: Codable, Sendable {
         if !isEnabled { try c.encode(isEnabled, forKey: .isEnabled) }
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         if !custom.isEmpty { try c.encode(custom, forKey: .custom) }
+        if !styleChannels.isEmpty { try c.encode(styleChannels, forKey: .styleChannels) }
+        if !styleGaps.isEmpty { try c.encode(styleGaps, forKey: .styleGaps) }
         if !children.isEmpty { try c.encode(children, forKey: .children) }
         if !regions.isEmpty { try c.encode(regions, forKey: .regions) }
         if suspectedMultiRegion { try c.encode(suspectedMultiRegion, forKey: .suspectedMultiRegion) }
@@ -242,6 +282,8 @@ public struct Node: Codable, Sendable {
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         custom = try c.decodeIfPresent([String: MetadataValue].self, forKey: .custom) ?? [:]
+        styleChannels = try c.decodeIfPresent([String: StyleChannel].self, forKey: .styleChannels) ?? [:]
+        styleGaps = try c.decodeIfPresent([String: String].self, forKey: .styleGaps) ?? [:]
         children = try c.decodeIfPresent([String].self, forKey: .children) ?? []
         regions = try c.decodeIfPresent([InteractionRegion].self, forKey: .regions) ?? []
         suspectedMultiRegion = try c.decodeIfPresent(Bool.self, forKey: .suspectedMultiRegion) ?? false

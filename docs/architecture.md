@@ -255,6 +255,7 @@ Command → tree mapping:
 | `ui tree` | **view tree** | indented `Node` hierarchy |
 | `ui tree --semantics` | **semantic tree** | indented `SemanticNode` hierarchy |
 | `ui compact` | view tree (filtered to interactive/labelled) | one line per item |
+| `ui style` | view tree (every node with style or a declared gap) | geometry + style per node, each value in raw/dp/sp units and tagged with the channel it came through |
 | **`ui node`** | **view tree** | a single `Node` — full view properties, not a semantic summary |
 | `mutate` | view tree (resolves the concrete `View` to patch) | `MutationResult` |
 | `act tap` (selector) | **semantic tree first, view tree fallback** | a resolved point |
@@ -273,6 +274,52 @@ The split, restated:
 Only the **action** path (`act tap`) is semantic-first; the **inspection**
 path (`ui node`) is always the view tree. These are different concerns and
 intentionally use different trees.
+
+## Style evidence (`ui style`)
+
+The question behind it is "does this screen match the design" — spacing between
+elements, colours, font properties, and whether proportions hold across screen
+sizes. Reticle answers **none** of those. It emits what only an in-process
+observer can know and stops there:
+
+- **The values.** Padding rather than the gap between two frames, because a
+  frame-to-frame measurement cannot say whether the space belongs to this view,
+  its neighbour or their parent — which is exactly what a spacing spec states.
+- **The units.** A raw length is meaningless without the screen it was measured
+  on, and the raw unit is not the same on both platforms: the Android view tree
+  measures in physical pixels, UIKit in points, which are already
+  density-independent. `StyleUnits.lengthsAreDensityIndependent` is the one place
+  that difference is decided; dividing an iOS point by `density` would scale it
+  twice, and the shared fixture pins against exactly that. Text also renders in
+  sp, which divides out `ScreenInfo.fontScale` as well and so separates "the app
+  asked for the wrong size" from "the user enlarged text".
+- **The provenance.** `Node.styleChannels` names the channel per property
+  (`viewField`, `textLayout`, `computedStyle`, `drawableReflect`) because they are
+  not equally trustworthy — a `viewField` read is the live value the platform will
+  render, a `drawableReflect` read walked a background `Drawable`.
+- **The gaps.** `Node.styleGaps` lists properties this node HAS and no channel can
+  read, with a reason. Without it "the design says 600, the app has nothing" and
+  "Reticle cannot see the weight" are the same observation. See
+  [boundaries.md](boundaries.md) for the two that exist today.
+
+What it deliberately does not do is compare. Deciding what the values ought to be
+imports an external truth, a delta needs a tolerance, and "ignore the status bar"
+is an exemption list — all three are the consumer's policy, which is why the
+roadmap's `diff design` item was dropped rather than built. The projection is the
+same shape for a design comparison, a cross-build check, or the same screen on two
+devices, and Reticle does not need to know which.
+
+`StyleObservation` in `reticle-core`, mirrored in `ReticleProtocol`, owns the
+derivation AND its text rendering — both host renderers just call `render()`, so
+the Kotlin helper and the Swift host cannot format one snapshot two ways. Pinned
+for both by `reticle-protocol/fixtures/style-observation.cases.json`.
+
+One capture asymmetry is worth knowing. Compose semantics carries no style of its
+own — it is an accessibility surface — so text style comes from the
+`GetTextLayoutResult` action's `TextLayoutResult.layoutInput.style`, the same
+public channel `ComposeTextRegions` already uses for link geometry. Values are
+normalised to rendered pixels there, so `textSize` means one thing whether it came
+from a `TextView` or a `Text`.
 
 ## Sub-node interaction regions (multi-region controls)
 

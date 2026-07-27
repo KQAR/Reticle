@@ -5,6 +5,7 @@
   "screen": {
     "size": { "width": 1080.0, "height": 2400.0 },
     "density": 3.0,
+    "fontScale": 1.0,
     "interfaceStyle": "dark",
     "keyboard": {
       "visible": true,
@@ -37,6 +38,14 @@
         "textSize": { "_type": "real", "value": 42.0 },
         "lineCount": { "_type": "int", "value": 1 },
         "selected": { "_type": "bool", "value": false }
+      },
+      "styleChannels": {
+        "alpha": "viewField",
+        "textColor": "viewField",
+        "textSize": "viewField"
+      },
+      "styleGaps": {
+        "fontFamily": "android-typeface-exposes-no-family"
       },
       "regions": [
         {

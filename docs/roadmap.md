@@ -120,7 +120,8 @@ mismatch hid in exactly this blind spot.
 
 The primitives exist and the agent assembles them by hand. Each of these packages
 them into something a human consumes directly; all three emit magnitudes, never
-grades. Do **A1 → A2 → A3** (A4 already landed as `replay gif`).
+grades. Do **A1 → A2** (A4 already landed as `replay gif`; A3 was dropped as
+specified — see below).
 
 - **A1 — PR evidence bot (`reticle review`).** Read a diff → drive a deterministic
   flow to the affected screens → assemble trace + compact diff + network events +
@@ -130,10 +131,27 @@ grades. Do **A1 → A2 → A3** (A4 already landed as `replay gif`).
   between builds with a change-region overlay. Complements structural diff:
   structural says "text/state changed", pixel says "layout/render drifted". The
   threshold is a hint, not a verdict.
-- **A3 — design-fidelity evidence (`reticle diff design`).** Align a design frame's
-  boxes with live node rects and emit per-region deltas (position / size / color /
-  text) plus an overlay. Design data comes through the existing Figma channel. No
-  letter grade — grading is the consumer's call.
+- **A3 — design-fidelity evidence — DROPPED as specified; the capability half
+  landed as `ui style`.** It was to align a design frame's boxes with live node
+  rects and emit per-region deltas. That is a verdict wearing an observation's
+  clothes, and the "no letter grade" caveat only blocked the third of three ways
+  in: reading the design imports an external truth and makes Reticle the arbiter
+  of correct; a delta needs a tolerance, which is policy; and skipping the status
+  bar needs an exemption list, which is domain policy. All three belong to the
+  consumer. What is genuinely unguessable from outside — the values, the units they
+  are measured in, and which properties no channel can read — is now `ui style`
+  (`StyleObservation`), and Reticle does not care whether the caller compares it
+  against a design frame, a previous build, or a second device.
+
+  Two consequences worth keeping written down. **A `reticle diff responsive`** was
+  considered and rejected for the same reason even though it imports no external
+  truth: classifying a width as "should scale proportionally" versus "should stay
+  a fixed dp" IS the design intent. `ui style` instead emits every length in raw
+  units, dp and (for text) sp plus a share of the screen, and the consumer picks
+  which one it expects to hold constant across devices. And **A2 stands** — it
+  compares two pictures Reticle took itself, invents no truth, and its threshold is
+  already documented as a hint; it is a pixel-evidence product, not a fidelity
+  verdict.
 - **A5 — navigation / coverage map (`reticle map`).** Fold `ui outline` + trace
   transitions into "screen → reachable path", positioned strictly as a coverage aid
   ("what no flow touches yet"), never a verification path. Lowest priority.

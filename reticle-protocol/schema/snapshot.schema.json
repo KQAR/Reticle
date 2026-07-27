@@ -74,6 +74,10 @@
           "type": "number",
           "description": "Display density (dpi / 160)."
         },
+        "fontScale": {
+          "type": ["number", "null"],
+          "description": "System font-scale multiplier at capture time (Android Configuration.fontScale; on iOS the Dynamic Type scale of a body font), or null when the platform did not probe it. Needed to tell a wrong font size apart from a user-enlarged one: dp divides out density alone, sp divides out density and this."
+        },
         "interfaceStyle": {
           "type": ["string", "null"],
           "description": "\"light\" | \"dark\" — UI night-mode flag, or null."
@@ -105,6 +109,11 @@
       "type": "string",
       "enum": ["application", "window", "view", "composeSemantics", "axElement", "domNode", "probe"],
       "description": "Node origin. Includes merged Android Compose semantics (composeSemantics), iOS accessibility-derived SwiftUI elements (axElement — the SwiftUI analogue of composeSemantics: synthesized only from natively-exposed accessibility elements, never from private SwiftUI internals), and read-only WebView DOM nodes (domNode)."
+    },
+    "StyleChannel": {
+      "type": "string",
+      "enum": ["viewField", "textLayout", "computedStyle", "drawableReflect"],
+      "description": "The channel a style property in `custom` was read through. Channels differ in what they can be trusted for — a viewField read is the live value the platform will render, while a drawableReflect read walked a private Drawable field and can be stale on a themed or animated background — so provenance travels with the value instead of being inferred from the platform."
     },
     "MetadataValue": {
       "description": "Scalar metadata value, a sealed hierarchy serialized with a `_type` discriminator carrying a short tag (text/bool/int/real).",
@@ -237,6 +246,16 @@
         "custom": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/MetadataValue" }
+        },
+        "styleChannels": {
+          "type": "object",
+          "description": "Where each style-bearing entry of `custom` was read from, keyed by the same property name. Absent for non-style properties (ids, DOM bookkeeping, app-authored metadata), so this doubles as the allowlist of which `custom` keys are style.",
+          "additionalProperties": { "$ref": "#/$defs/StyleChannel" }
+        },
+        "styleGaps": {
+          "type": "object",
+          "description": "Style properties this node is known to HAVE but which no channel can read, keyed by property name with a short reason as the value (e.g. backgroundColor -> compose-draw-modifier). A key here is never also a key of `custom` or `styleChannels`: an unreachable property must name itself rather than look absent.",
+          "additionalProperties": { "type": "string" }
         },
         "children": {
           "type": "array",
