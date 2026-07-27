@@ -723,6 +723,38 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== COMPOUND FIELDS: type verifies focus, not dispatch =="
+# The shape real forms are built from: the unique id is on the WRAPPER and the
+# EditText inside it reuses a generic one. A tap on the wrapper focuses nothing,
+# so `type` used to report chars=N into a field that stayed empty.
+open_scenario scenario.compoundField compound.firstName
+# 1. Targeting the wrapper: exactly one focusable input inside it, so `type`
+# re-aims once and says so, rather than typing into the void.
+COMPOUND_TYPE="$(R act type --package "$PKG" --test-id compound.firstName --text "Ada")"
+echo "$COMPOUND_TYPE"
+echo "$COMPOUND_TYPE" | grep -q "focusLanded=" \
+  || { echo "FAIL: type must report where focus landed, got: $COMPOUND_TYPE"; exit 1; }
+echo "$COMPOUND_TYPE" | grep -Eq "focusLanded=(self|descendant)" \
+  || { echo "FAIL: type into a compound wrapper must land in its input, got: $COMPOUND_TYPE"; exit 1; }
+sleep 1
+R ui report --package "$PKG" --output "$TMP/compound-typed"
+R ui compact "$TMP/compound-typed/snapshot.json" | grep -q "Ada" \
+  || { echo "FAIL: the text did not reach the nested EditText"; exit 1; }
+# The focused field is marked in compact — "where would text go" is not inferable
+# from a rect, and the wrapper is `tappable` while taking no focus at all.
+R ui compact "$TMP/compound-typed/snapshot.json" | grep -q "focused" \
+  || { echo "FAIL: compact must mark the focused node"; exit 1; }
+# 2. Two inputs under one wrapper is a GUESS, and must be refused rather than
+# silently filling one of them.
+set +e
+AMBIGUOUS="$(R act type --package "$PKG" --test-id compound.ambiguous --text "07" 2>&1)"
+AMBIGUOUS_RC=$?
+set -e
+[ "$AMBIGUOUS_RC" -ne 0 ] \
+  || { echo "FAIL: type into a wrapper with two inputs must be refused, got: $AMBIGUOUS"; exit 1; }
+echo "$AMBIGUOUS" | grep -q "did not focus a text field" \
+  || { echo "FAIL: the refusal must say focus never landed; got: $AMBIGUOUS"; exit 1; }
+
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField
 # Focus the code field so the soft keyboard comes up.

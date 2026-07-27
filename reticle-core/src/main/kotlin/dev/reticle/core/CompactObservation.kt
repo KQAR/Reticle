@@ -68,6 +68,7 @@ data class CompactObservation(
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
+                            isFocused = node.isFocused,
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
                             domUnavailable = node.domUnavailable(),
@@ -99,6 +100,14 @@ data class CompactItem(
     val frame: Rect? = null,
     val isEnabled: Boolean = true,
     val isInteractive: Boolean = false,
+    /**
+     * True when this node holds input focus — where typed text will go. At most
+     * one item in an observation carries it. Included because the compact view is
+     * for acting NOW, and "which field is armed" is not inferable from a rect:
+     * a compound widget's wrapper is `tappable` yet takes no focus, so a tap on it
+     * arms nothing and `act type` would send text to whatever was focused before.
+     */
+    val isFocused: Boolean = false,
     /**
      * What sits on top of this node's tap point, when anything does: the ref of
      * a higher z-order window (a dialog/popup covering a background page), or
@@ -148,6 +157,7 @@ data class CompactItem(
         val state = buildString {
             if (!isEnabled) append(" disabled")
             if (isInteractive) append(" tappable")
+            if (isFocused) append(" focused")
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
             if (domUnavailable) append(" dom:unavailable")

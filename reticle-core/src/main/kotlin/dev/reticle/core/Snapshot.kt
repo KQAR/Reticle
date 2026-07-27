@@ -134,6 +134,31 @@ data class Node(
     val isVisible: Boolean = true,
     val isEnabled: Boolean = true,
     val isInteractive: Boolean = false,
+    /**
+     * Can this node take input focus **from a touch**? (Android:
+     * `focusableInTouchMode`, not `isFocusable` — since API 26 a plain clickable
+     * container reports `isFocusable = true` under `FOCUSABLE_AUTO` while a tap
+     * moves no focus into it, which is exactly the confusion this field exists to
+     * remove. Reticle drives touches, so the touch reading is the useful one.)
+     *
+     * Distinct from [isInteractive], which is true for anything clickable: the
+     * shape that motivated this is an outer container carrying the stable test id
+     * — clickable, and often the only unique handle — wrapping the `EditText`
+     * that actually accepts text. Targeting the container used to type into
+     * nothing at all.
+     *
+     * False on a node whose platform has no per-node focus channel (Compose
+     * semantics, DOM elements): there the platform focus sits on the host view,
+     * which is this node's ancestor.
+     */
+    val isFocusable: Boolean = false,
+    /**
+     * Does this node hold input focus right now? At most one node in a tree does.
+     * The post-condition `act type` checks: after tapping the target field, the
+     * focused node must be that node or inside it, or the text is about to land
+     * somewhere else.
+     */
+    val isFocused: Boolean = false,
     /** Scalar reflected properties, e.g. alpha, backgroundColor, elevation. */
     val custom: Map<String, MetadataValue> = emptyMap(),
     /**
