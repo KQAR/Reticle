@@ -36,6 +36,7 @@
     "text",
     "submit",
     "settle",
+    "noSettle",
     "settleTimeoutMs",
     "from",
     "to",

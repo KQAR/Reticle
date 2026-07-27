@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **A selector `tap` re-resolves its point before dispatching, by default.** Resolution
+  and dispatch are two steps, and between them the screen can move. `--settle` already
+  covered the target that is *animating in*, but the same staleness comes from a
+  relayout caused by an EARLIER command — and there a caller has no cue to reach for a
+  flag. Measured on a physical device: a `type` shifted the page up 161px, the next
+  `act tap --test-id <rowA>` resolved live to the right ref and the right node, and the
+  touch — aimed at a rect already stale — opened the bottom sheet of the row BELOW it.
+  The command reported plain success both times, and the trace's 101-change diff is
+  identical for the right sheet and the wrong one, so only a screenshot of the sheet
+  title caught it. Now every selector tap confirms the point repeats before dispatching
+  (800ms budget; on a settled screen one agreeing re-resolve ends it) and reports
+  `settled=`; when the re-resolve actually moved the point it adds `rectMoved=<dx>,<dy>`,
+  so the confirm does not *silently* fix a stale rect — the caller reasoned about a
+  screen that had already moved and needs to know. `--settle` now means "this target IS
+  animating" and raises the budget to 2s; `--no-settle` opts out to the single-read
+  dispatch; a raw `--point` never confirms (nothing to re-resolve). Android and the iOS
+  simulator HID path both, since the resolve/dispatch gap is the same on each; iOS
+  real-device `activate` is unaffected because it resolves and dispatches in one
+  in-process step.
+
 - **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
   the one picker shape the sample apps had no coverage for, and it behaves unlike the
   two they did have: a `Spinner` dropdown materialises real row nodes in a popup, and
