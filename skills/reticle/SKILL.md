@@ -7,7 +7,7 @@ description: >-
   Jetpack Compose semantics tree or embedded WebView DOM, find a stable selector
   or exact tap coordinates, tap/swipe/type real input, target a specific phrase
   or link inside a multi-region control (e.g. an agreement row), inspect DOM CSS
-  styles or image resources, capture an action trace with before/after evidence,
+  styles or image resources, read back what a recorded run did (`trace log`),
   show a read-only local Web panel for a multi-action evidence timeline, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
   rebuilding.
@@ -500,24 +500,55 @@ reticle act tap --package <pkg> --css '#style-target' --verify 'css=#style-targe
 
 ## Action traces
 
-Use `--trace-output <dir>` when an action needs a durable evidence package, not
-just terminal output. Reticle writes one subdirectory per action containing:
+**Every `act` records by default** — no flag, no `serve` needed. Reticle writes
+one subdirectory per action under the current session containing:
 
-- `trace.json` — manifest with gesture, selector, resolved point/source/ref, and
-  compact before→after diff.
+- `trace.json` — manifest with gesture, selector, resolved point/source/ref, the
+  gesture's own inputs (`params`, including a `type`'s text), and a ranked
+  before→after diff.
 - `before.snapshot.json` / `after.snapshot.json` — full trees around the action.
 - `before.screenshot.png` / `after.screenshot.png` when the agent screenshot path
   is available.
 
+Pass `--trace-output <dir>` only to put the artifacts somewhere specific (a bug
+report, a `replay gif` input). `RETICLE_NO_AUTO_TRACE=1` turns auto-recording off.
+
+**`trace log` — read a run back cheaply.** This is the command to reach for
+instead of opening trace files. A snapshot is 100KB+; the digest is a few lines
+per action and answers "what did this run do" on its own:
+
 ```bash
-reticle act tap --package <pkg> --css '#style-target' \
-  --verify 'css=#style-target' \
-  --trace-output reticle-traces
+reticle trace log                       # the current recording
+reticle trace log reticle-batch         # or any trace directory
+reticle trace log --changes 12 --json   # more per-action detail / machine-readable
 ```
 
-Prefer traces for bug reports, demos, and multi-step validation where later tools
-or humans need to inspect the exact evidence. Without `reticle serve`, keep
-default `act` calls trace-free when the inline `--verify` diff is enough.
+```
+1  19:11:48  tap  testId=checkout.payButton  →540,1176 semantic:testId
+    ~ r36 text "Cart: 3 items" → "Paid!" [testId=checkout.status role=text]
+    evidence 1785150708052-tap/, 2 snapshots, 2 screenshots
+
+2  19:11:55  tap  testId=scenario.login  →540,2320 semantic:testId
+    (no observable change between before and after)
+```
+
+How to read it:
+
+- `+` appeared, `-` disappeared, `~` changed. The `[testId=… role=…]` names the
+  node, so a bare `r36` never needs a snapshot lookup. It is attached once per
+  ref, not repeated on that node's other changes.
+- Changes are **ranked**, so the ones shown are the ones that mattered:
+  appearances and text before geometry, addressable nodes before anonymous
+  containers.
+- `(no observable change between before and after)` means the action dispatched
+  and the screen did not move. That is a real finding — the usual cause of a
+  later selector miss — not an empty result.
+- `…N more (…)` is what the digest omitted; `! manifest kept X of Y` is what the
+  capture already dropped. Both snapshots stay on disk, so raise `--changes` or
+  open the trace directory when you need the rest.
+
+`trace log` reads only. It asserts nothing: to state an expectation use
+`act … --verify` or `act wait --strict`.
 
 **`replay gif` — turn a recorded flow into a shareable artifact.** Once a flow
 has trace packages on disk, stitch them into a device-framed animated GIF for
@@ -654,7 +685,9 @@ for short paths when a broader prefix could match unrelated endpoints.
 Use `--trace-output <dir>` only when you also want a copy outside the session.
 This is useful for longer demos, replayable validation, or tools that want to
 consume trace events. Do not start `serve` for a simple one-off screen read;
-`ui report`, `ui node --live`, and `act --verify` stay the cheaper default paths.
+`ui report`, `ui node --live`, and `act --verify` stay the cheaper default paths
+— and actions record either way, so `reticle trace log` can reconstruct the run
+afterwards without the daemon.
 
 ## Multi-region controls (one View, several tap targets)
 
@@ -732,9 +765,12 @@ each one.
 
 - Verify with evidence: check the changed node/state after an action — don't
   claim success from the tap alone. Prefer the cheap paths: `act … --verify` to
-  see the before→after diff in the acting command, `act … --trace-output` when
-  you need durable before/after artifacts, or `ui node --live` to read one node.
-  Fall back to a full re-`ui report` only when you need the whole tree.
+  see the before→after diff in the acting command, `reticle trace log` to read
+  back what a whole run did, or `ui node --live` to read one node. Fall back to a
+  full re-`ui report` only when you need the whole tree.
+- A dispatched action is not a landed one. `trace log` printing `(no observable
+  change between before and after)` for a step is evidence the tap hit nothing —
+  say so rather than reporting the step as done.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.
