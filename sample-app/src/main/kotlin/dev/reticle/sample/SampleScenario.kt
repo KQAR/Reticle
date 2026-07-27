@@ -41,6 +41,12 @@ enum class SampleScenario(
         testId = "scenario.popups",
         activityClass = PopupScenarioActivity::class.java,
     ),
+    WheelPicker(
+        title = "Wheel picker",
+        subtitle = "Two NumberPicker wheels: only the selected value is a node",
+        testId = "scenario.wheelPicker",
+        activityClass = WheelPickerScenarioActivity::class.java,
+    ),
     LongList(
         title = "Long list",
         subtitle = "60 recycled rows; far-down rows are absent until scrolled",

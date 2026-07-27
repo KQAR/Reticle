@@ -66,7 +66,7 @@ public enum Render {
         }
         let header: String
         if kb.visible {
-            let whereStr = kb.frame.map { " [\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? ""
+            let whereStr = kb.frame.map { " [\($0.intDescription)]" } ?? ""
             let covered = observation.items.filter { $0.occludedBy == CompactObservation.occluderKeyboard }.count
             header = "keyboard: visible\(whereStr)"
                 + (covered > 0 ? " — \(covered) item(s) occluded" : "")
@@ -145,7 +145,7 @@ public enum Render {
             }
             for r in node.regions {
                 let rect = r.rects.first
-                let whereStr = rect.map { "[\(Int($0.x)),\(Int($0.y)) \(Int($0.width))x\(Int($0.height))]" } ?? "(no rect)"
+                let whereStr = rect.map { "[\($0.intDescription)]" } ?? "(no rect)"
                 let target = r.target.map { " -> \($0)" } ?? ""
                 let color = r.color.map { " color=\($0)" } ?? ""
                 out += "    - \(r.source.rawValue) \"\(r.label.map { String($0.prefix(40)) } ?? "")\"\(target)\(color) \(whereStr)\n"
@@ -183,7 +183,7 @@ public enum Render {
         public var description: String {
             let listed = matches.prefix(6).map { n -> String in
                 let text = n.text ?? n.contentDescription ?? "?"
-                let at = n.frame.map { "\(Int($0.x)),\(Int($0.y))" } ?? "?"
+                let at = n.frame.map { "\(Rect.whole($0.x)),\(Rect.whole($0.y))" } ?? "?"
                 return "'\(text)' at \(at) (\(n.ref))"
             }.joined(separator: ", ")
             return "label '\(label)' matched \(matches.count) visible nodes: \(listed). "
