@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Four stale surfaces and two duplications, all the same shape as the README
+  ones.** All four plugin manifests still sold "a runtime UI evidence + action
+  harness for **Android** apps", with `ios` missing even from the keyword list —
+  the text a user reads before installing. The three slash commands restated the
+  skill's workflows in their own words, mentioned no iOS, and had already drifted
+  (`report.md`'s health-check list was a stale subset of the skill's table); they
+  are now thin wrappers that name the skill as the source and keep only what is
+  command-specific, including the evidence markers a caller must relay rather than
+  smooth over. `docs/ios.md`'s boundary section and `docs/boundaries.md` covered
+  overlapping facts at different depths with no link either way, so both read as
+  complete; each now says what the other is for — index of facts vs. the mechanism
+  behind the platform-specific rows. And `AGENTS.md`'s second Toolchain list, which
+  had already diverged from the README's in both directions, is now a pointer plus
+  the three build-specific pins.
+
+  Two roadmap items were falsified by the preceding work and are recorded as such.
+  The **codegen trigger already fired**: "a drift bug the schema tests fail to
+  catch" is exactly what the seven selector-resolution drifts were — none of them
+  wire shape — and it was answered with a shared fixture, which is the cheaper
+  answer while the drifting surfaces are behaviour tables rather than models.
+  Writing that down keeps it from later reading as an oversight. The
+  `Injector.kt` docs-debt item was real: `connectWithHandshake` now carries its own
+  KDoc for the three load-bearing details of its retry loop, while the measurement
+  rationale stays on the budget constant it actually explains.
 - **Both READMEs describe the same product again — and it is not an Android-only
   one.** The primary README still opened on Android, tabled Android mechanisms, and
   listed modules with no `reticle-swift`, no `reticle-agent/ios` and no
