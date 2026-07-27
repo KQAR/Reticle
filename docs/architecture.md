@@ -11,6 +11,12 @@ them: the two processes and the Android/iOS split (below), the one capture and t
 projections derived from it (**Two trees**), and the channels style is read through
 (**Style evidence**).
 
+An interactive version of those diagrams, plus a machine-readable form of the same
+model for agents, lives in **[architecture-map/](architecture-map/)** — click a
+module for its edges, or pick a flow (`ui report`, `app inject`, selector
+resolution, the network lane, …) and step through it. It is a *projection over this
+document*: if the two disagree, this one wins and the map is stale.
+
 ## The shape of the system
 
 Two processes on two machines, and one asymmetry that is worth seeing before

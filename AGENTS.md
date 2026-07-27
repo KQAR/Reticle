@@ -7,6 +7,10 @@ input through adb.
 
 Use this file as a map. Deeper architecture lives in `docs/architecture.md`, and
 what Reticle structurally cannot reach in `docs/boundaries.md`.
+`docs/architecture-map/` holds the same shape in two consumable forms: an
+interactive page (`index.html`) and `map.json` (`{nodes, edges, flows:[{steps}]}`)
+for an agent that wants the module graph and the named flows without parsing prose.
+It is generated from the prose docs — edit those first, then the map.
 
 ## Current Shape
 
