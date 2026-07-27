@@ -547,6 +547,21 @@ echo "$WEB_COMPACT" | grep -q "web.payButton" \
   || { echo "FAIL: expected folded domNodes (web.payButton) from the WebView"; exit 1; }
 echo "$WEB_COMPACT" | grep -q "web.status" \
   || { echo "FAIL: expected the web.status domNode"; exit 1; }
+# Computed CSS is the DOM's style channel, and it must behave DIFFERENTLY from a
+# native one: the values keep their own suffixes and are NOT converted, because a
+# page's zoom and viewport scaling are not observable from in-process — a px->dp
+# division here would be arithmetic on an assumption. Also asserted: a computed
+# value sitting at its CSS initial ("auto"/"none"/"0px") is dropped, since
+# getComputedStyle answers for every property whether or not the page stated it and
+# one node otherwise printed 26 lines that say nothing.
+WEB_STYLE="$(R ui style "$TMP/webview/snapshot.json")"
+echo "$WEB_STYLE" | grep -A 8 computedStyle | head -12
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9]+px +\\[computedStyle\\]" \
+  || { echo "FAIL: expected a domStyleFontSize via computedStyle"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyleFontSize +[0-9.]+px \\| [0-9.]+dp" \
+  && { echo "FAIL: a computed CSS length was converted to dp — the page's zoom is not observable"; exit 1; }
+echo "$WEB_STYLE" | grep -qE "domStyle\\w+ +(auto|none|static|visible|0px) " \
+  && { echo "FAIL: a computed style at its CSS initial value must be dropped, not printed"; exit 1; }
 # CSS selector resolution against a folded domNode.
 R ui node "$TMP/webview/snapshot.json" --css "#web-pay" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }

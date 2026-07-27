@@ -300,7 +300,7 @@
       ]
     },
     {
-      "name": "computed CSS passes through verbatim: a page's zoom is not observable, so no conversion is invented",
+      "name": "computed CSS passes through verbatim (a page's zoom is not observable), and values at their CSS initial mean the page stated nothing",
       "snapshot": {
         "schemaVersion": 1,
         "capturedAtMillis": 1719400000000,
@@ -325,11 +325,17 @@
             "custom": {
               "domStyleFontSize": { "_type": "text", "value": "14px" },
               "domStyleLineHeight": { "_type": "text", "value": "1.5" },
+              "domStyleTransform": { "_type": "text", "value": "none" },
+              "domStyleBorderRadius": { "_type": "text", "value": "0px" },
+              "domStyleBackgroundColor": { "_type": "text", "value": "rgba(0, 0, 0, 0)" },
               "domCssSelector": { "_type": "text", "value": "#web-pay" }
             },
             "styleChannels": {
               "domStyleFontSize": "computedStyle",
-              "domStyleLineHeight": "computedStyle"
+              "domStyleLineHeight": "computedStyle",
+              "domStyleTransform": "computedStyle",
+              "domStyleBorderRadius": "computedStyle",
+              "domStyleBackgroundColor": "computedStyle"
             }
           }
         }

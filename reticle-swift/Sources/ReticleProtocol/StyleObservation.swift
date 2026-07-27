@@ -312,9 +312,36 @@ public struct StyleUnits {
         case "visibility":
             if case .text(let v) = value { return v == "visible" }
             return false
-        default: return false
+        default:
+            // `getComputedStyle` answers for EVERY property whether or not the page
+            // stated it, so a computed value equal to the CSS initial value means
+            // "not stated" — the DOM's exact analogue of a null Android background
+            // or an absent iOS inset, both of which emit no key at all. Without this
+            // one DOM node printed 26 lines of `auto` / `none` / `0px` (measured on
+            // the sample's WebView page), which on a real page is hundreds of lines
+            // that say nothing.
+            guard name.hasPrefix("domStyle"), case .text(let v) = value else { return false }
+            return cssInitialValues.contains(v)
         }
     }
+
+    /// Computed-style spellings that mean "the page did not state this".
+    ///
+    /// Deliberately value-based rather than per-property: the CSS initial value for
+    /// `display` depends on the element type, which is not knowable from a property
+    /// name, while these spellings mean the same thing everywhere. A stated value
+    /// that happens to look default-ish (`text-align: left`, weight `400`) is NOT in
+    /// here and stays visible — the same rule that keeps an explicit `padding: 0`.
+    private static let cssInitialValues: Set<String> = [
+        "none",
+        "auto",
+        "normal",
+        "visible",
+        "static",
+        "0px",
+        "1",
+        "rgba(0, 0, 0, 0)",
+    ]
 
     /// True when a property is sitting at its platform default, so it says nothing
     /// **on its own** — every zero length included.
