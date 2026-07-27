@@ -1,34 +1,34 @@
 ---
-description: Tap an element in the running Android app by selector, then verify the result.
-argument-hint: <package> <selector>  e.g. dev.reticle.sample --test-id scenario.checkout
+description: Tap an element in the running app (Android or iOS) by selector, then verify the result.
+argument-hint: <package> <selector> [--target ios]  e.g. dev.reticle.sample --test-id scenario.checkout
 ---
 
-Tap an element in the running Android app using the bundled `reticle` CLI.
+Tap an element in the running app. Parse `$ARGUMENTS` as a package name followed
+by a selector: `--test-id`, `--resource-id`, `--css`, `--ref`, `--label`, or
+`--point x,y`, optionally with `--region "<substring>"` to hit one phrase or link
+inside a multi-region control.
 
-Parse `$ARGUMENTS` as a package name followed by a selector. The selector is one
-of `--test-id <id>`, `--resource-id <id>`, `--css <selector>`, `--ref <ref>`, or
-`--point x,y`, and may include `--region "<substring>"` to hit a specific
-phrase/link inside a multi-region control.
+Follow the **`reticle` skill** for selector choice, the resolution order, and how
+to read a verify diff. The short form:
 
-Steps:
-1. If unsure of the exact selector, first capture evidence:
-   `reticle ui report --package <pkg> --output reticle-report` and inspect
-   `reticle ui compact reticle-report/snapshot.json` (and `ui regions` for
-   multi-region controls) to pick the right selector. For embedded WebViews,
-   inspect a DOM target with `reticle ui node reticle-report/snapshot.json --css
-   '<selector>'`.
-2. Dispatch the tap, verifying the result in the same command:
-   `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|css=<selector>|ref>]`
-   (the key= spellings `testId=<id>`, `resourceId=<id>`, and `ref=<ref>` work too)
-   The resolver prints which path it used (semantic / view frame / region / char
-   grid), then `--verify` prints the watched node's before→after diff. Bare
-   `--verify` watches the tapped node; pass a selector to watch a different one
-   (e.g. tap a tab or WebView button, watch the value it updates).
-3. Report success only with that diff as evidence. If `--verify` says "no change",
-   say so and suggest next steps — don't claim success from the tap alone. For a
-   broader check use `reticle ui node --live --package <pkg> <selector>` (one
-   node, no files) or a full `reticle ui report …`.
+1. If the selector is not already known, capture evidence first —
+   `reticle ui report --package <pkg> --output reticle-report`, then `ui compact`
+   (and `ui regions` for multi-region rows) to pick a stable handle.
+2. Dispatch and check the post-condition in one command:
+   `reticle act tap --package <pkg> <selector> --verify [<#testId|@resourceId|css=…|ref>]`.
+   Bare `--verify` watches the tapped node; pass a selector to watch a different
+   one (tap a tab, watch the value it updates).
+3. **Report success only with the diff as evidence.** The result names how it
+   resolved (`semantic:testId`, `region:span`, `charGrid`, …) — a `charGrid` hit is
+   an approximation, not a semantic match. If `--verify` says "no change", say so
+   and suggest a next step; never claim success from the tap alone.
 
-For durable evidence, add `--trace-output reticle-traces`; Reticle writes a
-per-action directory with `trace.json`, before/after snapshots, and screenshots
-when available.
+Two refusals are answers rather than errors to work around: a `--label` matching
+several visible nodes, and a `--region` matching no phrase, both stop instead of
+guessing and both name what they did see. Narrow the selector rather than falling
+back to coordinates.
+
+Add `--trace-output reticle-traces` for durable evidence (a per-action directory
+with `trace.json`, before/after snapshots and screenshots). `--target ios` selects
+an iOS simulator or device; a real iOS device has no coordinate tap — use
+`act activate` with a selector there.

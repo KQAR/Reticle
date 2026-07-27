@@ -97,8 +97,10 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
   arm64 only.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
-- `commands/report.md`, `commands/tap.md` — slash commands (`/reticle:report`,
-  `/reticle:tap`).
+- `commands/report.md`, `commands/tap.md`, `commands/inject.md` — slash commands
+  (`/reticle:report`, `/reticle:tap`, `/reticle:inject`). Thin wrappers: each one
+  defers to the skill for the workflow instead of restating it, so the two cannot
+  drift apart.
 
 Validate after changing any manifest/skill/command: `claude plugin validate .`
 locally. CI runs a dependency-free check instead
@@ -170,18 +172,19 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 
 ## Toolchain
 
-- Android SDK at `~/Library/Android/sdk` (compileSdk 35, build-tools present).
-- JDK 17 for Gradle/AGP. The build **pins the Gradle daemon to JDK 17** via
+Versions and how to install them: README.md -> **Toolchain**. Only the parts a
+build here depends on and the README does not spell out:
+
+- The build **pins the Gradle daemon to JDK 17** via
   `gradle/gradle-daemon-jvm.properties` (`toolchainVersion=17`), so the wrapper
-  auto-selects a locally-installed 17 even when the default `java` is newer —
-  no `JAVA_HOME` needed. (A too-new default like JDK 26 otherwise crashes the
-  daemon and AGP 8.7.) If no JDK 17 is auto-detected, install one or set
-  `JAVA_HOME=$(/usr/libexec/java_home -v 17)` as a fallback.
-- GraalVM 21 with `native-image` for `:reticle-helper:nativeHelper`, located
-  via `$GRAALVM_HOME` or `native-image` on PATH.
-- Optional: `mise install` (repo-root `mise.toml`) provisions both JDKs —
-  temurin-17 as primary plus a GraalVM 21 whose `native-image` is on PATH.
-- Gradle 8.13 via the wrapper.
+  auto-selects a locally-installed 17 even when the default `java` is newer — no
+  `JAVA_HOME` needed. (A too-new default like JDK 26 otherwise crashes the daemon
+  and AGP 8.7.) Fallback if none is detected:
+  `JAVA_HOME=$(/usr/libexec/java_home -v 17)`.
+- `native-image` for `:reticle-helper:nativeHelper` is located via `$GRAALVM_HOME`
+  or `native-image` on PATH.
+- Android SDK expected at `~/Library/Android/sdk` (compileSdk 35, build-tools
+  present).
 
 ## Verification
 

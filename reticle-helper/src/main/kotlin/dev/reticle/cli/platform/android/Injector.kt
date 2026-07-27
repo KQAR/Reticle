@@ -155,6 +155,18 @@ object Injector : AppInjector {
         return (w / 2) to (h / 2)
     }
 
+    /**
+     * Opens the forwarded JDWP channel and completes the handshake, retrying until
+     * [HANDSHAKE_BUDGET_MS] runs out — whose KDoc explains the dead-zone this rides
+     * out and why the budget is what it is.
+     *
+     * Three details are load-bearing rather than incidental. The adb forward is
+     * re-issued from the second attempt on, because a stale or dud forward does not
+     * self-heal and the caller only set up the first one. Each failed attempt closes
+     * its socket, or the ~20 tries across the dead-zone leak one apiece. And the
+     * probe is fast (100ms) for the first second to catch the early accept window
+     * before it closes, then backs off to ~1s to wait out the dead-zone cheaply.
+     */
     private fun connectWithHandshake(adb: DeviceController, hostPort: Int, pid: Int): JdwpClient {
         val debug = System.getenv("RETICLE_JDWP_DEBUG") == "1"
         val deadline = System.currentTimeMillis() + HANDSHAKE_BUDGET_MS
