@@ -243,6 +243,8 @@
         "isVisible": { "type": "boolean" },
         "isEnabled": { "type": "boolean" },
         "isInteractive": { "type": "boolean" },
+        "isFocusable": { "type": "boolean" },
+        "isFocused": { "type": "boolean" },
         "custom": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/MetadataValue" }

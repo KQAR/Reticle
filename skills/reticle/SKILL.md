@@ -347,6 +347,27 @@ don't link/inject the agent. Non-ASCII (CJK, accented Latin, emoji — which
 `adb input text` silently drops) is staged on the device clipboard by the
 in-process agent and pasted, so it **requires a reachable runtime**.
 
+**`type` verifies FOCUS, not just dispatch (Android).** After tapping the target
+field it reads the tree back and reports `focusLanded=`:
+
+- `self` / `descendant` — the field, or an input inside it, took focus. Normal;
+- `ancestor` — the platform focus is on a host view (a WebView with the caret in a
+  DOM input, an `AndroidComposeView` with a Compose `TextField` focused). As precise
+  as those platforms allow, and treated as landed;
+- `unknown` — no focus reading was available (runtime unreachable, older agent).
+  Reported, never enforced;
+- `none` / `elsewhere` — **the command fails instead of typing.** The text would go
+  nowhere, or into a different field, while reporting `chars=N`.
+
+The shape this exists for: a form row where the outer container carries the unique
+test id and the real `EditText` inside it reuses one generic id. The container is
+then the only handle a selector can name, and a tap on it focuses nothing —
+`keyboardVisible` cannot stand in for the check either, since some IMEs render no
+window and it reads 0 in the working case too. When the container holds **exactly
+one** focusable input, `type` re-aims at it once and reports `retargetedTo=<ref>`;
+with two it refuses rather than guessing which field you meant. `ui compact` marks
+the focused node ` focused`, and `ui node` carries `isFocusable` per node.
+
 Add `--submit` to press the keyboard's action key after the text lands —
 Android performs the focused field's IME editor action in-process (Done / Next
 / Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens
