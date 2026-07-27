@@ -59,7 +59,73 @@ data class Snapshot(
         return null
     }
 
+    /**
+     * The in-app windows of this capture, bottom-most first — the application
+     * root's `window` children, in the platform's stacking order (dialogs and
+     * popups last).
+     *
+     * Stacking order is a fact of the capture, not a derivation: on Android the
+     * application node's children ARE `WindowManagerGlobal.getRootViews()` in
+     * z-order. It is the ordering both the occlusion test and window scoping use,
+     * so it lives here rather than being re-walked at each call site.
+     */
+    fun windowRefs(): List<String> =
+        root()?.children?.filter { nodes[it]?.kind == NodeKind.window } ?: emptyList()
+
+    /** The window that is on top, or null when this capture has no window nodes. */
+    fun topWindowRef(): String? = windowRefs().lastOrNull { nodes[it]?.isVisible != false }
+
+    /**
+     * The window a node belongs to — the nearest `window` ancestor, or null for a
+     * node captured outside any window (the application root itself).
+     */
+    fun windowRefOf(ref: String): String? {
+        var current = nodes[ref]
+        val seen = HashSet<String>()
+        while (current != null && seen.add(current.ref)) {
+            if (current.kind == NodeKind.window) return current.ref
+            current = current.parentRef?.let { nodes[it] }
+        }
+        return null
+    }
+
+    /**
+     * This capture narrowed to ONE window, keeping the application root above it.
+     *
+     * A form pushed over a still-alive host screen puts both windows in one tree,
+     * and every flat projection then interleaves them by geometry: the two
+     * `#content` roots appear twice, a repeated framework id resolves ambiguously,
+     * and the fields of the screen the user is actually looking at end up a dozen
+     * aliases apart with unrelated content wedged between them. On Android a
+     * stacked screen is the common case, not the exception.
+     *
+     * Scoping is done on the SNAPSHOT rather than in each renderer so every view —
+     * `tree`, `compact`, `outline`, `style`, and the `@N` alias numbering that
+     * follows from them — narrows identically, and so nothing else has to learn
+     * about windows.
+     *
+     * @param window a window ref, or `"top"` for the topmost visible one.
+     * @return the narrowed snapshot, or null when [window] names no window here.
+     */
+    fun scopedToWindow(window: String): Snapshot? {
+        val targetRef = if (window == TOP_WINDOW) topWindowRef() else window.takeIf { it in windowRefs() }
+        val target = targetRef?.let { nodes[it] } ?: return null
+        val kept = LinkedHashMap<String, Node>()
+        val rootNode = root()
+        if (rootNode != null) kept[rootNode.ref] = rootNode.copy(children = listOf(target.ref))
+        fun visit(ref: String) {
+            val node = nodes[ref] ?: return
+            if (kept.put(ref, node) != null) return
+            node.children.forEach(::visit)
+        }
+        visit(target.ref)
+        return copy(nodes = kept)
+    }
+
     companion object {
+        /** [scopedToWindow] argument for "whatever window is on top right now". */
+        const val TOP_WINDOW = "top"
+
         /**
          * The wire format version this build emits. Must equal the `const` on
          * `schemaVersion` in snapshot.schema.json — ProtocolContractTest pins the

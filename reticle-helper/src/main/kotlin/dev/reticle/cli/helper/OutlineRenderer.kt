@@ -21,6 +21,9 @@ import java.security.MessageDigest
 internal object OutlineRenderer {
     private const val CACHE_VERSION = 1
 
+    /** Sentinel for "no window seen yet" — null is a real value here. */
+    private const val NO_WINDOW = "\u0000none"
+
     data class Entry(
         val alias: String,
         val ref: String,
@@ -34,10 +37,13 @@ internal object OutlineRenderer {
         val interactive: Boolean,
         val listIndex: Int? = null,
         val listSize: Int? = null,
+        /** The window this node lives in, for grouping; null outside any window. */
+        val windowRef: String? = null,
     )
 
     fun render(snapshot: Snapshot): Pair<String, List<Entry>> {
         val entries = collect(snapshot)
+        val grouped = entries.mapNotNull { it.windowRef }.toSet().size > 1
         val text = buildString {
             append("Screen: ")
                 .append(snapshot.screen.size.width.toInt())
@@ -48,8 +54,25 @@ internal object OutlineRenderer {
                 .append("\n")
             if (entries.isEmpty()) {
                 append("(no visible labelled or interactive nodes)")
-            } else {
+            } else if (!grouped) {
+                // One window: headers would be pure noise.
                 entries.forEach { appendLine(line(it)) }
+            } else {
+                // Stacked screens interleave when flattened by geometry alone, so
+                // say which window each run of nodes belongs to. Entries already
+                // come topmost-window-first, so this only has to announce changes.
+                var current: String? = NO_WINDOW
+                val top = snapshot.topWindowRef()
+                for (entry in entries) {
+                    if (entry.windowRef != current) {
+                        current = entry.windowRef
+                        appendLine(
+                            current?.let { WindowGrouping.header(snapshot.nodes[it], it, top = it == top) }
+                                ?: "window: (none) — nodes captured outside any window"
+                        )
+                    }
+                    appendLine("  " + line(entry))
+                }
             }
         }.trimEnd()
         return text to entries
@@ -88,9 +111,20 @@ internal object OutlineRenderer {
     }
 
     private fun collect(snapshot: Snapshot): List<Entry> {
+        // Windows first (topmost first), geometry within a window. Numbering then
+        // starts in the window the user is actually looking at, instead of being
+        // dominated by a background screen's nodes — the `@N` half of the same
+        // complaint: aliases were least useful exactly when the screen was stacked.
+        val windowOrder = snapshot.windowRefs().withIndex().associate { (i, ref) -> ref to i }
+        val windowOf = HashMap<String, String?>()
         val nodes = snapshot.nodes.values
             .filter { it.isVisible && it.frame != null && (it.isInteractive || it.hasLabelOrSelector()) }
-            .sortedWith(compareBy<Node>({ it.frame?.y ?: 0.0 }, { it.frame?.x ?: 0.0 }))
+            .onEach { windowOf[it.ref] = snapshot.windowRefOf(it.ref) }
+            .sortedWith(
+                compareBy<Node>({ -(windowOf[it.ref]?.let { w -> windowOrder[w] } ?: -1) })
+                    .thenBy { it.frame?.y ?: 0.0 }
+                    .thenBy { it.frame?.x ?: 0.0 }
+            )
         val entries = nodes.mapIndexed { index, node ->
             Entry(
                 alias = "@${index + 1}",
@@ -103,6 +137,7 @@ internal object OutlineRenderer {
                 css = node.domCssSelector(),
                 enabled = node.isEnabled,
                 interactive = node.isInteractive,
+                windowRef = windowOf[node.ref],
             )
         }
         return withListOrdinals(entries)
@@ -223,7 +258,9 @@ internal object OutlineRenderer {
         val quantizedX = (frame.x / 24.0).toInt()
         val quantizedWidth = (frame.width / 24.0).toInt()
         val quantizedHeight = (frame.height / 12.0).toInt()
-        return "${entry.role}|$quantizedX|$quantizedWidth|$quantizedHeight|${entry.interactive}"
+        // Keyed by window too: two stacked screens can each hold a same-shaped row,
+        // and merging them would report "item 3/8" for a list of four.
+        return "${entry.windowRef}|${entry.role}|$quantizedX|$quantizedWidth|$quantizedHeight|${entry.interactive}"
     }
 
     private fun aliasMiss(alias: String, entries: JsonArray): String {

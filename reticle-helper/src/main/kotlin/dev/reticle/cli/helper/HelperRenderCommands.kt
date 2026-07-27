@@ -17,15 +17,36 @@ import kotlinx.serialization.json.put
 internal object HelperRenderCommands {
     fun render(params: JsonObject): JsonElement {
         val view = params.str("view") ?: throw CliError("render needs 'view'")
-        val snapshot = snapshotFor(params)
+        val snapshot = scopeToWindow(snapshotFor(params), params.str("window"))
         val text = renderView(view, snapshot, params)
         if (view == "outline") {
             params.str("package")?.let { pkg ->
+                // Cache from the same (possibly window-scoped) snapshot the text
+                // came from: @N must mean what the caller just read.
                 val (_, entries) = OutlineRenderer.render(snapshot)
                 OutlineRenderer.writeCache(snapshot, entries, params.str("serial"), pkg)
             }
         }
         return buildJsonObject { put("text", text) }
+    }
+
+    /**
+     * Narrow the capture to one window when `--window` asked for it.
+     *
+     * Applied to the SNAPSHOT, before any view runs, so every projection —
+     * `tree`, `compact`, `outline`, `style` — and the `@N` numbering that follows
+     * from the outline narrow identically, and no renderer has to learn about
+     * windows. A ref that names no window in this capture is an error naming the
+     * ones that exist: silently rendering everything would look like the scope had
+     * been applied and found the screen busy.
+     */
+    private fun scopeToWindow(snapshot: Snapshot, window: String?): Snapshot {
+        if (window == null) return snapshot
+        return snapshot.scopedToWindow(window) ?: throw CliError(
+            "no window '$window' in this capture. Windows here (bottom to top): " +
+                snapshot.windowRefs().joinToString(", ").ifBlank { "(none — this capture has no window nodes)" } +
+                ". Use `--window top` for whichever is on top."
+        )
     }
 
     private fun snapshotFor(params: JsonObject): Snapshot {
@@ -56,7 +77,7 @@ internal object HelperRenderCommands {
 
     private fun renderCompact(snapshot: Snapshot): String {
         val compact = CompactObservation.from(snapshot)
-        val lines = compact.items.map { it.line() }
+        val lines = WindowGrouping.lines(snapshot, compact)
         // Lead with the IME state when it was probed: the keyboard is invisible
         // to the node walk, so without this line an agent has no way to know
         // that "tappable" items near the bottom would actually hit the keys.

@@ -27,9 +27,7 @@ data class CompactObservation(
             // WindowManagerGlobal roots in stacking order, dialogs/popups last)
             // and the IME. The keyboard is another process's window — never a
             // node — so it comes from ScreenInfo.keyboard, not the tree.
-            val windowRefs = snapshot.root()?.children
-                ?.filter { snapshot.nodes[it]?.kind == NodeKind.window }
-                ?: emptyList()
+            val windowRefs = snapshot.windowRefs()
             val windowOrder = windowRefs.withIndex().associate { (i, ref) -> ref to i }
             val keyboardFrame = snapshot.screen.keyboard?.takeIf { it.visible }?.frame
 
@@ -68,6 +66,7 @@ data class CompactObservation(
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
+                            windowRef = currentWindow,
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
                             domUnavailable = node.domUnavailable(),
@@ -99,6 +98,17 @@ data class CompactItem(
     val frame: Rect? = null,
     val isEnabled: Boolean = true,
     val isInteractive: Boolean = false,
+    /**
+     * The in-app window this item belongs to, when it is inside one.
+     *
+     * A flat list of nodes from a stacked screen — a form pushed over a still-live
+     * host page — interleaves the two windows by geometry, so the fields of the
+     * screen being driven end up scattered among unrelated content. `occludedBy`
+     * carries the same information only indirectly, and it is overloaded: it also
+     * marks a node under the keyboard or under a popup in the SAME window, which
+     * is a different situation with a different response.
+     */
+    val windowRef: String? = null,
     /**
      * What sits on top of this node's tap point, when anything does: the ref of
      * a higher z-order window (a dialog/popup covering a background page), or
