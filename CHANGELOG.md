@@ -1,5 +1,60 @@
 # Changelog
 
+## Unreleased
+
+- **Recording: on by default, and readable.** An action trace already held good
+  evidence — two snapshots, two screenshots, a diff — and it was close to unusable.
+  Reconstructing a six-action run meant opening six manifests and, every time a
+  change named a bare `r102`, the 100KB+ snapshot beside it, because the diff cited
+  refs and never said who they were. Nothing summarised a run. And a session with no
+  `reticle serve` running recorded nothing at all unless the caller passed
+  `--trace-output` by hand, so the ad-hoc runs — the ones most worth reconstructing
+  — were exactly the ones leaving no trace.
+
+  Four changes, all on the recording side. **Nothing here asserts:** no replay
+  script, no verdict, no pass/fail. `--verify` and `act wait --strict` remain the
+  only places an expectation is stated.
+
+  **Every change names its node.** `ActionTraceChange.node` carries
+  testId/resourceId/label/role — or the node's text, clipped, when it has no other
+  handle — read from whichever side the node exists on, so a node that *vanished* is
+  still named. Attached once per ref, so four fields moving on one node cost one
+  identity rather than four.
+
+  **The diff is ranked before it is capped.** It was sorted alphabetically by ref
+  and truncated at 100, which meant a scrolling list's `frame` churn could fill the
+  budget and truncate away the single node that appeared — a correctness bug in the
+  evidence, not a formatting nit. Ranking is now by field (appearance, then what a
+  user would see, then identity, then the geometry tail) and then by how addressable
+  the node is. That second key came out of a real run: on a SwiftUI screen
+  transition every appearance ties on field rank, and ref order surfaced six lines of
+  `+ r104 [role=container]` describing nothing. The `truncated` marker now carries
+  the total, the kept count, and a per-field breakdown of what it shed.
+
+  **`params` records what shaped the gesture.** A `type` trace recorded `chars: 6`
+  and no reader could ever say what was typed. An allow-list
+  (`ActionTraceParams.RECORDED`) writes `text`, `submit`, `settle`, swipe endpoints
+  and the rest; transport keys stay out. `text` is verbatim, and what that costs is
+  now stated in docs/boundaries.md rather than left implied: nothing in the capture
+  layer marks a field secure, so Reticle cannot tell a password from a coupon code
+  and does not pretend to.
+
+  **`reticle trace log`** renders a run as a few lines per action — the same job
+  `ui compact` does for a snapshot. Losses are counted, never silent (`…N more` for
+  the render, `! manifest kept X of Y` for the capture), and an action that changed
+  nothing says so, which is a finding rather than a blank. With no daemon, `act`
+  now records into an auto session and prunes to 20 sessions / 2 GB.
+
+  Both diff ports are pinned by a new
+  `reticle-protocol/fixtures/action-trace-diff.cases.json` (7 cases + the param
+  allow-list), following the selector-resolution precedent. Two bugs the work
+  surfaced and fixed: the Kotlin/Swift clip units disagreed by default (UTF-16 vs
+  grapheme clusters — now code points on both sides, pinned with an astral-plane
+  case), and pruning identified its own sessions by an `auto-` name prefix, which
+  would have deleted this repo's own hand-named `auto-trace-e2e` session. Deletion
+  is now gated on a marker file Reticle writes, so a session it did not create is
+  invisible to pruning whatever it is called.
+
 ## 0.10.0 - 2026-07-27
 
 - **Style evidence (`ui style`): the values, their units, their provenance, and the

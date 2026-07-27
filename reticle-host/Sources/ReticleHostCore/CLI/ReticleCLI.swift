@@ -4,7 +4,7 @@ import Foundation
 public enum ReticleCLI {
     /// The shared release constant; `ReticleVersion.current` is the source.
     public static let version = ReticleVersion.current
-    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|rule|replay|serve|version> [--serial <id>] [options]"
+    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|trace|rule|replay|serve|version> [--serial <id>] [options]"
 
     /// Runs the Reticle CLI and returns a process exit code.
     public static func run(_ argv: [String]) -> Int32 {
@@ -35,6 +35,8 @@ public enum ReticleCLI {
             return runRule(args)
         case "replay":
             return runReplay(args)
+        case "trace":
+            return runTrace(args)
         default:
             return runHelperBacked(command: command, args: args)
         }
@@ -54,6 +56,16 @@ public enum ReticleCLI {
     private static func runRule(_ args: Args) -> Int32 {
         do {
             try cmdRule(args)
+            return 0
+        } catch {
+            writeError("error: \(error)\n")
+            return 1
+        }
+    }
+
+    private static func runTrace(_ args: Args) -> Int32 {
+        do {
+            try cmdTrace(args)
             return 0
         } catch {
             writeError("error: \(error)\n")
