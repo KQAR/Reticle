@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Both READMEs describe the same product again — and it is not an Android-only
+  one.** The primary README still opened on Android, tabled Android mechanisms, and
+  listed modules with no `reticle-swift`, no `reticle-agent/ios` and no
+  `sample-app-ios`, while asserting two things iOS had already falsified
+  ("`reticle-agent/` is reserved for future per-platform agents"; "the host owns no
+  device code"). iOS survived only in three Quick Start code comments.
+
+  The pair had also drifted **both** ways, which is worse than a lagging
+  translation: the English file had no `replay flow` at all, the Chinese one no
+  `act batch`, no helperd warm path or `--helper-broker`, no `status` advisories, no
+  proxy body cap, no pointer to the boundaries table. Both now carry the same twelve
+  sections and the same feature set.
+
+  Trimmed while doing it: "How it works" is one Android/iOS table; the 150-line
+  `Local session event bus` grab-bag splits into the session bus, warm paths and
+  routing, traffic rules **and flow replay**, and batching; the web panel's 16-line
+  description becomes four lines plus a pointer, because `events.md` already
+  documented the same surface in more detail; Quick Start keeps every command but
+  its six paragraph-long rationale comments shrink to a line each, the reasoning
+  being in `architecture.md` already; and `Releases` moves to `AGENTS.md`, which
+  owns the packaging rules.
+
 - **The host's platform interface is typed; JSONL is back to being Android's
   transport.** Every command used to be issued through one stringly-typed call —
   `call("uiReport", ["package": pkg])`, returning `[String: Any]`. For Android that
