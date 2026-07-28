@@ -7,12 +7,14 @@ import dev.reticle.cli.platform.android.Injector
 import dev.reticle.cli.platform.android.InputBackend
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.MutationRequest
+import dev.reticle.core.Node
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
 import java.util.Base64
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -349,6 +351,10 @@ internal object HelperDeviceCommands {
         var focus: ResolvedInputTarget? = null
         var landing = TypeFocus.Landing.UNKNOWN
         var retargeted: String? = null
+        // The tree as it stood the moment before the characters were dispatched:
+        // one read, used for BOTH post-conditions — where focus went, and what the
+        // field held before (the baseline the read-back is compared against).
+        var before: Snapshot? = null
         if (hasInputTarget(params)) {
             focus = resolveInputTarget(device, pkg, params)
             input.tap(focus.point.x.toInt(), focus.point.y.toInt())
@@ -357,28 +363,35 @@ internal object HelperDeviceCommands {
             // focus — the outer container of a compound input widget, which is
             // often the only uniquely-addressable handle — leaves the text going
             // to whatever held focus before. See [TypeFocus].
-            landing = focusLanding(device, pkg, params, focus.ref)
+            before = liveSnapshot(device, pkg, params)
+            landing = focusLanding(before, focus.ref)
             if (!TypeFocus.isLanded(landing)) {
                 // One retarget, and only when it is not a guess: exactly one
                 // focusable text input inside the node the caller named.
                 val candidate = focus.ref?.let { ref ->
-                    liveSnapshot(device, pkg, params)?.let { TypeFocus.soleFocusableInput(it, ref) }
+                    before?.let { TypeFocus.soleFocusableInput(it, ref) }
                 }
                 if (candidate?.frame != null) {
                     input.tap(candidate.frame!!.centerX.toInt(), candidate.frame!!.centerY.toInt())
                     Thread.sleep(FOCUS_SETTLE_MS)
-                    landing = focusLanding(device, pkg, params, focus.ref)
+                    before = liveSnapshot(device, pkg, params)
+                    landing = focusLanding(before, focus.ref)
                     if (TypeFocus.isLanded(landing)) retargeted = candidate.ref
                 }
                 if (!TypeFocus.isLanded(landing)) {
                     throw CliError(TypeFocus.refusal(landing, focus, candidate))
                 }
             }
+        } else {
+            before = liveSnapshot(device, pkg, params)
         }
+        val field = before?.let { TypeReadback.field(it, focus?.ref) }
+        // `--type-delay`: pace the burst for a field that cannot keep up with it.
+        val typeDelayMs = params.intOrNull("typeDelayMs")?.coerceIn(0, 2000) ?: 0
         val via: String
         if (InputBackend.isAsciiTypeable(text)) {
-            input.text(text)
-            via = "input text"
+            input.text(text, typeDelayMs)
+            via = if (typeDelayMs > 0) "input text (paced ${typeDelayMs}ms/char)" else "input text"
         } else {
             val client = runtimeClientFor(device, pkg, params)
             assertHealthy(client, pkg)
@@ -389,9 +402,14 @@ internal object HelperDeviceCommands {
             }
             via = "clipboard paste"
         }
+        // What reached the field, before anything else can move the screen —
+        // `--submit` in particular clears or navigates away from it.
+        val readback = readBackTypedText(input, device, pkg, params, before, focus?.ref, field, text, typeDelayMs)
         val submit = if (params.bool("submit")) submitAfterType(input, device, pkg, params) else null
         return buildJsonObject {
-            put("gesture", "type"); put("chars", text.length); put("via", via)
+            put("gesture", "type"); put("chars", text.length)
+            put("via", readback.via ?: via)
+            readback.writeInto(this)
             focus?.let {
                 put("focusedVia", it.source)
                 it.ref?.let { r -> put("ref", r) }
@@ -489,20 +507,168 @@ internal object HelperDeviceCommands {
     }
 
     /**
-     * Read the live tree back and classify where focus went. Best-effort by
-     * design: a runtime that cannot answer yields [TypeFocus.Landing.UNKNOWN], and
-     * typing proceeds — an optional post-condition must not turn a working `type`
-     * into a failure.
+     * Classify where focus went in [snapshot]. Best-effort by design: a runtime
+     * that could not answer (a null snapshot) yields [TypeFocus.Landing.UNKNOWN],
+     * and typing proceeds — an optional post-condition must not turn a working
+     * `type` into a failure.
      */
-    private fun focusLanding(
+    private fun focusLanding(snapshot: Snapshot?, targetRef: String?): TypeFocus.Landing =
+        snapshot?.let { TypeFocus.classify(it, targetRef) } ?: TypeFocus.Landing.UNKNOWN
+
+    /** The `type` post-condition: what the field holds now, and how it got there. */
+    private class Readback(
+        val landed: TypeReadback.Landed,
+        val landedChars: Int = 0,
+        val text: String? = null,
+        val unavailable: String? = null,
+        val recovery: String? = null,
+        /** Overrides the dispatch `via=` when a recovery re-sent the text. */
+        val via: String? = null,
+    ) {
+        fun writeInto(builder: JsonObjectBuilder) {
+            builder.put("textLanded", TypeReadback.label(landed))
+            text?.let { builder.put("text", it) }
+            if (landed == TypeReadback.Landed.PARTIAL) builder.put("landedChars", landedChars)
+            unavailable?.let { builder.put("textReadback", "unavailable:$it") }
+            recovery?.let { builder.put("recovery", it) }
+        }
+    }
+
+    /**
+     * Read the field back after typing and say what is in it.
+     *
+     * `chars=N` counts what was SENT. The gap that costs a caller a whole form flow
+     * is a field that took three of five characters and reported success: measured
+     * on a physical device, `--text "10000"` left `100` in a field whose
+     * `TextWatcher` reformats the value and re-renders a widget above it, while the
+     * neighbouring field on the same screen took the same five characters intact.
+     * See [TypeReadback] for the classification and why it is not a verdict.
+     *
+     * Best-effort, like every other optional post-condition here: an unreachable
+     * runtime or a field with no text channel is reported as unavailable and
+     * `type` still succeeds. It never claims a landing it did not read.
+     */
+    private fun readBackTypedText(
+        input: InputDispatcher,
         device: DeviceController,
         pkg: String,
         params: JsonObject,
+        before: Snapshot?,
         targetRef: String?,
-    ): TypeFocus.Landing =
-        liveSnapshot(device, pkg, params)
-            ?.let { TypeFocus.classify(it, targetRef) }
-            ?: TypeFocus.Landing.UNKNOWN
+        field: Node?,
+        typed: String,
+        typeDelayMs: Int,
+    ): Readback {
+        if (field == null) {
+            return Readback(
+                TypeReadback.Landed.UNREADABLE,
+                unavailable = TypeReadback.whyUnreadable(before, targetRef),
+            )
+        }
+        // A node that publishes no text before typing is read as empty rather than
+        // as unreadable: an empty field is the overwhelmingly common case, and the
+        // channel proves itself either way on the read AFTER typing.
+        val had = TypeReadback.valueOf(field) ?: ""
+        Thread.sleep(READBACK_SETTLE_MS)
+        val after = readFieldText(device, pkg, params, field)
+            ?: return Readback(
+                TypeReadback.Landed.UNREADABLE,
+                unavailable = TypeReadback.Unavailable.GONE,
+            )
+        val landedText = TypeReadback.valueOf(after)
+        if (landedText == null) {
+            return Readback(
+                TypeReadback.Landed.UNREADABLE,
+                unavailable = TypeReadback.Unavailable.NO_TEXT_CHANNEL,
+            )
+        }
+        val verdict = TypeReadback.classify(had, landedText, typed)
+        if (!TypeReadback.isLoss(verdict.landed)) {
+            return Readback(verdict.landed, verdict.landedChars, landedText)
+        }
+        return recoverLostText(input, device, pkg, params, after, had, typed, typeDelayMs, verdict)
+    }
+
+    /**
+     * Re-send text the read-back proved did not fully land, once, over the
+     * clipboard — which a `TextWatcher` sees as a single change rather than a
+     * burst of keystrokes, so it cannot be cut in half the way the key path was.
+     *
+     * Narrow on purpose. It only fires when the field was EMPTY before typing, so
+     * clearing it restores exactly the state that was there; with pre-existing
+     * content, `type` inserts at the caret and there is no way to undo a partial
+     * insertion without guessing what the caller meant to keep. It never fires for
+     * [TypeReadback.Landed.CHANGED] (the app transforming its own input is not a
+     * defect), never more than once, and never silently — the result says what it
+     * did, and if the second attempt lands no better the honest classification of
+     * that attempt is what gets reported.
+     */
+    private fun recoverLostText(
+        input: InputDispatcher,
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        field: Node,
+        before: String,
+        typed: String,
+        typeDelayMs: Int,
+        first: TypeReadback.Verdict,
+    ): Readback {
+        val landedText = TypeReadback.valueOf(field).orEmpty()
+        val recoverable = before.isEmpty() && typeDelayMs == 0 &&
+            landedText.length <= MAX_RECOVERY_DELETES
+        if (!recoverable) {
+            return Readback(first.landed, first.landedChars, landedText)
+        }
+        val client = runCatching { runtimeClientFor(device, pkg, params) }.getOrNull()
+        if (client == null || client.probe() !is RuntimeHealth.Healthy) {
+            return Readback(
+                first.landed, first.landedChars, landedText,
+                recovery = "not attempted (clipboard needs the agent; it is unreachable)",
+            )
+        }
+        val outcome = runCatching {
+            // Caret to the end, then one DEL per character actually in the field:
+            // deleting what landed, not what was asked for, is the difference
+            // between clearing the field and eating the line above it.
+            input.keyevent("KEYCODE_MOVE_END")
+            if (landedText.isNotEmpty()) {
+                input.keyevent(*Array(landedText.length) { "KEYCODE_DEL" })
+            }
+            client.setClipboard(typed)
+            val pasted = input.paste()
+            if (!pasted.ok) error("paste failed: ${pasted.stderr.ifBlank { "no focused input?" }}")
+            Thread.sleep(READBACK_SETTLE_MS)
+            readFieldText(device, pkg, params, field)
+        }.getOrElse { error ->
+            return Readback(
+                first.landed, first.landedChars, landedText,
+                recovery = "clipboard paste failed (${error.message}); the field holds what the keys left",
+            )
+        }
+        val secondText = outcome?.let { TypeReadback.valueOf(it) }
+            ?: return Readback(
+                TypeReadback.Landed.UNREADABLE,
+                unavailable = TypeReadback.Unavailable.GONE,
+                recovery = "re-sent over the clipboard, then the field could not be read back",
+            )
+        val second = TypeReadback.classify("", secondText, typed)
+        return Readback(
+            second.landed, second.landedChars, secondText,
+            recovery = "${TypeReadback.label(first.landed)} on the key path" +
+                (if (first.landed == TypeReadback.Landed.PARTIAL) " (${first.landedChars}/${typed.length} chars)" else "") +
+                "; re-sent over the clipboard",
+            via = "clipboard paste (after input text ${TypeReadback.label(first.landed)})",
+        )
+    }
+
+    /** Re-find [field] in a fresh tree; null when the runtime or the node is gone. */
+    private fun readFieldText(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        field: Node,
+    ): Node? = liveSnapshot(device, pkg, params)?.let { TypeReadback.refind(it, field) }
 
     /** A fresh snapshot, or null when the runtime cannot answer for one. */
     private fun liveSnapshot(device: DeviceController, pkg: String, params: JsonObject): Snapshot? =
@@ -537,5 +703,19 @@ internal object HelperDeviceCommands {
 
     /** Time for a tapped field to take focus before we dispatch text. */
     private const val FOCUS_SETTLE_MS = 200L
+
+    /**
+     * Time for the typed text to reach the field before reading it back. The
+     * failure this check exists for is a field that re-lays-out on every keystroke,
+     * so the read must sit behind that work rather than race it.
+     */
+    private const val READBACK_SETTLE_MS = 250L
+
+    /**
+     * A field longer than this is not cleared for a recovery attempt. One DEL per
+     * character is real input, and a long field would mean a long burst of it —
+     * exactly the shape of dispatch this whole check distrusts.
+     */
+    private const val MAX_RECOVERY_DELETES = 64
 
 }

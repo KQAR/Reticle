@@ -191,6 +191,11 @@ public struct ActRequest: @unchecked Sendable {
     public var direction: String?
     public var maxSwipes: String?
     public var submit: Bool = false
+    /// `type --type-delay <ms>`: send the characters one at a time with this gap
+    /// instead of as one `input text` burst. The opt-out for a field whose
+    /// `TextWatcher` reformats on every change and drops characters out of the
+    /// middle of a burst (Android only; the iOS HID path is already per-key).
+    public var typeDelayMs: Int?
     public var settle: Bool = false
     /// Opt OUT of the pre-dispatch confirm a selector tap now does by default.
     /// The confirm exists because a rect resolved before an intervening relayout
@@ -236,6 +241,7 @@ public struct ActRequest: @unchecked Sendable {
         if let direction { out["direction"] = direction }
         if let maxSwipes { out["maxSwipes"] = maxSwipes }
         if submit { out["submit"] = true }
+        if let typeDelayMs { out["typeDelayMs"] = typeDelayMs }
         if settle { out["settle"] = true }
         if noSettle { out["noSettle"] = true }
         if let settleTimeoutMs { out["settleTimeoutMs"] = settleTimeoutMs }
@@ -499,6 +505,7 @@ public extension ActRequest {
         request.direction = string("direction")
         request.maxSwipes = string("maxSwipes")
         request.submit = flag("submit")
+        request.typeDelayMs = int("typeDelayMs")
         request.settle = flag("settle")
         request.noSettle = flag("noSettle")
         request.settleTimeoutMs = int("settleTimeoutMs")

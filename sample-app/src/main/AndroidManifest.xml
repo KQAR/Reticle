@@ -58,6 +58,10 @@
             android:exported="false"
             android:label="Compound Fields" />
         <activity
+            android:name="dev.reticle.sample.ReformattingFieldScenarioActivity"
+            android:exported="false"
+            android:label="Reformatting Fields" />
+        <activity
             android:name="dev.reticle.sample.ListScenarioActivity"
             android:exported="false"
             android:label="Long List" />

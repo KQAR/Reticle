@@ -35,6 +35,7 @@
   "recordedParams": [
     "text",
     "submit",
+    "typeDelayMs",
     "settle",
     "noSettle",
     "settleTimeoutMs",

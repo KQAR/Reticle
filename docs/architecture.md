@@ -200,6 +200,30 @@ agent) is reported and never enforced. `Node.isFocusable` is the TOUCH reading
 clickable container as focusable — the false positive that makes this shape look
 fine.
 
+**And the focus reading is not the guarantee either — the text is.** `chars=N`
+counts the characters SENT. Measured on a physical device: `--text "10000"`
+reported `chars=5`, exit code 0, focus correct, and the field held `100`, while
+the field beside it took the same five characters intact. The difference is what
+each field does per keystroke — the lossy one reformats in a `TextWatcher` and
+re-renders a bound widget above it (101 changes in the trace against the other's
+6), and `input text` delivers the string as a burst of key events that a
+re-layout in the middle of can eat. So `type` reads the field back and reports
+what it holds (`TypeReadback`): `textLanded=exact|reformatted|partial|none|
+changed|unreadable`, plus `text=` and, for a partial landing, `landedChars=`.
+
+The classification is evidence, not a verdict. `reformatted` (the app added
+separators to everything it was given) and `changed` (the app rewrote its input —
+uppercasing, masking, `maxLength`) are the app doing its job and are only
+reported. `partial` and `none` are the burst-loss shape, and only those are
+re-sent — once, over the clipboard, which a `TextWatcher` sees as a single change
+rather than a run of keystrokes — and only when the field was EMPTY beforehand,
+since `type` inserts at the caret and there is no way to undo a partial insertion
+into existing content without guessing what the caller meant to keep. The result
+says what happened (`recovery=`), never silently. `--type-delay <ms>` is the
+caller's own escape hatch: one `input text` per character with that gap, for a
+field known to lose the burst. A field with no text channel reads
+`textLanded=unreadable` with a reason rather than passing by default.
+
 The one gap is multi-touch `pinch`, which `input` can't express — it would need
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.
