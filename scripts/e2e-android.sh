@@ -318,7 +318,13 @@ wait_compact "$PKG" "Spinner: Pro"
 # `--settle` re-resolves until the point repeats before dispatching, so the tap is
 # aimed at where the row ENDED UP; `settled=1` is the report that it was confirmed
 # stopped rather than merely resolved once.
-R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
+TRIGGER_TAP="$(R act tap --package "$PKG" --test-id popup.menuTrigger)"
+# The confirm is the DEFAULT now, not just a `--settle` behaviour: an ordinary
+# selector tap must report whether its point was confirmed at rest, because the
+# same staleness comes from a relayout caused by an EARLIER command (a keyboard
+# shown by `type`, a scroll) where no caller would think to pass a flag.
+echo "$TRIGGER_TAP" | grep -q "settled=" \
+  || { echo "FAIL: a plain selector tap must report settled=, got: $TRIGGER_TAP"; exit 1; }
 wait_compact "$PKG" "Delete item"
 MENU_TAP="$(R act tap --package "$PKG" --label "Delete item" --settle)"
 echo "$MENU_TAP" | grep -q "settled=1" \

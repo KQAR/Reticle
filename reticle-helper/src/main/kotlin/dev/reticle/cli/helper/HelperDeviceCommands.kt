@@ -64,7 +64,7 @@ internal object HelperDeviceCommands {
         params.str("payloadDex")?.let { System.setProperty("reticle.payloadDex", it) }
         val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
-        val injected = Injector.inject(device, pkg)
+        val injected = Injector.inject(device, pkg, restartUnderDebugger = params.bool("restartUnderDebugger"))
         val info = awaitRuntime(runtimeClientFor(device, pkg, params), pkg)
         return buildJsonObject {
             put("pid", info.pid)
@@ -133,22 +133,43 @@ internal object HelperDeviceCommands {
 
         val result: JsonObject = when (sub) {
             "tap" -> {
-                target = resolveInputTarget(device, pkg, params)
-                // `--settle`: hold the tap until the resolved point stops moving, so
-                // an animating popup/sheet cannot make it land on the neighbour.
+                val first = resolveInputTarget(device, pkg, params)
+                target = first
+                // Confirm the resolved point has stopped moving BEFORE dispatching.
+                //
+                // Resolution and dispatch are two steps, and between them the screen
+                // can move — not only because the target itself is animating in (the
+                // popup case `--settle` was introduced for) but because a PREVIOUS
+                // command relayouted the page: a `type` that showed the keyboard, a
+                // `hide-keyboard` that took it away, a scroll. Measured on a physical
+                // device: a form row tapped by its unique test id resolved to a rect
+                // already 161px stale and opened the sheet belonging to the row below
+                // it, reporting an unqualified success. Nothing in the result said so,
+                // and the trace diff is equally large for the right sheet and the
+                // wrong one.
+                //
+                // So the confirm is now the DEFAULT for selector-based taps rather
+                // than opt-in: it costs one extra tree read against a resolution that
+                // had to happen anyway, and the failure it prevents is silent and
+                // expensive to detect. `--settle` keeps its meaning — give it the full
+                // budget, for a target known to be animating — and `--no-settle` opts
+                // out for a caller who wants the single-read dispatch.
                 var stable: Boolean? = null
-                if (params.bool("settle")) {
-                    if (params.str("point") != null) {
-                        throw CliError(
-                            "--settle needs a selector: a raw --point has nothing to re-resolve, " +
-                                "so there is no way to tell whether it has stopped moving"
-                        )
-                    }
-                    val settled = settleInputTarget(
-                        device, pkg, params,
-                        first = target!!,
-                        budgetMs = (params.intOrNull("settleTimeoutMs") ?: 2_000).toLong(),
+                val rawPoint = params.str("point") != null
+                if (params.bool("settle") && rawPoint) {
+                    throw CliError(
+                        "--settle needs a selector: a raw --point has nothing to re-resolve, " +
+                            "so there is no way to tell whether it has stopped moving"
                     )
+                }
+                val plan = TapSettlePolicy.plan(
+                    rawPoint = rawPoint,
+                    settle = params.bool("settle"),
+                    noSettle = params.bool("noSettle"),
+                    timeoutMs = params.intOrNull("settleTimeoutMs"),
+                )
+                if (plan.confirm) {
+                    val settled = settleInputTarget(device, pkg, params, first = first, budgetMs = plan.budgetMs)
                     target = settled.target
                     stable = settled.stable
                 }
@@ -165,6 +186,11 @@ internal object HelperDeviceCommands {
                     // moving when the budget lapsed, so this tap may have been aimed
                     // at a point that had already changed.
                     stable?.let { put("settled", it) }
+                    // The evidence that the first read WAS stale: the same selector,
+                    // same ref, different coordinates. Without this the confirm would
+                    // silently fix the tap and the caller would never learn that the
+                    // screen it reasoned about had moved under it.
+                    TapSettlePolicy.movedBy(first.point, target!!.point)?.let { put("rectMoved", it) }
                 }
             }
             "swipe", "drag" -> {
@@ -511,4 +537,5 @@ internal object HelperDeviceCommands {
 
     /** Time for a tapped field to take focus before we dispatch text. */
     private const val FOCUS_SETTLE_MS = 200L
+
 }
