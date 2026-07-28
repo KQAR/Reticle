@@ -347,10 +347,33 @@ internal object HelperDeviceCommands {
         // focus, so without this a `type --test-id foo` silently typed into the
         // wrong (or no) field. With no target, type into the current focus.
         var focus: ResolvedInputTarget? = null
+        var landing = TypeFocus.Landing.UNKNOWN
+        var retargeted: String? = null
         if (hasInputTarget(params)) {
             focus = resolveInputTarget(device, pkg, params)
             input.tap(focus.point.x.toInt(), focus.point.y.toInt())
             Thread.sleep(FOCUS_SETTLE_MS)
+            // Verify FOCUS, not just dispatch. A tap on a node that cannot take
+            // focus — the outer container of a compound input widget, which is
+            // often the only uniquely-addressable handle — leaves the text going
+            // to whatever held focus before. See [TypeFocus].
+            landing = focusLanding(device, pkg, params, focus.ref)
+            if (!TypeFocus.isLanded(landing)) {
+                // One retarget, and only when it is not a guess: exactly one
+                // focusable text input inside the node the caller named.
+                val candidate = focus.ref?.let { ref ->
+                    liveSnapshot(device, pkg, params)?.let { TypeFocus.soleFocusableInput(it, ref) }
+                }
+                if (candidate?.frame != null) {
+                    input.tap(candidate.frame!!.centerX.toInt(), candidate.frame!!.centerY.toInt())
+                    Thread.sleep(FOCUS_SETTLE_MS)
+                    landing = focusLanding(device, pkg, params, focus.ref)
+                    if (TypeFocus.isLanded(landing)) retargeted = candidate.ref
+                }
+                if (!TypeFocus.isLanded(landing)) {
+                    throw CliError(TypeFocus.refusal(landing, focus, candidate))
+                }
+            }
         }
         val via: String
         if (InputBackend.isAsciiTypeable(text)) {
@@ -369,7 +392,15 @@ internal object HelperDeviceCommands {
         val submit = if (params.bool("submit")) submitAfterType(input, device, pkg, params) else null
         return buildJsonObject {
             put("gesture", "type"); put("chars", text.length); put("via", via)
-            focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+            focus?.let {
+                put("focusedVia", it.source)
+                it.ref?.let { r -> put("ref", r) }
+                // Where the focus actually went, not merely that a tap was
+                // dispatched. `unknown` means no focus reading was available —
+                // never a claim that it landed.
+                put("focusLanded", TypeFocus.label(landing))
+                retargeted?.let { r -> put("retargetedTo", r) }
+            }
             submit?.let { put("submit", it) }
             keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
         }
@@ -456,6 +487,29 @@ internal object HelperDeviceCommands {
             put("via", "keyevent ESCAPE (agent unreachable; state unknown)")
         }
     }
+
+    /**
+     * Read the live tree back and classify where focus went. Best-effort by
+     * design: a runtime that cannot answer yields [TypeFocus.Landing.UNKNOWN], and
+     * typing proceeds — an optional post-condition must not turn a working `type`
+     * into a failure.
+     */
+    private fun focusLanding(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        targetRef: String?,
+    ): TypeFocus.Landing =
+        liveSnapshot(device, pkg, params)
+            ?.let { TypeFocus.classify(it, targetRef) }
+            ?: TypeFocus.Landing.UNKNOWN
+
+    /** A fresh snapshot, or null when the runtime cannot answer for one. */
+    private fun liveSnapshot(device: DeviceController, pkg: String, params: JsonObject): Snapshot? =
+        runCatching {
+            val client = runtimeClientFor(device, pkg, params)
+            if (client.probe() is RuntimeHealth.Healthy) client.snapshot() else null
+        }.getOrNull()
 
     /** Whether the caller supplied any field-targeting selector for `type`. */
     private fun hasInputTarget(params: JsonObject): Boolean =

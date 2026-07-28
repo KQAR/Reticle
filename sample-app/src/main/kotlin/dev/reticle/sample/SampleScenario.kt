@@ -47,6 +47,12 @@ enum class SampleScenario(
         testId = "scenario.wheelPicker",
         activityClass = WheelPickerScenarioActivity::class.java,
     ),
+    CompoundField(
+        title = "Compound input fields",
+        subtitle = "Unique id on the wrapper, generic id on the EditText inside it",
+        testId = "scenario.compoundField",
+        activityClass = CompoundFieldScenarioActivity::class.java,
+    ),
     LongList(
         title = "Long list",
         subtitle = "60 recycled rows; far-down rows are absent until scrolled",
