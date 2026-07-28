@@ -184,6 +184,22 @@ so the text lands in *that* field rather than whatever happened to hold focus;
 with no selector it types into the current focus. Either way the text is
 inserted at the cursor — `type` never clears the field.
 
+**The tap is not the guarantee, the focus reading is.** A resolved node that
+cannot take focus — the outer container of a compound input widget, which is
+routinely the only uniquely-addressable handle on a form row — swallows the tap
+and leaves the text going wherever focus already was. So after the focusing tap
+the host reads the tree back and classifies who holds focus relative to the
+resolved node (`focusLanded=self|descendant|ancestor|elsewhere|none|unknown`,
+from `Node.isFocused`), retargets once when the node contains exactly one
+focusable input, and REFUSES to type when focus landed nowhere or somewhere
+unrelated. `ancestor` is a pass: a WebView owns the platform focus while the
+caret is in a DOM input, as does an `AndroidComposeView` for a Compose
+`TextField`, and neither exposes a finer channel. `unknown` (no runtime, older
+agent) is reported and never enforced. `Node.isFocusable` is the TOUCH reading
+(`focusableInTouchMode`), because since API 26 `FOCUSABLE_AUTO` reports every
+clickable container as focusable — the false positive that makes this shape look
+fine.
+
 The one gap is multi-touch `pinch`, which `input` can't express — it would need
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.

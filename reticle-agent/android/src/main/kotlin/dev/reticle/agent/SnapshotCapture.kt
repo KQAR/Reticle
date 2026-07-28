@@ -204,6 +204,15 @@ class SnapshotCapture(private val context: Context) {
             isVisible = view.visibility == View.VISIBLE && view.width > 0 && view.height > 0,
             isEnabled = view.isEnabled,
             isInteractive = isInteractive,
+            // Focus, separately from clickability: a compound input widget's outer
+            // container is clickable but cannot take text, and tapping it leaves the
+            // nested EditText unfocused. `act type` reads these back to check that
+            // the field it aimed at is the field that got focus.
+            // focusableInTouchMode, NOT isFocusable: since API 26 FOCUSABLE_AUTO
+            // makes any clickable container report isFocusable=true while a tap
+            // moves no focus into it — the false positive this field exists to avoid.
+            isFocusable = view.isFocusableInTouchMode,
+            isFocused = view.isFocused,
             custom = style.values +
                 screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
                 foreignWebKernel(view),
