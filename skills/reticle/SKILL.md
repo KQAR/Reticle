@@ -348,7 +348,12 @@ design). Deal with the prompt first; don't retry taps.
 and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at
 all. It matches visible text / the a11y label (exact, then substring) in the topmost
 window and **refuses an ambiguous match** rather than tapping the first candidate.
-Prefer `--test-id` whenever the app owns the control.
+Two matches that are NOT an ambiguity: a nested duplicate (a row container repeating
+its child's text — the innermost wins), and several views stacked on the same rect
+(an iOS `UIPickerView` draws its magnifier bands as separate table views, so a row
+near the selection exists 2-3× at one spot). The second reports
+`source=label:coincident`, so you can see the match was layered. Prefer `--test-id`
+whenever the app owns the control.
 
 **A selector `tap` re-resolves its point before dispatching, by default.** Between
 resolving a selector and synthesizing the touch the screen can move, and the touch

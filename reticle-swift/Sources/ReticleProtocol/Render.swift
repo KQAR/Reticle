@@ -229,6 +229,18 @@ public enum Render {
     /// first, substring second, scoped to the topmost window; ambiguity throws
     /// rather than silently taking the first match.
     public static func labelMatch(_ snapshot: Snapshot, _ label: String) throws -> Node? {
+        try labelHit(snapshot, label)?.node
+    }
+
+    /// A label hit, and whether several coincident views were collapsed into it.
+    public struct LabelHit: Sendable {
+        public let node: Node
+        public let coincident: Bool
+    }
+
+    /// [labelMatch], plus whether the match came from several views stacked on one
+    /// rect — the caller reports that in `source` rather than hiding it.
+    public static func labelHit(_ snapshot: Snapshot, _ label: String) throws -> LabelHit? {
         // Scope to the HIGHEST-stacked window that contains any candidate, not
         // simply the top window: on iOS the system keyboard is itself a window in
         // the scene, so a strict "top window only" rule would empty the candidate
@@ -269,8 +281,27 @@ public enum Render {
         }
         let leaves = matches.filter { node in !matches.contains { isAncestor(node, of: $0) } }
         if leaves.isEmpty { return nil }
-        if leaves.count == 1 { return leaves[0] }
+        if leaves.count == 1 { return LabelHit(node: leaves[0], coincident: false) }
+        // Same place, several layers: not an ambiguity. Measured on an iOS
+        // simulator, `UIPickerView` draws its magnifier bands as separate table
+        // views, so the row under the selection exists 3× at one spot ('09' at
+        // 50,487 / 50,487 / 42,487) and a `--label "09"` tap on the wheel the docs
+        // call tappable was REFUSED — precisely for the values nearest the
+        // selection, the ones worth tapping. A tap resolves identically whichever
+        // is picked, so refusing protects nothing. Rects genuinely apart stay
+        // ambiguous, which is the case the rule exists for.
+        if coincident(leaves) { return LabelHit(node: leaves[0], coincident: true) }
         throw AmbiguousLabel(label: label, matches: leaves)
+    }
+
+    /// Do all of these candidates sit on the SAME on-screen target? True when every
+    /// candidate's tap point falls inside every other candidate's rect. The
+    /// ancestor rule cannot catch this: these are siblings in DIFFERENT subtrees.
+    /// Kept identical to the Kotlin `SelectorResolver.coincident`.
+    static func coincident(_ candidates: [Node]) -> Bool {
+        let frames = candidates.compactMap { $0.frame }
+        guard frames.count == candidates.count else { return false }
+        return frames.allSatisfy { a in frames.allSatisfy { b in b.contains(a.centerX, a.centerY) } }
     }
 
     private static func orderedRefs(_ snapshot: Snapshot) -> [String] {
