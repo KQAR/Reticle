@@ -27,6 +27,36 @@
   gate, not a test gate — the agent still has no unit tests, and that gap is
   named here rather than implied.
 
+- **The text an agent reads is now rendered from the protocol module on both
+  platforms, and pinned by one fixture.** `compact`, `tree`, `tree --semantics`
+  and `regions` were formatted twice: `HelperRenderCommands` in the Kotlin helper
+  for Android, `Render` in `ReticleProtocol` for iOS. The *derivations* were shared
+  and fixture-pinned; the *formatting* was not, so the two could agree on every
+  field and still print one screen two ways — which is exactly how `compact`
+  drifted before. `StyleObservation` had already solved this by owning its
+  `render()`; the same move now covers the rest. `dev.reticle.core.Render` is the
+  Kotlin twin of `ReticleProtocol.Render`, the helper calls it, and
+  `reticle-protocol/fixtures/snapshot-render.cases.json` drives both suites — six
+  cases covering window grouping, the keyboard and lost-focus headers, the fold
+  footer, every boundary marker (`dom:unavailable`,
+  `dom:unsupported-kernel`, `pixels:unavailable`, `screencap:blank`, both wheel
+  shapes, `scroll:`), and an iOS snapshot with regions and a char grid.
+
+  One real divergence fell out of writing it: `SemanticTree.build` inserted kept
+  nodes in `HashSet` order on the Kotlin side, and that order decided the
+  synthesized root's child list — so a tree with several top-level kept nodes
+  printed in an arbitrary order the Swift twin (which walks the tree) did not
+  share. Both now build in document order, via a new
+  `Snapshot.refsInDocumentOrder()` that says why in one place: a map's order is a
+  decoding detail, and a `Dictionary`'s is hash-seeded per process on the Swift
+  side. `regions` was ordered by map iteration for the same reason and is now
+  document-ordered too.
+
+  What stays host-side is what genuinely is: loading or fetching the snapshot,
+  window scoping, `ui node` (it renders through selector diagnostics only the
+  helper has), and the Android-only `@N` alias cache — the one projection with no
+  Swift twin, which `Render.swift` already names as unported.
+
 ## 0.12.0 - 2026-07-28
 
 - **An action answered by a toast no longer reads as an action that missed.** A

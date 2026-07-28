@@ -15,14 +15,21 @@ It is generated from the prose docs — edit those first, then the map.
 ## Current Shape
 
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
-  observations, wire protocol, selectors. No Android dependency. Shared by the
-  CLI and the in-app agent. One implementation of `reticle-protocol`; the Swift
-  `ReticleProtocol` is the parallel one.
+  observations, wire protocol, selectors, and the text projections themselves
+  (`Render` — `compact` / `tree` / `semantics` / `regions`, beside
+  `StyleObservation.render`). No Android dependency. Shared by the CLI and the
+  in-app agent. One implementation of `reticle-protocol`; the Swift
+  `ReticleProtocol` is the parallel one. **A projection's formatting belongs here,
+  not in the helper**: a derivation shared while its rendering is not has only half
+  a contract, which is how `compact` drifted before
+  `reticle-protocol/fixtures/snapshot-render.cases.json` pinned both sides.
 - `reticle-swift` (`ReticleProtocol`): SwiftPM library — the Swift implementation
   of `reticle-protocol` (Codable models with omit-defaults JSON, `SemanticTree` /
-  `CompactObservation` derivations, `PortMap`, host-side tree/compact/node
-  renderers). Depended on by both the iOS agent and the Swift host so the protocol
-  is never re-ported. Outside the Gradle build.
+  `CompactObservation` derivations, `PortMap`, and `Render` — the twin of
+  `dev.reticle.core.Render`, pinned against it by
+  `reticle-protocol/fixtures/snapshot-render.cases.json`). Depended on by both the
+  iOS agent and the Swift host so the protocol is never re-ported. Outside the
+  Gradle build.
 - `reticle-agent/android` (`:reticle-agent:android`): Android library (AAR).
   In-process loopback HTTP server, view-tree + Compose-semantics capture,
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata

@@ -2,6 +2,7 @@ package dev.reticle.cli
 
 import dev.reticle.core.Node
 import dev.reticle.core.Rect
+import dev.reticle.core.Render
 import dev.reticle.core.Snapshot
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -67,7 +68,7 @@ internal object OutlineRenderer {
                     if (entry.windowRef != current) {
                         current = entry.windowRef
                         appendLine(
-                            current?.let { WindowGrouping.header(snapshot.nodes[it], it, top = it == top) }
+                            current?.let { Render.windowHeader(snapshot.nodes[it], it, top = it == top) }
                                 ?: "window: (none) — nodes captured outside any window"
                         )
                     }
