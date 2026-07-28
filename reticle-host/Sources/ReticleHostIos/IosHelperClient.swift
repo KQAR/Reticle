@@ -52,7 +52,15 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     }
 
     public func inject(_ request: AppStartRequest) throws -> RuntimeStartResult {
-        try start(request, inject: true)
+        // `--restart-under-debugger` relaxes Android's input-dispatch ANR during a
+        // JDWP suspension. iOS injection is a DYLD insert with no suspended main
+        // thread and no AMS, so there is nothing here for the flag to do. Refuse it
+        // by name rather than accepting it and doing nothing.
+        if request.restartUnderDebugger {
+            throw HelperError("--restart-under-debugger is Android-only: it relaxes the ANR that "
+                + "Android's JDWP suspension can trip. iOS injection is a DYLD insert and suspends nothing.")
+        }
+        return try start(request, inject: true)
     }
 
     public func logcat() throws -> [String] {
