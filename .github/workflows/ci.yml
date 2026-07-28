@@ -108,6 +108,17 @@ jobs:
       - name: Build the native helper
         run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 
+      # The Swift half of the reticle-protocol twins. `reticle-swift` is only ever
+      # BUILT here as a dependency of the host, so until this step existed its
+      # assertions never ran in CI: the shared fixtures under
+      # reticle-protocol/fixtures/ (selector-resolution, wait-classification,
+      # style-observation) were pinned on the Kotlin side by
+      # `:reticle-core:test`/`:reticle-helper:test` and on the Swift side by
+      # nothing. Half-enforced anti-drift is how the two ports silently diverge —
+      # which is the exact failure `CompactObservation` already had once.
+      - name: Run reticle-swift (ReticleProtocol) tests
+        run: swift test --package-path reticle-swift
+
       # The Swift host is the user-facing CLI and the sole producer of the
       # event stream; its test suite must gate merges, not just compile.
       #
