@@ -56,7 +56,11 @@ class SelectorResolver(
             semantic.node(ref)?.frame?.let { return Resolved(center(it), "semantic:ref", ref) }
         }
         selector.label?.let { label ->
-            labelMatch(label)?.let { n -> n.frame?.let { return Resolved(center(it), "label", n.ref) } }
+            labelMatch(label)?.let { hit ->
+                hit.node.frame?.let {
+                    return Resolved(center(it), if (hit.coincident) "label:coincident" else "label", hit.node.ref)
+                }
+            }
         }
 
         // 3. Fall back to view-tree frames, using the same node precedence.
@@ -65,20 +69,25 @@ class SelectorResolver(
         return null
     }
 
+    /** A label hit, and whether several coincident views had to be collapsed into it. */
+    private data class LabelHit(val node: Node, val coincident: Boolean)
+
     /**
      * The single visible node whose text / a11y label matches, for framework
      * controls with no id of their own (a `Spinner`'s rows, `PopupMenu` items,
      * alert buttons — captured, but sharing one resource id like `text1`).
      *
-     * Two rules keep it deterministic rather than "close enough":
+     * Three rules keep it deterministic rather than "close enough":
      *   - exact match first, substring only if nothing matched exactly;
      *   - ambiguity THROWS. Silently taking the first of several matches is how a
-     *     tap lands on the wrong row while looking like it worked.
+     *     tap lands on the wrong row while looking like it worked;
+     *   - but several views stacked on the SAME rect are one target, not several
+     *     — see [coincident].
      *
      * Scoped to the topmost window, so a menu item wins over identical text left
      * behind on the screen underneath it.
      */
-    private fun labelMatch(label: String): Node? {
+    private fun labelMatch(label: String): LabelHit? {
         val candidates = inHighestWindowWithAny(
             documentOrder().filter { it.isVisible && it.frame != null }
         )
@@ -95,7 +104,14 @@ class SelectorResolver(
         val leaves = matches.filter { node -> matches.none { isAncestor(node, it) } }
         return when {
             leaves.isEmpty() -> null
-            leaves.size == 1 -> leaves.first()
+            leaves.size == 1 -> LabelHit(leaves.first(), coincident = false)
+            // Same place, several layers: not an ambiguity. Measured on an iOS
+            // simulator, `UIPickerView` draws its magnifier bands as separate
+            // table views, so the row under the selection exists 3× at one spot
+            // ('09' at 50,487 / 50,487 / 42,487) — and `--label "09"` on the wheel
+            // the docs say is tappable was REFUSED, precisely for the values
+            // nearest the selection, which are the ones worth tapping.
+            coincident(leaves) -> LabelHit(leaves.first(), coincident = true)
             else -> throw CliError(
                 "label '$label' matched ${leaves.size} visible nodes " +
                     leaves.take(6).joinToString(", ") { n ->
@@ -124,6 +140,22 @@ class SelectorResolver(
         visit(snapshot.rootRef)
         snapshot.nodes.keys.sorted().forEach(::visit)
         return out
+    }
+
+    /**
+     * Do all of these candidates sit on the SAME on-screen target?
+     *
+     * True when every candidate's tap point falls inside every other candidate's
+     * rect — a tap resolves identically whichever one is picked, so refusing to
+     * choose protects nothing and only blocks the caller. The ancestor rule above
+     * cannot catch this case: these are siblings in DIFFERENT subtrees (a picker's
+     * magnifier bands, a cell and the label it draws through a separate view
+     * hierarchy), and that is exactly the shape that must stay ambiguous when the
+     * rects are genuinely apart.
+     */
+    private fun coincident(candidates: List<Node>): Boolean {
+        val frames = candidates.map { it.frame ?: return false }
+        return frames.all { a -> frames.all { b -> b.contains(a.centerX, a.centerY) } }
     }
 
     /** Is [candidate] a proper ancestor of [node]? */
@@ -232,7 +264,7 @@ class SelectorResolver(
         selector.resourceId != null -> snapshot.firstNode { it.resourceId == selector.resourceId }
         selector.cssSelector != null -> selector.cssSelector?.let(::nodeByCssSelector)
         selector.ref != null -> snapshot.nodes[selector.ref]
-        selector.label != null -> labelMatch(selector.label!!)
+        selector.label != null -> labelMatch(selector.label!!)?.node
         else -> null
     }
 
