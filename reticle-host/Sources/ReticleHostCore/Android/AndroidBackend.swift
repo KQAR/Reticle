@@ -57,6 +57,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     private func startParams(_ request: AppStartRequest) -> [String: Any] {
         var params: [String: Any] = ["package": request.package]
         if let payload = request.payload { params["payloadDex"] = payload }
+        if request.restartUnderDebugger { params["restartUnderDebugger"] = true }
         return params
     }
 
