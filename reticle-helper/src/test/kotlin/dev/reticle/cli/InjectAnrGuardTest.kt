@@ -14,25 +14,28 @@ import kotlin.test.assertTrue
  */
 class InjectAnrGuardTest {
 
-    // --- mDebugApp ---------------------------------------------------------
+    // --- debug_app ---------------------------------------------------------
 
     @Test
     fun parseDebugApp_readsAnExistingMarking() {
-        val line = "  mDebugApp=com.example.other mAllowBackgroundDebugging=false mOrigWaitForDebugger=false"
-        assertEquals("com.example.other", InjectAnrGuard.parseDebugApp(line))
+        // `settings get global debug_app` prints the bare package plus a newline.
+        assertEquals("com.example.other", InjectAnrGuard.parseDebugApp("com.example.other\n"))
     }
 
     @Test
     fun parseDebugApp_treatsTheLiteralNullAsUnset() {
         // The common case: nothing is marked, and restoring must then CLEAR rather
         // than set a package literally named "null".
-        assertNull(InjectAnrGuard.parseDebugApp("  mDebugApp=null mAllowBackgroundDebugging=false"))
+        assertNull(InjectAnrGuard.parseDebugApp("null\n"))
     }
 
     @Test
-    fun parseDebugApp_isNullWhenTheFieldIsAbsent() {
+    fun parseDebugApp_isNullWhenTheSettingCannotBeRead() {
+        // An empty answer, or an error sentence, must never be mistaken for a
+        // package name that then gets "restored" onto the device.
         assertNull(InjectAnrGuard.parseDebugApp(""))
-        assertNull(InjectAnrGuard.parseDebugApp("dumpsys: unknown service activity"))
+        assertNull(InjectAnrGuard.parseDebugApp("   \n"))
+        assertNull(InjectAnrGuard.parseDebugApp("cmd: Can't find service: settings"))
     }
 
     // --- exit-info ---------------------------------------------------------

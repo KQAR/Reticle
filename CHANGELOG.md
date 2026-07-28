@@ -10,17 +10,21 @@
   the whole suspension, and on real hardware that outran Android's 5s input-dispatch
   timeout: the system killed the process, and Reticle reported a bare `EOFException`
   that reads like a transient glitch and invites a retry that reproduces it.
-  Injection now marks the app as being debugged for its duration (`am set-debug-app
-  --persistent`, which makes AMS relax the input-dispatch verdict; without `-w` the
-  app does not wait for a debugger, so it is safe non-interactively) and restores the
-  previous marking — or clears it — on every exit path, including failure. When a ROM
-  ignores the marking and kills the app anyway, the failure is now classified instead
-  of surfaced raw: pid gone **and** `dumpsys activity exit-info` reporting `reason=6
-  (ANR)` is reported as the ANR it is, with the input-dispatch description and the
-  mitigation. Both readings need both halves of the evidence, so a JDWP fault is never
-  misattributed to an ANR. The skill also now says out loud that nudging the app in a
-  loop while injecting is the worst available strategy — Reticle sends its own nudge,
-  and an extra queued touch is exactly what trips the timeout.
+  The failure is now **classified** instead of surfaced raw: pid gone **and** `dumpsys
+  activity exit-info` reporting `reason=6 (ANR)` is reported as the ANR it is, with the
+  input-dispatch description and the mitigation. Both halves of the evidence are
+  required, so a genuine JDWP fault is never misattributed. The mitigation itself —
+  marking the app as being debugged (`am set-debug-app --persistent`), which makes AMS
+  relax the verdict — is available as **`app inject --restart-under-debugger`**, and is
+  opt-in for a measured reason: AMS FORCE-STOPS the app whose debug marking changes
+  (API 36 emulator: `pidof` went from 6356 to nothing), so the flag relaunches the app
+  and injects into the fresh process, losing the screen it was on. Doing that silently
+  on the one command whose selling point is "into the process as it is running now"
+  would be the wrong default — and doing it *without* the relaunch, as an earlier cut
+  of this change did, simply broke injection outright: the e2e caught it handshaking
+  against a pid the guard had just killed. The skill also now says out loud that
+  nudging the app in a loop while injecting is the worst available strategy — Reticle
+  sends its own nudge, and an extra queued touch is exactly what trips the timeout.
 
 - **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
   the one picker shape the sample apps had no coverage for, and it behaves unlike the
