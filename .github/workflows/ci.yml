@@ -144,6 +144,17 @@ jobs:
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
 
+      # The in-process iOS agent is the twin of the Android AAR and carries the
+      # whole iOS capture surface (UIKit walk, the accessibility-derived SwiftUI
+      # bridge, region probing, the WKWebView DOM bridge). It is UIKit-only, so
+      # `swift build` on the host triple cannot see it — which meant CI never
+      # built it at all, and a break surfaced only on a Mac with a simulator
+      # attached. Compile it against the iOS Simulator SDK, the same way
+      # scripts/e2e-ios.sh does, so at minimum it cannot merge broken. (The AAR
+      # side is already covered by `./gradlew assemble` in the ubuntu job.)
+      - name: Build the in-process iOS agent (simulator SDK)
+        run: scripts/build-ios-agent.sh
+
       - name: Smoke-check the binaries (no device needed)
         run: |
           set -euo pipefail

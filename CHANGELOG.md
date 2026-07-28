@@ -16,6 +16,17 @@
   step in both the CI and release workflows, so a one-sided fixture change fails
   the build that made it rather than a device run three commits later.
 
+- **CI now compiles the in-process iOS agent.** `reticle-agent/ios` holds the
+  whole iOS capture surface — the UIKit walk, the accessibility-derived SwiftUI
+  bridge, region probing, the WKWebView DOM bridge — and is UIKit-only, so
+  `swift build` on the host triple never sees it. It was therefore the one
+  shipped component with no build gate whatsoever: a break surfaced only on a Mac
+  with a simulator attached, which in practice meant during an e2e run. The
+  macOS job (and the release gates) now run `scripts/build-ios-agent.sh`, the
+  same iOS-Simulator-SDK build `scripts/e2e-ios.sh` relies on. This is a compile
+  gate, not a test gate — the agent still has no unit tests, and that gap is
+  named here rather than implied.
+
 ## 0.12.0 - 2026-07-28
 
 - **An action answered by a toast no longer reads as an action that missed.** A
