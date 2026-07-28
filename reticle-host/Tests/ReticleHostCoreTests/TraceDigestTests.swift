@@ -20,6 +20,7 @@ struct TraceDigestTests {
         recordedAtMillis: Int64 = 1_782_875_008_204,
         selector: [String: Any]? = ["testId": "checkout.payButton"],
         params: [String: Any]? = nil,
+        result: [String: Any]? = nil,
         diff: [[String: Any]] = [],
         artifacts: [String: Any] = [
             "beforeSnapshot": "before.snapshot.json", "afterSnapshot": "after.snapshot.json",
@@ -34,7 +35,7 @@ struct TraceDigestTests {
             "packageName": "dev.reticle.sample",
             "recordedAtMillis": recordedAtMillis,
             "gesture": gesture,
-            "result": ["gesture": gesture],
+            "result": result ?? ["gesture": gesture],
             "artifacts": artifacts,
             "diff": diff,
         ]
@@ -80,10 +81,59 @@ struct TraceDigestTests {
         let text = TraceDigest.render(try TraceDigest.entries(at: root), root: root, maxChanges: 3)
 
         // An action that dispatched cleanly and moved nothing is a real finding,
-        // and the single most likely thing a reader is looking for.
-        #expect(text.contains("(no observable change between before and after)"))
+        // and the single most likely thing a reader is looking for. It is also two
+        // findings wearing one face — the gesture hit nothing, or it hit something
+        // that answered where a snapshot cannot see — so the line names both.
+        #expect(text.contains("(no observable change between before and after — usually the gesture hit nothing"))
+        #expect(text.contains("answer out of tree or purely over the network)"))
         // The other action's hidden changes are counted by field, not vanished.
         #expect(text.contains("…6 more (frame 6)"))
+    }
+
+    @Test func aToastIsTheAnswerWhenTheDiffIsEmpty() throws {
+        // The measured blind spot: a submit answered by a Toast. On Android 11+
+        // the toast is a SYSTEM window, so it is in neither snapshot and in
+        // neither in-process screenshot — the pair is byte-identical and the step
+        // used to read exactly like a tap that hit nothing.
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeTrace(
+            in: root, name: "1-tap",
+            result: ["gesture": "tap", "toast": "Amount exceeds your limit", "toastKind": "text"],
+            diff: []
+        )
+
+        let text = TraceDigest.render(try TraceDigest.entries(at: root), root: root, maxChanges: 6)
+
+        #expect(text.contains("! transient message shown: \"Amount exceeds your limit\""))
+        // And the empty diff stops implying the gesture missed, because here it
+        // demonstrably did not.
+        #expect(text.contains("(no other observable change between before and after)"))
+        #expect(!text.contains("usually the gesture hit nothing"))
+    }
+
+    @Test func aCustomViewToastSaysWhereItsTextActuallyIs() throws {
+        // The complementary half: a `Toast.setView` toast is drawn by the APP, so
+        // its text is a node in the tree and the queue record carries none. The
+        // digest must not print an empty message as if the toast were silent.
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeTrace(
+            in: root, name: "1-tap",
+            result: [
+                "gesture": "tap",
+                "toast": "app-drawn custom view; its text is a node in the tree",
+                "toastKind": "custom-view",
+            ],
+            diff: [["ref": "r59", "field": "present", "after": "true"]]
+        )
+
+        let text = TraceDigest.render(try TraceDigest.entries(at: root), root: root, maxChanges: 6)
+
+        #expect(text.contains("! transient toast raised [custom-view]"))
+        #expect(text.contains("its text is a node in the tree"))
+        // Not quoted as if the explanation were the message.
+        #expect(!text.contains("transient message shown"))
     }
 
     @Test func surfacesThatTheManifestItselfWasAlreadyCapped() throws {

@@ -133,6 +133,16 @@ internal object HelperDeviceCommands {
         val before = verifySel?.let { HelperVerify.captureState(evidenceClient!!, it) }
         var target: ResolvedInputTarget? = null
 
+        // Watch the system Toast Queue across the action. A text toast is in no
+        // window of this app, so an action answered by one produced a byte-identical
+        // before/after pair — `0 change(s)`, the documented signal for a gesture that
+        // hit nothing. `wait` is excluded because it dispatches no input: a toast
+        // during a wait is not that command's answer. See [ToastProbe].
+        val toastProbe = ToastProbe.start(
+            device, pkg,
+            enabled = sub != "wait" && !params.bool("noToastProbe"),
+        )
+
         val result: JsonObject = when (sub) {
             "tap" -> {
                 val first = resolveInputTarget(device, pkg, params)
@@ -215,13 +225,26 @@ internal object HelperDeviceCommands {
         }
 
         val verify = verifySel?.let { HelperVerify.pollForChange(evidenceClient!!, it, before, params) }
+        // Collected before the trace is written so the toast is IN the manifest for
+        // that step — the place a later `trace log` reads, and the whole point: the
+        // step that says "no observable change" must be the step that also says the
+        // app answered out of tree.
+        val toasts = toastProbe?.stop().orEmpty()
+        val withToast = if (toasts.isEmpty()) result else buildJsonObject {
+            result.forEach { (k, v) -> put(k, v) }
+            val first = toasts.first()
+            put("toast", ToastQueue.summary(first))
+            put("toastKind", first.kind)
+            first.duration?.let { put("toastDuration", it) }
+            if (toasts.size > 1) put("toastCount", toasts.size)
+        }
         val trace = traceRecorder?.let {
             val settleMs = if (verify == null) (params.intOrNull("traceDelayMs") ?: 250).toLong() else 0L
-            it.write(sub, selectorOrNull(params), target, result, traceBefore!!, settleMs)
+            it.write(sub, selectorOrNull(params), target, withToast, traceBefore!!, settleMs)
         }
-        if (verify == null && trace == null) return result
+        if (verify == null && trace == null) return withToast
         return buildJsonObject {
-            result.forEach { (k, v) -> put(k, v) }
+            withToast.forEach { (k, v) -> put(k, v) }
             verify?.let { put("verify", it) }
             trace?.let { put("trace", it) }
         }

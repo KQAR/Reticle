@@ -172,6 +172,10 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
+    // Every act watches the system Toast Queue: a text toast is in no window of
+    // the app, so an action answered by one is otherwise indistinguishable from
+    // one that hit nothing. `--no-toast-probe` opts out.
+    request.noToastProbe = args.flag("no-toast-probe")
     // `type --type-delay <ms>`: pace the keystrokes for a field that loses them
     // out of the default single burst. `act type` reads the field back either
     // way and says what actually landed.

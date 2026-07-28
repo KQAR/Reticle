@@ -215,6 +215,9 @@ thread -> `dom:unavailable`), the popup windows (PopupWindow / Spinner dropdown 
 PopupMenu + `--label`), the wheel picker (a `NumberPicker`'s unselected values are
 canvas paint, not nodes — the one scenario where the two platforms deliberately
 report different amounts, since a `UIPickerView`'s rows ARE nodes),
+the toasts screen (a system-drawn text toast is in no tree and no in-process
+screenshot — recovered from the Toast Queue — next to an app-drawn one and a
+`WindowManager` overlay, which are ordinary nodes),
 the long list (recycling boundary + scroll evidence), the reformatting input
 fields (`type` reads the field back: `textLanded=reformatted` for an app's own
 formatting, a partial burst detected and re-sent over the clipboard, and

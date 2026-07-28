@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **An action answered by a toast no longer reads as an action that missed.** A
+  submit whose backend rejected it came back `0 change(s)`: the screen was
+  byte-identical before and after, and the docs read that as evidence the tap hit
+  nothing — so the reporter went looking for a targeting problem that did not
+  exist. The tap had landed; the app answered with a `Toast`, and on Android 11+
+  that toast is drawn by the SYSTEM in a window of its own. Four channels measured
+  at once on an API 36 emulator while one was on screen: view tree — absent;
+  in-process screenshot — absent; `adb exec-out screencap` — present;
+  `dumpsys notification`'s Toast Queue — **the text verbatim**.
+
+  Every `act` now watches that queue and reports `toast=` / `toastKind=` /
+  `toastDuration=` (`toastCount=` for more than one). Host-side over `adb shell`,
+  so it needs no agent and touches no hidden API. `trace log` leads the step with
+  `! transient message shown: "…"`, and — the other half — the empty-diff line
+  stops asserting a miss: with a toast recovered it reads `(no other observable
+  change …)`, and without one it now names both readings instead of the first.
+  `--no-toast-probe` turns the watch off.
+
+  The three things called "a toast" are three different problems and are kept
+  apart, because blurring them would replace one wrong claim with another.
+  Measured: `Toast.setView` and a `WindowManager` overlay belong to the app's own
+  process and are **already** nodes carrying their text — only the system-drawn
+  text toast was ever invisible. A custom-view toast's queue record holds a
+  callback and no string, so `toastKind=custom-view` says the text is a node
+  instead of quoting an empty message; an overlay never enters the queue and is
+  reported as no toast at all. A toast from ANOTHER process is filtered out by
+  package rather than attributed to the app under test.
+
+  The sampling detail that decides whether this works: samples ride along with
+  work the action was already doing, but the one that matters is taken at the END.
+  Resolving a selector and confirming its rect settled can eat ~250ms before the
+  touch is even synthesized — the first cut sampled the whole front of its
+  schedule before the tap landed and found nothing every time. `scenario.toasts`
+  is the fixture; the Android e2e drives all three kinds and the `trace log`
+  rendering.
+
 - **`act type` reports what LANDED, not what it sent.** `chars=N` only ever counted
   characters dispatched. Measured on a physical device: `--text "10000"` returned
   `chars=5`, exit code 0, focus correct — and the field held `100`, while the field

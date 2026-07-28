@@ -31,6 +31,13 @@ enum TraceDigest {
         let changes: [Change]
         /// Present when the manifest's own diff hit its cap.
         let manifestTruncation: String?
+        /// A toast the action raised, from the system Toast Queue. The one thing
+        /// a before/after snapshot pair structurally cannot hold: on Android 11+
+        /// a text toast lives in a system window, so it is in neither tree and in
+        /// neither in-process screenshot.
+        let toast: String?
+        let toastKind: String?
+        let toastCount: Int?
         let snapshotCount: Int
         let screenshotCount: Int
 
@@ -96,6 +103,11 @@ enum TraceDigest {
 
         let artifacts = manifest["artifacts"] as? [String: Any] ?? [:]
         let params = manifest["params"] as? [String: Any] ?? [:]
+        let result = manifest["result"] as? [String: Any] ?? [:]
+        func resultString(_ key: String) -> String? {
+            guard let value = result[key] else { return nil }
+            return value as? String ?? "\(value)"
+        }
 
         return Entry(
             directory: directory,
@@ -108,6 +120,9 @@ enum TraceDigest {
             targetDescription: targetDescription(manifest["target"] as? [String: Any]),
             changes: changes,
             manifestTruncation: manifestTruncation,
+            toast: resultString("toast"),
+            toastKind: resultString("toastKind"),
+            toastCount: resultString("toastCount").flatMap { Int($0) },
             snapshotCount: ["beforeSnapshot", "afterSnapshot"].filter { artifacts[$0] != nil }.count,
             screenshotCount: ["beforeScreenshot", "afterScreenshot"].filter { artifacts[$0] != nil }.count
         )
@@ -201,12 +216,40 @@ enum TraceDigest {
         for param in entry.params { head.append(renderParam(param)) }
         var lines = [head.joined(separator: "  ")]
 
+        // Above the diff, because when an action is answered by a toast the toast
+        // IS the answer — and it is the one piece of evidence a reader chasing an
+        // empty diff would otherwise go to logcat for.
+        if let toast = entry.toast {
+            // A text toast is quoted because the queue holds the message itself. A
+            // custom-view one is not: the record carries a callback, and the text
+            // is a node in the changes right below — quoting the explanation as if
+            // it were the message would be the wrong claim in the loudest place.
+            let isText = (entry.toastKind ?? "text") == "text"
+            var line = isText
+                ? "    ! transient message shown: \(quoted(toast))"
+                : "    ! transient toast raised [\(entry.toastKind ?? "?")] — \(toast)"
+            if let count = entry.toastCount, count > 1 { line += " (+\(count - 1) more)" }
+            lines.append(line)
+        }
+
         let shown = entry.realChanges.prefix(maxChanges)
         if entry.realChanges.isEmpty {
             // The most under-reported result there is. An action that dispatched
             // cleanly and changed nothing observable looks identical to a
             // successful one unless the digest says this out loud.
-            lines.append("    (no observable change between before and after)")
+            //
+            // It is also not one finding but two, and they need opposite
+            // responses: the gesture reached no handler (re-target), or it reached
+            // one that answered somewhere a snapshot cannot see (do not re-target
+            // — read the answer). When the toast line above is present the second
+            // reading is already established, so the wording stops implying the
+            // first.
+            lines.append(
+                entry.toast == nil
+                    ? "    (no observable change between before and after — usually the gesture hit"
+                        + " nothing, but an app can also answer out of tree or purely over the network)"
+                    : "    (no other observable change between before and after)"
+            )
         }
         for change in shown {
             lines.append("    " + renderChange(change))

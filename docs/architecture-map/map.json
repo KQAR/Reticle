@@ -299,6 +299,17 @@
           "nodes": ["agent-android", "proto-core"], "edges": ["e-agentA-pcore"]
         },
         {
+          "title": "And watch for an answer the diff cannot hold",
+          "detail": "Every act samples the system Toast Queue (dumpsys notification) across the action. On Android 11+ a text toast is drawn by the SYSTEM in its own window — in no view tree, in no in-process screenshot, taking no focus — so an action answered by one produced an identical before/after pair and read as 0 change(s), the signal for a gesture that hit nothing. Reports toast=/toastKind=/toastDuration=, and trace log leads the step with it. A Toast.setView toast and a WindowManager overlay are app-drawn and ALREADY nodes, so the kind says which half holds the text. Host-side over adb, no agent, no hidden API.",
+          "nodes": [
+            "helper",
+            "wire-android"
+          ],
+          "edges": [
+            "e-helper-wire"
+          ]
+        },
+        {
           "title": "Every change names its node",
           "detail": "ActionTraceChange.node carries testId/resourceId/label/role — or clipped text when there is no other handle — read from whichever side the node exists on, so a node that VANISHED is still named. Attached once per ref.",
           "nodes": ["proto-core", "fixtures"], "edges": ["e-pcore-fix"]

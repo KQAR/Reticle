@@ -224,6 +224,32 @@ caller's own escape hatch: one `input text` per character with that gap, for a
 field known to lose the burst. A field with no text channel reads
 `textLanded=unreadable` with a reason rather than passing by default.
 
+**And an action can be answered where no snapshot can see it.** Measured on an
+API 36 emulator, four channels at once while one text toast was on screen: the
+app's view tree — absent; the agent's in-process screenshot — absent; device-level
+`screencap` — present; `dumpsys notification`'s Toast Queue — **the text
+verbatim**. On Android 11+ `Toast.makeText` does not draw in the app at all
+(`INotificationManager.enqueueToast`, then the system draws it in a window of its
+own), so a submit the backend rejected produced a byte-identical before/after pair
+and read as `0 change(s)` — the documented signal for a gesture that hit nothing.
+
+So every `act` watches the Toast Queue across the action (`ToastProbe`,
+`ToastQueue`) and reports `toast=` / `toastKind=` / `toastDuration=`. Host-side
+over `adb shell`, so it needs no agent and no hidden API. Samples ride along with
+work the action was already doing, on a front-dense backoff, plus **one taken at
+`stop`** — the important one, since resolving and settling a selector can eat the
+whole front of the schedule before the touch is even synthesized, while at the end
+the gesture has landed and the toast is 2s/3.5s into its life.
+
+The three things called "a toast" are three different problems, and the fix must
+not blur them: `Toast.setView` and any app-drawn overlay belong to the app's own
+process and are **already** nodes carrying their text (measured), while a
+custom-view toast's queue record carries a callback and no string. So the queue
+and the tree each hold half, `toastKind` says which half, and an overlay is
+reported as no toast at all because it is not one. What stays unreachable is a
+toast raised by ANOTHER process — filtered out by package, since attributing the
+system's "Screenshot saved" to the app under test would be a wrong claim.
+
 The one gap is multi-touch `pinch`, which `input` can't express — it would need
 `sendevent` against the touchscreen device node. The API shape is reserved
 (`InputBackend.pinch()`) but not implemented.
