@@ -214,6 +214,25 @@ navigation or modal changes: `@N` numbering describes the outlined screen, not
 the new one. The `item i/n` text is a hint, not a selector. Stable automation
 should still prefer `--test-id`, `--resource-id`, `--css`, or `--ref`.
 
+**Stacked screens: `--window top`.** A capture holds EVERY live window of the
+process, and on Android a screen pushed over a still-alive one is the common case.
+Flattened by geometry the two interleave: framework ids like `#content` and
+`#etContent` appear once per window, and the fields you are driving end up a dozen
+aliases apart with unrelated content wedged between them. Two things address it:
+
+- **grouping is automatic.** With more than one window, `ui compact` and `ui outline`
+  emit a `window <ref> <what> [top]` / `[behind the top window]` header per window,
+  topmost first, and indent its nodes under it. Nothing is dropped, and a single-window
+  screen is unchanged;
+- **`--window top`** (or `--window <ref>`) on any `ui` view narrows the capture to one
+  window before rendering — `tree`, `compact`, `outline`, `style`, and the `@N`
+  numbering that follows from the outline, all together. That is usually what you
+  want: the screen the user is looking at, several-fold cheaper to read.
+
+Prefer scoping over filtering `occluded-by:` yourself. That marker is overloaded —
+it also means "under the keyboard" and "under a popup in the SAME window", which
+are different situations with different responses.
+
 **`--live` — inspect the running app without writing a report.** Any `ui` view
 (`node`/`compact`/`tree`/`regions`/`style`) takes `--live --package <pkg>` instead of a
 snapshot path: it pulls the CURRENT tree straight from the runtime and prints it,
@@ -223,6 +242,7 @@ now?" check — no 300-node report to grep:
 ```bash
 reticle ui node    --live --package <pkg> --resource-id rata   # one node, live
 reticle ui compact --live --package <pkg>                      # whole screen, live
+reticle ui compact --live --package <pkg> --window top          # only the top window
 ```
 
 ## Style evidence (`ui style`)

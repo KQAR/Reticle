@@ -135,14 +135,19 @@ public struct RenderRequest: Sendable {
     public let selector: HostSelector
     /// Present only so `outline` can write its alias cache for this package.
     public let package: String?
+    /// Narrow every view to ONE window: a window ref, or `"top"`. Nil renders the
+    /// whole capture, grouped by window.
+    public let window: String?
 
     public init(view: String, snapshotPath: String, depth: Int? = nil,
-                selector: HostSelector = .init(), package: String? = nil) {
+                selector: HostSelector = .init(), package: String? = nil,
+                window: String? = nil) {
         self.view = view
         self.snapshotPath = snapshotPath
         self.depth = depth
         self.selector = selector
         self.package = package
+        self.window = window
     }
 }
 
