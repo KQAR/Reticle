@@ -97,8 +97,13 @@ public enum SelectorResolution {
             return Resolved(point: center(frame), source: "semantic:ref", ref: ref)
         }
         if let label = selector.label,
-           let node = try Render.labelMatch(snapshot, label), let frame = node.frame {
-            return Resolved(point: center(frame), source: "label", ref: node.ref)
+           let hit = try Render.labelHit(snapshot, label), let frame = hit.node.frame {
+            // `label:coincident` when several stacked views over one rect were
+            // collapsed into this hit — the caller sees that the match was not a
+            // clean single node without being blocked by it.
+            return Resolved(point: center(frame),
+                            source: hit.coincident ? "label:coincident" : "label",
+                            ref: hit.node.ref)
         }
 
         // 3. View-tree frames, for a node the semantic projection dropped.
