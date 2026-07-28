@@ -8,8 +8,19 @@ package dev.reticle.cli.platform
  * Android-only by construction, not pending a second implementation.
  */
 interface AppInjector {
-    /** Inject and start the runtime in [packageName]. */
-    fun inject(device: DeviceController, packageName: String): InjectResult
+    /**
+     * Inject and start the runtime in [packageName].
+     *
+     * @param restartUnderDebugger mark the app as being debugged first, which makes
+     *   AMS relax the input-dispatch ANR verdict during the JDWP suspension. Costly
+     *   and therefore opt-in: setting the debug app FORCE-STOPS the target, so the
+     *   app is relaunched and the screen it was on is lost.
+     */
+    fun inject(
+        device: DeviceController,
+        packageName: String,
+        restartUnderDebugger: Boolean = false,
+    ): InjectResult
 
     /** The pid injected into, and the port Bootstrap.start() reported (a hint;
      *  real liveness is proven over HTTP by the caller). */

@@ -111,9 +111,15 @@ public struct StatusRequest: Sendable {
 public struct AppStartRequest: Sendable {
     public let package: String
     public let payload: String?
-    public init(package: String, payload: String? = nil) {
+    /// `app inject` only: mark the app as being debugged for the injection, so AMS
+    /// relaxes the input-dispatch ANR verdict while JDWP holds the main thread
+    /// suspended. Opt-in because setting the debug app force-stops the target — the
+    /// app is relaunched and the screen it was on is lost.
+    public let restartUnderDebugger: Bool
+    public init(package: String, payload: String? = nil, restartUnderDebugger: Bool = false) {
         self.package = package
         self.payload = payload
+        self.restartUnderDebugger = restartUnderDebugger
     }
 }
 

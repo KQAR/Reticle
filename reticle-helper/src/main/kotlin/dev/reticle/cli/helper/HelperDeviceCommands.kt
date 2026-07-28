@@ -64,7 +64,7 @@ internal object HelperDeviceCommands {
         params.str("payloadDex")?.let { System.setProperty("reticle.payloadDex", it) }
         val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
-        val injected = Injector.inject(device, pkg)
+        val injected = Injector.inject(device, pkg, restartUnderDebugger = params.bool("restartUnderDebugger"))
         val info = awaitRuntime(runtimeClientFor(device, pkg, params), pkg)
         return buildJsonObject {
             put("pid", info.pid)

@@ -49,13 +49,60 @@ object Injector : AppInjector {
      */
     private const val HANDSHAKE_BUDGET_MS = 20_000L
 
+    /** How long to wait for the app to come back after the debug marking stopped it. */
+    private const val RELAUNCH_BUDGET_MS = 20_000L
+
     /**
      * Inject and start the runtime in [packageName]. Returns the pid and the port
      * `Bootstrap.start()` reported (negative => a `Bootstrap.ERR_*` code; the
      * caller still verifies liveness over HTTP, which is the real proof).
      */
-    override fun inject(device: DeviceController, packageName: String): AppInjector.InjectResult {
+    override fun inject(
+        device: DeviceController,
+        packageName: String,
+        restartUnderDebugger: Boolean,
+    ): AppInjector.InjectResult {
         val adb = device
+        // The ANR guard, when asked for. It has to go FIRST and it is destructive:
+        // marking the debug app force-stops the target, so the pid must be resolved
+        // after the relaunch, not before. See [InjectAnrGuard].
+        val anrGuard = if (restartUnderDebugger) {
+            InjectAnrGuard.install(adb, packageName).also { relaunchForDebugger(adb, packageName) }
+        } else {
+            InjectAnrGuard.disabled(adb)
+        }
+        try {
+            return injectIntoRunningApp(adb, packageName, anrGuard)
+        } finally {
+            anrGuard.restore()
+        }
+    }
+
+    /**
+     * Bring [packageName] back up after the debug-app marking force-stopped it, and
+     * wait for a live pid. Without the wait the next `pidof` races the cold start
+     * and injection fails claiming the app is not running — which would be true,
+     * and entirely our own doing.
+     */
+    private fun relaunchForDebugger(adb: DeviceController, packageName: String) {
+        adb.shell("monkey -p $packageName -c android.intent.category.LAUNCHER 1")
+        val deadline = System.currentTimeMillis() + RELAUNCH_BUDGET_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (adb.pidOf(packageName) != null) return
+            Thread.sleep(250)
+        }
+        throw CliError(
+            "'$packageName' did not come back up within ${RELAUNCH_BUDGET_MS / 1000}s after " +
+                "`--restart-under-debugger` force-stopped it (setting the debug app restarts the " +
+                "target). Launch it by hand and inject without the flag."
+        )
+    }
+
+    private fun injectIntoRunningApp(
+        adb: DeviceController,
+        packageName: String,
+        anrGuard: InjectAnrGuard.Installed,
+    ): AppInjector.InjectResult {
         val pid = adb.pidOf(packageName)
             ?: throw CliError(
                 "app '$packageName' is not running. Start it first (open it, or " +
@@ -124,6 +171,14 @@ object Injector : AppInjector {
                 }
                 return AppInjector.InjectResult(pid, reported)
             }
+        } catch (error: Throwable) {
+            // A channel that dies mid-injection is usually not a JDWP fault: the
+            // system killed the app under us. Say which, with the system's own
+            // exit record as the evidence — a bare `EOFException` reads like a
+            // transient glitch and invites a retry that reproduces it.
+            InjectAnrGuard.explainKill(adb, packageName, pid, anrGuard.active)
+                ?.let { throw CliError(it) }
+            throw error
         } finally {
             adb.removeForward(jdwpHostPort)
         }

@@ -67,7 +67,13 @@ func cmdInject(_ backend: HostBackend, _ args: Args) throws {
             ?? (FileManager.default.fileExists(atPath: devPayload)
                 ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
     }
-    let started = try backend.inject(AppStartRequest(package: pkg, payload: payload))
+    // `--restart-under-debugger`: relax the input-dispatch ANR that can kill the app
+    // while JDWP holds its main thread suspended. Opt-in, and the name says the
+    // price: marking the debug app force-stops the target, so the app comes back on
+    // its launch screen rather than the one you were driving.
+    let started = try backend.inject(AppStartRequest(
+        package: pkg, payload: payload, restartUnderDebugger: args.flag("restart-under-debugger")
+    ))
     RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(started.jsonObject)
