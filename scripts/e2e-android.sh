@@ -442,7 +442,40 @@ PY
 # focus change (measured: typing 17 left the tree reading 17, the canvas
 # neighbours reading 10/12, and `wheel.status` reading Time: 11:00). Recorded in
 # docs/boundaries.md; a swipe is the honest driver.
+# The marker: a wheel must not look like a decorative empty view. Two shapes, and
+# the projection must not collapse them — a NumberPicker keeps its SELECTION as a
+# node (its neighbours are pixels), while the self-drawn column publishes nothing
+# at all, which is what a third-party date picker actually looks like.
+WHEEL_MARKED="$(R ui compact --live --package "$PKG")"
+echo "$WHEEL_MARKED" | grep '#wheel.year' | grep -q "wheel:opaque" \
+  || { echo "FAIL: a self-drawn wheel must be marked wheel:opaque, got: $(echo "$WHEEL_MARKED" | grep '#wheel.year')"; exit 1; }
+echo "$WHEEL_MARKED" | grep '#wheel.hour' | grep -q "wheel:selection-only" \
+  || { echo "FAIL: a NumberPicker must be marked wheel:selection-only, got: $(echo "$WHEEL_MARKED" | grep '#wheel.hour')"; exit 1; }
+# The NumberPicker's own value field must NOT be marked: it is the selection, not
+# a column, and it is the one node here whose value IS readable. (Measured: a
+# class-name match alone caught `NumberPicker$CustomEditText` and marked it
+# `wheel:opaque` — the opposite of the truth, right under its parent's
+# `wheel:selection-only`.)
+echo "$WHEEL_MARKED" | grep '#numberpicker_input' | grep -q "wheel:" \
+  && { echo "FAIL: a wheel's value node must not be marked as a wheel column"; exit 1; }
+# ...and an ordinary control on the same screen must NOT be marked: a false
+# positive would send a caller swiping at a button.
+echo "$WHEEL_MARKED" | grep '#wheel.confirm' | grep -q "wheel:" \
+  && { echo "FAIL: a plain button must not carry a wheel marker"; exit 1; }
+# The self-drawn column is drivable the way the marker says: swipe, then read the
+# app's own committed state. There is no node for the value, by construction.
+read -r YEAR_X YEAR_FROM_Y YEAR_TO_Y <<EOF
+$(echo "$WHEEL_MARKED" | sed -nE 's/^#wheel\.year [a-zA-Z]+ .*\[([0-9]+),([0-9]+) ([0-9]+)x([0-9]+)\].*/\1 \2 \3 \4/p' \
+   | awk '{ printf "%d %d %d\n", $1 + $3 / 2, $2 + $4 * 0.8, $2 + $4 * 0.2 }')
+EOF
+[ -n "${YEAR_TO_Y:-}" ] \
+  || { echo "FAIL: could not read the self-drawn wheel's frame"; exit 1; }
+R act swipe --package "$PKG" --from "$YEAR_X,$YEAR_FROM_Y" --to "$YEAR_X,$YEAR_TO_Y" --duration 300 >/dev/null
+R act wait --package "$PKG" --idle >/dev/null
+
 WHEEL_LOGS="$(R debug logs --package "$PKG")"
+echo "$WHEEL_LOGS" | grep -q "wheel_year_changed" \
+  || { echo "FAIL: the swipe never moved the self-drawn wheel (app-authored log is the only evidence there is)"; exit 1; }
 echo "$WHEEL_LOGS" | grep -q "wheel_hour_changed" \
   || { echo "FAIL: expected wheel_hour_changed in the app log bridge"; exit 1; }
 echo "$WHEEL_LOGS" | grep -q "wheel_confirmed" \

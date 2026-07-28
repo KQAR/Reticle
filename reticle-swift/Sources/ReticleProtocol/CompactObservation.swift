@@ -43,6 +43,22 @@ public struct CompactObservation: Codable, Sendable {
             return nil
         }
 
+        /// How much of a wheel column is readable, or nil when this is not one.
+        /// `selection-only` when the current value survives as a child node (an
+        /// Android `NumberPicker`), `opaque` when the control publishes nothing at
+        /// all. Either way its unselected values are pixels and the control must be
+        /// driven with `swipe`. Kept identical to the Kotlin twin.
+        func wheelMarker(_ node: Node) -> String? {
+            guard node.suspectedWheel else { return nil }
+            var seen = Set<String>()
+            func hasTextInside(_ ref: String) -> Bool {
+                guard let child = snapshot.nodes[ref], seen.insert(ref).inserted else { return false }
+                if ref != node.ref, !(child.text ?? "").isEmpty { return true }
+                return child.children.contains(where: hasTextInside)
+            }
+            return hasTextInside(node.ref) ? "selection-only" : "opaque"
+        }
+
         var items: [CompactItem] = []
         func visit(_ ref: String, _ windowRef: String?) {
             guard let node = snapshot.nodes[ref] else { return }
@@ -65,6 +81,7 @@ public struct CompactObservation: Codable, Sendable {
                         isFocused: node.isFocused,
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
+                        wheel: wheelMarker(node),
                         domUnavailable: node.domUnavailable(),
                         domKernelUnsupported: node.domKernelUnsupported(),
                         pixelsUnavailable: node.pixelsUnavailable(),
@@ -108,6 +125,10 @@ public struct CompactItem: Codable, Sendable {
     /// Scroll capability when this item is a scrollable container — how an agent
     /// tells "this selector doesn't exist" from "it isn't bound yet".
     public var scroll: ScrollInfo?
+    /// `"opaque"` / `"selection-only"` when this item is a wheel column, else nil.
+    /// Rendered as `wheel:<value>` — the honest-boundary marker for a control whose
+    /// candidate values exist only as pixels. See `Node.suspectedWheel`.
+    public var wheel: String?
     /// True when this node hosts a web view whose DOM could not be read at capture
     /// time (a JS modal blocking the page's thread, JS off, or a read that outran
     /// its budget). Without it, "no DOM nodes" and "this web view is empty" are the
@@ -138,6 +159,7 @@ public struct CompactItem: Codable, Sendable {
         isFocused: Bool = false,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
+        wheel: String? = nil,
         domUnavailable: Bool = false,
         domKernelUnsupported: Bool = false,
         pixelsUnavailable: Bool = false,
@@ -155,6 +177,7 @@ public struct CompactItem: Codable, Sendable {
         self.isFocused = isFocused
         self.occludedBy = occludedBy
         self.scroll = scroll
+        self.wheel = wheel
         self.domUnavailable = domUnavailable
         self.domKernelUnsupported = domKernelUnsupported
         self.pixelsUnavailable = pixelsUnavailable
@@ -175,6 +198,7 @@ public struct CompactItem: Codable, Sendable {
         if isFocused { state += " focused" }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
+        if let wheel { state += " wheel:\(wheel)" }
         if domUnavailable { state += " dom:unavailable" }
         if domKernelUnsupported { state += " dom:unsupported-kernel" }
         if pixelsUnavailable { state += " pixels:unavailable" }
@@ -184,7 +208,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case isFocused, windowRef, occludedBy, scroll
+        case isFocused, windowRef, occludedBy, scroll, wheel
         case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -202,6 +226,7 @@ public struct CompactItem: Codable, Sendable {
         if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
+        try c.encodeIfPresent(wheel, forKey: .wheel)
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
         if domKernelUnsupported { try c.encode(domKernelUnsupported, forKey: .domKernelUnsupported) }
         if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
@@ -222,6 +247,7 @@ public struct CompactItem: Codable, Sendable {
         isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
+        wheel = try c.decodeIfPresent(String.self, forKey: .wheel)
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
         domKernelUnsupported = try c.decodeIfPresent(Bool.self, forKey: .domKernelUnsupported) ?? false
         pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false
