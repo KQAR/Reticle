@@ -8,6 +8,7 @@ import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
 import dev.reticle.core.StyleChannel
+import dev.reticle.core.WebViewDomScript
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
