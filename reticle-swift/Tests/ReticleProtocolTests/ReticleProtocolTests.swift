@@ -112,6 +112,53 @@ final class JSONShapeTests: XCTestCase {
         XCTAssertEqual(decoded.screen.keyboard?.frame?.y, 700)
     }
 
+    /// The Swift half of reticle-core's `CompactCollapseTest`. The two folds must
+    /// agree node for node, or the same picker reads differently on each platform.
+    func testFoldsAnonymousLayersLikeKotlin() throws {
+        // One UIPickerView row as UIKit builds it: cell > (label, contentView).
+        // Two anonymous rectangles at one place; only the label can be named.
+        func node(_ ref: String, _ parent: String?, _ type: String, _ role: String,
+                  _ frame: Rect, text: String? = nil, interactive: Bool = false,
+                  children: [String] = []) -> Node {
+            Node(ref: ref, parentRef: parent, kind: .view, typeName: type, role: role,
+                 text: text, frame: frame, isInteractive: interactive, children: children)
+        }
+        let root = Node(ref: "root", kind: .application, typeName: "UIApplication", children: ["cell"])
+        let snap = Snapshot(
+            capturedAtMillis: 0, platform: "ios",
+            screen: ScreenInfo(size: Size(width: 400, height: 900), density: 3),
+            rootRef: "root",
+            nodes: [
+                "root": root,
+                "cell": node("cell", "root", "UIPickerTableViewTitledCell", "container",
+                             Rect(x: 41, y: 487, width: 165, height: 24),
+                             interactive: true, children: ["label", "content"]),
+                "label": node("label", "cell", "UILabel", "text",
+                              Rect(x: 50, y: 487, width: 147, height: 24), text: "09"),
+                "content": node("content", "cell", "UITableViewCellContentView", "view",
+                                Rect(x: 41, y: 487, width: 165, height: 24), interactive: true),
+            ]
+        )
+        let compact = CompactObservation.from(snap)
+        XCTAssertEqual(compact.items.map { $0.ref }, ["label"])
+        XCTAssertEqual(compact.collapsedWrappers, 2)
+        // The survivor absorbs the tappability, or the row reads inert.
+        XCTAssertTrue(compact.items[0].isInteractive, compact.items[0].line())
+        // And the fold is stated, not silent.
+        XCTAssertTrue(Render.compact(snap).contains("2 anonymous layer(s) folded"), Render.compact(snap))
+    }
+
+    /// A payload from an agent that folded nothing — or predates folding — has no
+    /// `collapsedWrappers` key at all, because reticle-core omits defaults.
+    func testCollapsedWrappersDefaultsWhenAbsentFromTheWire() throws {
+        let json = #"{"capturedAtMillis":1,"screen":{"size":{"width":1,"height":1},"density":1},"items":[]}"#
+        let decoded = try ReticleJSON.decode(CompactObservation.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.collapsedWrappers, 0)
+        // ...and it stays absent on the way back out.
+        let out = String(decoding: try ReticleJSON.encodeWire(decoded), as: UTF8.self)
+        XCTAssertFalse(out.contains("collapsedWrappers"), out)
+    }
+
     func testMetadataValueDiscriminator() throws {
         let data = try ReticleJSON.encodeWire(MetadataValue.integer(42))
         let json = String(decoding: data, as: UTF8.self)

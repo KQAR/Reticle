@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **`ui compact` folds anonymous layers into the node they wrap.** UI toolkits build one
+  on-screen row out of several views and only one of them is nameable: measured on an
+  iOS simulator, a `UIPickerView` row is three compact lines — the cell, the label, and
+  the cell's content view — of which two are anonymous rectangles at the same place. A
+  two-column wheel came to 86 lines, 46 of them carrying nothing an agent could act on,
+  and a caller reading that could not tell which of three lines was the row. Now 42.
+  Across every e2e artifact the iOS suite produces the fold removes 23% of compact
+  lines; on the wheel screen it is 52%, on a list screen ~45%. Android is essentially
+  unaffected (0.2% — 2 lines across 32 snapshots, both an `AndroidComposeView` host),
+  which is the expected asymmetry: its view trees are not built this way.
+
+  The rule is deliberately narrow, because a projection that drops the wrong thing is
+  worse than a verbose one. A layer folds only when **all** of these hold: it has no
+  identity of its own (no id, label, text, region, char grid, `scroll:`, `wheel:`, css
+  selector — the only reason it was kept is `isInteractive`); a NAMED node's tap point
+  falls inside it; it **hugs** that node (at least as large, at most 2× its area, so a
+  page-sized container that merely contains a label is not a wrapper of it); the two are
+  related (ancestor, descendant or siblings, so unrelated overlaps never merge); and it
+  is neither a window/application node nor the focused one — window nodes are structure
+  named by the window header, and "this node holds focus" is a precise claim that must
+  not migrate. The survivor **inherits `tappable`**, or a folded row would read inert and
+  be skipped. Nothing leaves the snapshot: every folded node keeps its ref, frame and
+  properties, reachable with `ui node --ref` and visible in `ui tree` — and when anything
+  folded, `compact` says how many, so the token-cheap view never quietly claims to be the
+  whole picture.
+
 - **`--label` no longer refuses a row just because the platform draws it three times.**
   Follow-up to the wheel work, found by reading the iOS wheel scenario's real capture:
   `UIPickerView` renders its magnifier bands as SEPARATE table views, so the row under

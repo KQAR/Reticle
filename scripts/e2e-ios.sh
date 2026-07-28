@@ -348,6 +348,64 @@ bad = [(n.get("ref"), n.get("typeName"), n["frame"]) for n in nodes
 if bad:
     print(f"FAIL: unrepresentable frames reached the wire: {bad[:3]}"); sys.exit(1)
 PY
+# One on-screen row must be ONE compact line. UIKit builds a picker row out of
+# three views (cell, label, cell content view) and only the label can be named;
+# the other two are anonymous rectangles at the same place. Folding them is what
+# keeps this screen readable — measured before the fold: 86 lines for a two-column
+# wheel, 46 of them carrying nothing actionable.
+WHEEL_COMPACT="$("$HOST" --target ios ui compact "$TMP/wheel/snapshot.json")"
+echo "$WHEEL_COMPACT" | grep -q "anonymous layer(s) folded" \
+  || { echo "FAIL: the picker's anonymous layers must be folded and said out loud"; exit 1; }
+# The fold, asserted in terms of its own rule: an anonymous `container`/`view`
+# line is a LEFTOVER WRAPPER when it hugs a labelled line — contains its centre
+# and is at most twice its area. Rendered before the fold this finds 84 of them
+# on this screen; after, none. Two things it must NOT flag: the same value
+# appearing twice at one spot (the picker draws magnifier bands, both are real
+# labels, and `label:coincident` handles tapping them), and the scroll views,
+# which carry `scroll:` and are identity, never folded.
+printf '%s\n' "$WHEEL_COMPACT" > "$TMP/wheel-compact.txt"
+/usr/bin/python3 - "$TMP/wheel-compact.txt" <<'PYFOLD' || exit 1
+import re, sys
+Q = chr(34)
+pattern = re.compile(r"(\S+) (\w+)(?: " + Q + r"(.*?)" + Q + r")? \[(\d+),(\d+) (\d+)x(\d+)\](.*)")
+rows = []
+for line in open(sys.argv[1]).read().splitlines():
+    m = pattern.match(line)
+    if m:
+        rows.append((m.group(1), m.group(2), m.group(3),
+                     tuple(int(g) for g in m.group(4, 5, 6, 7)), m.group(8)))
+
+def area(r):
+    return r[3][2] * r[3][3]
+
+def hugs(outer, inner):
+    ox, oy, ow, oh = outer[3]
+    ix, iy, iw, ih = inner[3]
+    cx, cy = ix + iw / 2, iy + ih / 2
+    inside = ox - 1 <= cx <= ox + ow + 1 and oy - 1 <= cy <= oy + oh + 1
+    return inside and area(inner) <= area(outer) <= 2 * area(inner)
+
+labelled = [r for r in rows if r[2]]
+anon = [r for r in rows if r[1] in ("container", "view") and not r[2]
+        and r[0].startswith("r") and "scroll:" not in r[4]]
+leftovers = [(a, l) for a in anon for l in labelled if hugs(a, l)]
+if leftovers:
+    print("FAIL: %d anonymous layer(s) still wrap a labelled line:" % len(leftovers))
+    for a, l in leftovers[:4]:
+        print("   %s %s %s  wraps  %s %r %s" % (a[0], a[1], a[3], l[0], l[2], l[3]))
+    sys.exit(1)
+if not labelled:
+    print("FAIL: no labelled rows in compact at all")
+    sys.exit(1)
+print("fold verified: %d labelled line(s), no anonymous wrapper left on any" % len(labelled))
+PYFOLD
+# The tappability has to MOVE to the survivor, or a folded row reads inert and an
+# agent skips it. The picker itself is named, so the fold must leave it alone.
+echo "$WHEEL_COMPACT" | grep -E '^r[0-9]+ text "[0-9]+"' | grep -q "tappable" \
+  || { echo "FAIL: a folded picker row must inherit the tappability it absorbed"; exit 1; }
+echo "$WHEEL_COMPACT" | grep -q "#wheel.picker" \
+  || { echo "FAIL: the named picker must survive the fold"; exit 1; }
+
 # Unlike Android, a neighbouring row IS a node here — tapping one selects it, and
 # the app's committed state is the proof. Row 13 is three below the initial 09,
 # inside the ~6 rows a picker renders.

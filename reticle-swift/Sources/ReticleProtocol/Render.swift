@@ -61,8 +61,16 @@ public enum Render {
             ? "window: UNFOCUSED — another window has input focus (a system prompt is not part of "
                 + "this app's tree); taps will not reach these items"
             : nil
+        // Say that the projection folded something, once, at the end — the Kotlin
+        // renderer's twin. The folded layers are anonymous and still in the
+        // snapshot; a token-cheap view must not quietly read as the whole tree.
+        let foldLine: String? = observation.collapsedWrappers > 0
+            ? "(\(observation.collapsedWrappers) anonymous layer(s) folded into the node they wrap "
+                + "— all still in the snapshot, reachable with `ui node --ref`)"
+            : nil
         guard let kb = snapshot.screen.keyboard else {
-            return ((focusLine.map { [$0] } ?? []) + lines).joined(separator: "\n")
+            return ((focusLine.map { [$0] } ?? []) + lines + (foldLine.map { [$0] } ?? []))
+                .joined(separator: "\n")
         }
         let header: String
         if kb.visible {
@@ -74,7 +82,8 @@ public enum Render {
         } else {
             header = "keyboard: hidden"
         }
-        return ((focusLine.map { [$0] } ?? []) + [header] + lines).joined(separator: "\n")
+        return ((focusLine.map { [$0] } ?? []) + [header] + lines + (foldLine.map { [$0] } ?? []))
+            .joined(separator: "\n")
     }
 
     /// Item lines grouped by window, topmost first, when more than one window has

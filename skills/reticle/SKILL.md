@@ -200,6 +200,16 @@ Send the **compact** observation to reason about the screen; query specific refs
 with `ui node` only when you need full properties. Keep the full snapshot on
 disk.
 
+`compact` **folds anonymous layers into the node they wrap**. Toolkits build one
+on-screen row out of several views and only one of them is nameable — an iOS
+`UIPickerView` row is a cell, a label, and the cell's content view, three lines
+with one meaning. A layer folds only when it has no id/label/text/region/scroll/
+wheel of its own, a named node's tap point falls inside it, it *hugs* that node
+(at least as large, at most 2×), and the two are related; the survivor inherits
+`tappable`, so a folded row never reads inert. When anything folded, the last line
+says how many. Nothing leaves the snapshot: every folded node keeps its ref and
+properties, reachable with `ui node --ref rN` and visible in `ui tree`.
+
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
 visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
 alias cache for that package. Repeated vertical controls are annotated as

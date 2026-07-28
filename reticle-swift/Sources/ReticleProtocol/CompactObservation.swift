@@ -6,14 +6,44 @@ public struct CompactObservation: Codable, Sendable {
     public var capturedAtMillis: Int64
     public var screen: ScreenInfo
     public var items: [CompactItem]
+    /// How many anonymous layers were folded into the named items above. Zero on a
+    /// tree that had none; reported so a token-cheap projection never quietly
+    /// claims to be the whole picture.
+    public var collapsedWrappers: Int
 
     /// `CompactItem.occludedBy` value for the system keyboard (IME).
     public static let occluderKeyboard = "keyboard"
 
-    public init(capturedAtMillis: Int64, screen: ScreenInfo, items: [CompactItem]) {
+    // Hand-written coding, for the same reason `CompactItem` has it: reticle-core
+    // omits a field equal to its default, so `collapsedWrappers` is absent from
+    // every payload that folded nothing — and from every payload produced before
+    // folding existed. Synthesised decoding would reject both.
+    private enum CodingKeys: String, CodingKey {
+        case capturedAtMillis, screen, items, collapsedWrappers
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(capturedAtMillis, forKey: .capturedAtMillis)
+        try c.encode(screen, forKey: .screen)
+        try c.encode(items, forKey: .items)
+        if collapsedWrappers != 0 { try c.encode(collapsedWrappers, forKey: .collapsedWrappers) }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        capturedAtMillis = try c.decode(Int64.self, forKey: .capturedAtMillis)
+        screen = try c.decode(ScreenInfo.self, forKey: .screen)
+        items = try c.decode([CompactItem].self, forKey: .items)
+        collapsedWrappers = try c.decodeIfPresent(Int.self, forKey: .collapsedWrappers) ?? 0
+    }
+
+    public init(capturedAtMillis: Int64, screen: ScreenInfo, items: [CompactItem],
+                collapsedWrappers: Int = 0) {
         self.capturedAtMillis = capturedAtMillis
         self.screen = screen
         self.items = items
+        self.collapsedWrappers = collapsedWrappers
     }
 
     /// Build from a snapshot, keeping interactive or labelled *visible* nodes.
@@ -92,12 +122,93 @@ public struct CompactObservation: Codable, Sendable {
             for c in node.children { visit(c, currentWindow) }
         }
         visit(snapshot.rootRef, nil)
+        let folded = collapseWrappers(snapshot, items)
         return CompactObservation(
             capturedAtMillis: snapshot.capturedAtMillis,
             screen: snapshot.screen,
-            items: Array(items.prefix(maxItems))
+            items: Array(folded.items.prefix(maxItems)),
+            collapsedWrappers: folded.collapsed
         )
     }
+}
+
+/// The item list after folding, and how many anonymous layers went into it.
+private struct Folded {
+    let items: [CompactItem]
+    let collapsed: Int
+}
+
+/// How much bigger than the node it wraps a layer may be and still be a wrapper.
+private let wrapperAreaRatio = 2.0
+
+/// Fold anonymous layers into the named node they sit on — the Swift twin of
+/// reticle-core's `collapseWrappers`, which carries the full rationale.
+///
+/// Measured here: a `UIPickerView` row is three compact lines (the cell, the
+/// label, the cell's content view), two of them anonymous rectangles at the same
+/// place — 86 lines for a two-column wheel, 46 carrying nothing actionable. A
+/// layer folds only when it has no identity of its own, a named item's tap point
+/// falls inside it, it HUGS that item (at least as large, at most
+/// `wrapperAreaRatio`x its area), the two are related, and it is neither a
+/// window/application node nor the focused one. The survivor inherits
+/// `isInteractive`, and nothing leaves the snapshot.
+private func collapseWrappers(_ snapshot: Snapshot, _ items: [CompactItem]) -> Folded {
+    func node(_ item: CompactItem) -> Node? { snapshot.nodes[item.ref] }
+    func identified(_ item: CompactItem) -> Bool {
+        guard let n = node(item) else { return true } // unknown node: never fold what we can't inspect
+        return item.testId != nil || item.resourceId != nil || item.label != nil
+            || item.scroll != nil || item.wheel != nil
+            || !n.regions.isEmpty || n.charGrid != nil || n.suspectedMultiRegion
+            || n.custom["domCssSelector"] != nil
+    }
+    func area(_ item: CompactItem) -> Double {
+        guard let f = item.frame else { return 0 }
+        return f.width * f.height
+    }
+    func related(_ a: CompactItem, _ b: CompactItem) -> Bool {
+        guard let na = node(a), let nb = node(b) else { return false }
+        if let pa = na.parentRef, pa == nb.parentRef { return true }
+        func descends(_ from: Node, _ ancestorRef: String) -> Bool {
+            var current = from.parentRef.flatMap { snapshot.nodes[$0] }
+            var seen = Set<String>()
+            while let c = current, seen.insert(c.ref).inserted {
+                if c.ref == ancestorRef { return true }
+                current = c.parentRef.flatMap { snapshot.nodes[$0] }
+            }
+            return false
+        }
+        return descends(na, nb.ref) || descends(nb, na.ref)
+    }
+
+    let named = items.filter { identified($0) && area($0) > 0 }
+    if named.isEmpty { return Folded(items: items, collapsed: 0) }
+    var absorbedInteractive = Set<String>()
+    var dropped = Set<String>()
+    for item in items {
+        guard let n = node(item) else { continue }
+        if n.kind == .window || n.kind == .application { continue }
+        if n.isFocused || identified(item) { continue }
+        guard let frame = item.frame else { continue }
+        let selfArea = area(item)
+        if selfArea <= 0 { continue }
+        let anchor = named.first { other in
+            guard let o = other.frame else { return false }
+            let oa = area(other)
+            return frame.contains(o.centerX, o.centerY) && oa <= selfArea
+                && selfArea <= wrapperAreaRatio * oa && related(item, other)
+        }
+        guard let anchor else { continue }
+        dropped.insert(item.ref)
+        if item.isInteractive { absorbedInteractive.insert(anchor.ref) }
+    }
+    if dropped.isEmpty { return Folded(items: items, collapsed: 0) }
+    let kept = items.filter { !dropped.contains($0.ref) }.map { item -> CompactItem in
+        guard absorbedInteractive.contains(item.ref), !item.isInteractive else { return item }
+        var copy = item
+        copy.isInteractive = true
+        return copy
+    }
+    return Folded(items: kept, collapsed: dropped.count)
 }
 
 public struct CompactItem: Codable, Sendable {
