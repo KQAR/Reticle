@@ -52,7 +52,15 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     }
 
     public func inject(_ request: AppStartRequest) throws -> RuntimeStartResult {
-        try start(request, inject: true)
+        // `--restart-under-debugger` relaxes Android's input-dispatch ANR during a
+        // JDWP suspension. iOS injection is a DYLD insert with no suspended main
+        // thread and no AMS, so there is nothing here for the flag to do. Refuse it
+        // by name rather than accepting it and doing nothing.
+        if request.restartUnderDebugger {
+            throw HelperError("--restart-under-debugger is Android-only: it relaxes the ANR that "
+                + "Android's JDWP suspension can trip. iOS injection is a DYLD insert and suspends nothing.")
+        }
+        return try start(request, inject: true)
     }
 
     public func logcat() throws -> [String] {
@@ -167,7 +175,16 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     }
 
     public func render(_ request: RenderRequest) throws -> RenderResult {
-        let snapshot = try loadSnapshotForRender(request)
+        var snapshot = try loadSnapshotForRender(request)
+        if let window = request.window {
+            guard let scoped = snapshot.scopedToWindow(window) else {
+                let refs = snapshot.windowRefs()
+                throw HelperError("no window '\(window)' in this capture. Windows here (bottom to top): "
+                    + (refs.isEmpty ? "(none — this capture has no window nodes)" : refs.joined(separator: ", "))
+                    + ". Use `--window top` for whichever is on top.")
+            }
+            snapshot = scoped
+        }
         let text = try Render.view(
             request.view,
             snapshot: snapshot,
@@ -333,13 +350,21 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let target = try resolveTarget(params, snapshot: snapshot)
-            var point = target.point
+            let firstPoint = target.point
+            var point = firstPoint
             var stable: Bool? = nil
-            if settleRequested(params) {
-                if params["point"] != nil {
-                    throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
-                        + "so there is no way to tell whether it has stopped moving")
-                }
+            let rawPoint = params["point"] != nil
+            if settleRequested(params), rawPoint {
+                throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
+                    + "so there is no way to tell whether it has stopped moving")
+            }
+            // Confirm the point before dispatching, by DEFAULT for a selector tap —
+            // the Android helper's twin, and for the same measured reason: a rect
+            // resolved before an intervening relayout (a keyboard shown by an earlier
+            // `type`, a scroll) sends the touch to the neighbouring control while the
+            // command reports an unqualified success. `--settle` raises the budget for
+            // a target that is genuinely animating in; `--no-settle` opts out.
+            if !rawPoint, !isTruthy(params["noSettle"]) {
                 let settled = settleTapPoint(pkg, params, first: point)
                 point = settled.point
                 stable = settled.stable
@@ -359,6 +384,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // when the budget lapsed, so this tap may have been aimed at a point that
             // had already changed.
             if let stable { result["settled"] = stable }
+            // The evidence that the first read WAS stale: same selector, same ref,
+            // different coordinates. Without it the confirm silently fixes the tap
+            // and the caller never learns the screen moved under it.
+            let dx = Int(point.x - firstPoint.x), dy = Int(point.y - firstPoint.y)
+            if dx != 0 || dy != 0 { result["rectMoved"] = "\(dx),\(dy)" }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)
@@ -563,7 +593,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     func settleTapPoint(
         _ pkg: String, _ params: [String: Any], first: Point
     ) -> SettledPoint {
-        let budget = Double((params["settleTimeoutMs"] as? Int) ?? 2_000) / 1000.0
+        // Short default budget: on a settled screen the loop returns as soon as one
+        // re-resolve agrees, so this bounds the animating case, not the common one.
+        // An explicit `--settle` means "this IS animating" and gets the full 2s.
+        let fallback = settleRequested(params) ? 2_000 : 800
+        let budget = Double((params["settleTimeoutMs"] as? Int) ?? fallback) / 1000.0
         let deadline = Date().addingTimeInterval(budget)
         var previous = first
         while Date() < deadline {

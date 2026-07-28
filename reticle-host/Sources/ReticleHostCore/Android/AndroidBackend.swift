@@ -57,6 +57,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     private func startParams(_ request: AppStartRequest) -> [String: Any] {
         var params: [String: Any] = ["package": request.package]
         if let payload = request.payload { params["payloadDex"] = payload }
+        if request.restartUnderDebugger { params["restartUnderDebugger"] = true }
         return params
     }
 
@@ -103,6 +104,8 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
         }
         if let depth = request.depth { params["depth"] = depth }
         if let package = request.package { params["package"] = package }
+        if let window = request.window { params["window"] = window }
+        if let window = request.window { params["window"] = window }
         for (key, value) in request.selector.wireParams { params[key] = value }
         let r = try transport.call("render", params)
         return RenderResult(text: r["text"] as? String ?? "")

@@ -227,6 +227,11 @@ struct SnapshotCapture {
             isVisible: effectiveVisible,
             isEnabled: isEnabled(view),
             isInteractive: isInteractive(view),
+            // The UIKit twin of Android's focusableInTouchMode / isFocused: a
+            // first responder is where typed text goes, and `canBecomeFirstResponder`
+            // is the one that distinguishes a tappable wrapper from the field inside it.
+            isFocusable: view.canBecomeFirstResponder,
+            isFocused: view.isFirstResponder,
             custom: custom,
             styleChannels: style.channels,
             styleGaps: style.gaps,

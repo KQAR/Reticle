@@ -64,7 +64,7 @@ internal object HelperDeviceCommands {
         params.str("payloadDex")?.let { System.setProperty("reticle.payloadDex", it) }
         val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
-        val injected = Injector.inject(device, pkg)
+        val injected = Injector.inject(device, pkg, restartUnderDebugger = params.bool("restartUnderDebugger"))
         val info = awaitRuntime(runtimeClientFor(device, pkg, params), pkg)
         return buildJsonObject {
             put("pid", info.pid)
@@ -133,22 +133,43 @@ internal object HelperDeviceCommands {
 
         val result: JsonObject = when (sub) {
             "tap" -> {
-                target = resolveInputTarget(device, pkg, params)
-                // `--settle`: hold the tap until the resolved point stops moving, so
-                // an animating popup/sheet cannot make it land on the neighbour.
+                val first = resolveInputTarget(device, pkg, params)
+                target = first
+                // Confirm the resolved point has stopped moving BEFORE dispatching.
+                //
+                // Resolution and dispatch are two steps, and between them the screen
+                // can move — not only because the target itself is animating in (the
+                // popup case `--settle` was introduced for) but because a PREVIOUS
+                // command relayouted the page: a `type` that showed the keyboard, a
+                // `hide-keyboard` that took it away, a scroll. Measured on a physical
+                // device: a form row tapped by its unique test id resolved to a rect
+                // already 161px stale and opened the sheet belonging to the row below
+                // it, reporting an unqualified success. Nothing in the result said so,
+                // and the trace diff is equally large for the right sheet and the
+                // wrong one.
+                //
+                // So the confirm is now the DEFAULT for selector-based taps rather
+                // than opt-in: it costs one extra tree read against a resolution that
+                // had to happen anyway, and the failure it prevents is silent and
+                // expensive to detect. `--settle` keeps its meaning — give it the full
+                // budget, for a target known to be animating — and `--no-settle` opts
+                // out for a caller who wants the single-read dispatch.
                 var stable: Boolean? = null
-                if (params.bool("settle")) {
-                    if (params.str("point") != null) {
-                        throw CliError(
-                            "--settle needs a selector: a raw --point has nothing to re-resolve, " +
-                                "so there is no way to tell whether it has stopped moving"
-                        )
-                    }
-                    val settled = settleInputTarget(
-                        device, pkg, params,
-                        first = target!!,
-                        budgetMs = (params.intOrNull("settleTimeoutMs") ?: 2_000).toLong(),
+                val rawPoint = params.str("point") != null
+                if (params.bool("settle") && rawPoint) {
+                    throw CliError(
+                        "--settle needs a selector: a raw --point has nothing to re-resolve, " +
+                            "so there is no way to tell whether it has stopped moving"
                     )
+                }
+                val plan = TapSettlePolicy.plan(
+                    rawPoint = rawPoint,
+                    settle = params.bool("settle"),
+                    noSettle = params.bool("noSettle"),
+                    timeoutMs = params.intOrNull("settleTimeoutMs"),
+                )
+                if (plan.confirm) {
+                    val settled = settleInputTarget(device, pkg, params, first = first, budgetMs = plan.budgetMs)
                     target = settled.target
                     stable = settled.stable
                 }
@@ -165,6 +186,11 @@ internal object HelperDeviceCommands {
                     // moving when the budget lapsed, so this tap may have been aimed
                     // at a point that had already changed.
                     stable?.let { put("settled", it) }
+                    // The evidence that the first read WAS stale: the same selector,
+                    // same ref, different coordinates. Without this the confirm would
+                    // silently fix the tap and the caller would never learn that the
+                    // screen it reasoned about had moved under it.
+                    TapSettlePolicy.movedBy(first.point, target!!.point)?.let { put("rectMoved", it) }
                 }
             }
             "swipe", "drag" -> {
@@ -321,10 +347,33 @@ internal object HelperDeviceCommands {
         // focus, so without this a `type --test-id foo` silently typed into the
         // wrong (or no) field. With no target, type into the current focus.
         var focus: ResolvedInputTarget? = null
+        var landing = TypeFocus.Landing.UNKNOWN
+        var retargeted: String? = null
         if (hasInputTarget(params)) {
             focus = resolveInputTarget(device, pkg, params)
             input.tap(focus.point.x.toInt(), focus.point.y.toInt())
             Thread.sleep(FOCUS_SETTLE_MS)
+            // Verify FOCUS, not just dispatch. A tap on a node that cannot take
+            // focus — the outer container of a compound input widget, which is
+            // often the only uniquely-addressable handle — leaves the text going
+            // to whatever held focus before. See [TypeFocus].
+            landing = focusLanding(device, pkg, params, focus.ref)
+            if (!TypeFocus.isLanded(landing)) {
+                // One retarget, and only when it is not a guess: exactly one
+                // focusable text input inside the node the caller named.
+                val candidate = focus.ref?.let { ref ->
+                    liveSnapshot(device, pkg, params)?.let { TypeFocus.soleFocusableInput(it, ref) }
+                }
+                if (candidate?.frame != null) {
+                    input.tap(candidate.frame!!.centerX.toInt(), candidate.frame!!.centerY.toInt())
+                    Thread.sleep(FOCUS_SETTLE_MS)
+                    landing = focusLanding(device, pkg, params, focus.ref)
+                    if (TypeFocus.isLanded(landing)) retargeted = candidate.ref
+                }
+                if (!TypeFocus.isLanded(landing)) {
+                    throw CliError(TypeFocus.refusal(landing, focus, candidate))
+                }
+            }
         }
         val via: String
         if (InputBackend.isAsciiTypeable(text)) {
@@ -343,7 +392,15 @@ internal object HelperDeviceCommands {
         val submit = if (params.bool("submit")) submitAfterType(input, device, pkg, params) else null
         return buildJsonObject {
             put("gesture", "type"); put("chars", text.length); put("via", via)
-            focus?.let { put("focusedVia", it.source); it.ref?.let { r -> put("ref", r) } }
+            focus?.let {
+                put("focusedVia", it.source)
+                it.ref?.let { r -> put("ref", r) }
+                // Where the focus actually went, not merely that a tap was
+                // dispatched. `unknown` means no focus reading was available —
+                // never a claim that it landed.
+                put("focusLanded", TypeFocus.label(landing))
+                retargeted?.let { r -> put("retargetedTo", r) }
+            }
             submit?.let { put("submit", it) }
             keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
         }
@@ -431,6 +488,29 @@ internal object HelperDeviceCommands {
         }
     }
 
+    /**
+     * Read the live tree back and classify where focus went. Best-effort by
+     * design: a runtime that cannot answer yields [TypeFocus.Landing.UNKNOWN], and
+     * typing proceeds — an optional post-condition must not turn a working `type`
+     * into a failure.
+     */
+    private fun focusLanding(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        targetRef: String?,
+    ): TypeFocus.Landing =
+        liveSnapshot(device, pkg, params)
+            ?.let { TypeFocus.classify(it, targetRef) }
+            ?: TypeFocus.Landing.UNKNOWN
+
+    /** A fresh snapshot, or null when the runtime cannot answer for one. */
+    private fun liveSnapshot(device: DeviceController, pkg: String, params: JsonObject): Snapshot? =
+        runCatching {
+            val client = runtimeClientFor(device, pkg, params)
+            if (client.probe() is RuntimeHealth.Healthy) client.snapshot() else null
+        }.getOrNull()
+
     /** Whether the caller supplied any field-targeting selector for `type`. */
     private fun hasInputTarget(params: JsonObject): Boolean =
         SELECTOR_KEYS.any { params.str(it) != null }
@@ -457,4 +537,5 @@ internal object HelperDeviceCommands {
 
     /** Time for a tapped field to take focus before we dispatch text. */
     private const val FOCUS_SETTLE_MS = 200L
+
 }
