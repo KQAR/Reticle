@@ -284,8 +284,10 @@ $CLI act scroll-to --package dev.reticle.sample --test-id list.item40
 $CLI act tap       --package dev.reticle.sample --test-id list.item40
 
 # A target still MOVING is the same problem one step earlier: a rect captured mid
-# animation is stale by the time the touch lands. `tap --settle` re-resolves until
-# the point repeats, then dispatches (position only — see docs/architecture.md).
+# animation is stale by the time the touch lands. Every selector tap re-resolves
+# until the point repeats before dispatching, and says `rectMoved=<dx>,<dy>` when
+# the first read HAD gone stale. `--settle` raises the budget for a target known to
+# be animating in; `--no-settle` opts out (position only — see docs/architecture.md).
 $CLI act tap --package dev.reticle.sample --test-id popup.menuTrigger
 $CLI act tap --package dev.reticle.sample --label "Delete item" --settle
 

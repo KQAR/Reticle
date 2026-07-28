@@ -62,6 +62,7 @@ public struct CompactObservation: Codable, Sendable {
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
                         windowRef: currentWindow,
+                        isFocused: node.isFocused,
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
                         domUnavailable: node.domUnavailable(),
@@ -96,6 +97,9 @@ public struct CompactItem: Codable, Sendable {
     /// carries this only indirectly and is overloaded with the keyboard and
     /// same-window popup cases.
     public var windowRef: String?
+    /// True when this node holds input focus — where typed text will go. At most
+    /// one item in an observation carries it.
+    public var isFocused: Bool
     /// What sits on top of this node's tap point, when anything does: the ref
     /// of a higher z-order window (a dialog/popup covering a background page),
     /// or `CompactObservation.occluderKeyboard` for the system keyboard. A tap
@@ -131,6 +135,7 @@ public struct CompactItem: Codable, Sendable {
         isEnabled: Bool = true,
         isInteractive: Bool = false,
         windowRef: String? = nil,
+        isFocused: Bool = false,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
         domUnavailable: Bool = false,
@@ -147,6 +152,7 @@ public struct CompactItem: Codable, Sendable {
         self.isEnabled = isEnabled
         self.isInteractive = isInteractive
         self.windowRef = windowRef
+        self.isFocused = isFocused
         self.occludedBy = occludedBy
         self.scroll = scroll
         self.domUnavailable = domUnavailable
@@ -166,6 +172,7 @@ public struct CompactItem: Codable, Sendable {
         var state = ""
         if !isEnabled { state += " disabled" }
         if isInteractive { state += " tappable" }
+        if isFocused { state += " focused" }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         if domUnavailable { state += " dom:unavailable" }
@@ -177,7 +184,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case windowRef, occludedBy, scroll
+        case isFocused, windowRef, occludedBy, scroll
         case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -192,6 +199,7 @@ public struct CompactItem: Codable, Sendable {
         if !isEnabled { try c.encode(isEnabled, forKey: .isEnabled) }
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         try c.encodeIfPresent(windowRef, forKey: .windowRef)
+        if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
@@ -211,6 +219,7 @@ public struct CompactItem: Codable, Sendable {
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         windowRef = try c.decodeIfPresent(String.self, forKey: .windowRef)
+        isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false

@@ -23,7 +23,7 @@ public enum ActionTraceParamNames {
         // type
         "text", "submit",
         // tap
-        "settle", "settleTimeoutMs",
+        "settle", "noSettle", "settleTimeoutMs",
         // swipe / drag
         "from", "to", "duration",
         // scroll-to

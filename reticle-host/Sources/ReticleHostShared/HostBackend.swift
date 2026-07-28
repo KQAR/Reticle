@@ -111,9 +111,15 @@ public struct StatusRequest: Sendable {
 public struct AppStartRequest: Sendable {
     public let package: String
     public let payload: String?
-    public init(package: String, payload: String? = nil) {
+    /// `app inject` only: mark the app as being debugged for the injection, so AMS
+    /// relaxes the input-dispatch ANR verdict while JDWP holds the main thread
+    /// suspended. Opt-in because setting the debug app force-stops the target — the
+    /// app is relaunched and the screen it was on is lost.
+    public let restartUnderDebugger: Bool
+    public init(package: String, payload: String? = nil, restartUnderDebugger: Bool = false) {
         self.package = package
         self.payload = payload
+        self.restartUnderDebugger = restartUnderDebugger
     }
 }
 
@@ -186,6 +192,12 @@ public struct ActRequest: @unchecked Sendable {
     public var maxSwipes: String?
     public var submit: Bool = false
     public var settle: Bool = false
+    /// Opt OUT of the pre-dispatch confirm a selector tap now does by default.
+    /// The confirm exists because a rect resolved before an intervening relayout
+    /// sends the touch to the neighbouring control while reporting success; this
+    /// is for a caller who has measured that cost and wants the single-read
+    /// dispatch back.
+    public var noSettle: Bool = false
     public var settleTimeoutMs: Int?
     /// `wait` only. `textContains` is named apart from `text` on the wire so a
     /// batch step can never be read as a `type`.
@@ -225,6 +237,7 @@ public struct ActRequest: @unchecked Sendable {
         if let maxSwipes { out["maxSwipes"] = maxSwipes }
         if submit { out["submit"] = true }
         if settle { out["settle"] = true }
+        if noSettle { out["noSettle"] = true }
         if let settleTimeoutMs { out["settleTimeoutMs"] = settleTimeoutMs }
         if let waitFor { out["for"] = waitFor }
         if waitGone { out["gone"] = true }
@@ -487,6 +500,7 @@ public extension ActRequest {
         request.maxSwipes = string("maxSwipes")
         request.submit = flag("submit")
         request.settle = flag("settle")
+        request.noSettle = flag("noSettle")
         request.settleTimeoutMs = int("settleTimeoutMs")
         request.waitFor = string("for")
         request.waitGone = flag("gone")

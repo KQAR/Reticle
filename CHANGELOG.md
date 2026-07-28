@@ -25,6 +25,71 @@
   indented, because a stacked screen is the common case and shifting them would break
   every `grep '^#selector'` written against this output most of the time rather than
   rarely.
+- **`act type` verifies focus, not just dispatch.** Its contract is "give it a selector
+  and the text lands in THAT field", and the only thing making that true was a tap on
+  the resolved rect. That is not enough for the commonest app-owned compound widget: an
+  outer container carries the stable, unique test id and the real `EditText` is nested
+  inside it with a generic id repeated down the page, so the container is the only
+  handle a selector can name — and tapping it moves no focus. Measured on a physical
+  device: `chars=4 focusedVia=semantic:testId`, exit code 0, and the field stayed empty;
+  the only hint was `0 change(s)` in the trace line, noticed two fields later.
+  `keyboardVisible` cannot stand in for the check either — it was `0` in the WORKING
+  case too, because that device's IME renders no window. So the snapshot now carries
+  `isFocused` and `isFocusable` per node (the TOUCH reading — since API 26
+  `FOCUSABLE_AUTO` reports every clickable container as focusable, which is exactly the
+  false positive here; `canBecomeFirstResponder` / `isFirstResponder` on iOS), `type`
+  reads the tree back after its focusing tap and reports
+  `focusLanded=self|descendant|ancestor|elsewhere|none|unknown`, and `ui compact` marks
+  the focused node ` focused`. `none`/`elsewhere` now **fail** instead of typing into
+  the void or into the wrong field; when the resolved node holds exactly one focusable
+  input, `type` re-aims at it once and says `retargetedTo=<ref>`; with two it refuses
+  rather than guessing. `ancestor` passes — a WebView owns the platform focus while the
+  caret is in a DOM input, and so does an `AndroidComposeView` for a Compose
+  `TextField`. `unknown` (runtime unreachable, older agent) is reported, never enforced.
+  New `scenario.compoundField` in the sample app reproduces the shape, including the
+  ambiguous two-input wrapper that must be refused.
+- **A selector `tap` re-resolves its point before dispatching, by default.** Resolution
+  and dispatch are two steps, and between them the screen can move. `--settle` already
+  covered the target that is *animating in*, but the same staleness comes from a
+  relayout caused by an EARLIER command — and there a caller has no cue to reach for a
+  flag. Measured on a physical device: a `type` shifted the page up 161px, the next
+  `act tap --test-id <rowA>` resolved live to the right ref and the right node, and the
+  touch — aimed at a rect already stale — opened the bottom sheet of the row BELOW it.
+  The command reported plain success both times, and the trace's 101-change diff is
+  identical for the right sheet and the wrong one, so only a screenshot of the sheet
+  title caught it. Now every selector tap confirms the point repeats before dispatching
+  (800ms budget; on a settled screen one agreeing re-resolve ends it) and reports
+  `settled=`; when the re-resolve actually moved the point it adds `rectMoved=<dx>,<dy>`,
+  so the confirm does not *silently* fix a stale rect — the caller reasoned about a
+  screen that had already moved and needs to know. `--settle` now means "this target IS
+  animating" and raises the budget to 2s; `--no-settle` opts out to the single-read
+  dispatch; a raw `--point` never confirms (nothing to re-resolve). Android and the iOS
+  simulator HID path both, since the resolve/dispatch gap is the same on each; iOS
+  real-device `activate` is unaffected because it resolves and dispatches in one
+  in-process step.
+- **`app inject` no longer ANR-kills the app it is injecting into.** The two
+  requirements of injection fight each other on a physical device: the main looper
+  must RUN for the instrumented method to fire (so the injector nudges input), and
+  once it fires JDWP SUSPENDS that thread while the payload dex loads. The queued
+  MotionEvent — including the nudge that fired the breakpoint — goes unconsumed for
+  the whole suspension, and on real hardware that outran Android's 5s input-dispatch
+  timeout: the system killed the process, and Reticle reported a bare `EOFException`
+  that reads like a transient glitch and invites a retry that reproduces it.
+  The failure is now **classified** instead of surfaced raw: pid gone **and** `dumpsys
+  activity exit-info` reporting `reason=6 (ANR)` is reported as the ANR it is, with the
+  input-dispatch description and the mitigation. Both halves of the evidence are
+  required, so a genuine JDWP fault is never misattributed. The mitigation itself —
+  marking the app as being debugged (`am set-debug-app --persistent`), which makes AMS
+  relax the verdict — is available as **`app inject --restart-under-debugger`**, and is
+  opt-in for a measured reason: AMS FORCE-STOPS the app whose debug marking changes
+  (API 36 emulator: `pidof` went from 6356 to nothing), so the flag relaunches the app
+  and injects into the fresh process, losing the screen it was on. Doing that silently
+  on the one command whose selling point is "into the process as it is running now"
+  would be the wrong default — and doing it *without* the relaunch, as an earlier cut
+  of this change did, simply broke injection outright: the e2e caught it handshaking
+  against a pid the guard had just killed. The skill also now says out loud that
+  nudging the app in a loop while injecting is the worst available strategy — Reticle
+  sends its own nudge, and an extra queued touch is exactly what trips the timeout.
 
 - **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
   the one picker shape the sample apps had no coverage for, and it behaves unlike the
