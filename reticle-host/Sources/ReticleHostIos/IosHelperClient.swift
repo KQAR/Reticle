@@ -341,13 +341,21 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let target = try resolveTarget(params, snapshot: snapshot)
-            var point = target.point
+            let firstPoint = target.point
+            var point = firstPoint
             var stable: Bool? = nil
-            if settleRequested(params) {
-                if params["point"] != nil {
-                    throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
-                        + "so there is no way to tell whether it has stopped moving")
-                }
+            let rawPoint = params["point"] != nil
+            if settleRequested(params), rawPoint {
+                throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
+                    + "so there is no way to tell whether it has stopped moving")
+            }
+            // Confirm the point before dispatching, by DEFAULT for a selector tap —
+            // the Android helper's twin, and for the same measured reason: a rect
+            // resolved before an intervening relayout (a keyboard shown by an earlier
+            // `type`, a scroll) sends the touch to the neighbouring control while the
+            // command reports an unqualified success. `--settle` raises the budget for
+            // a target that is genuinely animating in; `--no-settle` opts out.
+            if !rawPoint, !isTruthy(params["noSettle"]) {
                 let settled = settleTapPoint(pkg, params, first: point)
                 point = settled.point
                 stable = settled.stable
@@ -367,6 +375,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // when the budget lapsed, so this tap may have been aimed at a point that
             // had already changed.
             if let stable { result["settled"] = stable }
+            // The evidence that the first read WAS stale: same selector, same ref,
+            // different coordinates. Without it the confirm silently fixes the tap
+            // and the caller never learns the screen moved under it.
+            let dx = Int(point.x - firstPoint.x), dy = Int(point.y - firstPoint.y)
+            if dx != 0 || dy != 0 { result["rectMoved"] = "\(dx),\(dy)" }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)
@@ -571,7 +584,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     func settleTapPoint(
         _ pkg: String, _ params: [String: Any], first: Point
     ) -> SettledPoint {
-        let budget = Double((params["settleTimeoutMs"] as? Int) ?? 2_000) / 1000.0
+        // Short default budget: on a settled screen the loop returns as soon as one
+        // re-resolve agrees, so this bounds the animating case, not the common one.
+        // An explicit `--settle` means "this IS animating" and gets the full 2s.
+        let fallback = settleRequested(params) ? 2_000 : 800
+        let budget = Double((params["settleTimeoutMs"] as? Int) ?? fallback) / 1000.0
         let deadline = Date().addingTimeInterval(budget)
         var previous = first
         while Date() < deadline {
