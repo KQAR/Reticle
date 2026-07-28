@@ -43,6 +43,32 @@ data class Snapshot(
      * resolved differently between two runs. Both sides now walk the tree, so
      * `reticle-protocol/fixtures/selector-resolution.cases.json` gets one answer.
      */
+    /**
+     * Every ref in **document order**: depth-first from the root, then any
+     * unreached ref in sorted order — the ordering [firstNode] resolves in, made
+     * available to whoever needs the whole list rather than the first match.
+     *
+     * Anything that presents or derives from the tree walks this instead of
+     * `nodes.keys`, for the reason spelled out on [firstNode]: a map's order is a
+     * decoding detail, and on the Swift side a `Dictionary`'s is hash-seeded per
+     * process. Two projections ordered by map iteration cannot be pinned by a
+     * shared fixture even when both are otherwise correct.
+     */
+    fun refsInDocumentOrder(): List<String> {
+        val out = ArrayList<String>(nodes.size)
+        val seen = HashSet<String>()
+        fun visit(ref: String) {
+            if (ref in seen) return
+            val node = nodes[ref] ?: return
+            seen += ref
+            out += ref
+            node.children.forEach(::visit)
+        }
+        visit(rootRef)
+        nodes.keys.sorted().forEach(::visit)
+        return out
+    }
+
     fun firstNode(match: (Node) -> Boolean): Node? {
         val seen = HashSet<String>()
         fun visit(ref: String): Node? {

@@ -103,8 +103,14 @@ data class SemanticTree(
                 return out
             }
 
+            // Built in document order, not in `kept` iteration order: a HashSet's
+            // order is a hash detail, and it decided both this map's insertion
+            // order and the synthesized root's child list below — so the semantic
+            // projection listed several top-level nodes in an arbitrary order that
+            // the Swift twin (which walks the tree) did not share.
             val nodes = LinkedHashMap<String, SemanticNode>()
-            for (ref in kept) {
+            for (ref in from.refsInDocumentOrder()) {
+                if (ref !in kept) continue
                 val node = from.nodes[ref] ?: continue
                 nodes[ref] = SemanticNode(
                     ref = ref,

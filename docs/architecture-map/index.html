@@ -270,7 +270,7 @@ tailwind.config = {
       "kind": "kotlin-module",
       "layer": "shared",
       "sub": "pure JVM · no Android",
-      "detail": "Snapshot / semantic / region models, the wire protocol, selectors, WaitVerdict.classify, CharGrid, and the compact/style derivations. One implementation of reticle-protocol; shared by the helper and the in-app Android agent.",
+      "detail": "Snapshot / semantic / region models, the wire protocol, selectors, WaitVerdict.classify, CharGrid, the compact/style derivations, and Render \u2014 the text projections themselves. One implementation of reticle-protocol; shared by the helper and the in-app Android agent.",
       "x": 300, "y": 352, "w": 240, "h": 48
     },
     {
@@ -279,7 +279,7 @@ tailwind.config = {
       "kind": "swift-package",
       "layer": "shared",
       "sub": "the parallel implementation",
-      "detail": "reticle-swift: Codable models with omit-defaults JSON, the SemanticTree / CompactObservation derivations, SelectorResolution, PortMap, and the host-side tree/compact/node renderers. Depended on by BOTH the iOS agent and the Swift host, so the protocol is never re-ported a third time.",
+      "detail": "reticle-swift: Codable models with omit-defaults JSON, the SemanticTree / CompactObservation derivations, SelectorResolution, PortMap, and Render \u2014 the twin of dev.reticle.core.Render. Depended on by BOTH the iOS agent and the Swift host, so the protocol is never re-ported a third time.",
       "x": 760, "y": 258, "w": 240, "h": 48
     },
     {
@@ -288,7 +288,7 @@ tailwind.config = {
       "kind": "contract",
       "layer": "shared",
       "sub": "the anti-drift device",
-      "detail": "Language-neutral JSON cases read by both test suites: selector-resolution.cases.json, wait-classification.cases.json, style-observation.cases.json, action-trace-diff.cases.json. Each exists because the two implementations had already silently drifted — a rule added on one side only ships unpinned.",
+      "detail": "Language-neutral JSON cases read by both test suites: selector-resolution.cases.json, wait-classification.cases.json, style-observation.cases.json, action-trace-diff.cases.json, snapshot-render.cases.json. Each exists because the two implementations had already silently drifted — a rule added on one side only ships unpinned.",
       "x": 555, "y": 352, "w": 190, "h": 48
     },
 
