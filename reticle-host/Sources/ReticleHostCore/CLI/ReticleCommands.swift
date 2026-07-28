@@ -172,6 +172,10 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
+    // `type --type-delay <ms>`: pace the keystrokes for a field that loses them
+    // out of the default single burst. `act type` reads the field back either
+    // way and says what actually landed.
+    request.typeDelayMs = args.option("type-delay").flatMap { Int($0) }
     // A selector tap re-resolves its point before dispatching by default, so a
     // rect made stale by an earlier relayout cannot send the touch to the
     // neighbouring control. `--settle` raises the budget for a target that is

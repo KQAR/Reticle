@@ -215,7 +215,10 @@ thread -> `dom:unavailable`), the popup windows (PopupWindow / Spinner dropdown 
 PopupMenu + `--label`), the wheel picker (a `NumberPicker`'s unselected values are
 canvas paint, not nodes — the one scenario where the two platforms deliberately
 report different amounts, since a `UIPickerView`'s rows ARE nodes),
-the long list (recycling boundary + scroll evidence), the
+the long list (recycling boundary + scroll evidence), the reformatting input
+fields (`type` reads the field back: `textLanded=reformatted` for an app's own
+formatting, a partial burst detected and re-sent over the clipboard, and
+`--type-delay`'s paced path), the
 Compose semantics screen, the canvas control
 (virtual a11y sub-nodes under both id conventions + a touch-delegate rect),
 WebView DOM, same-origin iframe geometry (chained selector + a coordinate tap into

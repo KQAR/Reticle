@@ -66,7 +66,7 @@ data class ActionTrace(
 object ActionTraceParams {
     val RECORDED: List<String> = listOf(
         // type
-        "text", "submit",
+        "text", "submit", "typeDelayMs",
         // tap
         "settle", "noSettle", "settleTimeoutMs",
         // swipe / drag
