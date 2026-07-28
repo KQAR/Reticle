@@ -1,14 +1,5 @@
-package dev.reticle.cli
+package dev.reticle.core
 
-import dev.reticle.core.MetadataValue
-import dev.reticle.core.Node
-import dev.reticle.core.NodeKind
-import dev.reticle.core.Rect
-import dev.reticle.core.ScreenInfo
-import dev.reticle.core.Selector
-import dev.reticle.core.SemanticTree
-import dev.reticle.core.Size
-import dev.reticle.core.Snapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

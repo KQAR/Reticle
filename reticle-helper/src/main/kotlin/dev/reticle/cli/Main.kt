@@ -60,13 +60,8 @@ private fun printUsage() {
 /** A user-actionable error with a clean message (no stack trace). */
 open class CliError(message: String) : RuntimeException(message)
 
-/**
- * A `--region` needle matched no discovered region, no region source and no
- * char-grid substring inside the node the selector found.
- *
- * A [CliError] subclass so the RPC layer reports it like any other refusal, but a
- * distinct type because a poll loop must tell it apart from an ambiguous label:
- * an ambiguity makes the answer *unknowable*, while a phrase that is not on
- * screen yet is an honest negative a `wait` should keep waiting on.
- */
-class RegionMissError(message: String) : CliError(message)
+// The selector-resolution refusals (an ambiguous `--label`, a `--region` needle that
+// matched nothing) used to be CliError subclasses declared here. They moved to
+// `dev.reticle.core` with the resolver itself: the RPC layer reports any throwable by
+// message, so nothing is lost, and the refusal now travels with the rule that raises
+// it. See SelectorResolutionException in reticle-core.

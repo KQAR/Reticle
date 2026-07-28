@@ -2,9 +2,10 @@ package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
 import dev.reticle.core.Node
-import dev.reticle.core.PortMap
 import dev.reticle.core.Point
+import dev.reticle.core.PortMap
 import dev.reticle.core.RuntimeInfo
+import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
 import kotlinx.serialization.json.JsonObject
 
