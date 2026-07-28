@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **`act type` verifies focus, not just dispatch.** Its contract is "give it a selector
+  and the text lands in THAT field", and the only thing making that true was a tap on
+  the resolved rect. That is not enough for the commonest app-owned compound widget: an
+  outer container carries the stable, unique test id and the real `EditText` is nested
+  inside it with a generic id repeated down the page, so the container is the only
+  handle a selector can name — and tapping it moves no focus. Measured on a physical
+  device: `chars=4 focusedVia=semantic:testId`, exit code 0, and the field stayed empty;
+  the only hint was `0 change(s)` in the trace line, noticed two fields later.
+  `keyboardVisible` cannot stand in for the check either — it was `0` in the WORKING
+  case too, because that device's IME renders no window. So the snapshot now carries
+  `isFocused` and `isFocusable` per node (the TOUCH reading — since API 26
+  `FOCUSABLE_AUTO` reports every clickable container as focusable, which is exactly the
+  false positive here; `canBecomeFirstResponder` / `isFirstResponder` on iOS), `type`
+  reads the tree back after its focusing tap and reports
+  `focusLanded=self|descendant|ancestor|elsewhere|none|unknown`, and `ui compact` marks
+  the focused node ` focused`. `none`/`elsewhere` now **fail** instead of typing into
+  the void or into the wrong field; when the resolved node holds exactly one focusable
+  input, `type` re-aims at it once and says `retargetedTo=<ref>`; with two it refuses
+  rather than guessing. `ancestor` passes — a WebView owns the platform focus while the
+  caret is in a DOM input, and so does an `AndroidComposeView` for a Compose
+  `TextField`. `unknown` (runtime unreachable, older agent) is reported, never enforced.
+  New `scenario.compoundField` in the sample app reproduces the shape, including the
+  ambiguous two-input wrapper that must be refused.
 - **A selector `tap` re-resolves its point before dispatching, by default.** Resolution
   and dispatch are two steps, and between them the screen can move. `--settle` already
   covered the target that is *animating in*, but the same staleness comes from a
