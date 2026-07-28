@@ -13,6 +13,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class OutlineRendererTest {
     @Test
@@ -42,6 +43,15 @@ class OutlineRendererTest {
         assertEquals(listOf("form.a", "form.b", "host.a", "host.b"), entries.map { it.ref })
         assertEquals("@1", entries.first { it.ref == "form.a" }.alias)
         assertEquals("w2", entries.first { it.ref == "form.a" }.windowRef)
+        // Item lines keep their exact shape: a header is a line a consumer can skip,
+        // but indenting the items would break every `grep '^@N'` / `grep '^#id'`
+        // written against this output — and a stacked screen is the common case, so
+        // that would break them most of the time. (It broke this repo's own e2e on
+        // the first live run.)
+        assertTrue(
+            lines.any { it.startsWith("@1 #firstName ") },
+            "grouped item lines must not be indented: $text",
+        )
     }
 
     @Test

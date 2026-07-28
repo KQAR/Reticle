@@ -91,12 +91,12 @@ public enum Render {
             let items = observation.items.filter { $0.windowRef == ref }
             if items.isEmpty { continue }
             out.append(windowHeader(snapshot.nodes[ref], ref: ref, top: ref == top))
-            out.append(contentsOf: items.map { "  " + $0.line() })
+            out.append(contentsOf: items.map { $0.line() })
         }
         let loose = observation.items.filter { $0.windowRef == nil }
         if !loose.isEmpty {
             out.append("window: (none) — nodes captured outside any window")
-            out.append(contentsOf: loose.map { "  " + $0.line() })
+            out.append(contentsOf: loose.map { $0.line() })
         }
         return out
     }

@@ -20,7 +20,11 @@
   (`Snapshot.scopedToWindow`), so `tree`, `compact`, `outline`, `style` and the `@N`
   alias numbering all scope together and no renderer has to learn about windows. Outline
   numbering also now starts in the top window, so `@1` is a node you might actually act
-  on. A single-window screen is byte-identical to before.
+  on. A single-window screen is byte-identical to before — and so is every ITEM line on a
+  stacked one: the headers are new lines a consumer can skip, but the items are not
+  indented, because a stacked screen is the common case and shifting them would break
+  every `grep '^#selector'` written against this output most of the time rather than
+  rarely.
 
 - **Wheel-picker scenario, on both platforms — and the crash it found.** A wheel is
   the one picker shape the sample apps had no coverage for, and it behaves unlike the
