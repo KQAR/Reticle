@@ -449,6 +449,32 @@ one** focusable input, `type` re-aims at it once and reports `retargetedTo=<ref>
 with two it refuses rather than guessing which field you meant. `ui compact` marks
 the focused node ` focused`, and `ui node` carries `isFocusable` per node.
 
+**`type` also reads the TEXT back (Android).** `chars=N` counts what was *sent*.
+A field that reformats its value on every change (and re-renders something bound
+to it) can lose characters out of the `adb input text` burst: measured,
+`--text "10000"` reported `chars=5` into a field that ended up holding `100`,
+while the field beside it took all five. So the result also carries `textLanded=`
+and the field's actual `text=`:
+
+- `exact` — the typed text is in the field, verbatim;
+- `reformatted` — everything you sent is there plus the app's own formatting
+  (`10000` → `10,000`). Not a loss;
+- `partial` — a proper prefix landed; `landedChars=N` says how much;
+- `none` — the field did not change at all;
+- `changed` — the text changed into something not derivable from what was sent
+  (uppercasing, masking, a `maxLength` rewrite). The app transforming its own
+  input is not a defect and Reticle does not call it one — read `text=` and judge;
+- `unreadable` — no read-back was possible; `textReadback=unavailable:<reason>`
+  names why (no text channel on the field, runtime unreachable, field gone).
+  **Never** a claim that it landed.
+
+On `partial` / `none` — and only when the field was empty to begin with — `type`
+clears it and re-sends the text over the clipboard, which the app sees as one
+change rather than a run of keystrokes, then re-reads. It says so in `recovery=`;
+it never retries silently, and it never retries a `changed` (that would be
+fighting the app). `--type-delay <ms>` sends one character at a time with that
+gap if you would rather avoid the burst than recover from it.
+
 Add `--submit` to press the keyboard's action key after the text lands —
 Android performs the focused field's IME editor action in-process (Done / Next
 / Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens

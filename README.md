@@ -513,8 +513,8 @@ Short deterministic flows can be sequenced from a JSON file. The Swift host
 expands each step into the same single-action helper RPC, stopping on the first
 failure. Step keys are the protocol field names, so every selector a single
 `act` takes works here too — `testId`, `resourceId`, `css`, `ref`, `point`,
-`alias`, `region` — plus `text`/`submit` for type and `from`/`to`/`duration`
-for swipe and drag:
+`alias`, `region` — plus `text`/`submit`/`typeDelayMs` for type and
+`from`/`to`/`duration` for swipe and drag:
 
 ```json
 [

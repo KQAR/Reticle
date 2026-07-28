@@ -21,7 +21,7 @@ import Foundation
 public enum ActionTraceParamNames {
     public static let recorded: [String] = [
         // type
-        "text", "submit",
+        "text", "submit", "typeDelayMs",
         // tap
         "settle", "noSettle", "settleTimeoutMs",
         // swipe / drag
