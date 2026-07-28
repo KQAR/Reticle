@@ -86,6 +86,11 @@ jobs:
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
 
+      # The iOS half of the same gate: the agent is consumed from source by
+      # apps, so a tag that cannot compile it ships a broken integration path.
+      - name: "Gate: in-process iOS agent builds (simulator SDK)"
+        run: scripts/build-ios-agent.sh
+
       - name: Build agent AAR + payload dex
         run: ./gradlew :reticle-agent:android:assembleRelease :reticle-agent:android:dexPayload --stacktrace
 
