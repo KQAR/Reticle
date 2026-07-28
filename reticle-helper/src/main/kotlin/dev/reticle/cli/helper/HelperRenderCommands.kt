@@ -1,11 +1,10 @@
 package dev.reticle.cli
 
 import dev.reticle.cli.platform.android.Adb
-import dev.reticle.core.CompactObservation
+import dev.reticle.core.Render
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
-import dev.reticle.core.StyleObservation
 import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -64,51 +63,22 @@ internal object HelperRenderCommands {
         return ReticleJson.instance.decodeFromString(Snapshot.serializer(), file.readText())
     }
 
+    /**
+     * Every projection except `outline` and `node` is rendered by
+     * [dev.reticle.core.Render], the twin of `Render` in ReticleProtocol — so the
+     * Android helper and the iOS host cannot format one snapshot two ways.
+     * `outline` is the Android-only `@N` alias cache, and `node` needs the
+     * selector diagnostics that only the helper has.
+     */
     private fun renderView(view: String, snapshot: Snapshot, params: JsonObject): String = when (view) {
-        "tree" -> renderViewTree(snapshot, params.intOrNull("depth") ?: Int.MAX_VALUE)
-        "semantics" -> renderSemanticTree(SemanticTree.build(snapshot), params.intOrNull("depth") ?: Int.MAX_VALUE)
-        "compact" -> renderCompact(snapshot)
+        "tree" -> Render.tree(snapshot, params.intOrNull("depth") ?: Int.MAX_VALUE)
+        "semantics" -> Render.semantics(SemanticTree.build(snapshot), params.intOrNull("depth") ?: Int.MAX_VALUE)
+        "compact" -> Render.compact(snapshot)
         "outline" -> OutlineRenderer.render(snapshot).first
         "node" -> renderNode(snapshot, params)
-        "regions" -> renderRegions(snapshot)
-        "style" -> renderStyle(snapshot)
+        "regions" -> Render.regions(snapshot)
+        "style" -> Render.style(snapshot)
         else -> throw CliError("unknown render view '$view'")
-    }
-
-    private fun renderCompact(snapshot: Snapshot): String {
-        val compact = CompactObservation.from(snapshot)
-        val lines = WindowGrouping.lines(snapshot, compact)
-        // Lead with the IME state when it was probed: the keyboard is invisible
-        // to the node walk, so without this line an agent has no way to know
-        // that "tappable" items near the bottom would actually hit the keys.
-        // Focus loss outranks the keyboard line: when another process's window has
-        // focus (a permission prompt, a biometric sheet) NOTHING in this tree is
-        // tappable, however tappable it looks.
-        val focusLine = if (snapshot.screen.windowFocused == false) {
-            "window: UNFOCUSED — another window has input focus (a system prompt is not part of " +
-                "this app's tree); taps will not reach these items"
-        } else {
-            null
-        }
-        // Say that the projection folded something, once, at the end: the folded
-        // layers are anonymous and still in the snapshot, but a token-cheap view
-        // must not quietly read as the whole tree.
-        val foldLine = compact.collapsedWrappers.takeIf { it > 0 }?.let {
-            "($it anonymous layer(s) folded into the node they wrap — all still in the " +
-                "snapshot, reachable with `ui node --ref`)"
-        }
-        val kb = snapshot.screen.keyboard
-            ?: return (listOfNotNull(focusLine) + lines + listOfNotNull(foldLine)).joinToString("\n")
-        val header = if (kb.visible) {
-            val where = kb.frame?.let { " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]" } ?: ""
-            val covered = compact.items.count { it.occludedBy == CompactObservation.OCCLUDER_KEYBOARD }
-            "keyboard: visible$where" +
-                (if (covered > 0) " — $covered item(s) occluded" else "") +
-                " (dismiss with `act hide-keyboard`)"
-        } else {
-            "keyboard: hidden"
-        }
-        return (listOfNotNull(focusLine) + listOf(header) + lines + listOfNotNull(foldLine)).joinToString("\n")
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {
@@ -117,63 +87,4 @@ internal object HelperRenderCommands {
         return ReticleJson.instance.encodeToString(dev.reticle.core.Node.serializer(), node)
     }
 
-    private fun renderViewTree(snapshot: Snapshot, maxDepth: Int): String = buildString {
-        fun walk(ref: String, depth: Int) {
-            if (depth > maxDepth) return
-            val node = snapshot.nodes[ref] ?: return
-            val sel = node.testId?.let { "#$it" } ?: node.resourceId?.let { "@$it" } ?: node.ref
-            val label = node.text ?: node.contentDescription
-            append("  ".repeat(depth)).append("$sel ${node.role ?: node.typeName}${label?.let { " \"${it.take(30)}\"" } ?: ""}").append("\n")
-            node.children.forEach { walk(it, depth + 1) }
-        }
-        walk(snapshot.rootRef, 0)
-    }.trimEnd()
-
-    private fun renderSemanticTree(tree: SemanticTree, maxDepth: Int): String = buildString {
-        fun walk(ref: String, depth: Int) {
-            if (depth > maxDepth) return
-            val node = tree.nodes[ref] ?: return
-            val sel = node.testId?.let { "#$it" } ?: node.resourceId?.let { "@$it" } ?: node.ref
-            append("  ".repeat(depth)).append("$sel ${node.role}${node.label?.let { " \"${it.take(30)}\"" } ?: ""}").append("\n")
-            node.children.forEach { walk(it, depth + 1) }
-        }
-        val roots = tree.nodes.values
-            .filter { it.parentRef == null || !tree.nodes.containsKey(it.parentRef) }
-            .map { it.ref }
-        if (roots.isEmpty()) append("(no semantic nodes)") else roots.forEach { walk(it, 0) }
-    }.trimEnd()
-
-    /**
-     * Geometry + style + provenance for every node that has any, in units a
-     * consumer can compare.
-     *
-     * Deliberately NOT a comparison: what the values ought to be, what tolerance
-     * counts and which regions are exempt are the caller's policy, not an
-     * observation. Kept identical to `Render.style` in ReticleProtocol.
-     */
-    private fun renderStyle(snapshot: Snapshot): String =
-        StyleObservation.from(snapshot).render()
-
-    private fun renderRegions(snapshot: Snapshot): String = buildString {
-        var any = false
-        for (node in snapshot.nodes.values) {
-            if (node.regions.isEmpty() && !node.suspectedMultiRegion) continue
-            any = true
-            val sel = node.testId?.let { "#$it" } ?: node.resourceId?.let { "@$it" } ?: node.ref
-            append("$sel ${node.role ?: node.typeName}${node.text?.let { " \"${it.take(40)}\"" } ?: ""}").append("\n")
-            if (node.suspectedMultiRegion) {
-                append("    ! suspectedMultiRegion: self-drawn control\n")
-                node.charGrid?.let { g ->
-                    append("    charGrid: ${g.lines.size} line(s)${if (g.approximate) " (approximate)" else ""}\n")
-                }
-            }
-            for (r in node.regions) {
-                val rect = r.rects.firstOrNull()
-                val where = rect?.let { "[${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]" }
-                    ?: "(no rect)"
-                append("    - ${r.source} \"${r.label?.take(40) ?: ""}\"${r.target?.let { " -> $it" } ?: ""}${r.color?.let { " color=$it" } ?: ""} $where\n")
-            }
-        }
-        if (!any) append("(no multi-region nodes found)")
-    }.trimEnd()
 }

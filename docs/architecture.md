@@ -416,7 +416,7 @@ can describe different frames:
                                                                          mutate · act (fallback)
 ```
 
-Two rules hold this together. **Refs are shared**: a `ref` from any projection
+Three rules hold this together. **Refs are shared**: a `ref` from any projection
 re-resolves to the same node — and on Android to the same live `View`, since
 `viewByRef` replays the identical walk with the identical numbering. So a style
 finding can be tapped, and a tapped node can be inspected, without a second
@@ -426,6 +426,18 @@ different binaries. Twins are pinned by shared fixtures under
 `reticle-protocol/fixtures/`, which is the only thing stopping them from slowly
 answering differently; `CompactObservation` drifted that way before the fixtures
 existed.
+
+And **the rendering is part of the projection, not part of the host.** A shared
+derivation whose text formatting lives in each host separately has only half a
+contract — the two can agree on every field and still print one screen two ways,
+which is precisely how `compact` drifted. So `Render` (`compact` / `tree` /
+`semantics` / `regions`) sits in `reticle-core` and in `ReticleProtocol` beside the
+derivations, both pinned by
+`reticle-protocol/fixtures/snapshot-render.cases.json`; the hosts only call it. What
+stays host-side is what genuinely is: fetching or loading the snapshot, window
+scoping, `ui node` (which renders through selector diagnostics), and the Android-only
+`@N` alias cache — the one projection with no Swift twin, and named as such in
+`Render.swift` rather than left to be discovered.
 
 Reticle maintains **two separate trees** from a single capture. Confusing them
 is the most common mistake when reading the output, so this is explicit:
@@ -854,8 +866,8 @@ Which box in the [first diagram](#the-shape-of-the-system) each module is:
 
 | Module | Kind | Contents |
 | --- | --- | --- |
-| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol (one implementation of `reticle-protocol`) |
-| `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, and the host-side tree/compact/node renderers. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
+| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol + the text projections (`Render`, `StyleObservation.render`) — one implementation of `reticle-protocol` |
+| `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, and `Render` — the twin of `dev.reticle.core.Render`, so the tree/compact/semantics/regions text is formatted from the protocol module on both platforms rather than once per host. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
 | `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
