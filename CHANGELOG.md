@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **A wheel column no longer reads as a decorative empty view.** A wheel paints its
+  candidate values onto its own canvas, so an Android `NumberPicker` publishes only its
+  selection and a third-party self-drawn wheel (`WheelView` / `LoopView` / `PickerView`
+  — what most date and region pickers actually use) publishes nothing at all: no items,
+  no selected value, no `scroll:` travel, no regions. Three rectangles. That silence is
+  the bug — it is indistinguishable from an empty view, so a caller has no cue to switch
+  tactics and ends up reverse-engineering the row pitch from screenshots: four
+  screenshot round-trips and a hand-derived pixel constant for what is semantically
+  "select 1995". Nodes now carry `suspectedWheel` (a hint from the widget FAMILY, like
+  `suspectedMultiRegion` — the only thing knowable from outside a canvas), and `ui
+  compact` renders it as `wheel:opaque` or `wheel:selection-only`. The two are kept
+  apart deliberately: collapsing them would understate what a `NumberPicker` offers and
+  overstate what a self-drawn wheel does. `DatePicker`/`TimePicker` are deliberately NOT
+  matched — in calendar/clock mode they materialise real tappable nodes, and marking
+  those "unreachable" would be a wrong claim in the other direction — and neither are
+  text views: a `NumberPicker`'s value field is `NumberPicker$CustomEditText`, so a name
+  match alone marked the one node whose value IS readable as `wheel:opaque`, right under
+  its parent's honest `wheel:selection-only` (caught on an emulator, now asserted). The sample's
+  wheel-picker scenario gains a genuinely self-drawn third column so the `opaque` case
+  has a fixture, and the skill now states the recipe the marker implies (swipe along the
+  column, verify against the app's own committed state, never `type`).
+
+  **Not shipped, and why:** an `act pick --value 1995` primitive. It cannot verify what
+  it did — for an opaque wheel there is no value to read back, and `scroll-to`'s
+  contract is precisely that it converges on a selector that resolves. A "pick" that
+  dispatches swipes and reports success without evidence is the exact failure shape this
+  project exists to avoid, so the marker plus the documented recipe is what is honest
+  today.
 - **Stacked screens read as two screens now, not one shuffled list.** A capture holds
   every live window of the process, and on Android a form pushed over a still-alive
   host page is the common case rather than the exception. `ui compact` and `ui outline`
