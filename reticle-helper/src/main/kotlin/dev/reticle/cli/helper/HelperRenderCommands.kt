@@ -90,8 +90,15 @@ internal object HelperRenderCommands {
         } else {
             null
         }
+        // Say that the projection folded something, once, at the end: the folded
+        // layers are anonymous and still in the snapshot, but a token-cheap view
+        // must not quietly read as the whole tree.
+        val foldLine = compact.collapsedWrappers.takeIf { it > 0 }?.let {
+            "($it anonymous layer(s) folded into the node they wrap — all still in the " +
+                "snapshot, reachable with `ui node --ref`)"
+        }
         val kb = snapshot.screen.keyboard
-            ?: return (listOfNotNull(focusLine) + lines).joinToString("\n")
+            ?: return (listOfNotNull(focusLine) + lines + listOfNotNull(foldLine)).joinToString("\n")
         val header = if (kb.visible) {
             val where = kb.frame?.let { " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]" } ?: ""
             val covered = compact.items.count { it.occludedBy == CompactObservation.OCCLUDER_KEYBOARD }
@@ -101,7 +108,7 @@ internal object HelperRenderCommands {
         } else {
             "keyboard: hidden"
         }
-        return (listOfNotNull(focusLine) + listOf(header) + lines).joinToString("\n")
+        return (listOfNotNull(focusLine) + listOf(header) + lines + listOfNotNull(foldLine)).joinToString("\n")
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {

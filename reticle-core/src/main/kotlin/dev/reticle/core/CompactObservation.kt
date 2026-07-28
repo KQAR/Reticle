@@ -14,6 +14,13 @@ data class CompactObservation(
     val capturedAtMillis: Long,
     val screen: ScreenInfo,
     val items: List<CompactItem>,
+    /**
+     * How many anonymous layers were folded into the named items above (see the
+     * fold rule in this file). Zero on a tree that had none. Reported so a
+     * token-cheap projection never quietly claims to be the whole picture — the
+     * folded nodes are all still in the snapshot, addressable by ref.
+     */
+    val collapsedWrappers: Int = 0,
 ) {
     companion object {
         /** [CompactItem.occludedBy] value for the system keyboard (IME). */
@@ -103,14 +110,109 @@ data class CompactObservation(
                 node.children.forEach { visit(it, currentWindow) }
             }
             visit(snapshot.rootRef, null)
+            val folded = collapseWrappers(snapshot, items)
             return CompactObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
                 screen = snapshot.screen,
-                items = items.take(maxItems),
+                items = folded.items.take(maxItems),
+                collapsedWrappers = folded.collapsed,
             )
         }
     }
 }
+
+/** The item list after folding, and how many anonymous layers went into it. */
+private data class Folded(val items: List<CompactItem>, val collapsed: Int)
+
+/**
+ * Fold anonymous layers into the named node they sit on.
+ *
+ * UI toolkits build one on-screen row out of several views, and only one of them
+ * is nameable. Measured on an iOS simulator, a `UIPickerView` row is three compact
+ * lines — the cell, the label, and the cell's content view — of which two are
+ * anonymous rectangles at the same place: 86 lines for a two-column wheel, 46 of
+ * them carrying nothing an agent can act on. A caller reading that cannot tell
+ * which of three lines is the row.
+ *
+ * A layer is folded when ALL of these hold, which is what makes it safe:
+ *
+ *  - it has no identity of its own — no id, label, text, region, char grid,
+ *    scroll or wheel marker. The only reason it was kept is `isInteractive`;
+ *  - a NAMED item's tap point falls inside it, so a tap aimed at the survivor
+ *    still lands within this layer and still reaches whatever handler it carries;
+ *  - it HUGS that item: at least as large, and no more than [WRAPPER_AREA_RATIO]×
+ *    its area. A page-sized container that merely happens to contain a label is
+ *    not a wrapper of it;
+ *  - the two are related (ancestor, descendant, or siblings), so unrelated things
+ *    that happen to overlap are never merged;
+ *  - it is not a window or the application root — those are structure, named by
+ *    the window header, and folding them on some screens but not others would be
+ *    worse than either choice — and it does not hold input focus, which is a
+ *    precise claim about one node that must not migrate.
+ *
+ * The survivor INHERITS `isInteractive`: the tappability was real and belonged to
+ * that point on screen, and dropping it would turn a tappable row into a line that
+ * reads inert. Nothing is lost from the snapshot — every folded node keeps its ref,
+ * its frame and its properties there, reachable with `ui node --ref` — and the
+ * count travels on the observation so the renderer can say the fold happened.
+ */
+private fun collapseWrappers(snapshot: Snapshot, items: List<CompactItem>): Folded {
+    fun node(item: CompactItem) = snapshot.nodes[item.ref]
+    fun identified(item: CompactItem): Boolean {
+        val n = node(item) ?: return true // unknown node: never fold what we can't inspect
+        return item.testId != null || item.resourceId != null || item.label != null ||
+            item.scroll != null || item.wheel != null ||
+            n.regions.isNotEmpty() || n.charGrid != null || n.suspectedMultiRegion ||
+            // A DOM node's css selector is its handle, same as a testId. Read the
+            // raw property here: the typed accessor lives in the helper.
+            n.custom["domCssSelector"] != null
+    }
+    fun area(item: CompactItem): Double = item.frame?.let { it.width * it.height } ?: 0.0
+    fun related(a: CompactItem, b: CompactItem): Boolean {
+        val na = node(a) ?: return false
+        val nb = node(b) ?: return false
+        if (na.parentRef != null && na.parentRef == nb.parentRef) return true
+        fun descends(from: Node, ancestorRef: String): Boolean {
+            var current = from.parentRef?.let { snapshot.nodes[it] }
+            val seen = HashSet<String>()
+            while (current != null && seen.add(current.ref)) {
+                if (current.ref == ancestorRef) return true
+                current = current.parentRef?.let { snapshot.nodes[it] }
+            }
+            return false
+        }
+        return descends(na, nb.ref) || descends(nb, na.ref)
+    }
+
+    val named = items.filter { identified(it) && area(it) > 0.0 }
+    if (named.isEmpty()) return Folded(items, 0)
+    val absorbedInteractive = HashSet<String>()
+    val dropped = HashSet<String>()
+    for (item in items) {
+        val n = node(item) ?: continue
+        if (n.kind == NodeKind.window || n.kind == NodeKind.application) continue
+        if (n.isFocused || identified(item)) continue
+        val frame = item.frame ?: continue
+        val self = area(item)
+        if (self <= 0.0) continue
+        val anchor = named.firstOrNull { other ->
+            val o = other.frame ?: return@firstOrNull false
+            val oa = area(other)
+            frame.contains(o.centerX, o.centerY) && oa <= self && self <= WRAPPER_AREA_RATIO * oa &&
+                related(item, other)
+        } ?: continue
+        dropped.add(item.ref)
+        if (item.isInteractive) absorbedInteractive.add(anchor.ref)
+    }
+    if (dropped.isEmpty()) return Folded(items, 0)
+    val kept = items.filterNot { it.ref in dropped }.map { item ->
+        if (item.ref in absorbedInteractive && !item.isInteractive) item.copy(isInteractive = true) else item
+    }
+    return Folded(kept, dropped.size)
+}
+
+/** How much bigger than the node it wraps a layer may be and still be a wrapper. */
+private const val WRAPPER_AREA_RATIO = 2.0
 
 @Serializable
 data class CompactItem(
