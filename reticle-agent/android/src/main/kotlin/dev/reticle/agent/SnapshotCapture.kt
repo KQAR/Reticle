@@ -346,9 +346,18 @@ class SnapshotCapture(private val context: Context) {
      * those materialise real, tappable day and hour nodes, and marking them
      * "unreachable values" would be a wrong claim in the opposite direction. The
      * wheel-mode ones contain a `NumberPicker`, which this catches on its own.
+     *
+     * And deliberately excluding TEXT views, measured on an API 36 emulator: a
+     * `NumberPicker`'s own value field is `android.widget.NumberPicker$CustomEditText`,
+     * so a name match alone marked the one node on the whole screen whose value IS
+     * readable as `wheel:opaque` — the precise opposite of the truth, sitting right
+     * under its parent's honest `wheel:selection-only`. A wheel is a COLUMN; the text
+     * inside one is its selection.
      */
-    private fun suspectedWheel(view: View): Boolean =
-        view is android.widget.NumberPicker || WHEEL_CLASS_NAME.containsMatchIn(view.javaClass.name)
+    private fun suspectedWheel(view: View): Boolean {
+        if (view is TextView) return false
+        return view is android.widget.NumberPicker || WHEEL_CLASS_NAME.containsMatchIn(view.javaClass.name)
+    }
 
     private fun roleFor(view: View): String = when (view) {
         is android.widget.Button -> "button"
