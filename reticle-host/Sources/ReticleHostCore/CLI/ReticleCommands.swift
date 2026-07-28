@@ -172,10 +172,12 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
-    // `tap --settle`: re-resolve the selector until its point stops moving before
-    // dispatching, so a still-animating popup cannot make the touch land on its
-    // neighbour. Opt-in, because it costs a poll loop on every tap.
+    // A selector tap re-resolves its point before dispatching by default, so a
+    // rect made stale by an earlier relayout cannot send the touch to the
+    // neighbouring control. `--settle` raises the budget for a target that is
+    // genuinely animating in; `--no-settle` opts out of the confirm entirely.
     request.settle = args.flag("settle")
+    request.noSettle = args.flag("no-settle")
     request.settleTimeoutMs = args.option("settle-timeout").map { Int($0) ?? 2000 }
     request.verify = args.option("verify")
     request.verifyTimeoutMs = args.option("verify-timeout").map { Int($0) ?? 2000 }

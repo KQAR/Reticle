@@ -313,7 +313,8 @@ reticle act swipe --package <pkg> --from 540,1600 --to 540,400 --duration 300
 reticle act drag  --package <pkg> --from x,y --to x,y
 reticle act scroll-to --package <pkg> --test-id list.item40   # then tap it
 reticle act tap   --package <pkg> --label "Delete item"       # framework rows/menu items
-reticle act tap   --package <pkg> --label "Delete item" --settle  # popup still sliding in
+reticle act tap   --package <pkg> --label "Delete item" --settle  # popup still sliding in: full budget
+reticle act tap   --package <pkg> --test-id row.a --no-settle     # skip the default re-resolve
 reticle act type  --package <pkg> --test-id checkout.name --text "Ada"
 reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 ```
@@ -329,13 +330,25 @@ all. It matches visible text / the a11y label (exact, then substring) in the top
 window and **refuses an ambiguous match** rather than tapping the first candidate.
 Prefer `--test-id` whenever the app owns the control.
 
-`--settle` (opt-in, on `tap`) re-resolves the selector until its point repeats
-before dispatching, and reports `settled=1`/`settled=true`. Use it when the target
-may still be MOVING: a `PopupWindow` / `Spinner` / `PopupMenu` slides in, and a row
-captured mid-animation has a rect that is stale by the time the touch is
-synthesized — measured, that tap landed on the neighbouring row. It needs a
-selector (a raw `--point` has nothing to re-resolve, and is refused). Know its
-limit: it watches the resolved POSITION, so a view that animates in place with a
+**A selector `tap` re-resolves its point before dispatching, by default.** Between
+resolving a selector and synthesizing the touch the screen can move, and the touch
+then lands on the neighbour while the command reports a plain success — the worst
+shape of failure, because the wrong thing *did* change convincingly. Two triggers,
+same hazard: the target is animating in (`PopupWindow` / `Spinner` / `PopupMenu`),
+or an EARLIER command relayouted the page (a `type` that raised the keyboard, a
+`hide-keyboard`, a scroll — measured on a device: a form row's rect was 161px stale
+and the tap opened the sheet of the row below it). So every selector tap now
+confirms the point repeats before dispatching and reports:
+
+- `settled=1` — confirmed at rest; `settled=0` — still moving when the budget lapsed,
+  so this tap may have been aimed at a point that had already changed;
+- `rectMoved=<dx>,<dy>` — **only when the first read was stale**. The confirm fixed
+  the tap, and this says the screen you reasoned about had already moved.
+
+`--settle` still exists and now means *this target IS animating*: it raises the
+budget from 800ms to 2s (`--settle-timeout <ms>` overrides either). `--no-settle`
+opts out and dispatches on the single read. A raw `--point` never confirms (nothing
+to re-resolve; `--point --settle` is refused). Know the limit: it watches the resolved POSITION, so a view that animates in place with a
 transform/alpha — an iOS `UIAlertController`, whose accessibility frame is final
 immediately — reports `settled` at once while still not being hit-testable. There,
 wait (or `--verify` and retry); no position signal can tell you.
