@@ -66,12 +66,15 @@ build**. If it can't be obtained the launcher stops with actionable guidance.
     Two things it needs from you, both about the main thread: the app must be
     **foregrounded** (injection runs on the app's own looper — a backgrounded app
     fails with exactly that message), and you must **not** nudge it with input in
-    a loop while it runs. Reticle sends its own nudge; an extra queued touch is
+    a loop while it runs. Reticle sends its own nudge; an extra queued touch stays
     unconsumed for the whole JDWP suspension and trips Android's 5s input-dispatch
-    ANR, which kills the app mid-injection. Reticle marks the app as being
-    debugged (`am set-debug-app`, restored afterwards) to relax that verdict, and
-    if the system kills it anyway the failure says so — an ANR verdict, not a bare
-    `EOFException`.
+    ANR, which kills the app mid-injection. When that happens the failure now says
+    so — an ANR verdict with the system's own exit record, not a bare
+    `EOFException`. `--restart-under-debugger` prevents it (it marks the app as
+    being debugged, so AMS relaxes the verdict) but is **opt-in for a reason**:
+    setting the debug app force-stops the target, so the app is relaunched and
+    whatever screen it was on is gone. Reach for it after an ANR verdict, not
+    before.
   - **Truly unreachable** (non-debuggable, no AAR): without an injection path
     `reticle ui report` cannot reach the app — say so rather than inventing data
     (use `reticle debug logcat` to confirm no agent, and `reticle ui screenshot`

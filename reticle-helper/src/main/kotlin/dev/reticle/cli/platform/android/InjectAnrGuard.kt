@@ -3,8 +3,7 @@ package dev.reticle.cli.platform.android
 import dev.reticle.cli.platform.DeviceController
 
 /**
- * The ANR window `app inject` opens on itself, closed and — when it still
- * happens — named.
+ * The ANR window `app inject` opens on itself: named always, closed on request.
  *
  * Injection has two requirements that fight each other on a physical device:
  *
@@ -22,17 +21,20 @@ import dev.reticle.cli.platform.DeviceController
  * Android 15 device: one minimal swipe, sent once, was enough, because the
  * post-breakpoint work by itself outran 5s on that hardware.
  *
- * Two halves, both here:
+ * Two halves, with deliberately different defaults:
  *
+ *  - [explainKill] is ALWAYS on. It costs nothing until an injection fails, and
+ *    turns a bare exception name into the system's own verdict: the pid we
+ *    attached to is gone AND `dumpsys activity exit-info` reports an ANR;
  *  - [install] marks the app as being debugged (`am set-debug-app --persistent`),
- *    which makes AMS relax the input-dispatch verdict for it, and [Installed.restore]
- *    puts the previous value back (or clears it) on every exit path. Without `-w`
- *    the app does NOT wait for a debugger, so this is safe non-interactively. This
- *    removes the race rather than papering over it;
- *  - [explainKill] classifies the aftermath when the guard did not hold (an OEM
- *    ROM that ignores `set-debug-app`, a `shell` uid without the permission): the
- *    pid we attached to is gone, and `dumpsys activity exit-info` says ANR. That
- *    is a verdict the caller can act on, unlike an exception name.
+ *    which makes AMS relax the input-dispatch verdict for it. This is **opt-in**,
+ *    because AMS FORCE-STOPS the target when its debug marking changes: measured
+ *    on an API 36 emulator, `pidof` went from 6356 to nothing, and injection then
+ *    failed with an EOF handshake against a pid that no longer existed. The app
+ *    has to be relaunched and injected into fresh, so the guard costs the screen
+ *    the app was on — not something to spend behind a caller's back on the one
+ *    command whose whole selling point is "into the process as it is running
+ *    now". `app inject --restart-under-debugger` asks for it explicitly.
  */
 internal object InjectAnrGuard {
 
@@ -52,14 +54,19 @@ internal object InjectAnrGuard {
         }
     }
 
+    /** A guard that was never installed: nothing to restore, nothing relaxed. */
+    fun disabled(device: DeviceController): Installed = Installed(device, previous = null, active = false)
+
     /**
-     * Mark [packageName] as the debug app for the duration of an injection,
-     * remembering whatever was set before.
+     * Mark [packageName] as the debug app, remembering whatever was set before.
      *
-     * Best-effort by construction: a device that refuses (`SecurityException`, an
-     * OEM build without the command) still gets injected, just without the
-     * relaxed ANR verdict — the same behaviour as before this guard existed. The
-     * failure is reported by [explainKill] if it turns out to matter.
+     * **Kills the target**: AMS force-stops the app whose debug marking changes, so
+     * the caller must relaunch it and resolve a fresh pid afterwards. That is why
+     * this sits behind a flag rather than running by default.
+     *
+     * Best-effort otherwise: a device that refuses (`SecurityException`, an OEM
+     * build without the command) still gets injected, just without the relaxed ANR
+     * verdict — and [explainKill] says so if it turns out to matter.
      */
     fun install(device: DeviceController, packageName: String): Installed {
         val previous = runCatching { readDebugApp(device) }.getOrNull()
@@ -68,17 +75,26 @@ internal object InjectAnrGuard {
         return Installed(device, previous?.takeIf { it != packageName }, active)
     }
 
-    /** Current `mDebugApp`, or null when none is set / it can't be read. */
+    /**
+     * The currently marked debug app, or null when none is set.
+     *
+     * Read through `settings get global debug_app` rather than `dumpsys activity
+     * processes`: it is one cheap row instead of a multi-megabyte dump, and the
+     * dump has to be filtered on-device by a `grep` whose flags are not portable —
+     * toybox's `grep -m 1` (with the space) silently produced NOTHING on the API 36
+     * emulator, i.e. a read that always answered "unset" and would have cleared a
+     * marking it should have restored.
+     */
     private fun readDebugApp(device: DeviceController): String? =
-        parseDebugApp(device.shell("dumpsys activity processes | grep -m 1 mDebugApp", timeoutSeconds = 15).stdout)
+        parseDebugApp(device.shell("settings get global debug_app", timeoutSeconds = 10).stdout)
 
     /**
-     * The package named by AMS's `mDebugApp=` field, or null for `null`/absent.
+     * The package named by the `debug_app` setting, or null for `null`/absent.
      * Split out from the device call so the parsing is testable without a device.
      */
-    fun parseDebugApp(dumpsys: String): String? {
-        val value = Regex("""mDebugApp=(\S+)""").find(dumpsys)?.groupValues?.get(1) ?: return null
-        return value.takeIf { it != "null" && it.isNotBlank() }
+    fun parseDebugApp(raw: String): String? {
+        val value = raw.trim().lines().firstOrNull()?.trim() ?: return null
+        return value.takeIf { it.isNotBlank() && it != "null" && !it.contains(' ') }
     }
 
     /**
@@ -113,16 +129,16 @@ internal object InjectAnrGuard {
             )
             append(
                 if (guardActive) {
-                    "  Reticle marked the app as being debugged (`am set-debug-app`) to relax that " +
+                    "  The app WAS marked as being debugged (`am set-debug-app`) to relax that " +
                         "verdict and the system killed it anyway, so this ROM does not honour the " +
                         "marking. Retrying will reproduce it. Injecting on a screen that is idle " +
                         "(no animation, no pending touch) gives the suspension the most headroom.\n"
                 } else {
-                    "  Reticle could not mark the app as being debugged on this device, so nothing " +
-                        "relaxed the verdict. Try it by hand:\n" +
-                        "    adb shell am set-debug-app --persistent $packageName\n" +
-                        "    reticle app inject --package $packageName\n" +
-                        "    adb shell am clear-debug-app\n"
+                    "  Retry with `app inject --restart-under-debugger`: it marks the app as being " +
+                        "debugged for the injection, which makes AMS relax that verdict. Note the " +
+                        "cost, which is why it is not the default — setting the debug app " +
+                        "force-stops the target, so the app is RELAUNCHED and whatever screen it " +
+                        "was on is gone.\n"
                 }
             )
             append("  Do NOT nudge the app in a loop while injecting: a queued touch is exactly what trips this.")
