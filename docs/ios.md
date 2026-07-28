@@ -72,8 +72,10 @@ real device.
 
 The read-only DOM bridge is ported: a WKWebView seen during the view walk stays
 an opaque node on the main thread, then the server thread evaluates the shared
-DOM script (`WebViewDomScript.swift`, kept in sync with the Android
-`WebViewDomScript.kt`) via `evaluateJavaScript` with a 750 ms timeout and folds
+DOM script (`ReticleProtocol.WebViewDomScript`, one of the two embeddings of
+`reticle-protocol/scripts/dom-traversal.js` — each asserted against that file, so
+this is genuinely the same script the Android bridge runs rather than a copy kept in
+step by hand) via `evaluateJavaScript` with a 750 ms timeout and folds
 the visible DOM in as `domNode` children — same element payload, `data-testid`
 as `testId`, `domCssSelector` + computed-style / image metadata, page-to-screen
 coordinate folding (CSS points are UIKit points, so the scale is normally 1.0).

@@ -57,6 +57,26 @@
   helper has), and the Android-only `@N` alias cache — the one projection with no
   Swift twin, which `Render.swift` already names as unported.
 
+- **The DOM traversal script is one file now, not two hand-copied strings.** Both
+  WebView bridges run the same JavaScript, and it lived as a 174-line string
+  literal in the Android agent and again in the iOS agent, kept in step by a
+  `KEEP IN SYNC` comment and nothing else. Worse, Kotlin raw strings and Swift
+  multiline literals escape differently (`\s` vs `\\s`), so the two copies could
+  not even be compared with a diff — a reviewer had no mechanical way to tell
+  whether they still agreed. (They did, as it turns out; the extraction was a pure
+  refactor.) The traversal now lives in
+  `reticle-protocol/scripts/dom-traversal.js` and is embedded in
+  `dev.reticle.core.WebViewDomScript` and `ReticleProtocol.WebViewDomScript`, each
+  asserted equal to that file by its own suite — so editing one embedding, or the
+  file, fails a build rather than giving the two platforms different DOM readings.
+
+  Embedded rather than loaded from a resource on purpose: the Android agent also
+  ships as a payload dex that `app inject` pushes into a live process, and a dex
+  carries no resources — a resource read would work in the linked build and fail
+  exactly on the unlinked path. Both suites also assert the script still contains
+  no mutating call (`.click(`, `.innerHTML =`, …), since "read-only" is the claim
+  the whole bridge rests on.
+
 ## 0.12.0 - 2026-07-28
 
 - **An action answered by a toast no longer reads as an action that missed.** A

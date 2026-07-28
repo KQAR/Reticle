@@ -1,12 +1,26 @@
-package dev.reticle.agent
+package dev.reticle.core
 
 /**
- * JavaScript used by [WebViewBridge] to read a WebView DOM without mutation.
+ * The read-only DOM traversal script both WebView bridges run.
  *
- * KEEP IN SYNC with the iOS agent's `WebViewDomScript.swift`. The walk pierces
- * OPEN shadow roots and same-origin iframes (Playwright-style): pierced
- * elements carry a chained selector (`#host >>> #inner`), and iframe content
- * coordinates are offset into page space.
+ * The JavaScript itself lives ONCE, in `reticle-protocol/scripts/dom-traversal.js`,
+ * and is embedded here and in `ReticleProtocol.WebViewDomScript` verbatim. It used
+ * to be hand-copied between the Android agent and the iOS agent under a
+ * "KEEP IN SYNC" comment — with different escaping on each side, so the two copies
+ * could not even be diffed mechanically. `WebViewDomScriptTest` (Kotlin) and
+ * `WebViewDomScriptTests` (Swift) each assert their embedded copy equals that file,
+ * so an edit to one embedding, or to the file, fails the build until all three
+ * agree.
+ *
+ * The script is embedded rather than loaded at runtime on purpose: the Android
+ * agent also ships as a payload dex pushed into a live process by `app inject`,
+ * which carries no resources.
+ *
+ * What it does: walks the visible DOM without mutating page state, pierces OPEN
+ * shadow roots and same-origin iframes (Playwright's injected-script approach) —
+ * pierced elements carry a chained selector (`#host >>> #inner`) and iframe
+ * content coordinates are offset into page space — and folds DOM rectangles into
+ * page coordinates the host then maps to the screen.
  */
 object WebViewDomScript {
     val SCRIPT: String = """
