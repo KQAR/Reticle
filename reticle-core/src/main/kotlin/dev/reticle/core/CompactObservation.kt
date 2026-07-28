@@ -110,6 +110,7 @@ data class CompactItem(
      * is a different situation with a different response.
      */
     val windowRef: String? = null,
+    /**
      * True when this node holds input focus — where typed text will go. At most
      * one item in an observation carries it. Included because the compact view is
      * for acting NOW, and "which field is armed" is not inferable from a rect:
