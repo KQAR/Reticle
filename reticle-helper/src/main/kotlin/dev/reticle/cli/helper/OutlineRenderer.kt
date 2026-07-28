@@ -71,7 +71,9 @@ internal object OutlineRenderer {
                                 ?: "window: (none) — nodes captured outside any window"
                         )
                     }
-                    appendLine("  " + line(entry))
+                    // No indent: a header is a line a consumer can skip, but shifting
+                    // every item would break line-anchored parsing of the outline.
+                    appendLine(line(entry))
                 }
             }
         }.trimEnd()

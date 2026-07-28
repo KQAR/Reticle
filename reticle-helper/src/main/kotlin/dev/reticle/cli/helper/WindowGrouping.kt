@@ -16,7 +16,12 @@ import dev.reticle.core.Snapshot
  * a 99-line outline.
  *
  * This is a presentation change and drops nothing — every node still appears,
- * under a header naming its window. Scoping (`--window top`) is the other half and
+ * under a header naming its window. The item lines themselves are left BYTE-FOR-BYTE
+ * unchanged, indentation included: a header is a new line a consumer can ignore,
+ * while indenting the items would break every `grep '^#selector'` written against
+ * this output — and since a screen stacked over a live one is the Android common
+ * case, that would break them most of the time rather than rarely. Measured: it
+ * broke this repo's own e2e assertions on the first run. Scoping (`--window top`) is the other half and
  * lives in [Snapshot.scopedToWindow], so a caller can choose between "show me
  * everything, organised" and "show me only the screen I am driving".
  */
@@ -39,14 +44,14 @@ internal object WindowGrouping {
             val items = compact.items.filter { it.windowRef == ref }
             if (items.isEmpty()) continue
             out += header(snapshot.nodes[ref], ref, top = ref == snapshot.topWindowRef())
-            items.forEach { out += "  " + it.line() }
+            items.forEach { out += it.line() }
         }
         // Anything outside a window (the application root's own children) keeps its
         // place rather than being silently dropped.
         val loose = compact.items.filter { it.windowRef == null }
         if (loose.isNotEmpty()) {
             out += "window: (none) — nodes captured outside any window"
-            loose.forEach { out += "  " + it.line() }
+            loose.forEach { out += it.line() }
         }
         return out
     }
