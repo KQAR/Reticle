@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- **`act type` reports what LANDED, not what it sent.** `chars=N` only ever counted
+  characters dispatched. Measured on a physical device: `--text "10000"` returned
+  `chars=5`, exit code 0, focus correct — and the field held `100`, while the field
+  beside it took the same five characters intact. The difference is what each field
+  does per keystroke: the lossy one reformats in a `TextWatcher` and re-renders a
+  widget bound to it (101 changes in the trace against the other's 6), and
+  `adb shell input text` delivers the string as a burst of key events that a
+  re-layout in the middle of can eat. The damage surfaced several steps later as a
+  validation failure against a value nobody typed.
+
+  So `type` now reads the field back: `textLanded=exact|reformatted|partial|none|
+  changed|unreadable`, the field's actual `text=`, and `landedChars=` for a partial.
+  The split between `partial` (a proper prefix — the burst-loss shape) and `changed`
+  (uppercasing, masking, a `maxLength` rewrite) is deliberate: an app transforming
+  its own input is not a defect and Reticle does not call it one. `reformatted`
+  (`10000` -> `10,000`) is likewise everything you sent, dressed.
+
+  Only `partial` and `none` are repaired, once, by re-sending over the clipboard —
+  which a `TextWatcher` sees as a single change rather than a run of keystrokes —
+  and only when the field was EMPTY beforehand, since `type` inserts at the caret
+  and there is no way to undo a partial insertion into existing content without
+  guessing what the caller meant to keep. It never repairs silently: `recovery=`
+  says what the key path did before the clipboard re-send. `--type-delay <ms>` is
+  the caller's own escape hatch (one `input text` per character, at that pace) for a
+  field known to lose the burst. A field with no readable value says
+  `textLanded=unreadable` with a reason (`runtime-unreachable`,
+  `dom-input-value-not-separable-from-placeholder`, ...) — never a claim it landed.
+  `scenario.reformattingField` is the fixture; the Android e2e drives all three
+  paths.
+
+- **A Compose text field's value is on the wire.** Found while closing the above: a
+  Compose field keeps what the user typed in `SemanticsProperties.EditableText`,
+  apart from `Text` (which on a Material `TextField` is the LABEL). The bridge read
+  only `Text`, so `ui compact` showed `#compose.codeField composable` — a text field
+  with nothing in it — and `type` had no channel to check that six characters had
+  arrived. Now the value comes through as `custom.editableText`, a node that has one
+  reports `role=textField`, and a `BasicTextField` (no label) carries it as the
+  node's text: `#compose.codeField textField "246813"`.
+
+- **`docs/boundaries.md` corrected on secure fields.** The row on typed passwords
+  claimed "a snapshot never contains a secure field's contents". It never did:
+  `TextView.getText()` returns the raw text of a password field (masking is a
+  display transformation), so the snapshot carries it, and the read-back above now
+  prints it as `text=` too. Measured on an API 36 emulator with a
+  `TYPE_TEXT_VARIATION_PASSWORD` field: `#login.codeField textField "hunter2"`.
+
 - **`ui compact` folds anonymous layers into the node they wrap.** UI toolkits build one
   on-screen row out of several views and only one of them is nameable: measured on an
   iOS simulator, a `UIPickerView` row is three compact lines — the cell, the label, and

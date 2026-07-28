@@ -25,11 +25,28 @@ class InputBackend(private val adb: DeviceController) : InputDispatcher {
     override fun drag(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): CommandResult =
         adb.shell("input swipe $x1 $y1 $x2 $y2 $durationMs")
 
-    override fun text(value: String): CommandResult =
-        adb.shell("input text ${shellArgForInputText(value)}")
+    /**
+     * One `input text` call for the whole string by default — which is also how a
+     * field that re-lays-out on every keystroke loses characters out of the middle
+     * of the burst. [perCharDelayMs] trades round trips for a paced delivery the
+     * app's `TextWatcher` can keep up with; the caller opts in (`--type-delay`),
+     * because the paced path costs one adb round trip per character.
+     */
+    override fun text(value: String, perCharDelayMs: Int): CommandResult {
+        if (perCharDelayMs <= 0 || value.length <= 1) {
+            return adb.shell("input text ${shellArgForInputText(value)}")
+        }
+        var last = adb.shell("input text ${shellArgForInputText(value.take(1))}")
+        for (ch in value.drop(1)) {
+            if (!last.ok) return last
+            Thread.sleep(perCharDelayMs.toLong())
+            last = adb.shell("input text ${shellArgForInputText(ch.toString())}")
+        }
+        return last
+    }
 
-    override fun keyevent(keyCode: String): CommandResult =
-        adb.shell("input keyevent $keyCode")
+    override fun keyevent(vararg keyCodes: String): CommandResult =
+        adb.shell("input keyevent ${keyCodes.joinToString(" ")}")
 
     /** Paste the device clipboard into the focused field (KEYCODE_PASTE = 279). */
     override fun paste(): CommandResult = keyevent("279")

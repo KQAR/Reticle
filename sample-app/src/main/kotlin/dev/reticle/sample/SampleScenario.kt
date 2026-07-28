@@ -53,6 +53,12 @@ enum class SampleScenario(
         testId = "scenario.compoundField",
         activityClass = CompoundFieldScenarioActivity::class.java,
     ),
+    ReformattingField(
+        title = "Reformatting input fields",
+        subtitle = "One field formats what it is given; one loses part of a typed burst",
+        testId = "scenario.reformattingField",
+        activityClass = ReformattingFieldScenarioActivity::class.java,
+    ),
     LongList(
         title = "Long list",
         subtitle = "60 recycled rows; far-down rows are absent until scrolled",

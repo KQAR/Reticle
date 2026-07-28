@@ -64,6 +64,24 @@ object SemanticsReflect {
         }
     }
 
+    /**
+     * A text field's CURRENT VALUE.
+     *
+     * Compose keeps it under `EditableText`, separately from `Text` — which on a
+     * Material `TextField` is the label, not what the user typed. So [text] alone
+     * makes a Compose field's value invisible: `act type` could report `chars=6`
+     * with no channel to check that six characters arrived, and `ui compact`
+     * showed a text field with nothing in it. Read as its own property because
+     * "the label" and "the value" are different facts.
+     */
+    fun editableText(node: Any): String? {
+        val raw = configValue(node, "EditableText") ?: return null
+        return when (raw) {
+            is List<*> -> raw.joinToString(" ") { it.toString() }
+            else -> raw.toString()
+        }
+    }
+
     fun role(node: Any): String? = configValue(node, "Role")?.toString()
 
     /**

@@ -794,6 +794,54 @@ set -e
 echo "$AMBIGUOUS" | grep -q "did not focus a text field" \
   || { echo "FAIL: the refusal must say focus never landed; got: $AMBIGUOUS"; exit 1; }
 
+echo "== REFORMATTING FIELDS: type reports what LANDED, not what was sent =="
+# `chars=N` counts characters SENT. The measured failure is a five-character
+# --text that left three in the field, exit code 0, focus correct — a TextWatcher
+# that reformats and re-lays-out on every change losing part of the `input text`
+# burst. So `type` reads the field back.
+open_scenario scenario.reformattingField reformat.amount
+# 1. A field that LOSES part of a burst: the shortfall is detected, named, and
+# re-sent over the clipboard (one change, not a run of keystrokes).
+LOSSY="$(R act type --package "$PKG" --test-id reformat.lossy --text "10000")"
+echo "$LOSSY"
+echo "$LOSSY" | grep -q "recovery=" \
+  || { echo "FAIL: a partial landing must be detected and named, got: $LOSSY"; exit 1; }
+echo "$LOSSY" | grep -q "textLanded=exact" \
+  || { echo "FAIL: the clipboard re-send must land the whole string, got: $LOSSY"; exit 1; }
+echo "$LOSSY" | grep -q "text=10000" \
+  || { echo "FAIL: the recovered field must hold the typed text, got: $LOSSY"; exit 1; }
+R ui compact --live --package "$PKG" | grep -q "10000" \
+  || { echo "FAIL: the tree must agree with what type reported"; exit 1; }
+# 2. `--type-delay` is the escape hatch that avoids the loss instead of recovering
+# from it, and the field it types into FORMATS what it is given: every character
+# arrived, the app added separators. That is not a loss and must not be retried.
+#
+# Paced on purpose. A burst into this field is lossy too on a software-GPU
+# emulator (its watcher re-lays-out the bound rows above it on every keystroke —
+# the real thing, measured here at 4 of 5 characters), so pacing is what isolates
+# "the app formatted it" from "the burst was cut short".
+FORMATTED="$(R act type --package "$PKG" --test-id reformat.amount --text "30000" --type-delay 200)"
+echo "$FORMATTED"
+echo "$FORMATTED" | grep -q "paced 200ms/char" \
+  || { echo "FAIL: --type-delay must report the paced path, got: $FORMATTED"; exit 1; }
+echo "$FORMATTED" | grep -q "textLanded=reformatted" \
+  || { echo "FAIL: an app's own formatting must read as reformatted, got: $FORMATTED"; exit 1; }
+echo "$FORMATTED" | grep -q "text=30,000" \
+  || { echo "FAIL: type must report the text the field actually holds, got: $FORMATTED"; exit 1; }
+echo "$FORMATTED" | grep -q "recovery=" \
+  && { echo "FAIL: reformatting is the app doing its job — nothing to recover, got: $FORMATTED"; exit 1; }
+# 3. Into a field that ALREADY holds text there is no recovery to be had: `type`
+# inserts at the caret, so clearing it would throw away content the caller never
+# asked to lose. The shortfall is reported instead of repaired.
+PARTIAL="$(R act type --package "$PKG" --test-id reformat.lossy --text "246813")"
+echo "$PARTIAL"
+echo "$PARTIAL" | grep -q "textLanded=partial" \
+  || { echo "FAIL: a burst into a non-empty lossy field must read as partial, got: $PARTIAL"; exit 1; }
+echo "$PARTIAL" | grep -q "landedChars=" \
+  || { echo "FAIL: a partial landing must say how much landed, got: $PARTIAL"; exit 1; }
+echo "$PARTIAL" | grep -q "recovery=" \
+  && { echo "FAIL: a non-empty field must not be cleared to retry, got: $PARTIAL"; exit 1; }
+
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField
 # Focus the code field so the soft keyboard comes up.

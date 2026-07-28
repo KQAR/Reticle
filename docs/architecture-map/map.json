@@ -533,6 +533,18 @@
           "nodes": ["helper", "wire-android"], "edges": ["e-helper-wire", "e-wire-appA"]
         },
         {
+          "title": "Then read the field back",
+          "detail": "chars=N counts what was SENT. A field that reformats and re-lays-out on every keystroke can lose part of the input text burst — measured: --text \"10000\" reported chars=5 into a field holding 100. So type re-reads the field: textLanded=exact|reformatted|partial|none|changed|unreadable, plus the text= it actually holds. partial/none are re-sent ONCE over the clipboard (atomic against a TextWatcher) and only when the field was empty; reformatted/changed are the app transforming its own input and are only reported. --type-delay paces the keystrokes instead.",
+          "nodes": [
+            "helper",
+            "wire-android"
+          ],
+          "edges": [
+            "e-helper-wire",
+            "e-wire-appA"
+          ]
+        },
+        {
           "title": "ASCII goes straight through",
           "detail": "adb shell input text — which works even on an app with no agent at all.",
           "nodes": ["wire-android", "app-android"], "edges": ["e-wire-appA"]

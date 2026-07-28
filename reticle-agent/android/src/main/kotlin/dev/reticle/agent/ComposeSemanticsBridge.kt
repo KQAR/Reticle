@@ -107,7 +107,12 @@ object ComposeSemanticsBridge {
         val contentDescription = SemanticsReflect.contentDescription(semanticsNode)
         val frame = SemanticsReflect.boundsInWindow(semanticsNode)
             ?.let { it.copy(x = it.x + offsetX, y = it.y + offsetY) }
-        val role = SemanticsReflect.role(semanticsNode) ?: "composable"
+        // The field's value, which Compose keeps apart from `Text`. A node that has
+        // one IS a text field, whatever else it declares — Compose sets no `Role`
+        // for one, so without this the tree cannot tell an input from a label.
+        val editableText = SemanticsReflect.editableText(semanticsNode)
+        val role = SemanticsReflect.role(semanticsNode)
+            ?: if (editableText != null) "textField" else "composable"
 
         val childRefs = ArrayList<String>()
         for (child in SemanticsReflect.children(semanticsNode)) {
@@ -134,7 +139,11 @@ object ComposeSemanticsBridge {
             typeName = "ComposeSemanticsNode",
             role = role,
             contentDescription = contentDescription,
-            text = text,
+            // `Text` first: on a Material `TextField` it is the label, and the value
+            // is carried separately in `custom.editableText` so the two never merge
+            // into one ambiguous string. A `BasicTextField` has no label, and then
+            // the value IS the node's text.
+            text = text ?: editableText,
             testId = testTag,
             frame = frame,
             isVisible = frame == null || (frame.width > 0 && frame.height > 0),
@@ -144,6 +153,7 @@ object ComposeSemanticsBridge {
             scroll = SemanticsReflect.scrollInfo(semanticsNode),
             custom = buildMap {
                 putAll(textStyle.values)
+                editableText?.let { put("editableText", MetadataValue.Text(it)) }
                 testTag?.let { tag ->
                     ReticleRuntime.shared.metadata(tag).forEach { (k, v) -> put(k, v) }
                 }
