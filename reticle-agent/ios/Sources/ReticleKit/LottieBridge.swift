@@ -40,7 +40,7 @@ enum LottieBridge {
             let layersAny = mchild(animation, "layers")
         else { return [] }
 
-        let map = ViewMap(view: view, frame: screenFrame, compW: compW, compH: compH)
+        let map = ViewMap(contentMode: view.contentMode, frame: screenFrame, compW: compW, compH: compH)
         return melements(layersAny).compactMap { region(for: $0, map: map) }
     }
 
@@ -91,11 +91,17 @@ enum LottieBridge {
     }
 
     /// Composition-space → screen-space for the view's contentMode.
+    ///
+    /// Takes the content mode as a VALUE rather than the view: a nested type does not
+    /// inherit the enclosing `@MainActor`, so reading `view.contentMode` in here is a
+    /// main-actor access from a nonisolated context — an error under Swift 6.1's UIKit
+    /// annotations (CI's Xcode 16.4) and accepted by a newer toolchain, which is how
+    /// this got through locally. Passing the value keeps the map pure geometry.
     private struct ViewMap {
         let ox: Double, oy: Double, sx: Double, sy: Double
-        init(view: UIView, frame: Rect, compW: Double, compH: Double) {
+        init(contentMode: UIView.ContentMode, frame: Rect, compW: Double, compH: Double) {
             let vw = frame.width, vh = frame.height
-            switch view.contentMode {
+            switch contentMode {
             case .scaleToFill:
                 sx = vw / compW; sy = vh / compH
                 ox = frame.x; oy = frame.y
