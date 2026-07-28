@@ -4,8 +4,9 @@ import dev.reticle.cli.platform.DeviceController
 import dev.reticle.cli.platform.InputDispatcher
 import dev.reticle.core.Node
 import dev.reticle.core.Rect
-import dev.reticle.core.SemanticTree
 import dev.reticle.core.Selector
+import dev.reticle.core.SelectorResolver
+import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject

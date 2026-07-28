@@ -77,6 +77,25 @@
   no mutating call (`.click(`, `.innerHTML =`, …), since "read-only" is the claim
   the whole bridge rests on.
 
+- **Selector resolution now lives in the protocol module on both sides.** The
+  action path's resolution table is pinned across languages by
+  `reticle-protocol/fixtures/selector-resolution.cases.json`, and the Swift half
+  (`SelectorResolution`) sits in `ReticleProtocol` — while the Kotlin half
+  (`SelectorResolver`) sat in `reticle-helper`, a layer *above* the module that
+  fixture describes. That asymmetry cost more than tidiness: the two halves of one
+  contract lived at different layers, so nothing told the next contributor where a
+  new resolution rule belonged. `SelectorResolver` and its two tests move to
+  `reticle-core`; `Node.domCssSelector()` moves with them (resolution reads it, and
+  the Swift twin has always been on the model).
+
+  The refusals move too. `AmbiguousLabelException` and `RegionMissException` are
+  `reticle-core` types rather than `CliError` subclasses — which costs nothing,
+  since the helper's RPC layer reports any throwable by message, and keeps a
+  refusal travelling with the rule that raises it. They stay two distinct types for
+  the reason they always were: a poll loop must tell them apart, because an
+  ambiguity makes an answer `unknowable` while a phrase not yet on screen is an
+  honest negative a `wait` should keep waiting on.
+
 ## 0.12.0 - 2026-07-28
 
 - **An action answered by a toast no longer reads as an action that missed.** A

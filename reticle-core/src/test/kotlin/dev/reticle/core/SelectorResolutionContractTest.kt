@@ -1,10 +1,5 @@
-package dev.reticle.cli
+package dev.reticle.core
 
-import dev.reticle.core.Point
-import dev.reticle.core.ReticleJson
-import dev.reticle.core.Selector
-import dev.reticle.core.SemanticTree
-import dev.reticle.core.Snapshot
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -31,11 +26,11 @@ class SelectorResolutionContractTest {
 
     /**
      * The fixture wrapper is walked as raw JSON rather than modelled with
-     * `@Serializable` classes: reticle-helper deliberately does not apply the
-     * serialization compiler plugin (it has no wire types of its own, and the
-     * native-image build depends on compile-time serializers only coming from
-     * core). `Snapshot` and `Selector` still decode through their own generated
-     * serializers, so the fixture is parsed by the real protocol code.
+     * `@Serializable` classes — it was written that way while this test lived in
+     * reticle-helper, which deliberately does not apply the serialization compiler
+     * plugin, and it is kept because the shape it walks is the fixture's envelope
+     * rather than a wire type. `Snapshot` and `Selector` still decode through their
+     * own generated serializers, so the cases are parsed by the real protocol code.
      */
     private data class Case(
         val name: String,
@@ -88,9 +83,9 @@ class SelectorResolutionContractTest {
                 val resolved = resolver.resolve(case.selector)
                 if (resolved == null) "miss"
                 else "${resolved.source} @${fmt(resolved.point)} ref=${resolved.ref ?: "nil"}"
-            } catch (e: RegionMissError) {
+            } catch (e: RegionMissException) {
                 "error:regionMiss"
-            } catch (e: CliError) {
+            } catch (e: SelectorResolutionException) {
                 "error:ambiguousLabel"
             }
             if (actual != case.expected) {

@@ -2,7 +2,10 @@ package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
 import dev.reticle.core.CompactObservation
+import dev.reticle.core.RegionMissException
 import dev.reticle.core.Selector
+import dev.reticle.core.SelectorResolutionException
+import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
 import dev.reticle.core.WaitOutcome
@@ -164,13 +167,13 @@ internal object HelperWait {
         // explanation, not an exception from inside a poll loop.
         val resolved = try {
             SelectorResolver(snapshot, SemanticTree.build(snapshot)).resolve(selector)
-        } catch (_: RegionMissError) {
+        } catch (_: RegionMissException) {
             // The node is there but the requested phrase is not (yet): an honest
             // negative, not an unknowable. Distinct from the ambiguity below —
             // conflating them would report "refusing to guess" for a phrase that
             // simply has not rendered.
             return base
-        } catch (_: CliError) {
+        } catch (_: SelectorResolutionException) {
             return base.copy(ambiguous = true)
         } ?: return base
 
