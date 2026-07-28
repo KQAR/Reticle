@@ -18,6 +18,14 @@ import ReticleProtocol
 /// property or an unexpected shape yields no regions rather than a crash. The
 /// geometry comes from the same model Lottie draws from; the "this layer is a
 /// button" inference is a hint (the label is the layer's own text).
+///
+/// `@MainActor` because it reads UIView state (`contentMode`) to build the
+/// composition→screen map, like every other capture path here. Under Swift 6.1's
+/// UIKit annotations that read from a nonisolated context is an error; a newer
+/// toolchain accepts it, which is how this compiled locally while CI (Xcode 16.4)
+/// rejected it. The whole capture is main-thread work anyway — `SnapshotCapture` is
+/// already `@MainActor` and is the only caller.
+@MainActor
 enum LottieBridge {
 
     static func regions(for view: UIView, screenFrame: Rect?) -> [InteractionRegion] {
