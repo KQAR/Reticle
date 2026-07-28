@@ -373,6 +373,18 @@ its visible DOM through a default-on, read-only bridge when JavaScript is enable
 rectangles into screen coordinates, and appends each element as a `NodeKind.domNode`
 child under the WebView. The script does not mutate page state.
 
+**The script itself is one file, embedded twice.** Both bridges — Android's and the
+WKWebView twin — run the same JavaScript, and it used to be hand-copied between the
+two agents under a `KEEP IN SYNC` comment: with Kotlin raw strings escaping one way
+and Swift multiline literals another, the two copies could not even be compared with
+a diff, so nothing failed when one moved. The traversal now lives once in
+`reticle-protocol/scripts/dom-traversal.js` and is embedded verbatim in
+`dev.reticle.core.WebViewDomScript` and `ReticleProtocol.WebViewDomScript`, each
+asserted equal to that file by its own suite. Embedded rather than loaded from a
+resource because the Android agent also ships as a payload dex that `app inject`
+pushes into a live process, and a dex carries no resources — so a resource read would
+work in the linked build and fail exactly on the unlinked path.
+
 If JavaScript is disabled, the WebView is detached, the callback times out, or
 the result cannot be parsed, Reticle emits no DOM nodes and leaves the WebView as
 an opaque L0 leaf. CSS targeting is host-side: DOM nodes carry a `domCssSelector`
