@@ -86,6 +86,28 @@ wait_compact() { # package needle
   echo "-------------------------------------------"
   exit 1
 }
+# Poll until two consecutive live compacts are IDENTICAL, so a step that asserts
+# "this action changed nothing" is not handed a tree that was still moving on its
+# own. The measured case: an Activity started from the home list draws its own
+# content (which is what `wait_compact` waits for) while the home Activity behind
+# it is still RESUMED — its DecorView flips to `invisible` only when the stop
+# finally lands, and on a loaded software-GPU emulator that can be seconds later.
+# Caught inside one action's before/after span it reads as `2 change(s)` on a
+# window the gesture never touched.
+wait_quiet() { # package
+  local pkg="$1" prev="" now="" deadline=$(( $(date +%s) + 30 ))
+  prev="$(R ui compact --live --package "$pkg" 2>&1 || true)"
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    sleep 2
+    now="$(R ui compact --live --package "$pkg" 2>&1 || true)"
+    if [ "$now" = "$prev" ]; then return 0; fi
+    prev="$now"
+  done
+  # Not fatal: a genuinely animating screen never settles, and the assertion that
+  # follows is the one entitled to judge that. Say so, so a later failure is read
+  # as "the tree was still moving" rather than as the feature under test.
+  echo "note: the tree was still changing after 30s; the next step's diff may carry it"
+}
 boot_app() { # package
   "$ADB" -s "$SERIAL" shell am force-stop "$1" >/dev/null 2>&1 || true
   sleep 1
@@ -801,6 +823,9 @@ echo "== TOASTS: an action answered out of tree is not an action that missed =="
 # `0 change(s)` — the documented signal for a gesture that hit nothing. Every act
 # now watches the system Toast Queue, which is the one channel that holds it.
 open_scenario scenario.toasts toast.text
+# This is the one section whose subject is an EMPTY diff, so it is the one that
+# cannot start while the launch transition is still finishing behind it.
+wait_quiet "$PKG"
 TOAST_TRACES="$TMP/toast-traces"
 # 1. Text toast: no tree change at all, and the message is still recovered.
 TEXT_TOAST="$(R act tap --package "$PKG" --test-id toast.text --trace-output "$TOAST_TRACES")"

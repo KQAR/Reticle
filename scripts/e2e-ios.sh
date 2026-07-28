@@ -37,11 +37,24 @@ fi
 # The LOGIN scenario needs the on-screen software keyboard. With "Connect
 # Hardware Keyboard" on (the Simulator.app default), iOS suppresses it and the
 # keyboard-trap assertions can never hold. Turn it off up front; the setting is
-# read when the device boots, so a stale-booted sim may still need a reboot
-# (the login section fails with a pointer here if so).
+# read when the device BOOTS, so writing it under a device that is already up
+# changes nothing this run — a sim booted by hand (or left over from an earlier
+# run) still suppresses the keyboard and the login section fails ~700 lines later.
+# So: read the setting first, and if a booted device is carrying the wrong value,
+# reboot it here where the reason is obvious.
 defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 defaults write com.apple.iphonesimulator DevicePreferences -dict-add "$UDID" '{ConnectHardwareKeyboard = 0;}' 2>/dev/null || true
+# A device already up read those prefs at ITS boot, and a live Simulator.app can
+# hold the hardware keyboard attached whatever the plist says — measured: the
+# plist read 0 and the keyboard was still suppressed. The write above only takes
+# effect on a boot, so take one: reboot a pre-booted device here, where the reason
+# is one line away, instead of failing in the login section ~700 lines later.
+if xcrun simctl list devices booted | grep -q "$UDID"; then
+  echo "== rebooting $UDID so the keyboard settings above apply =="
+  xcrun simctl shutdown "$UDID"
+fi
 xcrun simctl boot "$UDID" 2>/dev/null || true
+xcrun simctl bootstatus "$UDID" >/dev/null 2>&1 || true
 
 echo "== build protocol + agent =="
 (cd reticle-swift && swift test >/dev/null)
@@ -65,6 +78,28 @@ hold_launch() { # bundleId [dylib port]
   else
     ( xcrun simctl launch --console-pty "$UDID" "$1" >/dev/null 2>&1 ) & echo $!
   fi
+}
+
+# Poll a live compact until it contains `needle`, instead of guessing with a fixed
+# sleep. A `WKWebView` scenario needs this specifically: the agent answers as soon
+# as the process is up, and the app's own views draw long before the page inside
+# the web view has parsed — so a report taken too early comes back with the web
+# view present and a single `domNode` (the document) under it, which reads exactly
+# like a DOM capture that failed rather than one that had nothing to capture yet.
+# Measured on a loaded host: 3s was short, 10s was enough — hence a poll, not a
+# bigger constant.
+wait_live() { # bundleId needle
+  local id="$1" needle="$2" last="" deadline=$(( $(date +%s) + 60 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    last="$("$HOST" --target ios ui compact --live --package "$id" 2>&1 || true)"
+    if printf '%s' "$last" | grep -q "$needle"; then return 0; fi
+    sleep 2
+  done
+  echo "FAIL: '$needle' never appeared on screen for $id within 60s"
+  echo "--- last observation (why it timed out) ---"
+  printf '%s\n' "$last"
+  echo "-------------------------------------------"
+  exit 1
 }
 
 # HID input (real synthesized touch/keyboard) works on every simulator runtime
@@ -482,8 +517,9 @@ kill "$HOLD" 2>/dev/null || true
 
 echo "== WEBVIEW DOM =="
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webview
-HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+HOLD="$(hold_launch "$LINKED_ID")"
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "complex.title"
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview"
 "$HOST" --target ios ui compact "$TMP/webview/snapshot.json" | grep -q "complex.title" \
   || { echo "FAIL: expected folded domNodes (complex.title) from the WKWebView"; exit 1; }
@@ -598,13 +634,23 @@ export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=login
 HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
 # Focus the code field with a HID tap so the system keyboard actually comes up.
+#
+# ORDER MATTERS HERE, and it is not a style choice. Measured 2026-07-28 on iOS 26.3:
+# a HID *tap* raises the software keyboard, but the first HID *keyboard* event of a
+# boot attaches a hardware keyboard as far as iOS is concerned — so `act type`
+# dismisses the very keyboard this section is about, and it does not come back. Not
+# for the rest of that app run, not after a relaunch, and not after a device reboot:
+# the sim persists it (`HardwareKeyboardLastSeen` in the device's own
+# com.apple.keyboard.preferences), and only `xcrun simctl erase` clears it. Every
+# HOST-side fix is a red herring — `ConnectHardwareKeyboard` false in all three
+# places, quitting Simulator.app, rebooting the device — and it reproduces with the
+# field focused programmatically and no HID in play, so it is not Reticle's input
+# path being wrong either. It is a simulator-only artifact of typing at all.
+#
+# So the keyboard is asserted here, BEFORE anything types, and the typing that the
+# login flow needs happens after the keyboard evidence is banked.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id login.codeField
 sleep 1
-# type must report the keyboard it left behind.
-TYPE_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --text "123456")"
-echo "$TYPE_OUT"
-echo "$TYPE_OUT" | grep -Eq "keyboardVisible=(1|true)" \
-  || { echo "FAIL: act type did not report the keyboard. If the software keyboard never appeared, disable Simulator's 'Connect Hardware Keyboard' (I/O > Keyboard) and reboot the sim device."; exit 1; }
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login"
 LOGIN_COMPACT="$("$HOST" --target ios ui compact "$TMP/login/snapshot.json")"
 echo "$LOGIN_COMPACT"
@@ -648,6 +694,16 @@ echo "$LOGIN_AFTER" | grep -q "keyboard: hidden" \
   || { echo "FAIL: compact must report 'keyboard: hidden' after hide-keyboard"; exit 1; }
 echo "$LOGIN_AFTER" | grep "login.submitButton" | grep -q "occluded-by" \
   && { echo "FAIL: submit button still occluded after hide-keyboard"; exit 1; }
+# NOW type, with the keyboard evidence already banked (see the note above). The
+# field lost first responder to `hide-keyboard`, so re-focus it first. `type` still
+# lands its text with no software keyboard on screen — that is what the HID keyboard
+# IS — and the read-back is what proves it, not the keyboard flag.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id login.codeField
+sleep 1
+TYPE_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --text "123456")"
+echo "$TYPE_OUT"
+echo "$TYPE_OUT" | grep -q "text=123456" \
+  || { echo "FAIL: act type did not land the code in the field, got: $TYPE_OUT"; exit 1; }
 # The freed button must now actually work: activate it with --verify watching the
 # status node, and confirm iOS reports the login-status text flip as a diff (the
 # iOS analogue of the Android helper's --verify; iOS previously dropped it).
@@ -798,8 +854,9 @@ echo "== WEB LOTTIE DIALOG (lottie-web modal inside a WKWebView) =="
 # the modal's elements (dialog role, animation container, title, message, button)
 # into the unified tree with content + frames while an animated <svg> plays.
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webLottieDialog
-HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+HOLD="$(hold_launch "$LINKED_ID")"
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "webLottie.trigger"
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#open-lottie"
 sleep 2
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-lottie"
@@ -832,8 +889,9 @@ echo "== WEB DOM BLOCKED (unreadable DOM degrades to dom:unavailable) =="
 # blocks its own JS thread with a bounded busy loop — the same condition, and it
 # clears itself so recovery is observable.
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webDomBlocked
-HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+HOLD="$(hold_launch "$LINKED_ID")"
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "jsDialog.busyButton"
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dom-ok"
 "$HOST" --target ios ui compact "$TMP/dom-ok/snapshot.json" | grep -q "jsDialog.busyButton" \
   || { echo "FAIL: expected the page's DOM nodes before blocking its JS thread"; exit 1; }
@@ -868,8 +926,9 @@ echo "== WEB COMPONENT DIALOG (custom element + open shadow root) =="
 # Asserts Reticle pierces the shadow boundary and folds the modal's elements into
 # the unified tree with content + frames, and that a shadow-piercing activate lands.
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webComponentDialog
-HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+HOLD="$(hold_launch "$LINKED_ID")"
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "webComponent.trigger"
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#open-wc"
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/web-comp"
@@ -965,8 +1024,9 @@ xcrun simctl terminate "$UDID" "$LINKED_ID" 2>/dev/null || true
 xcrun simctl uninstall "$UDID" "$LINKED_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$UDID" "$LINKED_APP" >/dev/null
 export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=permission
-HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+HOLD="$(hold_launch "$LINKED_ID")"
 unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "permission.trigger"
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/permission-before"
 "$HOST" --target ios ui compact "$TMP/permission-before/snapshot.json" | grep -q "UNFOCUSED" \
   && { echo "FAIL: the app should hold focus before the prompt is raised"; exit 1; }
