@@ -16,7 +16,10 @@
   apart deliberately: collapsing them would understate what a `NumberPicker` offers and
   overstate what a self-drawn wheel does. `DatePicker`/`TimePicker` are deliberately NOT
   matched — in calendar/clock mode they materialise real tappable nodes, and marking
-  those "unreachable" would be a wrong claim in the other direction. The sample's
+  those "unreachable" would be a wrong claim in the other direction — and neither are
+  text views: a `NumberPicker`'s value field is `NumberPicker$CustomEditText`, so a name
+  match alone marked the one node whose value IS readable as `wheel:opaque`, right under
+  its parent's honest `wheel:selection-only` (caught on an emulator, now asserted). The sample's
   wheel-picker scenario gains a genuinely self-drawn third column so the `opaque` case
   has a fixture, and the skill now states the recipe the marker implies (swipe along the
   column, verify against the app's own committed state, never `type`).

@@ -445,6 +445,13 @@ echo "$WHEEL_MARKED" | grep '#wheel.year' | grep -q "wheel:opaque" \
   || { echo "FAIL: a self-drawn wheel must be marked wheel:opaque, got: $(echo "$WHEEL_MARKED" | grep '#wheel.year')"; exit 1; }
 echo "$WHEEL_MARKED" | grep '#wheel.hour' | grep -q "wheel:selection-only" \
   || { echo "FAIL: a NumberPicker must be marked wheel:selection-only, got: $(echo "$WHEEL_MARKED" | grep '#wheel.hour')"; exit 1; }
+# The NumberPicker's own value field must NOT be marked: it is the selection, not
+# a column, and it is the one node here whose value IS readable. (Measured: a
+# class-name match alone caught `NumberPicker$CustomEditText` and marked it
+# `wheel:opaque` — the opposite of the truth, right under its parent's
+# `wheel:selection-only`.)
+echo "$WHEEL_MARKED" | grep '#numberpicker_input' | grep -q "wheel:" \
+  && { echo "FAIL: a wheel's value node must not be marked as a wheel column"; exit 1; }
 # ...and an ordinary control on the same screen must NOT be marked: a false
 # positive would send a caller swiping at a button.
 echo "$WHEEL_MARKED" | grep '#wheel.confirm' | grep -q "wheel:" \
