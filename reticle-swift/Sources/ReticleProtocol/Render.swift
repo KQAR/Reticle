@@ -49,7 +49,7 @@ public enum Render {
 
     static func compact(_ snapshot: Snapshot) -> String {
         let observation = CompactObservation.from(snapshot)
-        let lines = observation.items.map { $0.line() }
+        let lines = windowGrouped(snapshot, observation)
         // Lead with the keyboard state when it was probed: the keyboard is
         // invisible to the node walk, so without this line an agent has no way
         // to know that "tappable" items near the bottom would actually hit the
@@ -75,6 +75,39 @@ public enum Render {
             header = "keyboard: hidden"
         }
         return ((focusLine.map { [$0] } ?? []) + [header] + lines).joined(separator: "\n")
+    }
+
+    /// Item lines grouped by window, topmost first, when more than one window has
+    /// items — a stacked screen otherwise interleaves them by geometry and the
+    /// screen being driven ends up scattered. Kept identical to the Kotlin helper's
+    /// `WindowGrouping`. With one window the headers would be noise, and the output
+    /// is unchanged.
+    static func windowGrouped(_ snapshot: Snapshot, _ observation: CompactObservation) -> [String] {
+        let present = Set(observation.items.compactMap { $0.windowRef })
+        guard present.count > 1 else { return observation.items.map { $0.line() } }
+        var out: [String] = []
+        let top = snapshot.topWindowRef()
+        for ref in snapshot.windowRefs().reversed() {
+            let items = observation.items.filter { $0.windowRef == ref }
+            if items.isEmpty { continue }
+            out.append(windowHeader(snapshot.nodes[ref], ref: ref, top: ref == top))
+            out.append(contentsOf: items.map { $0.line() })
+        }
+        let loose = observation.items.filter { $0.windowRef == nil }
+        if !loose.isEmpty {
+            out.append("window: (none) — nodes captured outside any window")
+            out.append(contentsOf: loose.map { $0.line() })
+        }
+        return out
+    }
+
+    static func windowHeader(_ node: Node?, ref: String, top: Bool) -> String {
+        let what = node?.testId
+            ?? node?.resourceId
+            ?? node?.typeName.split(separator: ".").last.map(String.init)
+            ?? "window"
+        let whereStr = node?.frame.map { " [\($0.intDescription)]" } ?? ""
+        return "window \(ref) \(what)\(whereStr)" + (top ? " [top]" : " [behind the top window]")
     }
 
     static func tree(_ snapshot: Snapshot, maxDepth: Int) -> String {

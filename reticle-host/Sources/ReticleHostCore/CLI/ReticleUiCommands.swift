@@ -85,7 +85,11 @@ func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
         snapshotPath: snapshotPath,
         depth: args.option("depth").map { Int($0) ?? 0 },
         selector: args.hostSelector(["test-id", "resource-id", "css", "ref"]),
-        package: package
+        package: package,
+        // `--window top` (or a ref): a stacked screen puts two live windows in one
+        // capture, and the flat views interleave them. Scoping is applied to the
+        // snapshot, so every view and the `@N` numbering narrow together.
+        window: args.option("window")
     ))
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(["text": result.text])
