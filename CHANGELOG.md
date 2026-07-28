@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **The Swift half of the protocol twins now runs in CI.** Every derivation in
+  `reticle-protocol` exists twice — Kotlin in `reticle-core`, Swift in
+  `reticle-swift` — and the shared fixtures under `reticle-protocol/fixtures/`
+  are the only thing stopping the two from slowly answering differently. The
+  Kotlin half was gated by `:reticle-core:test` / `:reticle-helper:test`; the
+  Swift half was gated by nothing. `reticle-swift` is a path dependency of the
+  host, so CI compiled `ReticleProtocol` on every push and never executed one of
+  its 25 assertions — `SelectorResolutionContractTests`,
+  `WaitClassificationTests`, `StyleObservationTests` and the
+  `CompactObservation`/`SemanticTree` mirrors of `reticle-core`'s own tests all
+  passed by never being asked. `swift test --package-path reticle-swift` is now a
+  step in both the CI and release workflows, so a one-sided fixture change fails
+  the build that made it rather than a device run three commits later.
+
 ## 0.12.0 - 2026-07-28
 
 - **An action answered by a toast no longer reads as an action that missed.** A
