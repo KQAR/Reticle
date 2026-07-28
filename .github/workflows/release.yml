@@ -60,6 +60,11 @@ jobs:
       - name: "Gate: JVM unit tests"
         run: ./gradlew :reticle-core:test :reticle-helper:test --stacktrace
 
+      - name: "Gate: reticle-swift (ReticleProtocol) tests"
+        # The Swift half of the shared reticle-protocol fixtures; see ci.yml for
+        # why building it as a host dependency is not the same as running it.
+        run: swift test --package-path reticle-swift
+
       - name: "Gate: Swift host tests"
         # Retry the executor-flaky Hummingbird serve tests (see ci.yml).
         run: |
