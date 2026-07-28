@@ -318,7 +318,10 @@ android · dev.reticle.sample · 3 actions · 19:11:47 → 19:11:55
 ——所以截断后留下的是真正要紧的那些。而每一次丢弃都**有计数、不静默**:渲染层是
 `…N more`,捕获层是 `! manifest kept X of Y`。什么都没变的动作会明说
 `(no observable change between before and after)`——上面第 3 步就是:tap 派发成功了,
-但屏幕没有任何反应。这是一条结论,不是一片空白。
+但屏幕没有任何反应。这是一条结论,不是一片空白。而且它会把两种读法都说出来:「手势没
+命中」和「手势命中了、app 在树外回答了你」需要相反的处置。最常见的第二种是 toast——
+它由系统绘制,不在任何视图树里,也不在进程内截图里,这一步会以
+`! transient message shown: "…"` 打头,内容取自系统的 Toast Queue。
 
 `trace log` 只读。它不是回放脚本,也不做任何断言:一次运行算不算通过由读的人判断,
 要表达预期仍然用 `--verify` 和 `act wait --strict`。

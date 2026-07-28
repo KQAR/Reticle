@@ -475,6 +475,24 @@ it never retries silently, and it never retries a `changed` (that would be
 fighting the app). `--type-delay <ms>` sends one character at a time with that
 gap if you would rather avoid the burst than recover from it.
 
+**Every `act` reports a toast the action raised (Android).** An app rejecting a
+submit usually says so with `Toast.makeText`, and on Android 11+ that toast is
+drawn by the SYSTEM in a window of its own — it is in no tree, in no in-process
+screenshot, takes no focus, and cannot be waited for. It used to leave the step
+reading `0 change(s)`, i.e. exactly like a tap that hit nothing. The result now
+carries:
+
+- `toast="…"` + `toastKind=text` — the message, from the system Toast Queue;
+- `toastKind=custom-view` — a `Toast.setView` toast: the app drew it, so the queue
+  record has no text and **the text is a node in the tree** (`ui compact` shows it);
+- `toastDuration=short|long`, and `toastCount=` when an action raised more than one.
+
+An in-app overlay (a view a "toast library" adds through `WindowManager`) is not a
+`Toast` at all: it never enters the queue, is reported as no toast, and needs no
+help — it is an ordinary node. A toast raised by ANOTHER process (the system's
+"Screenshot saved") is filtered out rather than attributed to your app. The watch
+costs ~25ms of `adb shell`; `--no-toast-probe` turns it off.
+
 Add `--submit` to press the keyboard's action key after the text lands —
 Android performs the focused field's IME editor action in-process (Done / Next
 / Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens
@@ -669,8 +687,17 @@ How to read it:
   appearances and text before geometry, addressable nodes before anonymous
   containers.
 - `(no observable change between before and after)` means the action dispatched
-  and the screen did not move. That is a real finding — the usual cause of a
-  later selector miss — not an empty result.
+  and the screen did not move. That is a real finding — not an empty result — but
+  it is **two** findings wearing one face: the gesture reached no handler
+  (re-target), or it reached one that answered somewhere a snapshot cannot see
+  (do **not** re-target — read the answer). Before concluding a miss, check the
+  `! transient message` line below, and consider a purely network answer.
+- `! transient message shown: "…"` is a **toast** the action raised, read from the
+  system Toast Queue. It leads the step because when an action is answered by a
+  toast, the toast IS the answer — and when one is present the empty-diff line
+  changes to `(no other observable change …)`, because the gesture demonstrably
+  did not miss. `! transient toast raised [custom-view]` means the app drew the
+  toast itself, so its text is a node in the changes right below.
 - `…N more (…)` is what the digest omitted; `! manifest kept X of Y` is what the
   capture already dropped. Both snapshots stay on disk, so raise `--changes` or
   open the trace directory when you need the rest.
