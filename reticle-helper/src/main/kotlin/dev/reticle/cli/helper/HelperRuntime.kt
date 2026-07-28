@@ -206,3 +206,50 @@ internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: OutlineRenderer.
         dx * dx + dy * dy
     }
 }
+
+/**
+ * When a selector tap re-resolves before dispatching, and for how long.
+ *
+ * Split out from the act handler because it is the whole of the policy change and
+ * the part worth pinning: resolution and dispatch are two steps, and between them
+ * the screen can move. `--settle` was introduced for a target ANIMATING IN, but
+ * the same staleness comes from a relayout caused by an EARLIER command — a
+ * `type` that raised the keyboard, a `hide-keyboard`, a scroll — and a caller has
+ * no cue to reach for a flag in that case. Measured on a physical device: a form
+ * row resolved to a rect already 161px stale and the touch opened the sheet of the
+ * row below it, reported as a plain success.
+ *
+ * So the confirm is the default, and the flags now mean:
+ *  - nothing        -> confirm with a short budget (one agreeing re-resolve ends it);
+ *  - `--settle`     -> this target IS animating; give it the full budget;
+ *  - `--no-settle`  -> single-read dispatch, the pre-existing behaviour;
+ *  - `--point`      -> nothing to re-resolve; never confirm.
+ */
+internal object TapSettlePolicy {
+    /** Budget for the default confirm — bounds the animating case, not the common one. */
+    const val CONFIRM_BUDGET_MS = 800L
+
+    /** Budget for an explicit `--settle`, for a target known to be sliding in. */
+    const val SETTLE_BUDGET_MS = 2_000L
+
+    /** Whether to re-resolve before dispatch, and the budget to do it in. */
+    data class Plan(val confirm: Boolean, val budgetMs: Long)
+
+    fun plan(rawPoint: Boolean, settle: Boolean, noSettle: Boolean, timeoutMs: Int?): Plan {
+        if (rawPoint || noSettle) return Plan(confirm = false, budgetMs = 0L)
+        val budget = timeoutMs?.toLong() ?: if (settle) SETTLE_BUDGET_MS else CONFIRM_BUDGET_MS
+        return Plan(confirm = true, budgetMs = budget)
+    }
+
+    /**
+     * How far the confirm moved the tap point, as `dx,dy` — or null when it did not
+     * move (whole pixels; a sub-pixel difference is not a relayout). Reported so the
+     * confirm does not SILENTLY fix a stale rect: the caller reasoned about the
+     * screen as it was before, and needs to know that changed.
+     */
+    fun movedBy(first: Point, dispatched: Point): String? {
+        val dx = (dispatched.x - first.x).toInt()
+        val dy = (dispatched.y - first.y).toInt()
+        return if (dx == 0 && dy == 0) null else "$dx,$dy"
+    }
+}

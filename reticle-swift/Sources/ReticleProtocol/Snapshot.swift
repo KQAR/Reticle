@@ -92,6 +92,60 @@ public struct Snapshot: Codable, Sendable {
 }
 
 /// A single node in the unified UI tree.
+public extension Snapshot {
+    /// The in-app windows of this capture, bottom-most first — the root's `window`
+    /// children in the platform's stacking order. The Swift twin of reticle-core's
+    /// `Snapshot.windowRefs()`.
+    func windowRefs() -> [String] {
+        (root()?.children ?? []).filter { nodes[$0]?.kind == .window }
+    }
+
+    /// The window on top, or nil when this capture has no window nodes.
+    func topWindowRef() -> String? {
+        windowRefs().last { nodes[$0]?.isVisible != false }
+    }
+
+    /// The nearest `window` ancestor of a node, or nil outside any window.
+    func windowRefOf(_ ref: String) -> String? {
+        var current = nodes[ref]
+        var seen = Set<String>()
+        while let node = current, seen.insert(node.ref).inserted {
+            if node.kind == .window { return node.ref }
+            current = node.parentRef.flatMap { nodes[$0] }
+        }
+        return nil
+    }
+
+    /// This capture narrowed to ONE window (`"top"` for the topmost), keeping the
+    /// application root above it; nil when the argument names no window here.
+    ///
+    /// Scoping the SNAPSHOT rather than each renderer is what makes every view —
+    /// tree, compact, outline, style — narrow identically. See the Kotlin twin for
+    /// the full rationale.
+    func scopedToWindow(_ window: String) -> Snapshot? {
+        let refs = windowRefs()
+        let targetRef = window == Snapshot.topWindow ? topWindowRef() : (refs.contains(window) ? window : nil)
+        guard let targetRef, let target = nodes[targetRef] else { return nil }
+        var kept: [String: Node] = [:]
+        if var rootNode = root() {
+            rootNode.children = [target.ref]
+            kept[rootNode.ref] = rootNode
+        }
+        func visit(_ ref: String) {
+            guard let node = nodes[ref], kept[ref] == nil else { return }
+            kept[ref] = node
+            node.children.forEach(visit)
+        }
+        visit(target.ref)
+        var scoped = self
+        scoped.nodes = kept
+        return scoped
+    }
+
+    /// `scopedToWindow` argument for "whatever window is on top right now".
+    static var topWindow: String { "top" }
+}
+
 public struct Node: Codable, Sendable {
     public var ref: String
     public var parentRef: String?
@@ -106,6 +160,16 @@ public struct Node: Codable, Sendable {
     public var isVisible: Bool
     public var isEnabled: Bool
     public var isInteractive: Bool
+    /// Can this node take input focus **from a touch** (Android:
+    /// `focusableInTouchMode`)? Distinct from `isInteractive`, which is true for
+    /// anything clickable: a compound input widget's outer container is clickable
+    /// but only the nested field can accept text. False where the platform has no
+    /// per-node focus channel (Compose semantics, DOM elements) — there the
+    /// platform focus sits on the host view above it.
+    public var isFocusable: Bool
+    /// Does this node hold input focus right now? At most one node in a tree does.
+    /// The post-condition `act type` checks after tapping its target field.
+    public var isFocused: Bool
     public var custom: [String: MetadataValue]
     /// Where each style-bearing entry of `custom` was read from, keyed by the same
     /// property name. Absent for non-style properties, so it doubles as the
@@ -147,6 +211,8 @@ public struct Node: Codable, Sendable {
         isVisible: Bool = true,
         isEnabled: Bool = true,
         isInteractive: Bool = false,
+        isFocusable: Bool = false,
+        isFocused: Bool = false,
         custom: [String: MetadataValue] = [:],
         styleChannels: [String: StyleChannel] = [:],
         styleGaps: [String: String] = [:],
@@ -170,6 +236,8 @@ public struct Node: Codable, Sendable {
         self.isVisible = isVisible
         self.isEnabled = isEnabled
         self.isInteractive = isInteractive
+        self.isFocusable = isFocusable
+        self.isFocused = isFocused
         self.custom = custom
         self.styleChannels = styleChannels
         self.styleGaps = styleGaps
@@ -238,7 +306,8 @@ public struct Node: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
-        case text, testId, frame, isVisible, isEnabled, isInteractive, custom
+        case text, testId, frame, isVisible, isEnabled, isInteractive
+        case isFocusable, isFocused, custom
         case styleChannels, styleGaps
         case children, regions, suspectedMultiRegion, suspectedWheel, charGrid, scroll
     }
@@ -263,6 +332,8 @@ public struct Node: Codable, Sendable {
         if !isVisible { try c.encode(isVisible, forKey: .isVisible) }
         if !isEnabled { try c.encode(isEnabled, forKey: .isEnabled) }
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
+        if isFocusable { try c.encode(isFocusable, forKey: .isFocusable) }
+        if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         if !custom.isEmpty { try c.encode(custom, forKey: .custom) }
         if !styleChannels.isEmpty { try c.encode(styleChannels, forKey: .styleChannels) }
         if !styleGaps.isEmpty { try c.encode(styleGaps, forKey: .styleGaps) }
@@ -289,6 +360,8 @@ public struct Node: Codable, Sendable {
         isVisible = try c.decodeIfPresent(Bool.self, forKey: .isVisible) ?? true
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
+        isFocusable = try c.decodeIfPresent(Bool.self, forKey: .isFocusable) ?? false
+        isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         custom = try c.decodeIfPresent([String: MetadataValue].self, forKey: .custom) ?? [:]
         styleChannels = try c.decodeIfPresent([String: StyleChannel].self, forKey: .styleChannels) ?? [:]
         styleGaps = try c.decodeIfPresent([String: String].self, forKey: .styleGaps) ?? [:]

@@ -54,6 +54,10 @@
             android:exported="false"
             android:label="Wheel Picker" />
         <activity
+            android:name="dev.reticle.sample.CompoundFieldScenarioActivity"
+            android:exported="false"
+            android:label="Compound Fields" />
+        <activity
             android:name="dev.reticle.sample.ListScenarioActivity"
             android:exported="false"
             android:label="Long List" />

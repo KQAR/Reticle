@@ -318,7 +318,13 @@ wait_compact "$PKG" "Spinner: Pro"
 # `--settle` re-resolves until the point repeats before dispatching, so the tap is
 # aimed at where the row ENDED UP; `settled=1` is the report that it was confirmed
 # stopped rather than merely resolved once.
-R act tap --package "$PKG" --test-id popup.menuTrigger >/dev/null
+TRIGGER_TAP="$(R act tap --package "$PKG" --test-id popup.menuTrigger)"
+# The confirm is the DEFAULT now, not just a `--settle` behaviour: an ordinary
+# selector tap must report whether its point was confirmed at rest, because the
+# same staleness comes from a relayout caused by an EARLIER command (a keyboard
+# shown by `type`, a scroll) where no caller would think to pass a flag.
+echo "$TRIGGER_TAP" | grep -q "settled=" \
+  || { echo "FAIL: a plain selector tap must report settled=, got: $TRIGGER_TAP"; exit 1; }
 wait_compact "$PKG" "Delete item"
 MENU_TAP="$(R act tap --package "$PKG" --label "Delete item" --settle)"
 echo "$MENU_TAP" | grep -q "settled=1" \
@@ -755,6 +761,38 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 # the element, so the closed widget stays targetable as a plain DOM node.
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
+
+echo "== COMPOUND FIELDS: type verifies focus, not dispatch =="
+# The shape real forms are built from: the unique id is on the WRAPPER and the
+# EditText inside it reuses a generic one. A tap on the wrapper focuses nothing,
+# so `type` used to report chars=N into a field that stayed empty.
+open_scenario scenario.compoundField compound.firstName
+# 1. Targeting the wrapper: exactly one focusable input inside it, so `type`
+# re-aims once and says so, rather than typing into the void.
+COMPOUND_TYPE="$(R act type --package "$PKG" --test-id compound.firstName --text "Ada")"
+echo "$COMPOUND_TYPE"
+echo "$COMPOUND_TYPE" | grep -q "focusLanded=" \
+  || { echo "FAIL: type must report where focus landed, got: $COMPOUND_TYPE"; exit 1; }
+echo "$COMPOUND_TYPE" | grep -Eq "focusLanded=(self|descendant)" \
+  || { echo "FAIL: type into a compound wrapper must land in its input, got: $COMPOUND_TYPE"; exit 1; }
+sleep 1
+R ui report --package "$PKG" --output "$TMP/compound-typed"
+R ui compact "$TMP/compound-typed/snapshot.json" | grep -q "Ada" \
+  || { echo "FAIL: the text did not reach the nested EditText"; exit 1; }
+# The focused field is marked in compact — "where would text go" is not inferable
+# from a rect, and the wrapper is `tappable` while taking no focus at all.
+R ui compact "$TMP/compound-typed/snapshot.json" | grep -q "focused" \
+  || { echo "FAIL: compact must mark the focused node"; exit 1; }
+# 2. Two inputs under one wrapper is a GUESS, and must be refused rather than
+# silently filling one of them.
+set +e
+AMBIGUOUS="$(R act type --package "$PKG" --test-id compound.ambiguous --text "07" 2>&1)"
+AMBIGUOUS_RC=$?
+set -e
+[ "$AMBIGUOUS_RC" -ne 0 ] \
+  || { echo "FAIL: type into a wrapper with two inputs must be refused, got: $AMBIGUOUS"; exit 1; }
+echo "$AMBIGUOUS" | grep -q "did not focus a text field" \
+  || { echo "FAIL: the refusal must say focus never landed; got: $AMBIGUOUS"; exit 1; }
 
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField

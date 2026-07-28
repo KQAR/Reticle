@@ -77,6 +77,8 @@ public struct CompactObservation: Codable, Sendable {
                         frame: node.frame,
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
+                        windowRef: currentWindow,
+                        isFocused: node.isFocused,
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
                         wheel: wheelMarker(node),
@@ -107,6 +109,14 @@ public struct CompactItem: Codable, Sendable {
     public var frame: Rect?
     public var isEnabled: Bool
     public var isInteractive: Bool
+    /// The in-app window this item belongs to, when it is inside one. A flat list
+    /// from a stacked screen interleaves two windows by geometry; `occludedBy`
+    /// carries this only indirectly and is overloaded with the keyboard and
+    /// same-window popup cases.
+    public var windowRef: String?
+    /// True when this node holds input focus — where typed text will go. At most
+    /// one item in an observation carries it.
+    public var isFocused: Bool
     /// What sits on top of this node's tap point, when anything does: the ref
     /// of a higher z-order window (a dialog/popup covering a background page),
     /// or `CompactObservation.occluderKeyboard` for the system keyboard. A tap
@@ -145,6 +155,8 @@ public struct CompactItem: Codable, Sendable {
         frame: Rect? = nil,
         isEnabled: Bool = true,
         isInteractive: Bool = false,
+        windowRef: String? = nil,
+        isFocused: Bool = false,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
         wheel: String? = nil,
@@ -161,6 +173,8 @@ public struct CompactItem: Codable, Sendable {
         self.frame = frame
         self.isEnabled = isEnabled
         self.isInteractive = isInteractive
+        self.windowRef = windowRef
+        self.isFocused = isFocused
         self.occludedBy = occludedBy
         self.scroll = scroll
         self.wheel = wheel
@@ -181,6 +195,7 @@ public struct CompactItem: Codable, Sendable {
         var state = ""
         if !isEnabled { state += " disabled" }
         if isInteractive { state += " tappable" }
+        if isFocused { state += " focused" }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         if let wheel { state += " wheel:\(wheel)" }
@@ -193,7 +208,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case occludedBy, scroll, wheel
+        case isFocused, windowRef, occludedBy, scroll, wheel
         case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -207,6 +222,8 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(frame, forKey: .frame)
         if !isEnabled { try c.encode(isEnabled, forKey: .isEnabled) }
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
+        try c.encodeIfPresent(windowRef, forKey: .windowRef)
+        if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
         try c.encodeIfPresent(wheel, forKey: .wheel)
@@ -226,6 +243,8 @@ public struct CompactItem: Codable, Sendable {
         frame = try c.decodeIfPresent(Rect.self, forKey: .frame)
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
+        windowRef = try c.decodeIfPresent(String.self, forKey: .windowRef)
+        isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
         wheel = try c.decodeIfPresent(String.self, forKey: .wheel)
