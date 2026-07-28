@@ -67,7 +67,13 @@ func cmdInject(_ backend: HostBackend, _ args: Args) throws {
             ?? (FileManager.default.fileExists(atPath: devPayload)
                 ? FileManager.default.currentDirectoryPath + "/" + devPayload : nil)
     }
-    let started = try backend.inject(AppStartRequest(package: pkg, payload: payload))
+    // `--restart-under-debugger`: relax the input-dispatch ANR that can kill the app
+    // while JDWP holds its main thread suspended. Opt-in, and the name says the
+    // price: marking the debug app force-stops the target, so the app comes back on
+    // its launch screen rather than the one you were driving.
+    let started = try backend.inject(AppStartRequest(
+        package: pkg, payload: payload, restartUnderDebugger: args.flag("restart-under-debugger")
+    ))
     RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(started.jsonObject)
@@ -166,10 +172,12 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
-    // `tap --settle`: re-resolve the selector until its point stops moving before
-    // dispatching, so a still-animating popup cannot make the touch land on its
-    // neighbour. Opt-in, because it costs a poll loop on every tap.
+    // A selector tap re-resolves its point before dispatching by default, so a
+    // rect made stale by an earlier relayout cannot send the touch to the
+    // neighbouring control. `--settle` raises the budget for a target that is
+    // genuinely animating in; `--no-settle` opts out of the confirm entirely.
     request.settle = args.flag("settle")
+    request.noSettle = args.flag("no-settle")
     request.settleTimeoutMs = args.option("settle-timeout").map { Int($0) ?? 2000 }
     request.verify = args.option("verify")
     request.verifyTimeoutMs = args.option("verify-timeout").map { Int($0) ?? 2000 }
