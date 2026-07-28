@@ -63,6 +63,18 @@ build**. If it can't be obtained the launcher stops with actionable guidance.
     works even on locked `user` builds where `wrap.sh` is blocked. After it, every
     other command works unchanged. The target must already hold the `INTERNET`
     permission (real apps do); non-debuggable release builds still need Frida/root.
+    Two things it needs from you, both about the main thread: the app must be
+    **foregrounded** (injection runs on the app's own looper — a backgrounded app
+    fails with exactly that message), and you must **not** nudge it with input in
+    a loop while it runs. Reticle sends its own nudge; an extra queued touch stays
+    unconsumed for the whole JDWP suspension and trips Android's 5s input-dispatch
+    ANR, which kills the app mid-injection. When that happens the failure now says
+    so — an ANR verdict with the system's own exit record, not a bare
+    `EOFException`. `--restart-under-debugger` prevents it (it marks the app as
+    being debugged, so AMS relaxes the verdict) but is **opt-in for a reason**:
+    setting the debug app force-stops the target, so the app is relaunched and
+    whatever screen it was on is gone. Reach for it after an ANR verdict, not
+    before.
   - **Truly unreachable** (non-debuggable, no AAR): without an injection path
     `reticle ui report` cannot reach the app — say so rather than inventing data
     (use `reticle debug logcat` to confirm no agent, and `reticle ui screenshot`
