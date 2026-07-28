@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-07-28
+
 - **An action answered by a toast no longer reads as an action that missed.** A
   submit whose backend rejected it came back `0 change(s)`: the screen was
   byte-identical before and after, and the docs read that as evidence the tap hit
