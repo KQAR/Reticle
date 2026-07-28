@@ -191,6 +191,11 @@ public struct ActRequest: @unchecked Sendable {
     public var direction: String?
     public var maxSwipes: String?
     public var submit: Bool = false
+    /// Opt OUT of the Toast Queue watch an action does by default (Android). The
+    /// watch rides along with work the action was already doing and costs ~25ms
+    /// of `adb shell` per sample; this is for a caller who has measured that and
+    /// wants it gone.
+    public var noToastProbe: Bool = false
     /// `type --type-delay <ms>`: send the characters one at a time with this gap
     /// instead of as one `input text` burst. The opt-out for a field whose
     /// `TextWatcher` reformats on every change and drops characters out of the
@@ -241,6 +246,7 @@ public struct ActRequest: @unchecked Sendable {
         if let direction { out["direction"] = direction }
         if let maxSwipes { out["maxSwipes"] = maxSwipes }
         if submit { out["submit"] = true }
+        if noToastProbe { out["noToastProbe"] = true }
         if let typeDelayMs { out["typeDelayMs"] = typeDelayMs }
         if settle { out["settle"] = true }
         if noSettle { out["noSettle"] = true }
@@ -505,6 +511,7 @@ public extension ActRequest {
         request.direction = string("direction")
         request.maxSwipes = string("maxSwipes")
         request.submit = flag("submit")
+        request.noToastProbe = flag("noToastProbe")
         request.typeDelayMs = int("typeDelayMs")
         request.settle = flag("settle")
         request.noSettle = flag("noSettle")

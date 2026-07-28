@@ -411,7 +411,11 @@ ahead of anonymous layout containers — so what survives a cap is what mattered
 And every loss is **counted, not silent**: `…N more` for the render, `! manifest
 kept X of Y` for the capture. An action that changed nothing says
 `(no observable change between before and after)`, which is a finding, not a
-blank.
+blank — and names both of its readings, because "the gesture hit nothing" and
+"the gesture landed and the app answered out of tree" need opposite responses. A
+toast is the common second case: it is drawn by the system, so it is in no tree
+and no in-process screenshot, and the step leads with `! transient message shown:
+"…"` recovered from the system Toast Queue.
 
 `trace log` only reads. It is not a replay script and asserts nothing: whether a
 run passed is the reader's call, and `--verify` / `act wait --strict` remain the

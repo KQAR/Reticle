@@ -794,6 +794,54 @@ set -e
 echo "$AMBIGUOUS" | grep -q "did not focus a text field" \
   || { echo "FAIL: the refusal must say focus never landed; got: $AMBIGUOUS"; exit 1; }
 
+echo "== TOASTS: an action answered out of tree is not an action that missed =="
+# The measured blind spot. On Android 11+ a text toast is drawn by the SYSTEM in
+# a window of its own, so it is in no snapshot of this app and in no in-process
+# screenshot: the before/after pair is byte-identical and the step reads
+# `0 change(s)` — the documented signal for a gesture that hit nothing. Every act
+# now watches the system Toast Queue, which is the one channel that holds it.
+open_scenario scenario.toasts toast.text
+TOAST_TRACES="$TMP/toast-traces"
+# 1. Text toast: no tree change at all, and the message is still recovered.
+TEXT_TOAST="$(R act tap --package "$PKG" --test-id toast.text --trace-output "$TOAST_TRACES")"
+echo "$TEXT_TOAST"
+echo "$TEXT_TOAST" | grep -q "toast=Amount exceeds your daily limit" \
+  || { echo "FAIL: a text toast must be recovered from the Toast Queue, got: $TEXT_TOAST"; exit 1; }
+echo "$TEXT_TOAST" | grep -q "toastKind=text" \
+  || { echo "FAIL: the toast kind decides where its text lives, got: $TEXT_TOAST"; exit 1; }
+# The point of the whole thing: this action really did change nothing in the tree.
+echo "$TEXT_TOAST" | grep -q "0 change(s)" \
+  || { echo "FAIL: expected a tree-silent action — the scenario is wrong, got: $TEXT_TOAST"; exit 1; }
+sleep 4
+# 2. Custom-view toast: the app drew it, so the TREE has the text and the queue
+# record does not. Reticle must say which, not paper over the difference.
+CUSTOM_TOAST="$(R act tap --package "$PKG" --test-id toast.customView --trace-output "$TOAST_TRACES")"
+echo "$CUSTOM_TOAST"
+echo "$CUSTOM_TOAST" | grep -q "toastKind=custom-view" \
+  || { echo "FAIL: a Toast.setView toast must be marked custom-view, got: $CUSTOM_TOAST"; exit 1; }
+echo "$CUSTOM_TOAST" | grep -q "node in the tree" \
+  || { echo "FAIL: a custom-view toast must point at where its text IS, got: $CUSTOM_TOAST"; exit 1; }
+R ui compact --live --package "$PKG" | grep -q "Custom view: amount exceeds your limit" \
+  || { echo "FAIL: an app-drawn toast IS a node; the tree must carry its text"; exit 1; }
+sleep 4
+# 3. A WindowManager overlay is not a Toast at all: it never enters the queue, and
+# it needs no help — it is an ordinary node.
+OVERLAY="$(R act tap --package "$PKG" --test-id toast.overlay)"
+echo "$OVERLAY"
+echo "$OVERLAY" | grep -q "toast=" \
+  && { echo "FAIL: an app overlay is not a Toast and must not be reported as one, got: $OVERLAY"; exit 1; }
+R ui compact --live --package "$PKG" | grep -q "Overlay: amount exceeds your limit" \
+  || { echo "FAIL: an app overlay must be an ordinary node in the tree"; exit 1; }
+sleep 4
+# 4. `trace log` leads with the transient message, and the empty-diff line stops
+# implying the gesture missed once a toast has proved it did not.
+TOAST_LOG="$(R trace log "$TOAST_TRACES")"
+echo "$TOAST_LOG"
+echo "$TOAST_LOG" | grep -q '! transient message shown: "Amount exceeds your daily limit"' \
+  || { echo "FAIL: trace log must lead the step with the toast; got: $TOAST_LOG"; exit 1; }
+echo "$TOAST_LOG" | grep -q "(no other observable change between before and after)" \
+  || { echo "FAIL: with a toast recovered, the empty diff must stop reading as a miss"; exit 1; }
+
 echo "== REFORMATTING FIELDS: type reports what LANDED, not what was sent =="
 # `chars=N` counts characters SENT. The measured failure is a five-character
 # --text that left three in the field, exit code 0, focus correct — a TextWatcher

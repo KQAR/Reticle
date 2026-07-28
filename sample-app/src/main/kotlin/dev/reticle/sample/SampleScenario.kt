@@ -59,6 +59,12 @@ enum class SampleScenario(
         testId = "scenario.reformattingField",
         activityClass = ReformattingFieldScenarioActivity::class.java,
     ),
+    Toasts(
+        title = "Toasts",
+        subtitle = "A text toast is a SYSTEM window: in no tree, in no in-process screenshot",
+        testId = "scenario.toasts",
+        activityClass = ToastScenarioActivity::class.java,
+    ),
     LongList(
         title = "Long list",
         subtitle = "60 recycled rows; far-down rows are absent until scrolled",
