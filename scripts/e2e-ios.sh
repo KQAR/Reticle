@@ -353,6 +353,19 @@ PY
 # inside the ~6 rows a picker renders.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "13"
 sleep 1
+# ...and now that 13 IS the selection, the same label must still be tappable.
+# `UIPickerView` renders its magnifier bands as separate table views, so the row
+# under the selection exists 2-3x at one spot (measured: '09' at 50,487 / 50,487 /
+# 42,487) and `--label` on it was refused as ambiguous — for exactly the values
+# worth tapping. Views stacked on ONE rect are one target; the tap reports
+# `source=label:coincident` so the collapse is stated, not hidden.
+STACKED_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "13" 2>&1 || true)"
+echo "$STACKED_TAP"
+echo "$STACKED_TAP" | grep -q "Refusing to guess" \
+  && { echo "FAIL: views stacked on one rect must not read as an ambiguous label: $STACKED_TAP"; exit 1; }
+echo "$STACKED_TAP" | grep -q "source=label" \
+  || { echo "FAIL: the selected row must still resolve by label, got: $STACKED_TAP"; exit 1; }
+sleep 1
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id wheel.confirm \
   --verify 'testId=wheel.status' | tee "$TMP/wheel-confirm.txt"
 grep -q "Time: 13:" "$TMP/wheel-confirm.txt" \

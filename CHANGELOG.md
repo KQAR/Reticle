@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **`--label` no longer refuses a row just because the platform draws it three times.**
+  Follow-up to the wheel work, found by reading the iOS wheel scenario's real capture:
+  `UIPickerView` renders its magnifier bands as SEPARATE table views, so the row under
+  the selection exists 2-3× at one spot. Measured on a simulator: `'09' at 50,487 /
+  50,487 / 42,487`, and `act tap --label "09"` came back *"matched 3 visible nodes …
+  Refusing to guess"* — on the wheel `docs/boundaries.md` said a label tap selects, and
+  for precisely the values worth tapping (the selection and its neighbours; a distant
+  row like `13` has only one band and worked fine). The three candidates were the same
+  on-screen row, so the refusal protected nothing. Matches stacked on ONE rect — every
+  candidate's tap point inside every other's rect — are now collapsed to one target and
+  reported as `source=label:coincident`, so the layering is stated rather than hidden.
+  Genuine ambiguity is untouched: `--label "15"` on the same screen still refuses,
+  because 15 is an hour AND a minute, two different places. Both resolvers change
+  together and the shared `selector-resolution.cases.json` pins the new rule, so Android
+  and iOS cannot drift on it.
+
 - **A wheel column no longer reads as a decorative empty view.** A wheel paints its
   candidate values onto its own canvas, so an Android `NumberPicker` publishes only its
   selection and a third-party self-drawn wheel (`WheelView` / `LoopView` / `PickerView`
