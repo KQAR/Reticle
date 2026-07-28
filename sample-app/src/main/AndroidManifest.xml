@@ -62,6 +62,10 @@
             android:exported="false"
             android:label="Reformatting Fields" />
         <activity
+            android:name="dev.reticle.sample.ToastScenarioActivity"
+            android:exported="false"
+            android:label="Toasts" />
+        <activity
             android:name="dev.reticle.sample.ListScenarioActivity"
             android:exported="false"
             android:label="Long List" />
