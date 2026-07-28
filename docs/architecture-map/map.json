@@ -101,7 +101,7 @@
       "kind": "kotlin-module",
       "layer": "shared",
       "sub": "pure JVM · no Android",
-      "detail": "Snapshot / semantic / region models, the wire protocol, selectors, WaitVerdict.classify, CharGrid, the compact/style derivations, and Render — the text projections themselves, so a projection's formatting is shared with its derivation rather than living in the helper. One implementation of reticle-protocol; shared by the helper and the in-app Android agent.",
+      "detail": "Snapshot / semantic / region models, the wire protocol, selectors and their resolution, WaitVerdict.classify, CharGrid, the compact/style derivations, and Render — the text projections themselves, so a projection's formatting is shared with its derivation rather than living in the helper. One implementation of reticle-protocol; shared by the helper and the in-app Android agent.",
       "x": 300, "y": 352, "w": 240, "h": 48
     },
     {
@@ -370,7 +370,7 @@
         },
         {
           "title": "Resolve through the Swift protocol",
-          "detail": "SelectorResolution in ReticleProtocol — the twin of the helper's Kotlin SelectorResolver. Both are pinned by selector-resolution.cases.json, which exists because the two had silently drifted on every rule.",
+          "detail": "SelectorResolution in ReticleProtocol — the twin of reticle-core's Kotlin SelectorResolver. Both are pinned by selector-resolution.cases.json, which exists because the two had silently drifted on every rule.",
           "nodes": ["host-ios", "proto-swift", "fixtures"], "edges": ["e-ios-swift", "e-pswift-fix"]
         },
         {
@@ -422,7 +422,7 @@
         },
         {
           "title": "Two implementations, one table",
-          "detail": "Android resolves in SelectorResolver (Kotlin, in the helper), iOS in SelectorResolution (Swift, in ReticleProtocol). selector-resolution.cases.json is the authority for every rule above.",
+          "detail": "Android resolves in SelectorResolver (Kotlin, in reticle-core), iOS in SelectorResolution (Swift, in ReticleProtocol) — both in the module the fixture describes. selector-resolution.cases.json is the authority for every rule above.",
           "nodes": ["helper", "host-ios", "fixtures"], "edges": ["e-helper-core", "e-ios-swift", "e-pcore-fix", "e-pswift-fix"]
         }
       ]

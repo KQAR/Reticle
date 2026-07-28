@@ -361,6 +361,18 @@ data class Node(
         (custom["pixelStatus"] as? MetadataValue.Text)?.value == "unavailable"
 
     /**
+     * The CSS selector a WebView DOM node was emitted with, the twin of the Swift
+     * `Node.domCssSelector()`. Present only on `NodeKind.domNode`.
+     *
+     * Lives here rather than in the helper because selector resolution — which is
+     * pinned across both languages by
+     * `reticle-protocol/fixtures/selector-resolution.cases.json` — reads it, and the
+     * key/cast must be spelled once.
+     */
+    fun domCssSelector(): String? =
+        (custom["domCssSelector"] as? MetadataValue.Text)?.value
+
+    /**
      * The mirror image: this window is `FLAG_SECURE`, so a DEVICE-level capture
      * (`adb exec-out screencap`) comes back blanked while the in-process capture is
      * unaffected. Agents set `custom["screencapStatus"] = "blank"`.

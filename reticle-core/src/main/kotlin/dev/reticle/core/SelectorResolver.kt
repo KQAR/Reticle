@@ -1,11 +1,28 @@
-package dev.reticle.cli
+package dev.reticle.core
 
-import dev.reticle.core.Node
-import dev.reticle.core.Point
-import dev.reticle.core.Rect
-import dev.reticle.core.Selector
-import dev.reticle.core.SemanticTree
-import dev.reticle.core.Snapshot
+/**
+ * A selector resolution that refused rather than guessed. Both subclasses are a
+ * REFUSAL, not a failure: the resolver had a candidate and declined to act on it,
+ * because the wrong target would have looked like a success.
+ *
+ * They live here, beside the resolver, so the rule and its refusals travel together
+ * into whichever host calls them — the Swift twin does the same with
+ * `SelectorResolution.AmbiguousLabel` / `.RegionMiss`. The helper's RPC layer
+ * reports any throwable by message, so nothing is lost by not being a `CliError`;
+ * the reason they stay two distinct types is that a poll loop must tell them apart
+ * (see `HelperWait`): an ambiguity makes an answer *unknowable*, while a phrase that
+ * is simply not on screen yet is an honest negative a `wait` should keep waiting on.
+ */
+open class SelectorResolutionException(message: String) : RuntimeException(message)
+
+/** A `--label` matched several visible nodes in different subtrees. */
+class AmbiguousLabelException(message: String) : SelectorResolutionException(message)
+
+/**
+ * A `--region` needle matched no discovered region, no region source and no
+ * char-grid substring inside the node the selector found.
+ */
+class RegionMissException(message: String) : SelectorResolutionException(message)
 
 /**
  * Resolves a selector to a screen point for input dispatch. Encodes the
@@ -14,11 +31,17 @@ import dev.reticle.core.Snapshot
  *   "Use the semantic tree first for movement and input; selector actions
  *    should only fall back to view frames when no semantic match exists."
  *
- * This is the Android half of a two-language contract: `SelectorResolution` in
- * `reticle-swift` is the iOS half, and both are pinned by
+ * This is the Kotlin half of a two-language contract: `SelectorResolution` in
+ * `reticle-swift` is the Swift half, and both are pinned by
  * `reticle-protocol/fixtures/selector-resolution.cases.json`. The fixture exists
  * because the two had drifted — change resolution here only together with a case
  * there, or iOS ships a different answer for the same command.
+ *
+ * It lives in `reticle-core` rather than in the helper for the same reason its twin
+ * lives in `ReticleProtocol` rather than in the Swift host: a rule pinned by a shared
+ * fixture belongs in the module that shared fixture describes. With it in the helper,
+ * the two halves of one contract sat at different layers, and nothing told the next
+ * contributor where a new resolution rule was supposed to go.
  */
 class SelectorResolver(
     private val snapshot: Snapshot,
@@ -112,7 +135,7 @@ class SelectorResolver(
             // the docs say is tappable was REFUSED, precisely for the values
             // nearest the selection, which are the ones worth tapping.
             coincident(leaves) -> LabelHit(leaves.first(), coincident = true)
-            else -> throw CliError(
+            else -> throw AmbiguousLabelException(
                 "label '$label' matched ${leaves.size} visible nodes " +
                     leaves.take(6).joinToString(", ") { n ->
                         "'${n.text ?: n.contentDescription}' at ${n.frame?.let { f -> "${f.x.toInt()},${f.y.toInt()}" }} (${n.ref})"
@@ -179,7 +202,7 @@ class SelectorResolver(
      */
     private fun inHighestWindowWithAny(nodes: List<Node>): List<Node> {
         val windowRefs = snapshot.root()?.children
-            ?.filter { snapshot.nodes[it]?.kind == dev.reticle.core.NodeKind.window }
+            ?.filter { snapshot.nodes[it]?.kind == NodeKind.window }
             ?: return nodes
         if (windowRefs.isEmpty()) return nodes
         val byWindow = nodes.groupBy { windowRefOf(it) }
@@ -192,7 +215,7 @@ class SelectorResolver(
     private fun windowRefOf(node: Node): String? {
         var current: Node? = node
         while (current != null) {
-            if (current.kind == dev.reticle.core.NodeKind.window) return current.ref
+            if (current.kind == NodeKind.window) return current.ref
             current = current.parentRef?.let { snapshot.nodes[it] }
         }
         return null
@@ -244,7 +267,7 @@ class SelectorResolver(
                 }
             }
         }
-        throw RegionMissError(
+        throw RegionMissException(
             "node ${node.ref} matched but no region or on-screen text matched '$needle' " +
                 "(${node.regions.size} discovered region(s), " +
                 "charGrid=${if (node.charGrid != null) "yes" else "no"}). " +

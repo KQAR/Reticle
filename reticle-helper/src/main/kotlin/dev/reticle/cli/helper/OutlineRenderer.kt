@@ -4,6 +4,8 @@ import dev.reticle.core.Node
 import dev.reticle.core.Rect
 import dev.reticle.core.Render
 import dev.reticle.core.Snapshot
+import java.io.File
+import java.security.MessageDigest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -15,8 +17,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.io.File
-import java.security.MessageDigest
 
 /** Agent-facing outline renderer plus short-lived @N alias cache. */
 internal object OutlineRenderer {

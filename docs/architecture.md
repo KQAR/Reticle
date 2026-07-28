@@ -865,12 +865,23 @@ Note this is the *opposite default* from inspection: actions prefer the
 semantic tree (it's the honest input surface, and the only one Compose
 exposes), while `ui node` always returns the richer view-tree node.
 
-**Two implementations, one table.** Android resolves in `SelectorResolver`
-(Kotlin, in the helper) and iOS in `SelectorResolution` (Swift, in
-`ReticleProtocol`), because the two hosts are different programs. Both are pinned
-by `reticle-protocol/fixtures/selector-resolution.cases.json`, which is the
+**Two implementations, one table, both in the protocol module.** Android resolves
+in `SelectorResolver` (Kotlin, `reticle-core`) and iOS in `SelectorResolution`
+(Swift, `ReticleProtocol`), because the two hosts are different programs. Both are
+pinned by `reticle-protocol/fixtures/selector-resolution.cases.json`, which is the
 authority for every rule above — the file exists because the two had silently
 drifted on all of them.
+
+The Kotlin half used to live in the helper, i.e. a layer above the module the
+fixture describes, and that asymmetry cost more than tidiness: a rule pinned by a
+shared fixture had no obvious home, so the next one could as easily land in the
+host as beside its twin. Its refusals moved with it — `AmbiguousLabelException` and
+`RegionMissException` are `reticle-core` types now rather than `CliError`
+subclasses, which costs nothing (the helper's RPC layer reports any throwable by
+message) and keeps a refusal travelling with the rule that raises it. They stay two
+types because a poll loop must tell them apart: an ambiguity makes an answer
+`unknowable`, while a phrase not yet on screen is an honest negative a `wait`
+should keep waiting on.
 
 ## Module layout
 
@@ -882,7 +893,7 @@ Which box in the [first diagram](#the-shape-of-the-system) each module is:
 | `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, and `Render` — the twin of `dev.reticle.core.Render`, so the tree/compact/semantics/regions text is formatted from the protocol module on both platforms rather than once per host. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
-| `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector resolver. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
+| `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector *diagnostics* (resolution itself is `reticle-core`, beside its Swift twin). Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
 | `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`) behind the typed `HostBackend` interface (one method per capability, typed requests/results): Android device commands go through `AndroidBackend`, the single place the helper's JSONL method names and parameter keys are spelled; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. Internally four SwiftPM library targets stacked bottom-up — `ReticleHostShared` (dependency-free `JSONValue` / event models / `HelperError` / the `HelperCalling` call surface / the version constant), `ReticleNetworkLane` (the capture proxy + MITM + mock engine, behind the `NetworkEventSink` interface), `ReticleHostIos` (the iOS platform backend: `simctl`/`devicectl`, loopback HTTP, the wait/scroll-to/verify loops, CoreSimulator HID — depending on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI), and `ReticleHostCore` (daemon, CLI, panel, Android helper clients, grouped as `Daemon/` `CLI/` `Android/`) — plus the `ReticleHost` executable. `ReticleHostCore` `@_exported`s the lower three, so the split is an internal boundary, not an API change. |
 | `sample-app` | Android app | Demo linking the Android agent, proving the round trip |
 | `sample-app-ios` | iOS app | Demo with a `linked` target (links `ReticleKit`) and a `noagent` target (injection test), proving the iOS round trip |

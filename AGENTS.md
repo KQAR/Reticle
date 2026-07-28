@@ -52,8 +52,12 @@ It is generated from the prose docs — edit those first, then the map.
   It ships as the no-JDK native `reticle-helper` (GraalVM native-image, built by
   `:reticle-helper:nativeHelper`) that the Swift host drives. The runtime probe,
   injection (`Injector.kt` + `Jdwp.kt`, a dependency-free JDWP client — payload
-  dex into a debuggable app, no AAR/repackage/root), selector resolution, and all
-  device I/O live here. The three platform seams (device control, injection,
+  dex into a debuggable app, no AAR/repackage/root) and all device I/O live here.
+  Selector *resolution* does not: it is fixture-pinned across both languages, so it
+  sits in `reticle-core` beside its Swift twin (`SelectorResolution`), and the helper
+  keeps only the host-side diagnostics for a miss.
+
+  The three platform seams (device control, injection,
   input) sit behind a `dev.reticle.cli.platform` SPI; the Android implementation
   (`Adb`/`Injector`/`InputBackend`/`Jdwp`) is under `platform/android`, selected
   via `--target` (default `android`). Adding a platform = a new `platform/<os>`
