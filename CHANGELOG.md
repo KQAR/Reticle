@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Docs caught up with what the code does.** Three claims had gone stale: the
+  skill's Rules section still said an empty action diff is evidence the tap hit
+  nothing (0.12.0 made it two readings, and the skill's own body already said so —
+  the rule contradicted the page it was on); the roadmap's feature table listed
+  `@N` aliases as a plain Drive capability when the outline cache is Android-only
+  and `Render.swift` says as much in place; and the sample `trace log` output
+  predated the current wording. The app-authored channel (`log` /
+  `attachMetadata` / `registerProbe`, and now the retract) is documented in the
+  README for the first time — it existed only in a changelog entry from months
+  ago.
+
 - **The bilingual roadmap is checked for structural drift.** `docs/roadmap.md`
   and `docs/roadmap.zh-CN.md` are one document in two languages, and the roadmap
   is where scope decisions are recorded — a section added to one and not the other

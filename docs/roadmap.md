@@ -58,7 +58,7 @@ language fits.
 | --- | --- |
 | **Observe** (Android) | View tree + Compose semantics + WebView DOM in one flat `ref → Node` map; semantic tree and compact observation derived in-process; regions/char grid for multi-target controls |
 | **Observe** (iOS) | UIKit tree + SwiftUI `axElement` bridge (including links inside one `Text`) + `WKWebView` DOM; same protocol JSON |
-| **Drive** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`, selector-first with `--region`, `--label`, `@N` aliases, `--settle`, `--verify`, `act batch`. Real HID on Android and the iOS simulator; in-process activation on iOS devices |
+| **Drive** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`, selector-first with `--region`, `--label`, `--settle`, `--verify`, `act batch` (plus `@N` aliases, which are **Android-only** — the outline cache is not ported to the iOS host, and `Render.swift` says so in place). Real HID on Android and the iOS simulator; in-process activation on iOS devices |
 | **Evidence** | Action traces (before/after snapshots + screenshots + a ranked, self-describing diff), recorded by default; `trace log` digest, `replay gif`, session timeline, the absence vocabulary (`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`, `pixels:unavailable`, `screencap:blank`, `occluded-by:*`, `scroll:*`) |
 | **Network** | `reticle serve` capture lane on Loom's `ProxyEngine`, HTTPS MITM with CA issuance, session-scoped traffic rules (`mock`/`block`/`mapRemote`/`passthrough` + modifiers), flow replay + diff. Android and iOS (simulator and device) |
 | **Panel** | Localhost read-only evidence panel: traces, artifacts, network cards with filters and rule grouping, "copy as rule". Display-only by design |
