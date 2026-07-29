@@ -675,7 +675,8 @@ reticle trace log --changes 12 --json   # more per-action detail / machine-reada
     evidence 1785150708052-tap/, 2 snapshots, 2 screenshots
 
 2  19:11:55  tap  testId=scenario.login  →540,2320 semantic:testId
-    (no observable change between before and after)
+    (no observable change between before and after — usually the gesture hit
+     nothing, but an app can also answer out of tree or purely over the network)
 ```
 
 How to read it:
@@ -923,9 +924,14 @@ each one.
   see the before→after diff in the acting command, `reticle trace log` to read
   back what a whole run did, or `ui node --live` to read one node. Fall back to a
   full re-`ui report` only when you need the whole tree.
-- A dispatched action is not a landed one. `trace log` printing `(no observable
-  change between before and after)` for a step is evidence the tap hit nothing —
-  say so rather than reporting the step as done.
+- A dispatched action is not a landed one — but an empty diff is **two** findings
+  wearing one face, so do not report it as a miss on its own. `trace log` printing
+  `(no observable change between before and after …)` means either the gesture
+  reached no handler (re-target) or it reached one that answered where a snapshot
+  cannot see: a toast, a purely network round trip, another process's window.
+  Check the `! transient message shown:` line first — with a toast recovered the
+  wording changes to `(no other observable change …)`, which is evidence the
+  gesture did NOT miss.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.

@@ -314,6 +314,23 @@ $CLI mutate --package dev.reticle.sample --test-id checkout.status \
     --property text --value "Paid!"
 ```
 
+### The app-authored channel (optional, from inside the app)
+
+A linked app can add to what Reticle sees. Each one only writes to an in-process
+buffer — nothing leaves the app until Reticle answers a request for it, and the
+log ring is bounded — so they are safe to leave in a debug build:
+
+| API (Android / iOS) | What it adds |
+| --- | --- |
+| `Reticle.log(message, metadata)` | An entry in `debug logs` — the app's own narration beside the tree |
+| `Reticle.attachMetadata(testId, metadata)` | Scalar fields merged into that node's `custom` map at capture time |
+| `Reticle.registerProbe(testId, metadata)` | A synthetic node under the application root, for state with no view to hang it on |
+
+Probes are process-global, so publish them on entry and **retract them on exit**
+— `ReticleProbeRegistry.clear()` on Android, `Reticle.clearProbes()` on iOS.
+Without that a `testId` registered for one screen stays addressable on every
+screen after it, which reads as a stale target rather than as a leak.
+
 All helper-backed commands accept `--json` for machine-readable output. Success
 uses `{ "ok": true, "data": ... }`; failures use `{ "ok": false, "error": ... }`.
 Text output remains the default for interactive use:
@@ -410,7 +427,7 @@ Three properties make this readable rather than merely short. Each change
 ahead of anonymous layout containers — so what survives a cap is what mattered.
 And every loss is **counted, not silent**: `…N more` for the render, `! manifest
 kept X of Y` for the capture. An action that changed nothing says
-`(no observable change between before and after)`, which is a finding, not a
+`(no observable change between before and after …)`, which is a finding, not a
 blank — and names both of its readings, because "the gesture hit nothing" and
 "the gesture landed and the app answered out of tree" need opposite responses. A
 toast is the common second case: it is drawn by the system, so it is in no tree
