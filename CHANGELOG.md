@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **The in-process iOS agent has unit tests.** It carried the whole iOS capture
+  surface with no automated coverage at all: the only thing that ever exercised
+  `RegionProbe`, `TextLayoutStack`, `SwiftUITextRegions` or `LottieBridge` was a
+  device e2e run, on a Mac, by hand. `reticle-agent/ios` now has a
+  `ReticleKitTests` target — 58 tests over the text geometry, the four region
+  channels, the Lottie composition reflection, the mutation allowlist and the
+  HTTP framing — run by `scripts/test-ios-agent.sh` (XCTest on a simulator, which
+  is the only runner that can hand UIKit code real views, a real window and a real
+  TextKit stack) and gated in CI and at release. What they deliberately do not
+  cover is the whole-screen walk, which needs a real scene and stays the device
+  suite's job; that boundary is stated rather than papered over.
+
+  **They immediately found a real bug in wrapped-text geometry.** `UILabel`
+  exposes no layout API, so the probe rebuilds an equivalent TextKit stack — and
+  `UILabel.attributedText` carries an `NSParagraphStyle` whose `lineBreakMode` is
+  the label's default `.byTruncatingTail`, which OVERRIDES the text container. An
+  ordinary multi-line label (`numberOfLines = 0`, default break mode — an
+  agreement row, in other words) therefore laid out as one endless line: its char
+  grid claimed a single line running far off the right edge, and a link on the
+  second visual line resolved to a rect outside the label entirely. Both the
+  container's mode and the string's own paragraph styles are now corrected to
+  `.byWordWrapping` for a multi-line label, and the layout width is clamped to the
+  label's bounds. A wrapped agreement row was already the case
+  `docs/architecture.md` calls out for Android's `rectsForRange`; iOS had the same
+  trap through a different mechanism.
+
 - **The Swift half of the protocol twins now runs in CI.** Every derivation in
   `reticle-protocol` exists twice — Kotlin in `reticle-core`, Swift in
   `reticle-swift` — and the shared fixtures under `reticle-protocol/fixtures/`

@@ -155,6 +155,15 @@ jobs:
       - name: Build the in-process iOS agent (simulator SDK)
         run: scripts/build-ios-agent.sh
 
+      # The agent's own unit tests, on a simulator: XCTest is the only runner
+      # that can give UIKit code real views, a real window and a real TextKit
+      # stack, which is what the capture side is made of. They cover what is
+      # reachable without a host app - text geometry, the region channels, the
+      # Lottie reflection, HTTP framing - not the whole-screen walk, which needs
+      # a scene and stays the device e2e's job.
+      - name: Test the in-process iOS agent (simulator)
+        run: scripts/test-ios-agent.sh
+
       - name: Smoke-check the binaries (no device needed)
         run: |
           set -euo pipefail

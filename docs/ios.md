@@ -177,9 +177,18 @@ attributed to `ios:<udid|ecid>` in the timeline.
 
 ## Building & running
 
+The agent's unit tests run under XCTest on a simulator rather than under
+`swift test`: `ReticleKit` is UIKit-only, so SwiftPM's host-triple runner cannot
+build it — and the simulator is what gives the capture code real views, a real
+window and a real TextKit stack to measure. They cover the text geometry, the
+region channels, the Lottie reflection and the HTTP framing; the whole-screen
+walk needs a real scene and stays the device e2e's job. Both the build and the
+tests are CI gates.
+
 ```
 swift build --package-path reticle-host                 # the reticle host CLI
 scripts/build-ios-agent.sh                              # the agent + injection dylib
+scripts/test-ios-agent.sh                               # the agent's unit tests (XCTest on a simulator)
 scripts/build-sample-ios.sh SampleApp dev.reticle.sampleios   # a demo .app
 scripts/e2e-ios.sh                                      # full simulator round trip
 scripts/e2e-ios-device.sh <team-id>                     # full REAL-DEVICE round trip (linked path)

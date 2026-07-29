@@ -45,5 +45,20 @@ let package = Package(
             dependencies: ["ReticleKit", "CReticleBootstrap"],
             path: "Sources/ReticleInjection"
         ),
+        // The agent's unit tests. UIKit-only, so they cannot run under a plain
+        // `swift test` on the host: drive them with scripts/test-ios-agent.sh,
+        // which runs `xcodebuild test` against a booted iOS simulator (CI does
+        // the same). They cover the capture-side logic that is reachable without
+        // a host app — text geometry, the region channels, the Lottie
+        // reflection, HTTP framing — not the whole-screen walk, which needs a
+        // real scene.
+        .testTarget(
+            name: "ReticleKitTests",
+            dependencies: [
+                "ReticleKit",
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
+            ],
+            path: "Tests/ReticleKitTests"
+        ),
     ]
 )

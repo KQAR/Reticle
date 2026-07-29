@@ -43,13 +43,19 @@ struct TextLayoutStack {
             guard let attributed = TextLayoutStack.effectiveAttributedText(of: label) else { return nil }
             self.attributed = attributed
             let drawn = label.textRect(forBounds: label.bounds, limitedToNumberOfLines: label.numberOfLines)
-            guard drawn.width > 0 else { return nil }
-            let textStorage = NSTextStorage(attributedString: attributed)
+            // Clamp to the label's own width: `textRect` answers with the width the
+            // text WANTS under the label's break mode, which for the default
+            // `.byTruncatingTail` is the whole string on one line — wider than the
+            // label. Laying out in that width produces one long line whose rects run
+            // off the right edge of a label that visibly wraps.
+            let layoutWidth = label.numberOfLines == 1 ? drawn.width : min(drawn.width, label.bounds.width)
+            guard layoutWidth > 0 else { return nil }
+            let textStorage = NSTextStorage(attributedString: TextLayoutStack.wrapped(attributed, for: label))
             let layoutManager = NSLayoutManager()
-            let textContainer = NSTextContainer(size: CGSize(width: drawn.width, height: .greatestFiniteMagnitude))
+            let textContainer = NSTextContainer(size: CGSize(width: layoutWidth, height: .greatestFiniteMagnitude))
             textContainer.lineFragmentPadding = 0
             textContainer.maximumNumberOfLines = label.numberOfLines
-            textContainer.lineBreakMode = label.lineBreakMode
+            textContainer.lineBreakMode = TextLayoutStack.wrappingMode(for: label)
             layoutManager.addTextContainer(textContainer)
             textStorage.addLayoutManager(layoutManager)
             manager = layoutManager
@@ -79,6 +85,49 @@ struct TextLayoutStack {
         storage = textStorage
         originInView = .zero
         screenOrigin = CGPoint(x: screenFrame.x, y: screenFrame.y)
+    }
+
+    /// The line-break mode the rebuilt container must use to lay out like the
+    /// label does.
+    ///
+    /// Not simply `label.lineBreakMode`: UILabel defaults to `.byTruncatingTail`,
+    /// and on a MULTI-line label UIKit wraps every line and truncates only the
+    /// last — while an `NSTextContainer` set to `.byTruncatingTail` produces
+    /// exactly one line. Copying the mode verbatim therefore collapsed every
+    /// ordinary wrapped label (`numberOfLines = 0`, default break mode — an
+    /// agreement row, in other words) into a single line fragment, so its char
+    /// grid claimed one line running off the right edge and a link on the second
+    /// line resolved to a rect outside the label. Measured by
+    /// `TextLayoutStackTests`; the Android side never had this because it reads
+    /// the real `Layout` rather than rebuilding one.
+    /// The same correction applied to the string's own paragraph styles.
+    ///
+    /// This is the half that actually bites: `UILabel.attributedText` carries an
+    /// `NSParagraphStyle` whose `lineBreakMode` is the label's, and a paragraph
+    /// style OVERRIDES the container — so fixing only `NSTextContainer` left every
+    /// default-configured multi-line label laying out as one endless line.
+    private static func wrapped(_ attributed: NSAttributedString, for label: UILabel) -> NSAttributedString {
+        guard label.numberOfLines != 1 else { return attributed }
+        let mode = wrappingMode(for: label)
+        let out = NSMutableAttributedString(attributedString: attributed)
+        let full = NSRange(location: 0, length: out.length)
+        out.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            guard let style = value as? NSParagraphStyle, style.lineBreakMode != mode else { return }
+            guard let mutable = style.mutableCopy() as? NSMutableParagraphStyle else { return }
+            mutable.lineBreakMode = mode
+            out.addAttribute(.paragraphStyle, value: mutable, range: range)
+        }
+        return out
+    }
+
+    private static func wrappingMode(for label: UILabel) -> NSLineBreakMode {
+        guard label.numberOfLines != 1 else { return label.lineBreakMode }
+        switch label.lineBreakMode {
+        case .byTruncatingHead, .byTruncatingMiddle, .byTruncatingTail, .byClipping:
+            return .byWordWrapping
+        default:
+            return label.lineBreakMode
+        }
     }
 
     /// A label set via plain `text` still needs font/color attributes for the

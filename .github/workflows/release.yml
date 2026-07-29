@@ -91,6 +91,9 @@ jobs:
       - name: "Gate: in-process iOS agent builds (simulator SDK)"
         run: scripts/build-ios-agent.sh
 
+      - name: "Gate: in-process iOS agent unit tests (simulator)"
+        run: scripts/test-ios-agent.sh
+
       - name: Build agent AAR + payload dex
         run: ./gradlew :reticle-agent:android:assembleRelease :reticle-agent:android:dexPayload --stacktrace
 
