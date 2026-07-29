@@ -77,6 +77,13 @@ jobs:
       - name: Validate architecture map
         run: python3 scripts/validate_architecture_map.py
 
+      # roadmap.md and roadmap.zh-CN.md are one document in two languages, and
+      # the roadmap is where scope decisions are recorded — a section added to
+      # one and not the other gives two readers two different answers. Prose
+      # cannot be diffed across languages; the heading skeleton can.
+      - name: Validate translated docs
+        run: python3 scripts/validate_translations.py
+
   macos-host:
     name: Build Swift host + native helper (macOS arm64)
     # The shipped distribution is macOS arm64 only (Swift host + native-image
