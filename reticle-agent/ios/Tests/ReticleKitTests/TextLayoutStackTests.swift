@@ -13,20 +13,17 @@ import ReticleProtocol
 @MainActor
 final class TextLayoutStackTests: XCTestCase {
 
-    private var window: UIWindow!
-
-    override func setUp() {
-        super.setUp()
-        window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    /// A fresh window per test, built inside the test body rather than in
+    /// `setUp()`: an XCTestCase override is nonisolated under Swift 6.1, so
+    /// touching UIKit from it is an error there even though a newer toolchain
+    /// allows it — the same trap that broke the iOS agent build in #160.
+    private func makeWindow() -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.isHidden = false
+        return window
     }
 
-    override func tearDown() {
-        window = nil
-        super.tearDown()
-    }
-
-    private func label(text: String, width: CGFloat = 320, lines: Int = 0) -> UILabel {
+    private func label(in window: UIWindow, text: String, width: CGFloat = 320, lines: Int = 0) -> UILabel {
         let label = UILabel(frame: CGRect(x: 20, y: 100, width: width, height: 200))
         label.numberOfLines = lines
         label.font = .systemFont(ofSize: 16)
@@ -37,7 +34,8 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testTheGridHasOneBoundaryPerCharacterPlusTheTrailingEdge() throws {
-        let view = label(text: "Hello world")
+        let window = makeWindow()
+        let view = label(in: window, text: "Hello world")
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let (lines, approximate) = stack.charLines(in: view)
 
@@ -52,7 +50,8 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testBoundariesAdvanceLeftToRightAndStartAtTheTextOrigin() throws {
-        let view = label(text: "Hello world")
+        let window = makeWindow()
+        let view = label(in: window, text: "Hello world")
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let line = try XCTUnwrap(stack.charLines(in: view).0.first)
 
@@ -65,9 +64,10 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testProportionalGlyphsProduceUnequalAdvancesRatherThanAnInterpolation() throws {
+        let window = makeWindow()
         // The predecessor of this code interpolated equal widths and drifted on
         // mixed text; 'i' and 'W' must not be the same width.
-        let view = label(text: "iWiW")
+        let view = label(in: window, text: "iWiW")
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let xs = try XCTUnwrap(stack.charLines(in: view).0.first).xOffsets
         let narrow = xs[1] - xs[0]
@@ -82,7 +82,8 @@ final class TextLayoutStackTests: XCTestCase {
     /// `.byTruncatingTail`, which overrides the text container. Every char grid and
     /// every link rect on a wrapped label was wrong, pointing off the right edge.
     func testWrappedTextYieldsContiguousLinesStackedDownTheScreen() throws {
-        let view = label(text: "The quick brown fox jumps over the lazy dog near the river bank", width: 150)
+        let window = makeWindow()
+        let view = label(in: window, text: "The quick brown fox jumps over the lazy dog near the river bank", width: 150)
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let lines = stack.charLines(in: view).0
 
@@ -95,8 +96,9 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testARangeRectCoversTheSubstringAndNotTheWholeLine() throws {
+        let window = makeWindow()
         let text = "Read the Terms carefully"
-        let view = label(text: text)
+        let view = label(in: window, text: text)
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let range = (text as NSString).range(of: "Terms")
         let rect = try XCTUnwrap(stack.screenRects(for: range, in: view).first)
@@ -107,11 +109,12 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testTheGridAndARangeRectAgreeOnWhereASubstringIs() throws {
+        let window = makeWindow()
         // The two paths a caller can take to the same phrase must not disagree:
         // `--region "Terms"` resolves through the grid, a discovered span through
         // the rects.
         let text = "Read the Terms carefully"
-        let view = label(text: text)
+        let view = label(in: window, text: text)
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         let range = (text as NSString).range(of: "Terms")
 
@@ -122,22 +125,25 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testAnOutOfBoundsRangeReturnsNothingRatherThanCrashing() throws {
-        let view = label(text: "short")
+        let window = makeWindow()
+        let view = label(in: window, text: "short")
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         XCTAssertTrue(stack.screenRects(for: NSRange(location: 3, length: 99), in: view).isEmpty)
         XCTAssertTrue(stack.screenRects(for: NSRange(location: 0, length: 0), in: view).isEmpty)
     }
 
     func testRightToLeftTextIsReportedAsApproximateRatherThanConfidentlyWrong() throws {
+        let window = makeWindow()
         // A logical range over bidirectional text can map to a non-contiguous
         // visual span, so the flag is the honest answer — the row for it is in
         // docs/boundaries.md.
-        let view = label(text: "Read the شروط الخدمة carefully")
+        let view = label(in: window, text: "Read the شروط الخدمة carefully")
         let stack = try XCTUnwrap(TextLayoutStack(view: view))
         XCTAssertTrue(stack.charLines(in: view).1, "mixed-direction text must be flagged approximate")
     }
 
     func testATextViewLendsItsOwnStackAndStaysWithinItsFrame() throws {
+        let window = makeWindow()
         let textView = UITextView(frame: CGRect(x: 10, y: 300, width: 300, height: 120))
         textView.font = .systemFont(ofSize: 16)
         textView.text = "Terms of service"
@@ -151,13 +157,15 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testAViewWithNoTextHasNoStackAtAll() {
+        let window = makeWindow()
         let plain = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
         window.addSubview(plain)
         XCTAssertNil(TextLayoutStack(view: plain))
-        XCTAssertNil(TextLayoutStack(view: label(text: "")))
+        XCTAssertNil(TextLayoutStack(view: label(in: window, text: "")))
     }
 
     func testAScreenAnchoredStackNeedsNoViewToPlaceItsRects() throws {
+        let window = makeWindow()
         // The SwiftUI path: there is no view to convert through, so the frame the
         // accessibility element reports IS the origin.
         let attributed = NSAttributedString(string: "Terms and Privacy", attributes: [.font: UIFont.systemFont(ofSize: 16)])

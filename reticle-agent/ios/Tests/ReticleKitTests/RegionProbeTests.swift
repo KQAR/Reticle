@@ -13,22 +13,17 @@ import ReticleProtocol
 @MainActor
 final class RegionProbeTests: XCTestCase {
 
-    private var window: UIWindow!
-
-    override func setUp() {
-        super.setUp()
-        // A real window: the probe converts container -> view -> window -> screen,
-        // and a detached view would silently exercise none of that.
-        window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    /// A fresh window per test, built inside the test body rather than in
+    /// `setUp()`: an XCTestCase override is nonisolated under Swift 6.1, so
+    /// touching UIKit from it is an error there even though a newer toolchain
+    /// allows it — the same trap that broke the iOS agent build in #160.
+    private func makeWindow() -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.isHidden = false
+        return window
     }
 
-    override func tearDown() {
-        window = nil
-        super.tearDown()
-    }
-
-    private func label(_ configure: (UILabel) -> Void) -> UILabel {
+    private func label(in window: UIWindow, _ configure: (UILabel) -> Void) -> UILabel {
         let label = UILabel(frame: CGRect(x: 20, y: 100, width: 320, height: 80))
         label.numberOfLines = 0
         label.font = .systemFont(ofSize: 16)
@@ -57,10 +52,11 @@ final class RegionProbeTests: XCTestCase {
     // MARK: - Channel 1: real link runs
 
     func testARealLinkRunBecomesASpanRegionCarryingItsUrl() throws {
+        let window = makeWindow()
         let text = NSMutableAttributedString(string: "I agree to the Terms and the Privacy Policy")
         text.addAttribute(.font, value: UIFont.systemFont(ofSize: 16), range: NSRange(location: 0, length: text.length))
         text.addAttribute(.link, value: URL(string: "https://example.com/terms")!, range: (text.string as NSString).range(of: "Terms"))
-        let view = label { $0.attributedText = text }
+        let view = label(in: window) { $0.attributedText = text }
 
         let regions = RegionProbe.probe(view, isSwiftUIHost: false).regions
         let span = try XCTUnwrap(regions.first { $0.source == .span })
@@ -71,6 +67,7 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testTwoLinksInOneRowResolveToTwoDistinctRects() throws {
+        let window = makeWindow()
         // The agreement row: one node, two targets. Collapsing them to one rect
         // is the failure this channel exists to prevent — a tap would open the
         // wrong document while looking like it worked.
@@ -79,7 +76,7 @@ final class RegionProbeTests: XCTestCase {
         let ns = text.string as NSString
         text.addAttribute(.link, value: URL(string: "https://e/t")!, range: ns.range(of: "Terms"))
         text.addAttribute(.link, value: URL(string: "https://e/p")!, range: ns.range(of: "Privacy Policy"))
-        let view = label { $0.attributedText = text }
+        let view = label(in: window) { $0.attributedText = text }
 
         let spans = RegionProbe.probe(view, isSwiftUIHost: false).regions.filter { $0.source == .span }
         XCTAssertEqual(spans.count, 2)
@@ -91,13 +88,14 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testALinkWrappedAcrossLinesYieldsOneRectPerLine() throws {
+        let window = makeWindow()
         // A wrapped phrase is not one block. Returning a single union rect would
         // put the tap point in the gutter between the two lines.
         let long = "Please read and accept our extremely long and verbose Terms of Service Agreement Document"
         let text = NSMutableAttributedString(string: long)
         text.addAttribute(.font, value: UIFont.systemFont(ofSize: 16), range: NSRange(location: 0, length: text.length))
         text.addAttribute(.link, value: "terms", range: (long as NSString).range(of: "extremely long and verbose Terms of Service Agreement Document"))
-        let view = label {
+        let view = label(in: window) {
             $0.frame = CGRect(x: 20, y: 100, width: 200, height: 200)
             $0.attributedText = text
         }
@@ -110,6 +108,7 @@ final class RegionProbeTests: XCTestCase {
     // MARK: - Channel 3b: re-colored runs
 
     func testAMinorityColoredRunIsSurfacedAsAColorSpanCandidate() throws {
+        let window = makeWindow()
         // The "colour the phrase, hit-test it in one gesture recognizer" pattern:
         // no link attribute exists, so colour is the only signal there is.
         let text = NSMutableAttributedString(string: "By continuing you accept the Privacy Policy")
@@ -117,7 +116,7 @@ final class RegionProbeTests: XCTestCase {
         text.addAttribute(.font, value: UIFont.systemFont(ofSize: 16), range: NSRange(location: 0, length: text.length))
         text.addAttribute(.foregroundColor, value: UIColor.black, range: NSRange(location: 0, length: text.length))
         text.addAttribute(.foregroundColor, value: UIColor.blue, range: ns.range(of: "Privacy Policy"))
-        let view = label { $0.attributedText = text }
+        let view = label(in: window) { $0.attributedText = text }
 
         let colored = try XCTUnwrap(RegionProbe.probe(view, isSwiftUIHost: false).regions.first { $0.source == .colorSpan })
         XCTAssertEqual(colored.label, "Privacy Policy")
@@ -126,12 +125,13 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testUniformlyColoredTextProducesNoColorCandidate() {
+        let window = makeWindow()
         // Every attributed string with any colour set carries a run for the whole
         // string; treating that as a highlight would mark all text tappable.
         let text = NSMutableAttributedString(string: "Just a sentence")
         text.addAttribute(.font, value: UIFont.systemFont(ofSize: 16), range: NSRange(location: 0, length: text.length))
         text.addAttribute(.foregroundColor, value: UIColor.black, range: NSRange(location: 0, length: text.length))
-        let view = label { $0.attributedText = text }
+        let view = label(in: window) { $0.attributedText = text }
 
         XCTAssertTrue(RegionProbe.probe(view, isSwiftUIHost: false).regions.filter { $0.source == .colorSpan }.isEmpty)
     }
@@ -139,7 +139,8 @@ final class RegionProbeTests: XCTestCase {
     // MARK: - Channel 4: structural markers (fallback)
 
     func testBracketedPhrasesInASelfDrawnRowAreMarkedSuspectedAndMapped() throws {
-        let view = label {
+        let window = makeWindow()
+        let view = label(in: window) {
             $0.isUserInteractionEnabled = true
             $0.text = "我已阅读并同意《服务协议》和《隐私政策》"
         }
@@ -151,7 +152,8 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testMarkdownLinksCarryTheirTarget() throws {
-        let view = label {
+        let window = makeWindow()
+        let view = label(in: window) {
             $0.isUserInteractionEnabled = true
             $0.text = "Read [Terms](https://e/t) and [Privacy](https://e/p)"
         }
@@ -161,9 +163,10 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testPlainProseIsNeverGuessedToBeMultiRegion() {
+        let window = makeWindow()
         // Detection is structural, never lexical: keying on words like "agree"
         // would make the probe locale-specific and mark ordinary sentences.
-        let view = label {
+        let view = label(in: window) {
             $0.isUserInteractionEnabled = true
             $0.text = "By signing in you accept the User Agreement and Privacy Policy"
         }
@@ -175,13 +178,15 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testAnUnmarkedRowThatIsNotInteractiveIsNotFlaggedEither() {
-        let view = label { $0.text = "I agree to the 《Terms》" } // no user interaction
+        let window = makeWindow()
+        let view = label(in: window) { $0.text = "I agree to the 《Terms》" } // no user interaction
         XCTAssertFalse(RegionProbe.probe(view, isSwiftUIHost: false).suspectedMultiRegion)
     }
 
     // MARK: - Channel 2: accessibility sub-elements
 
     func testChildAccessibilityElementsBecomeVirtualRegions() throws {
+        let window = makeWindow()
         let container = UIView(frame: CGRect(x: 0, y: 200, width: 390, height: 120))
         window.addSubview(container)
         let seat = UIAccessibilityElement(accessibilityContainer: container)
@@ -196,6 +201,7 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testAnElementCoveringTheWholeViewIsTheViewsOwnProxyAndIsDropped() {
+        let window = makeWindow()
         let container = UIView(frame: CGRect(x: 0, y: 200, width: 390, height: 120))
         window.addSubview(container)
         let proxy = UIAccessibilityElement(accessibilityContainer: container)
@@ -211,6 +217,7 @@ final class RegionProbeTests: XCTestCase {
     }
 
     func testTheVirtualChannelIsSuppressedForSwiftUIHosts() {
+        let window = makeWindow()
         // SwiftUI's elements are already captured as axElement NODES; emitting
         // them as regions too would present one target twice.
         let container = UIView(frame: CGRect(x: 0, y: 200, width: 390, height: 120))
@@ -227,6 +234,7 @@ final class RegionProbeTests: XCTestCase {
     // MARK: - Non-text views
 
     func testAPlainViewProducesNothingRatherThanAnEmptyGrid() {
+        let window = makeWindow()
         let plain = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
         window.addSubview(plain)
         let result = RegionProbe.probe(plain, isSwiftUIHost: false)
