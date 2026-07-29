@@ -23,16 +23,16 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     // MARK: - Device / runtime
 
     func ping() throws -> PingResult {
-        let r = try transport.call("ping")
+        let r = try transport.call(.ping)
         return PingResult(version: r["version"] as? String ?? "?")
     }
 
     func listDevices() throws -> [DeviceSummary] {
-        devices(in: try transport.call("listDevices"))
+        devices(in: try transport.call(.listDevices))
     }
 
     func status(_ request: StatusRequest) throws -> StatusResult {
-        let r = try transport.call("status", ["package": request.package])
+        let r = try transport.call(.status, ["package": request.package])
         return StatusResult(
             devices: devices(in: r),
             running: r["running"] as? Bool ?? false,
@@ -44,11 +44,11 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     }
 
     func launch(_ request: AppStartRequest) throws -> RuntimeStartResult {
-        runtimeStart(try transport.call("launch", startParams(request)), request)
+        runtimeStart(try transport.call(.launch, startParams(request)), request)
     }
 
     func inject(_ request: AppStartRequest) throws -> RuntimeStartResult {
-        runtimeStart(try transport.call("inject", startParams(request)), request)
+        runtimeStart(try transport.call(.inject, startParams(request)), request)
     }
 
     /// The payload path travels as `payloadDex`: on Android the injectable is the
@@ -64,7 +64,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     // MARK: - Observation
 
     func uiReport(_ request: PackageRequest) throws -> UiReportResult {
-        let r = try transport.call("uiReport", ["package": request.package])
+        let r = try transport.call(.uiReport, ["package": request.package])
         var trees: [String: Any] = [:]
         for key in ["snapshot", "semantics", "compact"] {
             if let tree = r[key] { trees[key] = tree }
@@ -80,7 +80,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     func screenshot(_ request: ScreenshotRequest) throws -> ScreenshotResult {
         var params: [String: Any] = [:]
         if let package = request.package { params["package"] = package }
-        let r = try transport.call("screenshot", params)
+        let r = try transport.call(.screenshot, params)
         guard let b64 = r["pngBase64"] as? String else {
             throw HelperError("screenshot returned no image data")
         }
@@ -107,19 +107,19 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
         if let window = request.window { params["window"] = window }
         if let window = request.window { params["window"] = window }
         for (key, value) in request.selector.wireParams { params[key] = value }
-        let r = try transport.call("render", params)
+        let r = try transport.call(.render, params)
         return RenderResult(text: r["text"] as? String ?? "")
     }
 
     func logs(_ request: PackageRequest) throws -> [AppLogEntry] {
-        let r = try transport.call("logs", ["package": request.package])
+        let r = try transport.call(.logs, ["package": request.package])
         return ((r["entries"] as? [[String: Any]]) ?? []).map {
             AppLogEntry(level: $0["level"] as? String ?? "?", message: $0["message"] as? String ?? "")
         }
     }
 
     func logcat() throws -> [String] {
-        let r = try transport.call("logcat")
+        let r = try transport.call(.logcat)
         return (r["lines"] as? [String]) ?? []
     }
 
@@ -132,7 +132,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
             "value": request.value,
         ]
         for (key, value) in request.selector.wireParams { params[key] = value }
-        let r = try transport.call("mutate", params)
+        let r = try transport.call(.mutate, params)
         return MutationOutcome(
             applied: r["applied"] as? Bool ?? true,
             ref: r["ref"] as? String,
@@ -141,7 +141,7 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     }
 
     func act(_ request: ActRequest) throws -> ActOutcome {
-        ActOutcome(raw: try transport.call("act", request.wireParams))
+        ActOutcome(raw: try transport.call(.act, request.wireParams))
     }
 
     // MARK: - Android-only device configuration
@@ -151,25 +151,25 @@ final class AndroidBackend: HostBackend, @unchecked Sendable {
     /// is nothing to configure — an interface method every non-Android platform
     /// declined would be a worse description of reality than its absence.
     func setDeviceProxy(host: String, port: Int) throws -> (previous: String, current: String) {
-        let r = try transport.call("proxySet", ["host": host, "port": port])
+        let r = try transport.call(.proxySet, ["host": host, "port": port])
         return (r["previous"] as? String ?? "", r["current"] as? String ?? "")
     }
 
     func setDeviceProxy(raw value: String) throws {
-        _ = try transport.call("proxySet", ["value": value])
+        _ = try transport.call(.proxySet, ["value": value])
     }
 
     func clearDeviceProxy(port: Int?) throws {
         var params: [String: Any] = [:]
         if let port { params["port"] = port }
-        _ = try transport.call("proxyClear", params)
+        _ = try transport.call(.proxyClear, params)
     }
 
     /// Pushes a DER CA to the device and opens Settings for the user to confirm.
     /// Android 11+ has no silent path, which is why the result is a started intent
     /// and a message rather than "installed".
     func installDeviceCa(path: String, name: String) throws -> (started: Bool, message: String) {
-        let r = try transport.call("proxyInstallCa", ["path": path, "name": name])
+        let r = try transport.call(.proxyInstallCa, ["path": path, "name": name])
         return (r["started"] as? Bool ?? false, r["message"] as? String ?? "")
     }
 

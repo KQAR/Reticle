@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **The daemon's helper broker no longer forwards any string a caller sends.**
+  `POST /helper/rpc` (opt-in, `serve --helper-broker`) took a `method` straight
+  off the request and handed it to the helper process — the one path in the host
+  where a stringly-typed call bypassed the typed `HostBackend` surface everything
+  else goes through. Localhost-only, so this is a boundary fix rather than a
+  vulnerability, but a boundary with a hole in it is not the boundary
+  `docs/architecture.md` describes. The broker now refuses an undefined method
+  with a 400 naming it, before the helper sees it.
+
+  The gate is a new `HelperMethod` enum, which `AndroidBackend` also spells its
+  calls through — so "the one place the method names are written down" is
+  compiler-enforced now rather than conventional, and a typo in a literal can no
+  longer compile and fail later on a device. `HelperMethodContractTests` parses
+  the method table out of `reticle-protocol/helper-rpc.md` and asserts the enum is
+  that same set, so adding a method to the protocol without a case (or inventing a
+  case the protocol does not define) fails the build.
+
 - **The view walk is under test on both platforms, and probes can be retracted.**
   `SnapshotCapture` — what every command ultimately reads — was the largest piece
   of either agent with no coverage, because a unit-test process has no attached

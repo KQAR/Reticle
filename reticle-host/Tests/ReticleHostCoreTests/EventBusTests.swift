@@ -172,6 +172,30 @@ struct EventBusTests {
         #expect(helper.lastParams["package"] as? String == "pkg")
     }
 
+    @Test func theBrokerRefusesAMethodTheWireContractDoesNotDefine() async throws {
+        // The broker is the one place a caller-supplied STRING reaches the helper
+        // process, so it must not be a side door around the typed HostBackend
+        // surface every other path goes through.
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let helper = FakeHelperClient(result: ["ok": true])
+        let server = try ReticleHttpServer(store: store, port: 0, helper: helper)
+        try server.start()
+        defer { server.stop() }
+
+        let response = try await post(
+            URL(string: "http://127.0.0.1:\(server.port)/helper/rpc")!,
+            body: HelperRpcRequestFixture(method: "exec", params: ["cmd": "rm -rf /"])
+        )
+
+        #expect(response.status == 400)
+        let decoded = try JSONDecoder().decode(HelperRpcResponse.self, from: response.data)
+        #expect(!decoded.ok)
+        #expect(decoded.error?.contains("unknown helper method 'exec'") == true)
+        // Refused BEFORE the helper saw it, not rejected by the helper.
+        #expect(helper.calls.isEmpty)
+    }
+
     @Test func httpServerRejectsHelperRpcWithoutBroker() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
