@@ -16,4 +16,15 @@ object ReticleProbeRegistry {
 
     fun all(): Map<String, Map<String, MetadataValue>> =
         synchronized(probes) { LinkedHashMap(probes) }
+
+    /**
+     * Forget every registered probe. Process-global state that nothing removed
+     * from was a leak by construction — an app that publishes a screen's probes
+     * on entry had no way to retract them on exit, so a stale testId stayed
+     * addressable on every later screen. The unit tests need it for the same
+     * reason: a singleton that survives between them is shared state.
+     */
+    fun clear() {
+        synchronized(probes) { probes.clear() }
+    }
 }
