@@ -144,6 +144,11 @@ final class ReticleRuntime: @unchecked Sendable {
         return probes
     }
 
+    func clearProbes() {
+        lock.lock(); defer { lock.unlock() }
+        probes.removeAll()
+    }
+
     // MARK: - Runtime info
 
     func runtimeInfo() -> RuntimeInfo {
