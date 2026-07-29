@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-07-29
+
+A hardening release: the two in-process agents went from zero automated coverage
+to 100 unit tests between them (69 iOS, 31 Android), every projection an agent reads is now rendered
+from the protocol module rather than once per host, and three things that were
+true only by convention (the Swift half of the shared fixtures running at all,
+"one place spells the helper's method names", the architecture map's two copies
+agreeing) are enforced by CI.
+
+Two real defects fell out of writing the tests rather than out of a bug report —
+an iOS wrapped-label geometry bug that put a second-line link's rect outside the
+label, and an iOS agent that did not compile under CI's Swift 6.1 at all — plus
+one boundary hole (the daemon's helper broker forwarding any method string) and
+one leak by construction (probes with no way to retract them).
+
 - **Docs caught up with what the code does.** Three claims had gone stale: the
   skill's Rules section still said an empty action diff is evidence the tap hit
   nothing (0.12.0 made it two readings, and the skill's own body already said so —
