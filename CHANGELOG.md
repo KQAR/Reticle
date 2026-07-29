@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The bilingual roadmap is checked for structural drift.** `docs/roadmap.md`
+  and `docs/roadmap.zh-CN.md` are one document in two languages, and the roadmap
+  is where scope decisions are recorded — a section added to one and not the other
+  gives two readers two different answers to "is this in scope". Prose cannot be
+  diffed across languages, but the skeleton can:
+  `scripts/validate_translations.py` compares the heading-level sequence and the
+  ordinals of the numbered sections, which is exactly what changes when a section
+  is added, removed or reordered. `README.zh-CN.md` is deliberately excluded and
+  said to be so in the script — it is an abridged translation by choice, and an
+  unchecked pair should be unchecked on purpose rather than by omission.
+
 - **The architecture map's two copies can no longer drift apart.** The map ships
   twice by design — `map.json` for agents, a verbatim copy embedded in
   `index.html` for the interactive page — and the README told a contributor to

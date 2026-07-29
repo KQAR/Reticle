@@ -10,7 +10,12 @@ what Reticle structurally cannot reach in `docs/boundaries.md`.
 `docs/architecture-map/` holds the same shape in two consumable forms: an
 interactive page (`index.html`) and `map.json` (`{nodes, edges, flows:[{steps}]}`)
 for an agent that wants the module graph and the named flows without parsing prose.
-It is generated from the prose docs — edit those first, then the map.
+It is generated from the prose docs — edit those first, then the map. The map
+lives in two copies (the JSON and a verbatim block inside the page);
+`scripts/validate_architecture_map.py --fix` resyncs them and the bare script is
+a CI gate, so they cannot drift again. `docs/roadmap.md` and its `zh-CN` twin are
+checked the same way by `scripts/validate_translations.py` — heading skeletons
+only, since prose cannot be diffed across languages.
 
 ## Current Shape
 

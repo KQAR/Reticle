@@ -83,6 +83,9 @@ jobs:
       - name: "Gate: architecture map (two copies agree, version matches)"
         run: python3 scripts/validate_architecture_map.py
 
+      - name: "Gate: translated docs keep their originals' skeleton"
+        run: python3 scripts/validate_translations.py
+
       - name: Build the native helper (no-JDK reticle-helper)
         run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 
