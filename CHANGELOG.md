@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The architecture map's two copies can no longer drift apart.** The map ships
+  twice by design — `map.json` for agents, a verbatim copy embedded in
+  `index.html` for the interactive page — and the README told a contributor to
+  resync them by hand, which is to say sometimes. Measured: the embedded copy was
+  missing an entire flow step and still claimed version 0.11.0 while the repo was
+  on 0.12.0, so a person reading the page and an agent reading the JSON were being
+  told different things about the same system.
+
+  `scripts/validate_architecture_map.py` is now a CI gate. It asserts the two
+  copies agree, that `meta.version` matches the repo-root `VERSION`, that every
+  edge endpoint and every id a flow step cites resolves to a real node or edge (a
+  typo'd id renders as a step that highlights nothing), and that every fixture and
+  module path the map names exists. `--fix` rewrites the embedded copy from the
+  JSON, so maintenance is one edit plus one command.
+
 - **The daemon's helper broker no longer forwards any string a caller sends.**
   `POST /helper/rpc` (opt-in, `serve --helper-broker`) took a `method` straight
   off the request and handed it to the helper process — the one path in the host

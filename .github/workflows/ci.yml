@@ -69,6 +69,14 @@ jobs:
       - name: Validate plugin & marketplace manifests
         run: python3 scripts/validate_plugin.py
 
+      # The architecture map is a projection kept in two copies (map.json for
+      # agents, an embedded copy for the interactive page). They drifted while
+      # nothing compared them, so this asserts they agree, that the version
+      # matches VERSION, and that every id / fixture / module path the map names
+      # actually resolves.
+      - name: Validate architecture map
+        run: python3 scripts/validate_architecture_map.py
+
   macos-host:
     name: Build Swift host + native helper (macOS arm64)
     # The shipped distribution is macOS arm64 only (Swift host + native-image

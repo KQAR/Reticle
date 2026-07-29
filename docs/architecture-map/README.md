@@ -7,21 +7,27 @@ Two views of the same document, for two kinds of reader.
 | [`index.html`](index.html) | people | A self-contained dark-theme page: an interactive architecture diagram plus an interactive Flows section that highlights a path and steps through it. Open it directly — no server, no build. Tailwind comes from a CDN; everything else is inline. |
 | [`map.json`](map.json) | AI agents / tooling | `{ meta, nodes, edges, edgeKinds, flows: [{ steps }] }`. The machine-readable form: 18 nodes, 27 edges, 10 flows, 56 steps. |
 
-**They cannot disagree.** `index.html` renders entirely from a verbatim copy of
-`map.json` embedded in a `<script type="application/json">` block, and the page's
-Download button hands back those same bytes. Regenerate the copy after editing
-`map.json`:
+**They cannot disagree — and now something checks.** `index.html` renders
+entirely from a verbatim copy of `map.json` embedded in a
+`<script type="application/json">` block, and the page's Download button hands
+back those same bytes. That copy used to be resynced by hand, which is to say
+sometimes: measured before this was automated, the embedded map was missing a
+whole flow step and still claimed version 0.11.0 while the repo was on 0.12.0, so
+a person reading the page and an agent reading the JSON were told different
+things about the same system.
+
+Edit `map.json`, then:
 
 ```bash
-python3 - <<'PY'
-import pathlib, re
-h = pathlib.Path('docs/architecture-map/index.html')
-raw = pathlib.Path('docs/architecture-map/map.json').read_text().strip()
-s = h.read_text()
-m = re.search(r'(<script id="graph" type="application/json">)(.*?)(</script>)', s, re.S)
-h.write_text(s[:m.start(2)] + raw + s[m.end(2):])
-PY
+python3 scripts/validate_architecture_map.py --fix   # rewrite the embedded copy
+python3 scripts/validate_architecture_map.py         # what CI runs
 ```
+
+The check is a CI gate. Besides the two copies agreeing, it asserts
+`meta.version` matches the repo-root `VERSION`, that every edge endpoint and
+every id a flow step cites resolves to a real node or edge (a typo'd id renders
+as a step that highlights nothing), and that every fixture and module path the
+map names actually exists.
 
 ## Reading the page
 
