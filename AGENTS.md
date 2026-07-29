@@ -34,7 +34,11 @@ It is generated from the prose docs — edit those first, then the map.
   In-process loopback HTTP server, view-tree + Compose-semantics capture,
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata
   bridge, and an auto-start `ContentProvider`. `reticle-agent/` is a grouping
-  directory (no build.gradle); per-platform agents are its children.
+  directory (no build.gradle); per-platform agents are its children. Its unit
+  tests run under Robolectric in **NATIVE graphics mode**
+  (`src/test/resources/robolectric.properties`): the default mode fakes text
+  metrics, so a `RegionProbe` suite written against it would assert the fake and
+  pass while the real `android.text.Layout` produced different rects.
 - `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` +
   `ReticleInjectionBootstrap`): SwiftPM package — the in-process iOS agent. Same
   shape as the Android agent: loopback HTTP server, UIKit view-tree capture, a
@@ -45,7 +49,10 @@ It is generated from the prose docs — edit those first, then the map.
   twin) — allowlist mutation,
   in-process screenshot, `Reticle` facade, and dual auto-start (a DYLD-constructor
   bootstrap for injection, plus a linked `Reticle.start()`). Emits `platform="ios"`
-  protocol JSON. Built by SwiftPM, invisible to Gradle.
+  protocol JSON. Built by SwiftPM, invisible to Gradle. Its unit tests
+  (`Tests/ReticleKitTests`, run by `scripts/test-ios-agent.sh`) need XCTest on a
+  simulator rather than `swift test` — UIKit-only code, and real views/TextKit are
+  what the capture logic is made of.
 - `reticle-helper`: the Android host layer (Kotlin) — adb + JDWP injector + input
   + loopback client. **Not a user-facing CLI**: its only entry points are
   `helper` (a long-lived JSONL RPC server, `Helper.kt`), `version`, and `help`.

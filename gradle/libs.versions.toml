@@ -14,6 +14,8 @@ composeMaterial3 = "1.3.1"
 androidxActivity = "1.9.3"
 androidxRecyclerview = "1.3.2"
 jsonSchemaValidator = "1.5.2"
+robolectric = "4.14.1"
+junit = "4.13.2"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
@@ -27,6 +29,11 @@ androidx-compose-material3 = { module = "androidx.compose.material3:material3", 
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
 androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "androidxRecyclerview" }
 json-schema-validator = { module = "com.networknt:json-schema-validator", version.ref = "jsonSchemaValidator" }
+# Runs the Android agent's unit tests against real framework classes (a real
+# TextView with a real android.text.Layout) on the JVM - the analogue of running
+# the iOS agent's tests on a simulator instead of against mocks.
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
