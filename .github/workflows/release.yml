@@ -58,7 +58,7 @@ jobs:
       # published broken artifacts (including version skew validate_plugin.py
       # exists to catch).
       - name: "Gate: JVM unit tests"
-        run: ./gradlew :reticle-core:test :reticle-helper:test --stacktrace
+        run: ./gradlew :reticle-core:test :reticle-helper:test :reticle-agent:android:testDebugUnitTest --stacktrace
 
       - name: "Gate: reticle-swift (ReticleProtocol) tests"
         # The Swift half of the shared reticle-protocol fixtures; see ci.yml for

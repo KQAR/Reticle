@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **The Android agent has unit tests too, against real framework objects.** The
+  AAR had a `src/main` and nothing else: `RegionProbe` — 615 lines deciding where
+  a tap inside an agreement row actually lands — was covered only by the device
+  e2e. It now has a Robolectric suite driving a REAL `TextView` holding a REAL
+  `Spanned`, laid out by the real `android.text.Layout` every rect is derived
+  from, plus the mutation allowlist. `:reticle-agent:android:testDebugUnitTest`
+  runs in CI and at release.
+
+  One setup detail is load-bearing and is written down in
+  `src/test/resources/robolectric.properties`: Robolectric's DEFAULT graphics
+  mode fakes text metrics — every glyph one unit wide, `getPrimaryHorizontal`
+  returning nonsense, nothing ever wrapping. A suite written against that would
+  assert the fake and pass while the probe produced garbage on a device
+  (measured: the same string lays out as 1 line under the default and 3 under
+  `graphicsMode=NATIVE`). The tests therefore run in NATIVE graphics mode, which
+  is also why they pin an SDK level newer than the agent's `minSdk`.
+
 - **The in-process iOS agent has unit tests.** It carried the whole iOS capture
   surface with no automated coverage at all: the only thing that ever exercised
   `RegionProbe`, `TextLayoutStack`, `SwiftUITextRegions` or `LottieBridge` was a
