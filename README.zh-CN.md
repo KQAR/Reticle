@@ -308,7 +308,8 @@ android · dev.reticle.sample · 3 actions · 19:11:47 → 19:11:55
     evidence 1785150708052-tap/, 2 snapshots, 2 screenshots
 
 3  19:11:55  tap  testId=scenario.login  →540,2320 semantic:testId
-    (no observable change between before and after)
+    (no observable change between before and after — usually the gesture hit
+     nothing, but an app can also answer out of tree or purely over the network)
     evidence 1785150715273-tap/, 2 snapshots, 2 screenshots
 ```
 

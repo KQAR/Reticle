@@ -193,6 +193,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
     4 = unknowable, kept distinct on purpose).
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
+- App-authored probes are process-global: publish on screen entry, retract on
+  exit (`ReticleProbeRegistry.clear()` / `Reticle.clearProbes()`). A probe nothing
+  removes stays addressable on every later screen, which reads as a stale target
+  rather than as a leak.
 - Runtime mutation is allowlisted (`alpha`, `visibility`, `text`,
   `backgroundColor`, `enabled`). Compose nodes are intentionally not mutable;
   drive declarative UI through app-owned state.
