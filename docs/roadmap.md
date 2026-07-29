@@ -230,6 +230,17 @@ Both prior items are closed (README parity restored in both directions, and
   observation on timeout, so the next occurrence says whether the tap never landed
   or the capture degraded under animation load.
 
+- **`scripts/e2e-ios.sh` assumes warm app state.** Measured 2026-07-29 on a
+  freshly created simulator: the sample app opens on the Login screen, so the
+  script's first navigation (`act activate --test-id scenario.checkout`) finds no
+  such node and the run stops there. On a simulator that has been used before, the
+  app is already past login and the suite passes — i.e. the suite is only
+  reproducible on a warm device, which is the opposite of what a fixture should
+  be. Not a product defect (both paths behave correctly), and the obvious fix is
+  constrained: logging in early must not TYPE, because the first HID keyboard event
+  latches the simulator's hardware-keyboard state and would destroy the LOGIN
+  section's own keyboard assertions later in the same run (see docs/boundaries.md).
+
 ### Deferred — parked until a trigger arrives
 
 - **HarmonyOS feasibility probe.** The HarmonyOS seams (`hdc` forward/input, a
