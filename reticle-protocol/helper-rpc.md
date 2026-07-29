@@ -54,7 +54,11 @@ speak this one to be callable.
 - The Swift daemon can also broker the same calls through `POST /helper/rpc`
   when `reticle serve --helper-broker` is enabled; one-shot commands opt in
   with `--use-daemon` or `RETICLE_USE_DAEMON=1` (this takes precedence over
-  the socket hot path).
+  the socket hot path). The broker forwards ONLY the methods in the table below
+  — it is the one place a caller-supplied string reaches the helper process, so
+  anything else is refused with a 400 naming it rather than handed on. The Swift
+  side of that gate is `HelperMethod`, which a contract test checks against this
+  very table.
 
 ## Envelope
 
