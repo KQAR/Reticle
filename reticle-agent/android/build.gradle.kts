@@ -36,6 +36,19 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+
+    // The agent's own unit tests run under Robolectric, against REAL framework
+    // classes: a real TextView, laid out by the real android.text.Layout, is the
+    // thing RegionProbe measures, and a mocked one would only test the mock. The
+    // iOS half does the same by running XCTest on a simulator
+    // (scripts/test-ios-agent.sh).
+    // JUnit 4, not the platform: Robolectric ships a JUnit 4 runner, and the
+    // whole point of these tests is the real framework classes it provides.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 // A standalone configuration resolving to the runtime JARs the injectable dex
@@ -59,6 +72,13 @@ dependencies {
     // These come from the SAME catalog entries reticle-core uses, so the payload
     // can't drift from what core links. Android framework classes are provided by
     // the host process; Compose stays compileOnly, so neither lands in the payload.
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    // The Compose bridge is reflective and compileOnly in main; the tests need the
+    // real classes to build a semantics node worth reflecting over.
+    testImplementation(libs.androidx.compose.ui)
+
     "payload"(project(":reticle-core"))
     "payload"(libs.kotlin.stdlib)
     "payload"(libs.kotlinx.serialization.json)
