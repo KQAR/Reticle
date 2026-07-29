@@ -14,6 +14,16 @@ import WebKit
 /// re-resolves to the same view for mutation.
 @MainActor
 struct SnapshotCapture {
+    /// Where the windows come from. Nil means the live scene enumeration; a
+    /// caller can supply its own list, which is how the unit tests drive the whole
+    /// walk over a hand-built hierarchy without a real `UIWindowScene` (a unit
+    /// test process has none). Production never passes this.
+    private let injectedWindows: [UIWindow]?
+
+    init(windows: [UIWindow]? = nil) {
+        injectedWindows = windows
+    }
+
     final class Builder {
         var nextRef = 0
         var nodes: [String: Node] = [:]
@@ -103,6 +113,7 @@ struct SnapshotCapture {
     // MARK: - Windows / screen
 
     private func orderedWindows() -> [UIWindow] {
+        if let injectedWindows { return injectedWindows }
         var windows: [UIWindow] = []
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }

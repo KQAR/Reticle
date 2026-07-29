@@ -49,6 +49,15 @@ public enum Reticle {
         ReticleRuntime.shared.registerProbe(testId: testId, label: label, frame: frame, metadata: metadata)
     }
 
+    /// Forget every registered probe — the twin of the Android
+    /// `ReticleProbeRegistry.clear()`. Process-global state nothing could remove
+    /// from was a leak by construction: an app that publishes a screen's probes on
+    /// entry had no way to retract them on exit, so a stale `testId` stayed
+    /// addressable on every later screen.
+    public static func clearProbes() {
+        ReticleRuntime.shared.clearProbes()
+    }
+
     private static func envPort() -> Int? {
         if let s = ProcessInfo.processInfo.environment["RETICLE_PORT"], let p = Int(s) { return p }
         return nil

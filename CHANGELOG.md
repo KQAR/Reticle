@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **The view walk is under test on both platforms, and probes can be retracted.**
+  `SnapshotCapture` — what every command ultimately reads — was the largest piece
+  of either agent with no coverage, because a unit-test process has no attached
+  window (Android) and no `UIWindowScene` (iOS) to walk. Both captures now take
+  their window roots as an argument, defaulting to the live enumeration
+  production uses, and that one seam makes the whole walk testable over a
+  hand-built hierarchy: the application root and its one node per window, every
+  node reachable from the root with agreeing parent links, tags /
+  accessibility identifiers becoming `testId`, frames in screen coordinates, an
+  invisible node kept in the snapshot but filtered out of `compact`, two captures
+  of one tree agreeing on every ref (which is what makes `mutate --ref` land on
+  the view the caller read), a ref resolving back to its live view, and the
+  semantic projection staying connected.
+
+  Writing the probe case surfaced a gap worth fixing rather than working around:
+  the probe registries were process-global with no way to remove anything, so an
+  app that published a screen's probes on entry could not retract them on exit and
+  a stale `testId` stayed addressable on every later screen.
+  `ReticleProbeRegistry.clear()` (Android) and `Reticle.clearProbes()` (iOS) close
+  that, and the tests use them to stop leaking state into each other.
+
 - **The Android agent has unit tests too, against real framework objects.** The
   AAR had a `src/main` and nothing else: `RegionProbe` — 615 lines deciding where
   a tap inside an agreement row actually lands — was covered only by the device

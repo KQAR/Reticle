@@ -31,7 +31,16 @@ import java.util.concurrent.TimeUnit
  * It walks WindowManagerGlobal.getRootViews() -> ViewGroup -> View, the full set
  * of attached decor/window roots (activities, dialogs, popups, toasts).
  */
-class SnapshotCapture(private val context: Context) {
+class SnapshotCapture(
+    private val context: Context,
+    /**
+     * Where the window roots come from. Defaults to the live
+     * `WindowManagerGlobal` enumeration; a caller can supply its own list, which
+     * is how the unit tests drive the whole walk over a hand-built hierarchy
+     * without an attached window. Production never passes this.
+     */
+    private val windowRoots: () -> List<View> = { ReticleWindows.rootViews() },
+) {
 
     private var nextRef = 0
     private val handler = Handler(Looper.getMainLooper())
@@ -78,7 +87,7 @@ class SnapshotCapture(private val context: Context) {
         val webViews = ArrayList<WebViewBridge.Pending>()
 
         val appRef = makeRef()
-        val rootViews = ReticleWindows.rootViews()
+        val rootViews = windowRoots()
         val windowRefs = ArrayList<String>()
 
         for (root in rootViews) {
