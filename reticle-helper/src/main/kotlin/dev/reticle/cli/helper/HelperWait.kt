@@ -157,7 +157,10 @@ internal object HelperWait {
     /** One poll: capture, resolve the way `act` resolves, and read the screen-level markers. */
     private fun probeOnce(client: RuntimeClient, predicate: WaitPredicate): WaitProbe {
         val snapshot = client.snapshot()
-        val compact = CompactObservation.from(snapshot)
+        // UNCAPPED: the digest decides quiescence, and a change past the render
+        // cap (item #201 of a long list appearing) must still count as a change —
+        // a capped digest reports "quiet" while the screen is visibly moving.
+        val compact = CompactObservation.from(snapshot, maxItems = Int.MAX_VALUE)
         // Screen-level half comes from reticle-core, shared with the iOS host.
         val base = WaitProbe.screenState(snapshot, compact)
         val selector = predicate.selector ?: return base

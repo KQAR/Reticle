@@ -207,6 +207,10 @@ data class WaitProbe(
                         } ?: ""
                     )
                     .append('|').append(item.isEnabled)
+                    // Focus IS a screen change: a tap that moves the caret from
+                    // field A to field B with the same-height keyboard up changes
+                    // no geometry at all, and `type` would land in the old field.
+                    .append('|').append(item.isFocused)
                     .append('|').append(item.occludedBy ?: "")
                     .append('\n')
             }

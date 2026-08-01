@@ -31,6 +31,12 @@ data class StyleObservation(
     val platform: String,
     val screen: ScreenInfo,
     val items: List<StyleItem>,
+    /**
+     * How many style-bearing nodes past the projection cap were dropped. Zero
+     * when everything fit; rendered so the cap never silently reads as "that was
+     * every node" — the dropped nodes are still in the snapshot.
+     */
+    val truncatedItems: Int = 0,
 ) {
     /**
      * The whole text projection: screen header, then one block per node that has
@@ -50,6 +56,12 @@ data class StyleObservation(
             out.addAll(item.bodyLines())
         }
         if (out.size == 1) out.add("(no style-bearing nodes in this snapshot)")
+        if (truncatedItems > 0) {
+            out.add(
+                "($truncatedItems more style-bearing node(s) beyond this projection's cap — " +
+                    "NOT listed here; they are still in the snapshot)"
+            )
+        }
         return out.joinToString("\n")
     }
 
@@ -125,11 +137,13 @@ data class StyleObservation(
                 node.children.forEach { visit(it) }
             }
             visit(snapshot.rootRef)
+            val kept = items.take(maxItems)
             return StyleObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
                 platform = snapshot.platform,
                 screen = snapshot.screen,
-                items = items.take(maxItems),
+                items = kept,
+                truncatedItems = items.size - kept.size,
             )
         }
 
