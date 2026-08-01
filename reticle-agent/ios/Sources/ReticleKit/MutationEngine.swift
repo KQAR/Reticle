@@ -59,9 +59,10 @@ struct MutationEngine {
             return (ref, view)
         }
         if let point = selector.point {
-            // Deepest hit at the point, across windows top-to-bottom.
+            // Deepest hit at the point, across windows top-to-bottom — numeric
+            // ref order, not lexicographic (see RefOrder).
             let cg = CGPoint(x: point.x, y: point.y)
-            for (ref, view) in index.sorted(by: { $0.key > $1.key }) {
+            for (ref, view) in RefOrder.descending(index) {
                 if let window = view.window {
                     let local = window.convert(cg, to: view)
                     if view.point(inside: local, with: nil) && view.subviews.isEmpty {
