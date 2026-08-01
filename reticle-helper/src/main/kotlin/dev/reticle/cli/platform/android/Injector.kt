@@ -67,11 +67,16 @@ object Injector : AppInjector {
         // marking the debug app force-stops the target, so the pid must be resolved
         // after the relaunch, not before. See [InjectAnrGuard].
         val anrGuard = if (restartUnderDebugger) {
-            InjectAnrGuard.install(adb, packageName).also { relaunchForDebugger(adb, packageName) }
+            InjectAnrGuard.install(adb, packageName)
         } else {
             InjectAnrGuard.disabled(adb)
         }
+        // Everything past install() runs under the try: the relaunch can fail
+        // (monkey refused, app never came up within its deadline), and a throw
+        // before the try would leak the persistent debug-app marking onto the
+        // device with nothing left to restore() it.
         try {
+            if (restartUnderDebugger) relaunchForDebugger(adb, packageName)
             return injectIntoRunningApp(adb, packageName, anrGuard)
         } finally {
             anrGuard.restore()
