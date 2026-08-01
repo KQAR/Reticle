@@ -73,8 +73,8 @@ Four things this picture is meant to settle:
 - **`reticle serve` is host-owned state.** The agent and helper supply device
   operations and runtime observations; session events, artifacts, traffic rules and
   the panel never live on the device.
-- **The helper is not a CLI.** Its only entry points are `helper` (the JSONL RPC
-  server the Swift host spawns), `version` and `help`. Users never invoke it.
+- **The helper is not a CLI.** Users never invoke it; its entry points are listed
+  in the [module table](#module-layout).
 
 ## The three mechanisms
 
@@ -262,9 +262,7 @@ The one gap is multi-touch `pinch`, which `input` can't express — it would nee
 
 `reticle serve` is the host-owned long-lived surface. It creates an
 `EventStore` under `~/.reticle/sessions/<session>/`, starts a localhost
-Hummingbird server, and optionally starts the host proxy. The Android agent and
-helper do not own daemon state; they only supply device operations and app
-runtime observations.
+Hummingbird server, and optionally starts the host proxy.
 
 The daemon exposes three route groups:
 
@@ -507,14 +505,8 @@ elevation, background color, and app-attached metadata — *not* the trimmed
 semantic node. If you want the semantic projection instead, read
 `ui tree --semantics` or `semantics.json`.
 
-The split, restated:
-
-- `ui node` / `ui tree` / `ui outline` → **view tree** (`Node`)
-- `ui tree --semantics` → **semantic tree** (`SemanticNode`)
-
 Only the **action** path (`act tap`) is semantic-first; the **inspection**
-path (`ui node`) is always the view tree. These are different concerns and
-intentionally use different trees.
+path (`ui node`) is always the view tree.
 
 ## Style evidence (`ui style`)
 
@@ -960,8 +952,3 @@ own: where a section above hits a limit it states the mechanism and links the ro
 rather than half-repeating the table. A limit discovered and written down only
 here would make `boundaries.md` read as complete while being wrong — which is the
 reason the two documents were split.
-
-The rule, restated here because everything above depends on it: **an unreachable
-thing must produce evidence naming itself, never silence.** A boundary earns a row
-only when the mechanism is understood, and "not exercised" is written down where it
-is rather than implied by a missing test.

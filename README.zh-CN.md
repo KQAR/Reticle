@@ -130,14 +130,13 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
 同一个仓库也是一个 Cursor 插件——`.cursor-plugin/` 下的清单镜像了
 `.claude-plugin/`,并共享完全相同的 `skills/` 与 `commands/`,因此两个编辑器只有
 一份事实来源。像安装任何 Cursor 插件一样添加 marketplace 并安装 `reticle`;
-下面的启动器与 CLI 获取流程完全一致(无论哪个编辑器安装,`reticle` CLI 都会落到
-PATH 上)。
+下面的启动器与 CLI 获取流程完全一致。
 
 ### CLI 如何获取
 
 `reticle` 是 **Swift host**——一个无 JDK 的原生 macOS 14+ arm64 二进制,它通过相邻的
 **原生 helper**(`reticle-helper`,即由 GraalVM native-image 编译的 Kotlin Android
-层)驱动 Android。**仅支持 macOS 14+ arm64(Apple Silicon)。**
+层)驱动 Android。
 
 启动器按以下顺序解析它(命中即止):
 
@@ -152,9 +151,6 @@ PATH 上)。
 默认情况下 Reticle 总是使用预编译 release——无需工具链,且**不会静默地从源码构建**。
 若无法获取下载,启动器会停下并给出指引,而不是回退。用 `reticle version` 确认;
 用 `reticle doctor` 检查 adb 与设备。用 `RETICLE_REPO` 锁定到某个 fork。
-
-host 侧要求:Apple Silicon macOS 14+、一台通过 `adb` 连接的 Android 设备/模拟器,以及
-预编译下载所需的网络(或 `RETICLE_FROM_SOURCE=1` + Swift 工具链 + 一个 GraalVM)。
 
 要在不安装的情况下本地开发或测试:在仓库根目录运行 `claude --plugin-dir ./`。
 
@@ -496,8 +492,7 @@ helper RPC,遇到第一个失败就停。step 的键就是协议字段名,所以
 reticle act batch --package dev.reticle.sample --file steps.json \
   --trace-output reticle-batch
 
-# 把录到的流程拼成带设备边框的 GIF:手势画在它真正落下的位置,前后各一帧。
-# 纯 host 本地;Android 与 iOS 的 trace 都支持。
+# 把录到的流程拼成带设备边框的 GIF(见上文)。
 reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 ```
 
