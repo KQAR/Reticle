@@ -38,14 +38,15 @@ object ComposeTextRegions {
     /**
      * [nodeFrame] is the node's already-converted screen frame; Compose text
      * geometry is relative to the text layout's own origin, which is that frame's
-     * origin.
+     * origin. [layout] is the node's `TextLayoutResult`, fetched once by the
+     * caller — obtaining it runs the `GetTextLayoutResult` accessibility action,
+     * so the caller shares one result between this probe and [ComposeTextStyle].
      */
-    fun probe(semanticsNode: Any, nodeFrame: Rect?): Result {
-        if (nodeFrame == null) return EMPTY
+    fun probe(semanticsNode: Any, nodeFrame: Rect?, layout: Any?): Result {
+        if (nodeFrame == null || layout == null) return EMPTY
         val annotated = SemanticsReflect.annotatedText(semanticsNode) ?: return EMPTY
         val text = annotatedString(annotated) ?: return EMPTY
         if (text.isEmpty()) return EMPTY
-        val layout = SemanticsReflect.textLayoutResult(semanticsNode) ?: return EMPTY
 
         val regions = linkRanges(annotated).mapNotNull { (start, end, target) ->
             val rects = rectsForRange(layout, start, end, nodeFrame)
@@ -73,9 +74,7 @@ object ComposeTextRegions {
     private fun linkRanges(annotated: Any): List<Triple<Int, Int, String?>> {
         return try {
             val length = ReticleReflect.invokeNoArg(annotated, "length") as? Int ?: return emptyList()
-            val method = annotated.javaClass.methods.firstOrNull {
-                it.name == "getLinkAnnotations" && it.parameterTypes.size == 2
-            } ?: return emptyList()
+            val method = method(annotated, "getLinkAnnotations", 2) ?: return emptyList()
             val ranges = method.invoke(annotated, 0, length) as? List<*> ?: return emptyList()
             ranges.mapNotNull { range ->
                 range ?: return@mapNotNull null
@@ -189,12 +188,21 @@ object ComposeTextRegions {
 
     private fun lineForOffset(layout: Any, offset: Int): Int? = intAt(layout, "getLineForOffset", offset)
 
+    /**
+     * The char-grid loop calls these once per character offset, and
+     * `getMethods()` clones the class's whole Method array per call — on the
+     * main thread, per snapshot. Resolve once per (class, name, arity) through
+     * [ReticleReflect.cachedMethod], as [SemanticsReflect] does for its getters.
+     */
+    private fun method(target: Any, name: String, paramCount: Int) =
+        ReticleReflect.cachedMethod(target, "$name/$paramCount") { cls ->
+            cls.methods.firstOrNull { it.name == name && it.parameterTypes.size == paramCount }
+        }
+
     /** `TextLayoutResult.getParagraphDirection(offset)` == `ResolvedTextDirection.Ltr`. */
     private fun isLeftToRight(layout: Any, offset: Int): Boolean {
         return try {
-            val m = layout.javaClass.methods.firstOrNull {
-                it.name == "getParagraphDirection" && it.parameterTypes.size == 1
-            } ?: return true
+            val m = method(layout, "getParagraphDirection", 1) ?: return true
             (m.invoke(layout, offset)?.toString() ?: "Ltr").contains("Ltr", ignoreCase = true)
         } catch (_: Throwable) {
             true
@@ -204,9 +212,7 @@ object ComposeTextRegions {
     /** `TextLayoutResult.getHorizontalPosition(offset, usePrimaryDirection)`. */
     private fun horizontal(layout: Any, offset: Int): Double? {
         return try {
-            val m = layout.javaClass.methods.firstOrNull {
-                it.name == "getHorizontalPosition" && it.parameterTypes.size == 2
-            } ?: return null
+            val m = method(layout, "getHorizontalPosition", 2) ?: return null
             (m.invoke(layout, offset, true) as? Float)?.toDouble()
         } catch (_: Throwable) {
             null
@@ -218,14 +224,10 @@ object ComposeTextRegions {
             if (visibleEnd != null) {
                 // getLineEnd(lineIndex, visibleEnd) — the two-arg form excludes the
                 // trailing whitespace a soft wrap leaves on the line.
-                val m = layout.javaClass.methods.firstOrNull {
-                    it.name == name && it.parameterTypes.size == 2
-                }
+                val m = method(layout, name, 2)
                 if (m != null) return m.invoke(layout, arg, visibleEnd) as? Int
             }
-            val m = layout.javaClass.methods.firstOrNull {
-                it.name == name && it.parameterTypes.size == 1
-            } ?: return null
+            val m = method(layout, name, 1) ?: return null
             m.invoke(layout, arg) as? Int
         } catch (_: Throwable) {
             null
@@ -234,9 +236,7 @@ object ComposeTextRegions {
 
     private fun floatAt(layout: Any, name: String, arg: Int): Double? {
         return try {
-            val m = layout.javaClass.methods.firstOrNull {
-                it.name == name && it.parameterTypes.size == 1
-            } ?: return null
+            val m = method(layout, name, 1) ?: return null
             (m.invoke(layout, arg) as? Float)?.toDouble()
         } catch (_: Throwable) {
             null

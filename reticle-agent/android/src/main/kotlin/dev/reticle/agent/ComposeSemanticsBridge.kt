@@ -120,17 +120,22 @@ object ComposeSemanticsBridge {
                 ?.let(childRefs::add)
         }
 
+        // GetTextLayoutResult is an accessibility ACTION, not a stored value —
+        // resolving it re-runs text layout, so invoke it once per node and share
+        // the result between both probes below.
+        val textLayout = SemanticsReflect.textLayoutResult(semanticsNode)
+
         // Sub-regions inside one text node: a Compose Text carries its links as
         // AnnotatedString ranges, not as child nodes, so without this a link in
         // Compose text is unaddressable while the same ClickableSpan row on a View
         // is not.
-        val textRegions = ComposeTextRegions.probe(semanticsNode, frame)
+        val textRegions = ComposeTextRegions.probe(semanticsNode, frame, textLayout)
 
         // Text style off the same GetTextLayoutResult action. Semantics carries no
         // style of its own, so without this a Compose screen answered none of the
         // questions a design asks while the identical View screen answered all of
         // them.
-        val textStyle = ComposeTextStyle.probe(semanticsNode, densityScale, fontScale)
+        val textStyle = ComposeTextStyle.probe(textLayout, densityScale, fontScale)
 
         nodes[ref] = Node(
             ref = ref,
