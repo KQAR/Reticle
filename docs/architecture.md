@@ -455,6 +455,19 @@ scoping, `ui node` (which renders through selector diagnostics), and the Android
 `@N` alias cache — the one projection with no Swift twin, and named as such in
 `Render.swift` rather than left to be discovered.
 
+The wire format carries a `schemaVersion` (`Snapshot.SCHEMA_VERSION`, pinned
+against `snapshot.schema.json`), and every snapshot ingested from outside the
+process — the helper's agent-HTTP fetch, a `--snapshot` file load, the Swift
+host's render / fetch / trace paths — passes `requireSupportedSchema()` first.
+Only a **newer** version is refused; older ones still decode with defaults, which
+is the point of an additive format. Newer cannot be treated the same way because
+both JSON configurations ignore unknown keys (they must, for additive changes),
+so a future producer that renamed or moved a field would decode silently into a
+default — `isVisible=true` for a field that is no longer there — and the
+projection would present invented evidence as real. The refusal names both
+versions; the fix is to upgrade the host/helper to at least the agent's version,
+never to downgrade the agent.
+
 Reticle maintains **two separate trees** from a single capture. Confusing them
 is the most common mistake when reading the output, so this is explicit:
 

@@ -2,6 +2,156 @@
 
 ## Unreleased
 
+An audit batch with no new capability in it: twenty-one changes, every one of
+them a defect found by reading the code against the contracts it already claims
+to hold, or a hot path measured and made cheaper. Three classes dominate —
+selectors that silently pointed at the wrong node or no node, projections and
+waits that reported a partial reading as a complete one, and unbounded
+waits/writes that could hang a helper, a host, or the app being observed.
+
+- **Selectors stopped quietly missing.** `--label` scoped its match to "the
+  highest window containing any visible node", and every window contains at least
+  its own chrome — so the scope collapsed to "top window only" and any overlay
+  (an iOS keyboard, a popup, a tooltip) blinded every label under it. The match
+  now runs per window, top-down, and keeps the first window that actually
+  MATCHES, falling back to all visible nodes. On iOS, `--point` hit-testing
+  sorted refs lexicographically, which puts `r9` after `r10`: on any screen with
+  ten or more nodes — every real screen — a point could resolve to a shallower
+  view or one in a covered window. Both engines now share a numeric `RefOrder`.
+  An empty `--region` entered the region path on Android (`''` substring-matches
+  the first labelled region) while iOS ignored it, so one batch step tapped two
+  different points; `''` is no region on both sides now. And the Swift region
+  path resolved through `try? Render.labelMatch`, collapsing an ambiguous label
+  into "no match" — turning `UNKNOWABLE` into `ABSENT`, the exact observer lie
+  `WaitVerdict` exists to prevent; the ambiguity propagates now, like the Kotlin
+  twin.
+
+- **Projections declare their cap, and `act wait --idle` can see past it.**
+  `compact` kept 200 items and `ui style` 500, dropping the rest with no marker —
+  a capped projection read as the whole screen, against the repo's own rule that
+  anything unreachable must name itself. Both now carry `truncatedItems` and end
+  with `(N more … beyond this projection's cap — NOT listed here; still in the
+  snapshot)`; the marker is in `docs/boundaries.md` and the skill. The same cap
+  was worse inside the wait loop: the quiescence digest was built from the capped
+  list, so on a screen with more than 200 signal-bearing nodes a change past the
+  cap left the digest unchanged and `act wait --idle` reported a still-moving
+  list as quiet. Both wait paths build the digest UNCAPPED, and the digest now
+  folds in `isFocused` — a caret moving between two fields under a same-height
+  keyboard changes no geometry, and a wait that calls that quiet hands back the
+  wrong field.
+
+- **A snapshot from a newer schema is refused instead of silently misread.**
+  `schemaVersion` was written on every snapshot and read by no one. Both JSON
+  configurations ignore unknown keys — they must, for additive changes — so a
+  future producer's renamed field would decode into a default and the projection
+  would present invented evidence as real. `requireSupportedSchema()` (Kotlin and
+  Swift twins) now gates every snapshot ingested from outside the process: the
+  helper's agent-HTTP fetch and `--snapshot` load, and the Swift host's render,
+  fetch and trace paths. Only NEWER is refused — older still decodes with
+  defaults by design — and the error names both versions and the direction to
+  upgrade.
+
+- **Three render drifts between the Kotlin and Swift halves.** Every render
+  truncation clipped by UTF-16 units on Kotlin (`take`) and grapheme clusters on
+  Swift (`prefix`): the two agreed on ASCII and disagreed on CJK and emoji, and
+  Kotlin could emit an unpaired surrogate. Both clip by code point now, pinned by
+  a 45-emoji fixture. `StyleObservation.fmt` rounded half UP on the JVM and half
+  to EVEN in C's `printf`, so a 1px border at density 4 printed `0.3dp` on one
+  side and `0.2dp` on the other. And `'1'` sat in the CSS initial-value list for
+  opacity's sake while the check was value-based, so a page's explicit
+  `z-index:1` — a stated stacking decision — was dropped as "the page said
+  nothing".
+
+- **A malformed snapshot bounds every tree walk instead of hanging it.** A
+  snapshot can be loaded from disk or produced by a buggy agent, so a `parentRef`
+  cycle, a children cycle, or one ref under two parents are legitimate inputs.
+  `SemanticTree.build`, the label resolvers, `CompactObservation.from`,
+  `StyleObservation.from` and `WaitPredicate`'s window walkers were unguarded on
+  one or both platforms — `act wait` could hang forever, `ui report` could hang or
+  overflow the stack, and a duplicated ref emitted a duplicated item.
+
+- **A debugging request can no longer crash or wedge the app it observes.**
+  Android's `runOnMainSync` documented that it swallows exceptions and did not:
+  a screenshot OOM, an app `TextWatcher` throwing during a text mutation, or a
+  clipboard write over the binder limit killed the host app's main thread. The
+  in-app server had no write timeout (`soTimeout` bounds only reads), so a peer
+  that connected and stopped reading blocked its worker inside `write()` once the
+  buffer filled on a multi-megabyte screenshot; sixteen such peers exhausted the
+  pool and `CallerRunsPolicy` then ran requests on the accept thread, so the
+  server never accepted again until the app restarted. A watchdog now closes the
+  connection at a hard 30s per-request deadline, and the 413 path drains the sent
+  body so the diagnosis is not replaced by a connection reset. On iOS: window
+  ordering is stable again (`sorted` is not, so two `.normal`-level windows could
+  swap capture order between runs and flip occlusion and screenshot stacking),
+  `runtimeInfo()` reads `boundPort` under the lock `start()` writes it under, and
+  `start()` no longer holds the state lock across a blocking bind, which stalled
+  every thread calling `Reticle.log()`.
+
+- **Every remaining unbounded wait is bounded.** The JDWP reply read had no
+  socket timeout — a target wedged behind a class-init lock hung the helper and
+  the host waiting on it, with no cancel path (60s now, overridable, and the
+  connection is terminal after). `HelperClient.shutdown()` waited forever, so
+  Ctrl-C on `serve` hung until SIGKILL and idle-exit left a zombie daemon+helper
+  pair; it escalates 2s → SIGTERM → 1s → SIGKILL now. `SocketHelperClient`
+  treated a reply timeout as recoverable, leaving the late reply queued so every
+  later call ran one answer behind, forever; a timed-out connection is dead now.
+  The SSE stream buffered unbounded, so a half-open subscriber accumulated every
+  event including network payloads (`.bufferingNewest(512)` now, mirroring the
+  event ring). `awaitRuntime`'s budget was an attempt count that an unresponsive
+  port stretched into minutes; it is a ~15s wall-clock deadline. And `Adb.run`
+  returned the output buffer of a reader thread still alive after its bounded
+  join — a clipped `pidof` reads as "app not running" — which now fails the
+  result instead.
+
+- **Numeric CLI options fail loudly.** `--proxy-port`, `--port`, `--event-limit`,
+  `--proxy-max-request-body-mb`, `--depth`, `--settle-timeout`, `--trace-delay`,
+  `--verify-timeout`, `--type-delay`, `--timeout` and `--quiet-for` silently
+  substituted their default on an unparseable value — a typo'd `ui render
+  --depth` printed an EMPTY tree. They now throw naming the flag and the value.
+
+- **Helper state stops leaking onto the device.** `ForwardRegistry.cleanup()` ran
+  only after a clean stdin EOF, so a SIGTERM from the host leaked every forward of
+  the session onto the resident adb server (shutdown hook now, idempotent). The
+  ANR guard's `--restart-under-debugger` relaunch ran before the restoring
+  `finally`, so a refused relaunch left the persistent debug-app marking behind
+  and the target kept getting force-stopped on later runs. And when the developer
+  had ALREADY marked the target as the debug app themselves, `restore()` ran `am
+  clear-debug-app` and destroyed their marking — that case is a no-op now.
+
+- **Host-side races.** The daemon's helper-broker route ran the synchronous,
+  lock-serialized `helper.call` (up to 60s) on the Swift cooperative pool, so
+  concurrent `--use-daemon` requests against a wedged helper could occupy the
+  whole pool and freeze every other route; it blocks on a dedicated serial queue
+  now. The daemon's cold-start probe→unlink→bind→listen could interleave so a
+  losing daemon unlinked the winner's freshly bound socket; the sequence is
+  serialized under an `flock`'d lock file. The rule and flow daemon clients wait
+  `timeout+1` so URLSession's specific error beats a generic "timed out", and the
+  flow client's budget sits above the lane's worst path.
+
+- **Capture and wait hot paths got measurably cheaper.** `collapseWrappers` ran a
+  parent-chain walk per (anonymous, named) pair — O(unnamed × named × depth) with
+  two allocations each, inside every `CompactObservation.from`, which the wait
+  loop polls every 100-250ms; ancestor sets are memoized per ref now, and anchor
+  order (so, which survivor inherits `isInteractive`) is unchanged. The Android
+  agent caches reflective method lookups — the Compose char-grid loop cloned the
+  whole `Method` array per character offset — and fetches `GetTextLayoutResult`
+  once per text node instead of twice. iOS builds one `TextLayoutStack` per
+  `RegionProbe.probe()` instead of up to three per text view, each of which
+  rebuilt a full `NSTextStorage`/`NSLayoutManager` and re-ran layout on the host
+  app's main thread. The helper consults `ForwardRegistry` before forking `adb
+  forward` (one `act type` paid that 30-80ms fork 6-8 times), and self-heals a
+  stale entry. `EventStore` streams reads in chunks instead of loading whole
+  `events.jsonl` files per request — and the CURRENT session's history now reads
+  from disk like a historical one, so events older than the in-memory ring stop
+  disappearing from the panel.
+
+- **One new boundary recorded.** Reading `UITextView.layoutManager` — the
+  fallback layout stack a region probe needs — irreversibly downgrades that view
+  to TextKit 1 compatibility mode on iOS 16+. The evidence and the side effect are
+  the same act; there is no read-only probe, so `docs/boundaries.md` states it: a
+  snapshot is not free on TextKit-2 screens, and a layout shift after observation
+  must not be attributed to the app.
+
 ## 0.13.0 - 2026-07-29
 
 A hardening release: the two in-process agents went from zero automated coverage
