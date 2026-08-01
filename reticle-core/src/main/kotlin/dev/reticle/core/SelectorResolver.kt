@@ -59,7 +59,10 @@ class SelectorResolver(
 
         // 1. Region-within-node: target a sub-region (span / virtual / char
         //    range) inside a node, the multi-region case neither tree collapses.
-        if (selector.region != null) {
+        //    An EMPTY region is treated as no region at all, matching the Swift
+        //    twin: "" would substring-match the first labeled region here while
+        //    iOS ignored it — same batch step, two different taps.
+        if (!selector.region.isNullOrEmpty()) {
             val node = nodeFor(selector) ?: return null
             return resolveRegion(node, selector.region!!)
         }
