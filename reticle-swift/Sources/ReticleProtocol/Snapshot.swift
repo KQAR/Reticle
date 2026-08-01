@@ -38,6 +38,21 @@ public enum StyleChannel: String, Codable, Sendable {
 public struct Snapshot: Codable, Sendable {
     public static let schemaVersionValue = 1
 
+    /// Gate every snapshot INGESTED from outside the process (agent HTTP, a
+    /// `--snapshot` file). Checked at ingestion, not at decode: the decoder
+    /// ignores unknown keys (it must, for additive changes), so a NEWER
+    /// producer's renamed field would silently decode into a default —
+    /// `isVisible=true` for a field that moved — and the projection would
+    /// present invented evidence as real. Returns self so ingestion sites stay
+    /// one expression. Mirrors reticle-core's `requireSupportedSchema`.
+    @discardableResult
+    public func requireSupportedSchema() throws -> Snapshot {
+        if schemaVersion > Snapshot.schemaVersionValue {
+            throw UnsupportedSnapshotSchema(found: schemaVersion)
+        }
+        return self
+    }
+
     public var schemaVersion: Int
     /// Wall-clock millis when captured, stamped by the agent.
     public var capturedAtMillis: Int64
@@ -88,6 +103,18 @@ public struct Snapshot: Codable, Sendable {
     }
     public func children(of ref: String) -> [Node] {
         (nodes[ref]?.children ?? []).compactMap { nodes[$0] }
+    }
+}
+
+/// A snapshot whose wire format is NEWER than this build understands — see
+/// `Snapshot.requireSupportedSchema()`. An observer that cannot read the input
+/// says so; it does not guess.
+public struct UnsupportedSnapshotSchema: Error, CustomStringConvertible {
+    public let found: Int
+    public var description: String {
+        "snapshot schemaVersion=\(found) is newer than this build understands "
+            + "(max \(Snapshot.schemaVersionValue)). Upgrade the host to at least the "
+            + "agent's version — a newer producer's fields would silently decode as defaults."
     }
 }
 
