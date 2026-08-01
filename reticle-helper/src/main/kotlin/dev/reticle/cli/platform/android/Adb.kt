@@ -16,6 +16,8 @@ class Adb(
     private val serial: String? = null,
 ) : DeviceController {
 
+    override val serialOrNull: String? get() = serial
+
     override fun run(vararg args: String, timeoutSeconds: Long): CommandResult {
         val command = buildList {
             add(adbPath)
