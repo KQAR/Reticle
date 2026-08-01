@@ -206,6 +206,11 @@ wheel of its own, a named node's tap point falls inside it, it *hugs* that node
 says how many. Nothing leaves the snapshot: every folded node keeps its ref and
 properties, reachable with `ui node --ref rN` and visible in `ui tree`.
 
+`compact` also **caps the list at 200 items** (`ui style` at 500), and a capped
+run ends with `(N more item(s) beyond this projection's cap …)` — unlike a fold,
+those items are not printed at all, so never read a compact carrying that line as
+the whole screen; reach the rest with `ui tree` / `ui node --ref`.
+
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
 visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
 alias cache for that package. Repeated vertical controls are annotated as
