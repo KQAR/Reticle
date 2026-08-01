@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'ReticleProtocol'
-  s.version          = '0.13.0'
+  s.version          = '0.14.0'
   s.summary          = 'Reticle iOS wire-protocol types (shared with the host).'
   s.description      = 'The Swift port of the Reticle protocol model — snapshot, ' \
                        'semantic tree, compact observation, geometry. Pure Swift, no resources. ' \
