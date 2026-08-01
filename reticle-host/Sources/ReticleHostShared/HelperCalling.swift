@@ -7,7 +7,7 @@ import Foundation
 /// staleness check, and a platform backend's `ping`. Anchoring it under the CLI
 /// made the iOS backend depend on the CLI just to name itself.
 public enum ReticleVersion {
-    public static let current = "0.13.0"
+    public static let current = "0.14.0"
 }
 
 /// Minimal call surface every helper backend implements — a local helper process,
