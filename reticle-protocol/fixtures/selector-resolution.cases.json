@@ -511,6 +511,21 @@
       }
     },
     {
+      "name": "a label only in a LOWER window still resolves when another window is on top",
+      "$comment": "'First' lives only in w1 while the popup w2 is stacked above it — the iOS keyboard scenario. The window scope keys on windows that MATCH; a scope that keys on windows with any visible node degenerates to 'top window only' and blinds every label under an overlay.",
+      "selector": {
+        "label": "First"
+      },
+      "expect": {
+        "point": {
+          "x": 100.0,
+          "y": 150.0
+        },
+        "source": "label",
+        "ref": "n2"
+      }
+    },
+    {
       "name": "a label matching two different subtrees refuses to guess",
       "selector": {
         "label": "Rename"
