@@ -6,8 +6,13 @@ resolves precise selectors and tap regions, and drives real input. The
 user-facing CLI is a Swift host; Android is reached through a Kotlin/Gradle
 helper over adb, iOS through an in-process Swift agent with no helper at all.
 
-Use this file as a map. Deeper architecture lives in `docs/architecture.md`, and
-what Reticle structurally cannot reach in `docs/boundaries.md`.
+Use this file as a map — it is the one place that says which document owns what,
+so the others state their own job and point here rather than re-listing the set.
+`README.md` is how to use Reticle, `docs/architecture.md` how it works today,
+`docs/boundaries.md` the **Honest boundaries** table (the canonical list of what
+is structurally unreachable), and `docs/roadmap.md` where it is going — what is
+left in priority order, and which decisions are settled so they are not
+re-litigated.
 `docs/architecture-map/` holds the same shape in two consumable forms: an
 interactive page (`index.html`) and `map.json` (`{nodes, edges, flows:[{steps}]}`)
 for an agent that wants the module graph and the named flows without parsing prose.
@@ -17,7 +22,7 @@ lives in two copies (the JSON and a verbatim block inside the page);
 a CI gate, so they cannot drift again. `docs/roadmap.md` and its `zh-CN` twin are
 checked the same way by `scripts/validate_translations.py` — heading skeletons
 only, since prose cannot be diffed across languages. Two scoped satellites sit
-beside those four: `docs/ios.md` owns the iOS seam (what `--target ios` supports,
+beside the four: `docs/ios.md` owns the iOS seam (what `--target ios` supports,
 simulator vs real device, the iOS-only caveats), and `DESIGN.md` owns the web
 panel's visual language — the token spec (colors, type, surface ladder) the
 `GET /panel` CSS is meant to converge on, not a transcript of what it ships today.
