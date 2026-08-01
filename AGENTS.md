@@ -1,9 +1,10 @@
 # Reticle Agent Guide
 
-This repository is a Gradle/Kotlin project for Reticle, an Android runtime
-inspection, diagnostic, and action harness — it inspects the app that is
-actually running, resolves precise selectors and tap regions, and drives real
-input through adb.
+This repository holds Reticle, a runtime inspection, diagnostic, and action
+harness for Android **and** iOS — it inspects the app that is actually running,
+resolves precise selectors and tap regions, and drives real input. The
+user-facing CLI is a Swift host; Android is reached through a Kotlin/Gradle
+helper over adb, iOS through an in-process Swift agent with no helper at all.
 
 Use this file as a map. Deeper architecture lives in `docs/architecture.md`, and
 what Reticle structurally cannot reach in `docs/boundaries.md`.

@@ -338,8 +338,7 @@ app-presented `UIAlertController`, which the system-dialog scenario covers.
 
 Each `UIWindow` is captured as a window node (ordered by `windowLevel`, lowest
 first), which is what lets `CompactObservation` compute window-vs-window occlusion
-on iOS: a control under an overlay window reports `occluded-by:<windowRef>`. This
-was previously `.view` for every window, so that path never fired and an overlay
-left everything beneath it looking tappable. A `UIAlertController` still produces
-no occlusion because iOS presents it inside the presenting window — a presentation
-difference from Android's separate dialog window, not a missing capability.
+on iOS: a control under an overlay window reports `occluded-by:<windowRef>`. A
+`UIAlertController` still produces no occlusion because iOS presents it inside the
+presenting window — a presentation difference from Android's separate dialog
+window, not a missing capability.

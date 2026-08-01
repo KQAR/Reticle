@@ -147,9 +147,7 @@ specified — see below).
   a fixed dp" IS the design intent. `ui style` instead emits every length in raw
   units, dp and (for text) sp plus a share of the screen, and the consumer picks
   which one it expects to hold constant across devices. And **A2 stands** — it
-  compares two pictures Reticle took itself, invents no truth, and its threshold is
-  already documented as a hint; it is a pixel-evidence product, not a fidelity
-  verdict.
+  compares two pictures Reticle took itself, so it imports no external truth.
 - **A5 — navigation / coverage map (`reticle map`).** Fold `ui outline` + trace
   transitions into "screen → reachable path", positioned strictly as a coverage aid
   ("what no flow touches yet"), never a verification path. Lowest priority.
@@ -207,8 +205,7 @@ reversing. Do **B2** first — it fits the deterministic-drive + mock shape best
 
 ### 8. Docs debt — S
 
-Both prior items are closed (README parity restored in both directions, and
-`connectWithHandshake` documented at the function). What remains is structural:
+The prior items are closed. What remains is structural:
 
 - **Two full READMEs stay a standing cost.** Parity was restored twice now, in both
   directions, which is the signal: a feature landing has to be written up twice or
