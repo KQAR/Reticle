@@ -84,7 +84,13 @@ data class CompactObservation(
             }
 
             val items = ArrayList<CompactItem>()
+            // Seen-set, matching the document-order contract used everywhere
+            // else (`refsInDocumentOrder`, `SemanticTree.firstNode`): a children
+            // cycle in a malformed snapshot must not recurse forever, and a ref
+            // reachable under two parents is one item, not two.
+            val seen = HashSet<String>()
             fun visit(ref: String, windowRef: String?) {
+                if (!seen.add(ref)) return
                 val node = snapshot.nodes[ref] ?: return
                 val currentWindow = if (node.kind == NodeKind.window) node.ref else windowRef
                 // Same targeting-signal test as the semantic tree, plus a

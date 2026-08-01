@@ -53,10 +53,13 @@ public struct SemanticTree: Codable, Sendable {
             kept.insert(ref)
         }
 
-        // 2. Nearest kept ancestor of a ref, walking parentRef upward.
+        // 2. Nearest kept ancestor of a ref, walking parentRef upward. Guarded
+        //    against parentRef cycles: a snapshot can come from disk or a buggy
+        //    agent, and an unguarded upward walk on a cyclic one never terminates.
         func nearestKeptAncestor(_ ref: String) -> String? {
+            var seen = Set<String>()
             var cur = from.nodes[ref]?.parentRef
-            while let c = cur {
+            while let c = cur, seen.insert(c).inserted {
                 if kept.contains(c) { return c }
                 cur = from.nodes[c]?.parentRef
             }
@@ -64,10 +67,13 @@ public struct SemanticTree: Codable, Sendable {
         }
 
         // 3. Kept children of a ref: nearest kept descendants along each branch,
-        //    preserving order.
+        //    preserving order. Guarded against children cycles for the same
+        //    reason as `nearestKeptAncestor`.
         func keptDescendants(_ ref: String) -> [String] {
             var out: [String] = []
+            var seen: Set<String> = [ref]
             func collect(_ childRef: String) {
+                guard seen.insert(childRef).inserted else { return }
                 if kept.contains(childRef) {
                     out.append(childRef)
                 } else {
