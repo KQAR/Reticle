@@ -815,6 +815,79 @@
      }
     }
    }
+  },
+  {
+   "name": "clipping counts code points, so emoji labels clip identically on both platforms",
+   "$comment": "45 emoji: compact clips at 40, tree at 30. UTF-16 take(40) would keep only 20 emoji on the Kotlin side while Swift's grapheme prefix kept 40 — and a UTF-16 clip can split a surrogate pair. Both sides clip by code point.",
+   "expect": {
+    "compact": [
+     "@content window [0,0 1080x2400]",
+     "#emoji.button button \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\" [0,100 400x90] tappable"
+    ],
+    "tree": [
+     "r0 application",
+     "  @content window",
+     "    #emoji.button button \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+    ]
+   },
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 1080,
+      "height": 2400
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "com.android.internal.policy.DecorView",
+      "role": "window",
+      "resourceId": "content",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 1080,
+       "height": 2400
+      },
+      "children": [
+       "b1"
+      ],
+      "parentRef": "r0"
+     },
+     "b1": {
+      "ref": "b1",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "testId": "emoji.button",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 90
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     }
+    }
+   }
   }
  ]
 }

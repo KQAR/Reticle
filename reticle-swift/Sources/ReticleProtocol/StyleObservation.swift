@@ -155,7 +155,13 @@ public struct StyleObservation: Codable, Sendable {
     /// One decimal, trailing `.0` dropped. `%.1f` is locale-independent here,
     /// matching the Kotlin twin's explicit `Locale.ROOT`.
     static func fmt(_ value: Double) -> String {
-        let rounded = String(format: "%.1f", value)
+        // Round half AWAY from zero before formatting: C's %.1f rounds half to
+        // even while Java's rounds half up, so an exactly-representable .25
+        // (density 4: a 1px border = 0.25dp) rendered "0.2" here and "0.3" on
+        // the Kotlin side — in a function whose contract is line-for-line
+        // identical output. Only exact halves differ, so pre-rounding with the
+        // Java rule closes the gap.
+        let rounded = String(format: "%.1f", (value * 10).rounded(.toNearestOrAwayFromZero) / 10)
         return rounded.hasSuffix(".0") ? String(rounded.dropLast(2)) : rounded
     }
 }
@@ -213,7 +219,7 @@ public struct StyleItem: Codable, Sendable {
     /// Header line for this node: selector, role, label.
     public func headerLine() -> String {
         let selector = testId.map { "#\($0)" } ?? resourceId.map { "@\($0)" } ?? ref
-        let labelPart = label.map { " \"\(String($0.prefix(40)))\"" } ?? ""
+        let labelPart = label.map { " \"\($0.clipCodePoints(40))\"" } ?? ""
         return "\(selector) \(role)\(labelPart)"
     }
 
@@ -349,6 +355,13 @@ public struct StyleUnits {
         case "visibility":
             if case .text(let v) = value { return v == "visible" }
             return false
+        case "domStyleOpacity":
+            // "1" is initial only for OPACITY (z-index's initial is `auto`, so a
+            // page's explicit `z-index: 1` is a stated stacking decision) — the
+            // one entry that is not the same everywhere, checked per property
+            // instead of living in the value set. Kept identical to the Kotlin twin.
+            guard case .text(let v) = value else { return false }
+            return v == "1" || cssInitialValues.contains(v)
         default:
             // `getComputedStyle` answers for EVERY property whether or not the page
             // stated it, so a computed value equal to the CSS initial value means
@@ -376,7 +389,6 @@ public struct StyleUnits {
         "visible",
         "static",
         "0px",
-        "1",
         "rgba(0, 0, 0, 0)",
     ]
 

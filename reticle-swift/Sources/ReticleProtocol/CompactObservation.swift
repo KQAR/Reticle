@@ -316,7 +316,7 @@ public struct CompactItem: Codable, Sendable {
         if let testId { selector = "#\(testId)" }
         else if let resourceId { selector = "@\(resourceId)" }
         else { selector = ref }
-        let labelPart = label.map { " \"\(String($0.prefix(40)))\"" } ?? ""
+        let labelPart = label.map { " \"\($0.clipCodePoints(40))\"" } ?? ""
         let framePart = frame.map { " [\($0.intDescription)]" } ?? ""
         var state = ""
         if !isEnabled { state += " disabled" }
