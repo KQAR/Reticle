@@ -51,4 +51,18 @@ public struct Args {
         }
         return v
     }
+
+    /// Returns a `--name` option parsed as an integer, or nil when absent.
+    ///
+    /// A value that is present but not an integer throws by name instead of
+    /// silently substituting a default — `--depth x` used to parse as depth 0
+    /// and render an EMPTY tree, which reads as "the screen is blank" rather
+    /// than "the flag was mistyped".
+    public func intOption(_ name: String) throws -> Int? {
+        guard let raw = options[name] else { return nil }
+        guard let value = Int(raw) else {
+            throw HelperError("--\(name) must be an integer (got '\(raw)')")
+        }
+        return value
+    }
 }
