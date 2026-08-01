@@ -119,7 +119,14 @@ struct SnapshotCapture {
             guard let windowScene = scene as? UIWindowScene else { continue }
             windows.append(contentsOf: windowScene.windows)
         }
-        return windows.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
+        // Sort by (level, original index): Swift's `sorted` is not guaranteed
+        // stable, so sorting by level alone lets two same-level windows (main +
+        // overlay, both `.normal` — the common case) swap order between runs,
+        // flipping window-vs-window occlusion. `UIWindowScene.windows` is
+        // back-to-front within a level, so the index tiebreak preserves it.
+        return windows.enumerated()
+            .sorted { ($0.element.windowLevel.rawValue, $0.offset) < ($1.element.windowLevel.rawValue, $1.offset) }
+            .map(\.element)
     }
 
     private func screenInfo() -> ScreenInfo {
