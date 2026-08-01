@@ -2,6 +2,7 @@ package dev.reticle.agent
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -17,15 +18,29 @@ internal const val RETICLE_LOG_TAG = "Reticle"
  * own stricter variant that propagates capture errors.
  */
 internal fun <T> runOnMainSync(handler: Handler, timeoutSeconds: Long = 5, block: () -> T): T? {
-    if (Looper.myLooper() == Looper.getMainLooper()) return block()
+    if (Looper.myLooper() == Looper.getMainLooper()) return swallowing(block)
     var result: T? = null
     val latch = CountDownLatch(1)
     handler.post {
         try {
-            result = block()
+            result = swallowing(block)
         } finally {
             latch.countDown()
         }
     }
     return if (latch.await(timeoutSeconds, TimeUnit.SECONDS)) result else null
+}
+
+/**
+ * The swallow promised above. Without it, a throw inside the posted Runnable
+ * would propagate to [Looper.loop] and kill the HOST app's main thread — a
+ * debugging request must never be able to crash the process it is observing
+ * (a screenshot's Bitmap allocation can OOM, a text mutation can trip an
+ * app-registered TextWatcher).
+ */
+private fun <T> swallowing(block: () -> T): T? = try {
+    block()
+} catch (t: Throwable) {
+    Log.w(RETICLE_LOG_TAG, "main-thread work failed; returning null", t)
+    null
 }
