@@ -10,8 +10,15 @@ final class ReticleRuntime: @unchecked Sendable {
     static let shared = ReticleRuntime()
 
     private let lock = NSLock()
+    /// Serializes `start()` itself, so concurrent starts stay idempotent (one
+    /// bind, everyone else observes it) WITHOUT holding `lock` across the
+    /// blocking bind: `HttpServer.start` waits up to 3s for the listener to
+    /// become ready, and holding `lock` for that window stalled every thread
+    /// calling `Reticle.log()` / `attachMetadata()` behind a wedged bind.
+    /// `lock` now only guards short reads/writes of the state below.
+    private let startLock = NSLock()
     private var server: HttpServer?
-    private(set) var boundPort: Int = -1
+    private var boundPort: Int = -1
 
     private var logs: [LogEntry] = []
     private let maxLogs = 1000
@@ -36,20 +43,21 @@ final class ReticleRuntime: @unchecked Sendable {
     @discardableResult
     func start(port: Int?, bindHost: String, viaInjection: Bool) -> Int {
         if ProcessInfo.processInfo.environment["RETICLE_DISABLED"] == "1" { return -1 }
+        // startLock (not `lock`) is held across the bind — see its declaration.
+        startLock.lock()
+        defer { startLock.unlock() }
         lock.lock()
-        if let server, server.isRunning {
-            let p = boundPort
-            lock.unlock()
-            return p
-        }
+        let runningPort = (server?.isRunning == true) ? boundPort : nil
+        lock.unlock()
+        if let runningPort { return runningPort }
         if viaInjection && !autoStartAllowed() {
-            lock.unlock()
             return -1
         }
         let chosen = port ?? PortMap.derivePort(bundleId)
         let srv = HttpServer(router: Router())
         do {
             let bound = try srv.start(host: bindHost, port: chosen)
+            lock.lock()
             server = srv
             boundPort = bound
             lock.unlock()
@@ -64,7 +72,6 @@ final class ReticleRuntime: @unchecked Sendable {
             NSLog("[Reticle] agent listening on \(bindHost):\(bound) for \(bundleId)")
             return bound
         } catch {
-            lock.unlock()
             NSLog("[Reticle] failed to start server on \(bindHost):\(chosen): \(error)")
             return -1
         }
@@ -152,6 +159,11 @@ final class ReticleRuntime: @unchecked Sendable {
     // MARK: - Runtime info
 
     func runtimeInfo() -> RuntimeInfo {
+        // boundPort is written under `lock` in start(); read it under the same
+        // lock — an unsynchronized read is a data race under the Swift memory model.
+        lock.lock()
+        let port = boundPort
+        lock.unlock()
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return RuntimeInfo(
             packageName: bundleId,
@@ -159,7 +171,7 @@ final class ReticleRuntime: @unchecked Sendable {
             pid: Int(getpid()),
             sdkInt: os.majorVersion,
             agentVersion: Reticle.version,
-            port: boundPort
+            port: port
         )
     }
 }
