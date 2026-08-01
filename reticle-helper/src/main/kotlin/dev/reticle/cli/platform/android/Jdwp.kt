@@ -478,16 +478,36 @@ class JdwpClient(private val socket: Socket) : Closeable {
             output.flush()
         }
         // Read packets until the matching reply; park any events.
-        while (true) {
-            val packet = readPacket()
-            if (packet.isReply && packet.id == id) {
-                if (packet.errorCode != 0) {
-                    error("JDWP command $set/$cmd failed: error ${packet.errorCode} (${jdwpError(packet.errorCode)})")
+        //
+        // Bounded: this is the ONE read in the helper with no timeout of its own,
+        // and it can genuinely never return — `Bootstrap.start()` wedged behind a
+        // class-init lock in the target, or an adb forward channel that died
+        // without an EOF. The helper is a single-threaded JSONL loop, so an
+        // unbounded read here hangs the helper AND the Swift host waiting on it,
+        // with no cancel path. On timeout the connection is desynced (a packet may
+        // be half-read), so the error is terminal for this client — every caller
+        // holds it in a `use {}` and the close lets the VM resume.
+        socket.soTimeout = REPLY_TIMEOUT_MS
+        try {
+            while (true) {
+                val packet = readPacket()
+                if (packet.isReply && packet.id == id) {
+                    if (packet.errorCode != 0) {
+                        error("JDWP command $set/$cmd failed: error ${packet.errorCode} (${jdwpError(packet.errorCode)})")
+                    }
+                    return packet
                 }
-                return packet
+                if (!packet.isReply) pendingEvents.addLast(packet)
+                // A stray mismatched reply (shouldn't happen with synchronous use) is dropped.
             }
-            if (!packet.isReply) pendingEvents.addLast(packet)
-            // A stray mismatched reply (shouldn't happen with synchronous use) is dropped.
+        } catch (_: java.net.SocketTimeoutException) {
+            error(
+                "JDWP command $set/$cmd got no reply within ${REPLY_TIMEOUT_MS / 1000}s — " +
+                    "the target VM is not answering (wedged startup, or a dead adb forward). " +
+                    "Abandoning this JDWP connection; closing it lets the VM resume."
+            )
+        } finally {
+            socket.soTimeout = 0
         }
     }
 
@@ -598,6 +618,19 @@ class JdwpClient(private val socket: Socket) : Closeable {
     companion object {
         private val DEBUG = System.getenv("RETICLE_JDWP_DEBUG") == "1"
         private val HANDSHAKE = "JDWP-Handshake".toByteArray(Charsets.US_ASCII)
+
+        /**
+         * How long [command] waits for its reply before declaring the connection
+         * dead. Generous on purpose: `Bootstrap.start()` legitimately runs dex
+         * loading and server startup inside the target while the reply is
+         * pending, and a cold ART process can spend tens of seconds there. The
+         * ceiling exists for the pathological cases — a wedged VM or a forward
+         * that died silently — where the alternative is a helper (and the host
+         * behind it) blocked forever. Read per call so a test (or an operator on
+         * pathological hardware) can override it via the system property.
+         */
+        private val REPLY_TIMEOUT_MS: Int
+            get() = System.getProperty("reticle.jdwp.replyTimeoutMs")?.toIntOrNull() ?: 60_000
 
         // Command sets / commands (JDWP spec).
         private const val CMD_SET_VM = 1
