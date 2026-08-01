@@ -150,10 +150,17 @@ public final class EventStore: @unchecked Sendable {
 
     /// Loads persisted events for a session id without subscribing to live changes.
     public func historicalEvents(session id: String, since: String? = nil) throws -> [ReticleEventEnvelope] {
+        let events: [ReticleEventEnvelope]
         if id == session {
-            return events(since: since)
+            // The in-memory ring only holds the newest `limit` events, but the
+            // full history lives in events.jsonl (appends flush there before
+            // returning). Read from disk so the current session answers the
+            // same way a historical one does — the buffer is only a fallback
+            // if the file can't be read.
+            events = (try? Self.loadEvents(session: id, rootDirectory: rootDirectory)) ?? self.events()
+        } else {
+            events = try Self.loadEvents(session: id, rootDirectory: rootDirectory)
         }
-        let events = try Self.loadEvents(session: id, rootDirectory: rootDirectory)
         guard let since else { return events }
         return events.filter { $0.id > since }
     }
@@ -166,7 +173,7 @@ public final class EventStore: @unchecked Sendable {
         if id == session, let buffered = event(id: eventId) {
             return buffered
         }
-        return try Self.loadEvents(session: id, rootDirectory: rootDirectory).first { $0.id == eventId }
+        return try Self.loadEvent(session: id, eventId: eventId, rootDirectory: rootDirectory)
     }
 
     /// Adds a live event subscriber and returns a token for removing it.
@@ -276,22 +283,69 @@ public final class EventStore: @unchecked Sendable {
     }
 
     /// Cheap event counts for the session listing: total non-empty lines and
-    /// lines carrying the action.trace type, without decoding each line's JSON.
+    /// lines carrying the action.trace type, streamed in fixed-size chunks so a
+    /// multi-MB session file is never materialized as one String per poll.
     private static func countEvents(session id: String, rootDirectory: URL) -> (total: Int, actionTraces: Int) {
         let file = eventsFile(session: id, rootDirectory: rootDirectory)
-        guard let data = try? Data(contentsOf: file), let text = String(data: data, encoding: .utf8) else {
-            return (0, 0)
-        }
+        let marker = Data("\"type\":\"action.trace\"".utf8)
         var total = 0
         var traces = 0
-        for line in text.split(separator: "\n") where !line.isEmpty {
-            total += 1
-            if line.contains("\"type\":\"action.trace\"") { traces += 1 }
+        do {
+            try forEachLine(at: file) { line in
+                total += 1
+                if line.range(of: marker) != nil { traces += 1 }
+                return true
+            }
+        } catch {
+            return (0, 0)
         }
         return (total, traces)
     }
 
     private static func loadEvents(session id: String, rootDirectory: URL) throws -> [ReticleEventEnvelope] {
+        let file = try validatedEventsFile(session: id, rootDirectory: rootDirectory)
+        let decoder = JSONDecoder()
+        var events: [ReticleEventEnvelope] = []
+        // Skip corrupt/partial lines (see loadExistingEvents) instead of throwing,
+        // so listing sessions and reading history never fail on one torn line.
+        try forEachLine(at: file) { line in
+            if let event = try? decoder.decode(ReticleEventEnvelope.self, from: line) {
+                events.append(event)
+            }
+            return true
+        }
+        // Racing appends may persist out of id order (see loadExistingEvents);
+        // ids are fixed-width so a string sort restores the true order.
+        events.sort { $0.id < $1.id }
+        return events
+    }
+
+    /// Finds one persisted event by id without decoding past the hit: only
+    /// lines containing the id string are decode candidates, and the scan stops
+    /// at the first line whose decoded id matches.
+    private static func loadEvent(
+        session id: String,
+        eventId: String,
+        rootDirectory: URL
+    ) throws -> ReticleEventEnvelope? {
+        let file = try validatedEventsFile(session: id, rootDirectory: rootDirectory)
+        // The daemon encodes envelopes compactly, so the id always appears as
+        // this exact byte sequence. A payload string could also contain it, so
+        // a marker hit is confirmed against the decoded envelope's id.
+        let marker = Data("\"id\":\"\(eventId)\"".utf8)
+        let decoder = JSONDecoder()
+        var found: ReticleEventEnvelope?
+        try forEachLine(at: file) { line in
+            guard line.range(of: marker) != nil,
+                  let event = try? decoder.decode(ReticleEventEnvelope.self, from: line),
+                  event.id == eventId else { return true }
+            found = event
+            return false
+        }
+        return found
+    }
+
+    private static func validatedEventsFile(session id: String, rootDirectory: URL) throws -> URL {
         guard isSafeSessionID(id) else {
             throw EventStoreError.invalidSession(id)
         }
@@ -299,14 +353,30 @@ public final class EventStore: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: file.path) else {
             throw EventStoreError.sessionNotFound(id)
         }
-        let data = try Data(contentsOf: file)
-        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return [] }
-        let decoder = JSONDecoder()
-        // Skip corrupt/partial lines (see loadExistingEvents) instead of throwing,
-        // so listing sessions and reading history never fail on one torn line.
-        return text.split(separator: "\n").compactMap { line in
-            guard let data = String(line).data(using: .utf8) else { return nil }
-            return try? decoder.decode(ReticleEventEnvelope.self, from: data)
+        return file
+    }
+
+    /// Reads the file in fixed-size chunks and invokes [body] once per
+    /// newline-terminated, non-empty line (plus a trailing unterminated line,
+    /// which may be a torn append — callers already tolerate undecodable
+    /// lines). Returning `false` from [body] stops the scan early.
+    private static func forEachLine(at url: URL, _ body: (Data) -> Bool) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let newline = UInt8(ascii: "\n")
+        var pending = Data()
+        while let chunk = try handle.read(upToCount: 1 << 16), !chunk.isEmpty {
+            pending.append(chunk)
+            var cursor = pending.startIndex
+            while let breakIndex = pending[cursor...].firstIndex(of: newline) {
+                let line = pending.subdata(in: cursor..<breakIndex)
+                cursor = pending.index(after: breakIndex)
+                if !line.isEmpty, !body(line) { return }
+            }
+            pending = pending.subdata(in: cursor..<pending.endIndex)
+        }
+        if !pending.isEmpty {
+            _ = body(pending)
         }
     }
 

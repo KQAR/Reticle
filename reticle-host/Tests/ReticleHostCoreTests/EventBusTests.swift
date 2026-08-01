@@ -452,6 +452,40 @@ struct EventBusTests {
         #expect(try store.historicalEvent(session: "test", eventId: first.id)?.id == first.id)
     }
 
+    @Test func currentSessionHistoryIncludesEventsEvictedFromMemory() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 1)
+
+        let first = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        let second = try store.append(EventPostRequest(source: "action", type: "action.trace"))
+
+        // `first` has aged out of the in-memory ring (limit 1)...
+        #expect(store.events().map(\.id) == [second.id])
+        // ...but the current session's history must still include it, from
+        // events.jsonl — the same answer a historical read of this session gives.
+        #expect(try store.historicalEvents(session: "test").map(\.id) == [first.id, second.id])
+        #expect(try store.historicalEvents(session: "test", since: first.id).map(\.id) == [second.id])
+    }
+
+    @Test func historicalEventLookupIgnoresIdEmbeddedInAnotherEventsPayload() throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "old", rootDirectory: root, limit: 10)
+        let target = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
+        // A later event whose payload embeds the target id as text must not be
+        // mistaken for the target by the streamed id scan.
+        _ = try store.append(EventPostRequest(
+            source: "log",
+            type: "log",
+            payload: ["message": .string("\"id\":\"\(target.id)\"")]
+        ))
+
+        let current = try EventStore(session: "current", rootDirectory: root, limit: 10)
+        let found = try current.historicalEvent(session: "old", eventId: target.id)
+        #expect(found?.id == target.id)
+        #expect(found?.type == "ui.snapshot")
+        #expect(try current.historicalEvent(session: "old", eventId: "evt_9999999999999999") == nil)
+    }
+
     @Test func artifactPathsAreConfinedToAllowedRoots() throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
