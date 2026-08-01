@@ -103,8 +103,13 @@ public struct CompactObservation: Codable, Sendable {
         }
 
         var items: [CompactItem] = []
+        // Seen-set, matching the document-order contract used everywhere else
+        // (`refsInDocumentOrder`, `SemanticTree.firstNode`): a children cycle in
+        // a malformed snapshot must not recurse forever, and a ref reachable
+        // under two parents is one item, not two.
+        var seenRefs = Set<String>()
         func visit(_ ref: String, _ windowRef: String?) {
-            guard let node = snapshot.nodes[ref] else { return }
+            guard seenRefs.insert(ref).inserted, let node = snapshot.nodes[ref] else { return }
             let currentWindow = node.kind == .window ? node.ref : windowRef
             // Same targeting-signal test as the semantic tree, plus a visibility
             // filter: the compact view is for acting now, so a hidden-but-labelled
