@@ -244,7 +244,7 @@ The page rhythm is **dense evidence screenshots** — the panel leads with high-
 
 ## Colors
 
-> Palette adopted from the Linear dark-surface spec. Implementation target: the `:root` custom-property block in `reticle-host/Sources/ReticleHostCore/WebPanel.swift`.
+> Palette adopted from the Linear dark-surface spec. Implementation target: the `:root` custom-property block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` (see **Iteration Guide** 7 — that block has not adopted these tokens yet).
 
 ### Brand & Accent
 
@@ -510,7 +510,7 @@ Cards hold at `{rounded.lg}` 12px — never pill, rarely 16px. Pills are reserve
 4. New node types on the timeline get: a marker color from the existing semantic set, a `{rounded.lg}` surface-1 card, and an eyebrow type label — in that order.
 5. Treat lavender as scarce: selection, focus, links, action markers — nothing else.
 6. Lead every action trace with an evidence screenshot.
-7. Every token in this file maps 1:1 to a CSS custom property in the `:root` block of `reticle-host/Sources/ReticleHostCore/WebPanel.swift` (`--canvas`, `--surface-1`, `--ink`, `--primary`, …). Update the CSS variables and this file together; never hard-code a hex in a component rule.
+7. This file is the **target spec**, not a transcript of the shipped CSS: the `:root` block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` still carries the older `--bg` / `--panel` / `--soft` / `--line` / `--muted` / `--text` / `--accent` variables and has not been migrated to these tokens yet. Migrate a token by adding a CSS custom property named after it (`--canvas`, `--surface-1`, `--ink`, `--primary`, …) and updating both sides in the same change; never hard-code a hex in a component rule.
 8. The panel stays **display-only** (see `docs/roadmap.md` → Deferred, "Web panel reverse-drive"): no mutating controls, so no primary-button spec exists — do not add one without revisiting that decision, which would force a bidirectional transport.
 9. Add new variants as separate component entries.
 10. Run `npx @google/design.md lint DESIGN.md` after edits.

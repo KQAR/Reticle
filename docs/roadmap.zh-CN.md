@@ -2,9 +2,11 @@
 
 [English](roadmap.md) | **简体中文**
 
-四份文档，四个职责。`README.md` 讲怎么用；`docs/architecture.md` 讲今天它怎么工作；
+四份核心文档，四个职责。`README.md` 讲怎么用；`docs/architecture.md` 讲今天它怎么工作；
 `docs/boundaries.md` 是 **Honest boundaries（诚实边界）** 表，那是"结构上够不着什么"
 的权威清单；**本文讲它往哪走**：还剩什么（按优先级），以及哪些决定已经拍板、不必再讨论。
+另有两份挂在它们旁边、不计入这四份的专项文档：`docs/ios.md`（iOS 接缝）与
+`DESIGN.md`（Web 面板的视觉 token）。
 
 状态：2026-08-01，对应 0.13.0。捕获 / 驱动 / 证据这条主干已完成且跨平台；
 **边界能力扫描**（15 个点）于 2026-07-25 收官。剩余工作全部列在
