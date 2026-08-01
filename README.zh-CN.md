@@ -49,6 +49,36 @@ CLI 通过 `adb forward` 与之通信。agent 在进程内捕获实时 UI 树;CL
 跨域 iframe、第三方 WebView 内核、烘进位图的文字、跨进程系统 UI、截图的盲区),
 每条边界都挨着 Reticle 改吐什么证据——而不是回一个看起来合理的"空"。
 
+## 样式证据
+
+`ui style` 报告每个节点的几何与样式属性——间距、颜色、字号/字重/字体/行高、圆角、
+边框——每个值都以比对所需的单位给出,并各自标注它是从哪条通道读到的:
+
+```
+screen: 1080x2400px density=3 fontScale=1 -> 360x800dp
+#checkout.payButton button "Pay now"
+    frame  24,1800 1032x120px | 8,600 344x40dp | 95.6%x5% of screen
+    cornerRadius  24px | 8dp  [drawableReflect]
+    paddingLeft   48px | 16dp  [viewField]
+    textSize      42px | 14dp | 14sp  [viewField]
+    ! fontFamily  unreadable: android-typeface-exposes-no-family
+```
+
+有三件事是截图做不到的。长度除了原始像素还会给出 **dp**,于是同一个屏幕在 320dp 和
+411dp 的设备上可以直接比较;文本还额外给出 **sp**,它把系统字体缩放除掉——从而把
+"应用要的字号就是错的"和"用户把字体调大了"分开。读不到的属性会**连同原因一起点名**,
+而不是干脆缺席,于是"应用没设字体"和"根本没有通往它的通道"不再长得一样。而每个值都
+带着自己的**通道**,因为一个实时 view 字段和一次反射出来的 `Drawable` 可信度并不相同。
+
+它刻意不做比对。值应该是多少、容差算多大、哪些区域豁免,都是调用方的策略——所以同一份
+输出既能服务设计还原度检查,也能服务跨构建 diff,或同一个屏幕在两台设备上的对照,
+而 Reticle 不需要知道是哪一种。
+
+```bash
+reticle ui style snapshot.json
+reticle ui style --live --package <pkg>
+```
+
 ## 多区域控件
 
 单个 View 可以承载多个点击目标——典型例子是协议勾选行:
@@ -184,10 +214,18 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui compact reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
+# `ui outline` 给可见目标编号并缓存一份短时别名。导航之后要重跑;重复行上的
+# item i/n 只是位置提示,不是选择器。(别名缓存目前只有 Android 有。)
+$CLI ui outline --live --package dev.reticle.sample
+$CLI act tap --package dev.reticle.sample --alias @1
+
 # 对应用执行操作(语义/选择器优先,frame 兜底)
 $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui node reticle-report/snapshot.json --test-id checkout.payButton
 $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
+
+# 选择器没命中时,会从当前快照里列出同类候选,于是你可以换一个稳定 handle 重新
+# 定位,而不是退回去写死坐标。
 
 # 内嵌 WebView DOM:按 CSS selector 检查、点击、验证,并保留 trace 证据包
 $CLI act tap --package dev.reticle.sample --test-id scenario.webview
@@ -209,6 +247,20 @@ $CLI ui report --package dev.reticle.sample --output reticle-report
 $CLI ui regions reticle-report/snapshot.json
 $CLI act tap --package dev.reticle.sample --test-id agreement.span     --region "Terms"
 $CLI act tap --package dev.reticle.sample --test-id agreement.markdown --region "«Privacy»"
+
+# 惰性列表只绑定它可见的那一段,所以很靠下的行根本没有节点可点。
+# `act scroll-to` 在容器内持续拖动,直到选择器解析成功,再确认位置已经不再移动;
+# 拖到没有余量还没找到就显式失败。
+$CLI act tap       --package dev.reticle.sample --test-id scenario.list
+$CLI act scroll-to --package dev.reticle.sample --test-id list.item40
+$CLI act tap       --package dev.reticle.sample --test-id list.item40
+
+# 目标"还在动"是同一个问题往前一步:动画中途取到的矩形,等触摸落下时已经过期。
+# 每次按选择器 tap 都会反复重新解析、直到坐标点重复出现才派发,并在第一次读数
+# 确实已经过期时报 `rectMoved=<dx>,<dy>`。`--settle` 给明确正在入场动画的目标
+# 放宽预算;`--no-settle` 退出这次确认(只关位置——见 docs/architecture.md)。
+$CLI act tap --package dev.reticle.sample --test-id popup.menuTrigger
+$CLI act tap --package dev.reticle.sample --label "Delete item" --settle
 
 # 系统键盘是另一个进程的窗口——它不在节点树里,被盖住的提交按钮看起来仍然
 # tappable。快照带 screen.keyboard,`ui compact` 首行报键盘状态,被盖条目标
@@ -232,6 +284,33 @@ $CLI debug logs --package dev.reticle.sample
 # 在不重新构建的情况下实时修改某个允许列表内的属性
 $CLI mutate --package dev.reticle.sample --test-id checkout.status \
     --property text --value "Paid!"
+```
+
+### 应用自述通道(可选,从应用内部写入)
+
+链接了 agent 的应用可以给 Reticle 看到的内容做补充。这几个 API 都只写进程内的缓冲区
+——在 Reticle 来取之前没有任何东西离开应用,日志环也是有界的——所以留在 debug 构建里
+是安全的:
+
+| API(Android / iOS) | 补充了什么 |
+| --- | --- |
+| `Reticle.log(message, metadata)` | `debug logs` 里的一条记录——应用自己的叙述,与树并排 |
+| `Reticle.attachMetadata(testId, metadata)` | 捕获时把标量字段并进该节点的 `custom` map |
+| `Reticle.registerProbe(testId, metadata)` | 挂在 application 根下的合成节点,用于没有 view 可依附的状态 |
+
+probe 是进程全局的,所以进入时发布、**离开时撤销**——Android 用
+`ReticleProbeRegistry.clear()`,iOS 用 `Reticle.clearProbes()`。不撤销的话,为某一个
+屏幕注册的 `testId` 在之后每个屏幕上都仍然可寻址,读起来像一个过期的目标,而不像
+一处泄漏。
+
+所有由 helper 承载的命令都接受 `--json` 输出机器可读结果:成功是
+`{ "ok": true, "data": ... }`,失败是 `{ "ok": false, "error": ... }`。交互使用仍以
+文本输出为默认:
+
+```bash
+$CLI doctor --json
+$CLI act tap --package dev.reticle.sample --test-id checkout.payButton --verify --json
+$CLI ui node --live --package dev.reticle.sample --test-id checkout.status --json
 ```
 
 ## 本机 session 事件总线
@@ -433,6 +512,11 @@ reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 - 用于 host 的 **Swift** 工具链(Xcode);Hummingbird 2.25.0 使 host target 要求
   macOS 14+
 - Gradle 8.13(通过 wrapper)
+
+两个 JDK 可以用 [mise](https://mise.jdx.dev/) 一步装齐:在仓库根目录跑 `mise install`
+会装上 JDK 17(作为主 `java`/`JAVA_HOME`)和一个 GraalVM 21,后者的 `native-image`
+会落到 `PATH` 上——不需要再设 `GRAALVM_HOME`。这是可选的,手工安装的 JDK 照旧可用;
+Xcode/Swift 与 Android SDK 不由 mise 管理(见 `mise.toml`)。
 
 面向 agent 的导览图与架构规则见 `AGENTS.md`。
 
