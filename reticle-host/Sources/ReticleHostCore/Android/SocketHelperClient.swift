@@ -149,6 +149,18 @@ final class SocketHelperClient: HelperCalling, @unchecked Sendable {
     private let fd: Int32
     private let reader: FdLineReader
     private var nextId = 1
+    /// Set once a reply timed out or the daemon hung up: the stream can no
+    /// longer be trusted to be aligned, so every later call fails fast instead
+    /// of reading the PREVIOUS call's late reply (off-by-one forever).
+    private var dead = false
+    /// The fd is closed exactly once, whichever of the timeout path or close()
+    /// gets there first — a second close could hit a reused descriptor.
+    private var fdClosed = false
+
+    private func closeFdOnce() {
+        if !fdClosed { Darwin.close(fd) }
+        fdClosed = true
+    }
 
     /// Connects or returns nil when nothing listens on `socketPath`.
     /// `callTimeout` must exceed the daemon-side helper RPC timeout (60s) so
@@ -167,6 +179,12 @@ final class SocketHelperClient: HelperCalling, @unchecked Sendable {
     func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
         callLock.lock()
         defer { callLock.unlock() }
+        if dead {
+            throw HelperError(
+                "helper daemon connection was abandoned after an earlier timeout/hangup; "
+                    + "reconnect (re-run the command) instead of reusing it"
+            )
+        }
 
         let id = nextId
         nextId += 1
@@ -187,9 +205,19 @@ final class SocketHelperClient: HelperCalling, @unchecked Sendable {
         case .line(let l):
             line = l
         case .eof:
+            dead = true
             throw HelperError("helper daemon closed the connection before responding to '\(method)'")
         case .timedOut:
-            throw HelperError("helper daemon timed out responding to '\(method)'")
+            // The reply may still arrive later; leaving the connection open would
+            // hand that stale reply to the NEXT call, which then fails the id
+            // check — and every call after it reads one reply behind, forever.
+            // A timed-out connection is dead, not late.
+            dead = true
+            closeFdOnce()
+            throw HelperError(
+                "helper daemon timed out responding to '\(method)'; "
+                    + "abandoning this connection (a late reply would desync every later call)"
+            )
         }
         guard let obj = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
             throw HelperError("non-object response from helper daemon: \(line)")
@@ -204,7 +232,10 @@ final class SocketHelperClient: HelperCalling, @unchecked Sendable {
     }
 
     func close() {
-        Darwin.close(fd)
+        callLock.lock()
+        defer { callLock.unlock() }
+        dead = true
+        closeFdOnce()
     }
 }
 

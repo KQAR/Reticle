@@ -129,7 +129,24 @@ final class HelperClient: HelperCalling, @unchecked Sendable {
 
     func shutdown() {
         try? stdinPipe.fileHandleForWriting.close()
+        // Bounded, escalating: a helper wedged in a hung adb/JDWP operation never
+        // reads the stdin EOF, and an unbounded waitUntilExit here hung Ctrl-C on
+        // `serve` (daemon needed SIGKILL) and leaked daemon+helper pairs on
+        // idle-exit. Graceful window first, then SIGTERM, then SIGKILL.
+        if waitForExit(seconds: 2.0) { return }
+        process.terminate()
+        if waitForExit(seconds: 1.0) { return }
+        kill(process.processIdentifier, SIGKILL)
         process.waitUntilExit()
+    }
+
+    private func waitForExit(seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while process.isRunning {
+            if Date() >= deadline { return false }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return true
     }
 }
 
