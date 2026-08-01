@@ -84,11 +84,61 @@ jobs:
       - name: Validate translated docs
         run: python3 scripts/validate_translations.py
 
+  scope:
+    name: Does this change touch code?
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.check.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The macOS job below costs ~14 minutes on a single runner, and a change
+      # that only edits prose cannot break a Swift build. Docs still keep their
+      # guard: the validators in `plugin-validate` (map sync, translated
+      # headings, manifest/version lockstep) run on EVERY change, docs included.
+      #
+      # Fails OPEN on purpose: an unknown diff range (a force-push, a first
+      # push, a shallow fetch) answers `code=true` and the full job runs. The
+      # cost of a needless build is minutes; the cost of skipping a real one is
+      # a broken release artifact.
+      - name: Classify the diff
+        id: check
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="origin/${{ github.base_ref }}...HEAD"
+          else
+            before="${{ github.event.before }}"
+            case "$before" in
+              ''|0000000000000000000000000000000000000000) range="" ;;
+              *) range="$before..${{ github.sha }}" ;;
+            esac
+          fi
+          if [ -z "$range" ] || ! files=$(git diff --name-only "$range" 2>/dev/null); then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "diff range unavailable -> running the full build"
+            exit 0
+          fi
+          # Everything outside this set is code as far as the macOS build is
+          # concerned — including the workflow itself and the e2e scripts it runs.
+          if echo "$files" | grep -qvE '^(docs/|skills/|commands/|[^/]*\.md$|LICENSE$)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "docs-only change -> skipping the macOS host build"
+          fi
+          echo "$files"
+
   macos-host:
     name: Build Swift host + native helper (macOS arm64)
     # The shipped distribution is macOS arm64 only (Swift host + native-image
     # helper). This job is the CI guard for those release-critical pieces, which
-    # the ubuntu build can't exercise.
+    # the ubuntu build can't exercise. Skipped for docs-only changes — see the
+    # `scope` job, which fails open when it cannot classify the diff.
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
