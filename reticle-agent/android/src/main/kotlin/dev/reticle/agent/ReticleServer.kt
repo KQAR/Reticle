@@ -19,6 +19,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -46,6 +48,7 @@ class ReticleServer(private val runtime: ReticleRuntime) {
 
     @Volatile
     private var workers: ExecutorService? = null
+    private var watchdog: ScheduledExecutorService? = null
 
     fun start(port: Int, bindHost: String) {
         stop()
@@ -65,6 +68,9 @@ class ReticleServer(private val runtime: ReticleRuntime) {
             { r -> Thread(r, "reticle-worker").apply { isDaemon = true } },
             ThreadPoolExecutor.CallerRunsPolicy(),
         )
+        watchdog = Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "reticle-watchdog").apply { isDaemon = true }
+        }
 
         thread(name = "reticle-server", isDaemon = true) {
             while (running) {
@@ -89,10 +95,18 @@ class ReticleServer(private val runtime: ReticleRuntime) {
         serverSocket = null
         workers?.shutdownNow()
         workers = null
+        watchdog?.shutdownNow()
+        watchdog = null
     }
 
     private fun handle(client: Socket) {
         client.use { socket ->
+            // See HANDLE_DEADLINE_MS: closing the socket is the only way to
+            // unblock a write() against a peer that stopped reading.
+            val deadline = watchdog?.schedule(
+                { runCatching { socket.close() } },
+                HANDLE_DEADLINE_MS, TimeUnit.MILLISECONDS,
+            )
             try {
                 // Bound how long a client may hold this worker: a peer that
                 // connects and never finishes sending a request would otherwise
@@ -129,6 +143,12 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 }
                 if (contentLength > MAX_BODY_BYTES) {
                     writeText(out, 413, "request body too large (max $MAX_BODY_BYTES bytes)")
+                    // Drain what the client already sent before use{} closes the
+                    // socket: closing with unread data pending makes the kernel
+                    // send RST, which can destroy this 413 in flight — the CLI
+                    // then sees "connection reset" instead of the diagnosis.
+                    // Bounded by the read timeout and the watchdog.
+                    drain(input, contentLength)
                     return
                 }
 
@@ -156,6 +176,21 @@ class ReticleServer(private val runtime: ReticleRuntime) {
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "request handling failed", t)
+            } finally {
+                deadline?.cancel(false)
+            }
+        }
+    }
+
+    /** Read and discard up to [count] body bytes — see the 413 path. */
+    private fun drain(input: java.io.InputStream, count: Int) {
+        val chunk = ByteArray(8 * 1024)
+        var left = count
+        runCatching {
+            while (left > 0) {
+                val n = input.read(chunk, 0, minOf(chunk.size, left))
+                if (n < 0) break
+                left -= n
             }
         }
     }
@@ -331,6 +366,19 @@ class ReticleServer(private val runtime: ReticleRuntime) {
         const val TAG = RETICLE_LOG_TAG
         const val MAX_WORKERS = 16
         const val SOCKET_READ_TIMEOUT_MS = 15_000
+
+        /**
+         * Hard ceiling on ONE request, reads and writes both. soTimeout bounds
+         * only reads; a peer that connects, sends a request, and stops READING
+         * blocks the worker in write() forever once the TCP buffer fills (a
+         * screenshot PNG is several MB). 16 such peers exhaust the pool, and
+         * CallerRunsPolicy then wedges the accept thread itself — the server
+         * never accepts again. The watchdog closes the socket at the deadline,
+         * which unblocks the write with an exception. Generous: the slowest
+         * legitimate request (snapshot on a busy main thread + multi-WebView
+         * DOM waits) stays well under it on loopback.
+         */
+        const val HANDLE_DEADLINE_MS = 30_000L
 
         // Requests are small JSON (MUTATE) or clipboard text; 4 MiB is generous.
         const val MAX_BODY_BYTES = 4 * 1024 * 1024
