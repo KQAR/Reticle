@@ -32,6 +32,12 @@ struct TextLayoutStack {
         case let textView as UITextView:
             guard let attributed = textView.attributedText, attributed.length > 0 else { return nil }
             self.attributed = attributed
+            // KNOWN SIDE EFFECT: reading `layoutManager` on iOS 16+ irreversibly
+            // switches this text view into TextKit-1 compatibility mode — an
+            // observer effect on the app under test (e.g. Writing Tools and other
+            // TextKit-2-only behavior stop working for that view). Kept for now
+            // because it is the only public way to exact geometry; a TextKit-2
+            // path needs a design decision. Honest-boundary material.
             manager = textView.layoutManager
             container = textView.textContainer
             storage = nil

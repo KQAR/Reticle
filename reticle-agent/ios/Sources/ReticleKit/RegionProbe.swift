@@ -42,8 +42,15 @@ enum RegionProbe {
     static func probe(_ view: UIView, isSwiftUIHost: Bool) -> Result {
         var result = Result()
 
+        // One TextKit stack per probe, shared by every text channel. For a
+        // UILabel each construction rebuilds NSTextStorage/NSLayoutManager and
+        // re-runs layout, which used to happen up to three times per view and
+        // dominated capture cost on text-dense screens (host main thread).
+        // The stack is immutable after init, so reuse is behavior-identical.
+        let stack = TextLayoutStack(view: view)
+
         // Channel 1: real `.link` attribute runs.
-        if let stack = TextLayoutStack(view: view) {
+        if let stack {
             result.regions += linkRegions(view, stack: stack)
 
             // Channel 3b: re-colored runs not covered by a real link run.
@@ -66,14 +73,14 @@ enum RegionProbe {
            looksLikeEmbeddedLink(label.attributedText?.string ?? label.text) {
             result.suspectedMultiRegion = true
             // Channel 4 (fallback): one region per in-text marker.
-            if let stack = TextLayoutStack(view: view) {
+            if let stack {
                 result.regions += markerRegions(view, stack: stack)
             }
         }
 
         // Char grid for any text node — the last resort for a self-drawn
         // control with no markers (substring targeting by exact glyph X).
-        if let stack = TextLayoutStack(view: view) {
+        if let stack {
             result.charGrid = charGrid(view, stack: stack)
         }
 
