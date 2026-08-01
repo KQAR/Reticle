@@ -155,36 +155,62 @@ class RuntimeClient(
 
     private fun url(path: String) = URL("http://127.0.0.1:$hostPort$path")
 
+    /** Whether the one forward re-establishment this client is allowed has run. */
+    private var reforwarded = false
+
+    /**
+     * Run [request], re-establishing the forward once on a refused connect.
+     *
+     * A [ConnectException] here means nothing is listening on the HOST port —
+     * i.e. the `adb forward` is gone (killed externally, or the session-cache in
+     * the helper's ForwardRegistry was stale), which is a different failure from
+     * the agent being down behind a live forward. Re-run [setUpForward] once and
+     * retry, so a forward that vanished mid-session self-heals; when the retry
+     * still fails, the original classification paths (probe & friends) apply
+     * unchanged. Once per client: an agent that is simply not up must not turn
+     * every poll of a wait loop into an extra adb fork.
+     */
+    private fun <T> withForwardRecovery(request: () -> T): T =
+        try {
+            request()
+        } catch (e: ConnectException) {
+            if (reforwarded) throw e
+            reforwarded = true
+            runCatching { setUpForward() }.getOrElse { throw e }
+            request()
+        }
+
     private fun getString(
         path: String,
         connectTimeout: Int = DEFAULT_CONNECT_TIMEOUT,
         readTimeout: Int = DEFAULT_READ_TIMEOUT,
-    ): String {
+    ): String = withForwardRecovery {
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
         conn.connectTimeout = connectTimeout
         conn.readTimeout = readTimeout
-        return conn.readBody(path).toString(Charsets.UTF_8)
+        conn.readBody(path).toString(Charsets.UTF_8)
     }
 
-    private fun getBytes(path: String): ByteArray {
+    private fun getBytes(path: String): ByteArray = withForwardRecovery {
         val conn = url(path).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
         conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
         conn.readTimeout = DEFAULT_READ_TIMEOUT
-        return conn.readBody(path)
+        conn.readBody(path)
     }
 
-    private fun post(path: String, body: String, contentType: String = "application/json"): String {
-        val conn = url(path).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
-        conn.readTimeout = DEFAULT_READ_TIMEOUT
-        conn.setRequestProperty("Content-Type", contentType)
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        return conn.readBody(path).toString(Charsets.UTF_8)
-    }
+    private fun post(path: String, body: String, contentType: String = "application/json"): String =
+        withForwardRecovery {
+            val conn = url(path).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = DEFAULT_CONNECT_TIMEOUT
+            conn.readTimeout = DEFAULT_READ_TIMEOUT
+            conn.setRequestProperty("Content-Type", contentType)
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            conn.readBody(path).toString(Charsets.UTF_8)
+        }
 
     /**
      * Read a 2xx response body, or throw with the error body on a non-2xx.
