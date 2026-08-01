@@ -21,6 +21,13 @@ data class CompactObservation(
      * folded nodes are all still in the snapshot, addressable by ref.
      */
     val collapsedWrappers: Int = 0,
+    /**
+     * How many items past the projection cap were DROPPED, not just folded. Zero
+     * when everything fit. Like [collapsedWrappers], this exists so the cap can
+     * never silently read as "that was the whole screen": the dropped nodes are
+     * still in the snapshot, and a consumer that needs them must go there.
+     */
+    val truncatedItems: Int = 0,
 ) {
     companion object {
         /** [CompactItem.occludedBy] value for the system keyboard (IME). */
@@ -111,11 +118,13 @@ data class CompactObservation(
             }
             visit(snapshot.rootRef, null)
             val folded = collapseWrappers(snapshot, items)
+            val kept = folded.items.take(maxItems)
             return CompactObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
                 screen = snapshot.screen,
-                items = folded.items.take(maxItems),
+                items = kept,
                 collapsedWrappers = folded.collapsed,
+                truncatedItems = folded.items.size - kept.size,
             )
         }
     }

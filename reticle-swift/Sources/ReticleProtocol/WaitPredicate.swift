@@ -216,7 +216,10 @@ public struct WaitProbe: Codable, Sendable {
         sb.reserveCapacity(compact.items.count * 48)
         for item in compact.items {
             let frame = item.frame.map(\.commaIntDescription) ?? ""
-            sb += "\(item.ref)|\(item.role)|\(item.label ?? "")|\(frame)|\(item.isEnabled)|\(item.occludedBy ?? "")\n"
+            // Focus IS a screen change: a tap that moves the caret from field A
+            // to field B with the same-height keyboard up changes no geometry at
+            // all, and `type` would land in the old field.
+            sb += "\(item.ref)|\(item.role)|\(item.label ?? "")|\(frame)|\(item.isEnabled)|\(item.isFocused)|\(item.occludedBy ?? "")\n"
         }
         if let kb = compact.screen.keyboard {
             let frame = kb.frame.map { "\(Rect.whole($0.y))x\(Rect.whole($0.height))" } ?? ""

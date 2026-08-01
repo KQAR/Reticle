@@ -10,6 +10,10 @@ public struct CompactObservation: Codable, Sendable {
     /// tree that had none; reported so a token-cheap projection never quietly
     /// claims to be the whole picture.
     public var collapsedWrappers: Int
+    /// How many items past the projection cap were DROPPED, not just folded. Zero
+    /// when everything fit. Like `collapsedWrappers`, this exists so the cap can
+    /// never silently read as "that was the whole screen".
+    public var truncatedItems: Int
 
     /// `CompactItem.occludedBy` value for the system keyboard (IME).
     public static let occluderKeyboard = "keyboard"
@@ -19,7 +23,7 @@ public struct CompactObservation: Codable, Sendable {
     // every payload that folded nothing — and from every payload produced before
     // folding existed. Synthesised decoding would reject both.
     private enum CodingKeys: String, CodingKey {
-        case capturedAtMillis, screen, items, collapsedWrappers
+        case capturedAtMillis, screen, items, collapsedWrappers, truncatedItems
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -28,6 +32,7 @@ public struct CompactObservation: Codable, Sendable {
         try c.encode(screen, forKey: .screen)
         try c.encode(items, forKey: .items)
         if collapsedWrappers != 0 { try c.encode(collapsedWrappers, forKey: .collapsedWrappers) }
+        if truncatedItems != 0 { try c.encode(truncatedItems, forKey: .truncatedItems) }
     }
 
     public init(from decoder: Decoder) throws {
@@ -36,14 +41,16 @@ public struct CompactObservation: Codable, Sendable {
         screen = try c.decode(ScreenInfo.self, forKey: .screen)
         items = try c.decode([CompactItem].self, forKey: .items)
         collapsedWrappers = try c.decodeIfPresent(Int.self, forKey: .collapsedWrappers) ?? 0
+        truncatedItems = try c.decodeIfPresent(Int.self, forKey: .truncatedItems) ?? 0
     }
 
     public init(capturedAtMillis: Int64, screen: ScreenInfo, items: [CompactItem],
-                collapsedWrappers: Int = 0) {
+                collapsedWrappers: Int = 0, truncatedItems: Int = 0) {
         self.capturedAtMillis = capturedAtMillis
         self.screen = screen
         self.items = items
         self.collapsedWrappers = collapsedWrappers
+        self.truncatedItems = truncatedItems
     }
 
     /// Build from a snapshot, keeping interactive or labelled *visible* nodes.
@@ -129,11 +136,13 @@ public struct CompactObservation: Codable, Sendable {
         }
         visit(snapshot.rootRef, nil)
         let folded = collapseWrappers(snapshot, items)
+        let kept = Array(folded.items.prefix(maxItems))
         return CompactObservation(
             capturedAtMillis: snapshot.capturedAtMillis,
             screen: snapshot.screen,
-            items: Array(folded.items.prefix(maxItems)),
-            collapsedWrappers: folded.collapsed
+            items: kept,
+            collapsedWrappers: folded.collapsed,
+            truncatedItems: folded.items.count - kept.count
         )
     }
 }

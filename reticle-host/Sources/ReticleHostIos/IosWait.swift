@@ -80,7 +80,10 @@ struct IosWaitRunner {
     /// One poll: capture, resolve the way `act` resolves on iOS, read the markers.
     private func probeOnce(_ predicate: WaitPredicate) throws -> WaitProbe {
         let snapshot = try fetch()
-        let compact = CompactObservation.from(snapshot)
+        // UNCAPPED: the digest decides quiescence, and a change past the render
+        // cap (item #201 of a long list appearing) must still count as a change —
+        // a capped digest reports "quiet" while the screen is visibly moving.
+        let compact = CompactObservation.from(snapshot, maxItems: .max)
         // Screen-level half comes from ReticleProtocol, shared with the Android helper.
         let base = WaitProbe.screenState(snapshot, compact)
         guard let selector = predicate.selector else { return base }

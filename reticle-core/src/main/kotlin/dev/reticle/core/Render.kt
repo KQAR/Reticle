@@ -48,8 +48,15 @@ object Render {
             "($it anonymous layer(s) folded into the node they wrap — all still in the " +
                 "snapshot, reachable with `ui node --ref`)"
         }
+        // Unlike the fold, a truncated item is GONE from this view; the line is
+        // what keeps the cap from reading as "that was the whole screen".
+        val truncLine = observation.truncatedItems.takeIf { it > 0 }?.let {
+            "($it more item(s) beyond this projection's cap — NOT listed here; " +
+                "they are still in the snapshot, reachable with `ui tree` / `ui node --ref`)"
+        }
         val keyboard = snapshot.screen.keyboard
-            ?: return (listOfNotNull(focusLine) + lines + listOfNotNull(foldLine)).joinToString("\n")
+            ?: return (listOfNotNull(focusLine) + lines + listOfNotNull(foldLine, truncLine))
+                .joinToString("\n")
         val header = if (keyboard.visible) {
             val where = keyboard.frame?.let { " [${rect(it)}]" } ?: ""
             val covered = observation.items.count { it.occludedBy == CompactObservation.OCCLUDER_KEYBOARD }
@@ -59,7 +66,7 @@ object Render {
         } else {
             "keyboard: hidden"
         }
-        return (listOfNotNull(focusLine) + listOf(header) + lines + listOfNotNull(foldLine))
+        return (listOfNotNull(focusLine) + listOf(header) + lines + listOfNotNull(foldLine, truncLine))
             .joinToString("\n")
     }
 
