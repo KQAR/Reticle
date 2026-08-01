@@ -5,6 +5,7 @@ import dev.reticle.core.Render
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
+import dev.reticle.core.requireSupportedSchema
 import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -61,6 +62,7 @@ internal object HelperRenderCommands {
         val file = File(path)
         if (!file.exists()) throw CliError("snapshot file not found: $path")
         return ReticleJson.instance.decodeFromString(Snapshot.serializer(), file.readText())
+            .requireSupportedSchema()
     }
 
     /**

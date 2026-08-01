@@ -163,6 +163,31 @@ data class Snapshot(
 }
 
 /**
+ * A snapshot whose wire format is NEWER than this build understands.
+ *
+ * Thrown at ingestion, not at decode: both JSON configurations ignore unknown
+ * keys (they must, for additive changes), so a v2 producer's renamed field
+ * would otherwise decode silently into a default — `isVisible=true` for a
+ * field that moved — and the projection would present invented evidence as
+ * real. An observer that cannot read the input says so; it does not guess.
+ */
+class UnsupportedSnapshotSchema(found: Int) : RuntimeException(
+    "snapshot schemaVersion=$found is newer than this build understands " +
+        "(max ${Snapshot.SCHEMA_VERSION}). Upgrade the host/helper to at least the " +
+        "agent's version — a newer producer's fields would silently decode as defaults."
+)
+
+/**
+ * Gate every snapshot INGESTED from outside this process (agent HTTP, a
+ * `--snapshot` file) — see [UnsupportedSnapshotSchema]. Returns the snapshot so
+ * ingestion sites can stay one expression.
+ */
+fun Snapshot.requireSupportedSchema(): Snapshot {
+    if (schemaVersion > Snapshot.SCHEMA_VERSION) throw UnsupportedSnapshotSchema(schemaVersion)
+    return this
+}
+
+/**
  * The channel a style property was read through — the provenance half of
  * [Node.styleChannels].
  *

@@ -28,7 +28,8 @@ struct IosActionTrace {
     /// missing screenshot is not fatal — the trace still records the snapshots.
     func capture() -> Capture? {
         guard let (snapData, _) = try? http.get(Endpoints.snapshot),
-              let snapshot = try? ReticleJSON.decode(Snapshot.self, from: snapData) else { return nil }
+              let snapshot = try? ReticleJSON.decode(Snapshot.self, from: snapData)
+                  .requireSupportedSchema() else { return nil }
         let png = (try? http.get(Endpoints.screenshot))?.data
         return Capture(snapshotJSON: snapData, snapshot: snapshot, screenshotPNG: png)
     }
