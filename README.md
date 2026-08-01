@@ -245,6 +245,8 @@ $CLI act tap --package dev.reticle.sample --test-id scenario.checkout
 
 # `ui outline` numbers visible targets and caches short-lived aliases. Re-run it
 # after navigation; the item i/n hint on repeated rows is not a selector.
+# ANDROID ONLY: the alias cache lives in the Kotlin helper, so `--target ios`
+# refuses this view rather than answering without aliases.
 $CLI ui outline --live --package dev.reticle.sample
 $CLI act tap --package dev.reticle.sample --alias @1
 
