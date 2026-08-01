@@ -24,12 +24,43 @@ public struct StyleObservation: Codable, Sendable {
     public var platform: String
     public var screen: ScreenInfo
     public var items: [StyleItem]
+    /// How many style-bearing nodes past the projection cap were dropped. Zero
+    /// when everything fit; rendered so the cap never silently reads as "that
+    /// was every node" — the dropped nodes are still in the snapshot.
+    public var truncatedItems: Int
 
-    public init(capturedAtMillis: Int64, platform: String, screen: ScreenInfo, items: [StyleItem]) {
+    public init(capturedAtMillis: Int64, platform: String, screen: ScreenInfo, items: [StyleItem],
+                truncatedItems: Int = 0) {
         self.capturedAtMillis = capturedAtMillis
         self.platform = platform
         self.screen = screen
         self.items = items
+        self.truncatedItems = truncatedItems
+    }
+
+    // Omit-defaults coding, like CompactObservation: reticle-core drops a field
+    // equal to its default, so `truncatedItems` is absent from every payload that
+    // dropped nothing — and from every payload produced before the cap spoke up.
+    private enum CodingKeys: String, CodingKey {
+        case capturedAtMillis, platform, screen, items, truncatedItems
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(capturedAtMillis, forKey: .capturedAtMillis)
+        try c.encode(platform, forKey: .platform)
+        try c.encode(screen, forKey: .screen)
+        try c.encode(items, forKey: .items)
+        if truncatedItems != 0 { try c.encode(truncatedItems, forKey: .truncatedItems) }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        capturedAtMillis = try c.decode(Int64.self, forKey: .capturedAtMillis)
+        platform = try c.decode(String.self, forKey: .platform)
+        screen = try c.decode(ScreenInfo.self, forKey: .screen)
+        items = try c.decode([StyleItem].self, forKey: .items)
+        truncatedItems = try c.decodeIfPresent(Int.self, forKey: .truncatedItems) ?? 0
     }
 
     /// The whole text projection: screen header, then one block per node that has
@@ -46,6 +77,10 @@ public struct StyleObservation: Codable, Sendable {
             out.append(contentsOf: item.bodyLines())
         }
         if out.count == 1 { out.append("(no style-bearing nodes in this snapshot)") }
+        if truncatedItems > 0 {
+            out.append("(\(truncatedItems) more style-bearing node(s) beyond this projection's cap — "
+                + "NOT listed here; they are still in the snapshot)")
+        }
         return out.joined(separator: "\n")
     }
 
@@ -107,11 +142,13 @@ public struct StyleObservation: Codable, Sendable {
             for child in node.children { visit(child) }
         }
         visit(snapshot.rootRef)
+        let kept = Array(items.prefix(maxItems))
         return StyleObservation(
             capturedAtMillis: snapshot.capturedAtMillis,
             platform: snapshot.platform,
             screen: snapshot.screen,
-            items: Array(items.prefix(maxItems))
+            items: kept,
+            truncatedItems: items.count - kept.count
         )
     }
 

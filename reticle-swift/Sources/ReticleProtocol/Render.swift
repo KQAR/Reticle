@@ -68,8 +68,15 @@ public enum Render {
             ? "(\(observation.collapsedWrappers) anonymous layer(s) folded into the node they wrap "
                 + "— all still in the snapshot, reachable with `ui node --ref`)"
             : nil
+        // Unlike the fold, a truncated item is GONE from this view; the line is
+        // what keeps the cap from reading as "that was the whole screen".
+        let truncLine: String? = observation.truncatedItems > 0
+            ? "(\(observation.truncatedItems) more item(s) beyond this projection's cap — NOT listed here; "
+                + "they are still in the snapshot, reachable with `ui tree` / `ui node --ref`)"
+            : nil
+        let tail = (foldLine.map { [$0] } ?? []) + (truncLine.map { [$0] } ?? [])
         guard let kb = snapshot.screen.keyboard else {
-            return ((focusLine.map { [$0] } ?? []) + lines + (foldLine.map { [$0] } ?? []))
+            return ((focusLine.map { [$0] } ?? []) + lines + tail)
                 .joined(separator: "\n")
         }
         let header: String
@@ -82,7 +89,7 @@ public enum Render {
         } else {
             header = "keyboard: hidden"
         }
-        return ((focusLine.map { [$0] } ?? []) + [header] + lines + (foldLine.map { [$0] } ?? []))
+        return ((focusLine.map { [$0] } ?? []) + [header] + lines + tail)
             .joined(separator: "\n")
     }
 
