@@ -30,18 +30,14 @@ The CLI is on PATH as `reticle` while this plugin is enabled.
 
 `reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
 Android through a sibling native helper (`reticle-helper`). **macOS 14+ arm64 only.**
-The launcher (`bin/reticle`) resolves it in this order, first hit wins:
-1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
-2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
-3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host + native helper;
-   needs the Swift toolchain + a GraalVM with native-image). Development only.
-4. A **prebuilt release** — cached under `~/.reticle/cli`, else downloaded
-   (SHA256-verified) from GitHub Releases. **This is the default** (needs
-   `curl`+`unzip` and network; **no JDK**).
+Two things matter operationally: the default path **always** uses the
+SHA256-verified prebuilt release — there is **no silent source build** — and a
+failed download **hard-stops** with actionable guidance instead of quietly
+building from source. `reticle version` confirms it's ready.
 
-By default the prebuilt release is always used — there is **no silent source
-build**. If it can't be obtained the launcher stops with actionable guidance.
-`reticle version` confirms it's ready.
+The full launcher resolution order and its env overrides (`RETICLE_HOST`,
+`RETICLE_HOME`, `RETICLE_FROM_SOURCE`, `RETICLE_REPO`) are documented once, in
+`README.md` → **How the CLI is obtained**.
 
 ## Prerequisites (check, don't assume)
 
@@ -547,21 +543,8 @@ follow-up commands. A timeout is **not** a failure: `--json` stays
 `{"ok":true,…}`. For shell/CI, `--strict` projects the outcome onto exit codes
 (`0` resolved, `3` absent, `4` unknowable — 3 and 4 are deliberately distinct).
 
-Use `act batch --file steps.json` for short, deterministic multi-step flows.
-A `wait` step works inside a batch like any other gesture — this is the usual way
-to make a recorded flow deterministic instead of sleep-padded. Add
-`"strict": true` to make the step a **gate**: the batch stops there if the
-predicate did not resolve (without it, the batch records the outcome and carries
-on). Note the wire name `textContains`, so a wait step can never be misread as a
-`type`:
-
-```json
-[
-  { "gesture": "tap",  "testId": "checkout.payButton" },
-  { "gesture": "wait", "testId": "checkout.status", "textContains": "Paid", "strict": true },
-  { "gesture": "tap",  "testId": "checkout.done" }
-]
-```
+A `wait` step also works inside `act batch` — see **`act batch`** below; that is
+the usual way to make a recorded flow deterministic instead of sleep-padded.
 
 ## The system keyboard (IME) — state and dismissal
 
@@ -598,18 +581,28 @@ keyboard notification stream and dismisses via `resignFirstResponder`, so
 Simulator caveat: with "Connect Hardware Keyboard" enabled (Simulator.app
 I/O > Keyboard), iOS never shows the software keyboard at all — disable it
 and reboot the sim device if `keyboardVisible` stays false after typing.
+
+## `act batch` — deterministic multi-step flows
+
+Use `act batch --file steps.json` for short, deterministic multi-step flows.
 The file is a JSON array; each object is one normal act RPC using helper-style
 keys. **Every selector a single `act` takes works in a step** — `testId`,
 `resourceId`, `css`, `ref`, `point` ("x,y"), `alias`, `region` — plus `text`
 and `submit` for type, `from`/`to`/`duration` for swipe/drag, `verify`, and
-optional `delayMs` after that step:
+optional `delayMs` after that step.
+
+A `wait` step works inside a batch like any other gesture. Add `"strict": true`
+to make it a **gate**: the batch stops there if the predicate did not resolve
+(without it, the batch records the outcome and carries on). Note the wire name
+`textContains`, so a wait step can never be misread as a `type`:
 
 ```json
 [
   { "gesture": "type", "testId": "checkout.name", "text": "Ada" },
   { "gesture": "type", "testId": "login.code", "text": "123456", "submit": true },
-  { "gesture": "tap", "resourceId": "btnWithdraw" },
-  { "gesture": "tap", "testId": "checkout.payButton", "verify": "testId=checkout.status" }
+  { "gesture": "tap",  "testId": "checkout.payButton", "verify": "testId=checkout.status" },
+  { "gesture": "wait", "testId": "checkout.status", "textContains": "Paid", "strict": true },
+  { "gesture": "tap",  "resourceId": "btnWithdraw" }
 ]
 ```
 
