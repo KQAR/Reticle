@@ -2,6 +2,7 @@ package dev.reticle.cli
 
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.CompactObservation
+import dev.reticle.core.requireSupportedSchema
 import dev.reticle.core.EditorActionResult
 import dev.reticle.core.Endpoints
 import dev.reticle.core.KeyboardHideResult
@@ -81,6 +82,7 @@ class RuntimeClient(
 
     fun snapshot(): Snapshot =
         ReticleJson.instance.decodeFromString(Snapshot.serializer(), getString(Endpoints.SNAPSHOT))
+            .requireSupportedSchema()
 
     /**
      * Fetch a single-capture report from the in-app agent. The agent captures one

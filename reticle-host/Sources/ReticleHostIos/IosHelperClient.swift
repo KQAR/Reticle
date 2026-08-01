@@ -201,10 +201,10 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 throw HelperError("render --live needs --package")
             }
             let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
-            return try ReticleJSON.decode(Snapshot.self, from: data)
+            return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: request.snapshotPath))
-        return try ReticleJSON.decode(Snapshot.self, from: data)
+        return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
     }
 
     public func mutate(_ request: MutateRequest) throws -> MutationOutcome {
@@ -545,7 +545,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
 
     func fetchSnapshot(_ pkg: String) throws -> Snapshot {
         let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
-        return try ReticleJSON.decode(Snapshot.self, from: data)
+        return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
     }
 
     /// Resolves a tap target through the SHARED resolver in `ReticleProtocol`, the
