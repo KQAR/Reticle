@@ -115,4 +115,30 @@ class JdwpClientTest {
             jdwp.negotiateIdSizes()  // must not throw; reply framing parsed correctly
         }
     }
+
+    @Test
+    fun aReplyThatNeverComesTimesOutInsteadOfHangingTheHelperForever() {
+        // The server reads the command and then goes silent — the wedged-VM /
+        // dead-forward shape. Before the reply timeout this blocked forever: the
+        // helper is a single-threaded JSONL loop, so one silent VM hung the helper
+        // and the Swift host waiting on it, with no cancel path.
+        val port = serve { input, output ->
+            input.expectHandshake(output)
+            input.readCommand()
+            Thread.sleep(60_000) // never reply
+        }
+        System.setProperty("reticle.jdwp.replyTimeoutMs", "300")
+        try {
+            JdwpClient(Socket("127.0.0.1", port)).use { jdwp ->
+                jdwp.handshake()
+                val failure = assertFailsWith<IllegalStateException> { jdwp.negotiateIdSizes() }
+                assertTrue(
+                    failure.message!!.contains("no reply"),
+                    "the failure must say the VM went silent, not just time out: ${failure.message}"
+                )
+            }
+        } finally {
+            System.clearProperty("reticle.jdwp.replyTimeoutMs")
+        }
+    }
 }
