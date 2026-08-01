@@ -195,7 +195,7 @@ data class StyleItem(
     /** Header line for this node: selector, role, label. */
     fun headerLine(): String {
         val selector = testId?.let { "#$it" } ?: resourceId?.let { "@$it" } ?: ref
-        val labelPart = label?.let { " \"${it.take(40)}\"" } ?: ""
+        val labelPart = label?.let { " \"${it.clipCodePoints(40)}\"" } ?: ""
         return "$selector $role$labelPart"
     }
 
@@ -379,6 +379,12 @@ class StyleUnits(private val platform: String, private val screen: ScreenInfo) {
             // this one DOM node printed 26 lines of `auto` / `none` / `0px`
             // (measured on the sample's WebView page), which on a real page is
             // hundreds of lines that say nothing.
+            // "1" is initial only for OPACITY (z-index's initial is `auto`, so a
+            // page's explicit `z-index: 1` is a stated stacking decision) — the
+            // one entry here that is not the same everywhere, so it is checked
+            // per property instead of living in the value set.
+            name == "domStyleOpacity" ->
+                (value as? MetadataValue.Text)?.value.let { it == "1" || it in CSS_INITIAL_VALUES }
             name.startsWith("domStyle") ->
                 (value as? MetadataValue.Text)?.value in CSS_INITIAL_VALUES
             else -> false
@@ -409,7 +415,6 @@ class StyleUnits(private val platform: String, private val screen: ScreenInfo) {
             "visible",
             "static",
             "0px",
-            "1",
             "rgba(0, 0, 0, 0)",
         )
 

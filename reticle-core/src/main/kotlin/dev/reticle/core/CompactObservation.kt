@@ -321,7 +321,7 @@ data class CompactItem(
         val selector = testId?.let { "#$it" }
             ?: resourceId?.let { "@$it" }
             ?: ref
-        val labelPart = label?.let { " \"${it.take(40)}\"" } ?: ""
+        val labelPart = label?.let { " \"${it.clipCodePoints(40)}\"" } ?: ""
         val framePart = frame?.let {
             " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]"
         } ?: ""

@@ -134,7 +134,7 @@ object Render {
                 .append(selectorOf(node))
                 .append(" ")
                 .append(node.role ?: node.typeName)
-                .append(label?.let { " \"${it.take(30)}\"" } ?: "")
+                .append(label?.let { " \"${it.clipCodePoints(30)}\"" } ?: "")
                 .append("\n")
             node.children.forEach { walk(it, depth + 1) }
         }
@@ -150,7 +150,7 @@ object Render {
                 .append(selectorOf(node.testId, node.resourceId, node.ref))
                 .append(" ")
                 .append(node.role)
-                .append(node.label?.let { " \"${it.take(30)}\"" } ?: "")
+                .append(node.label?.let { " \"${it.clipCodePoints(30)}\"" } ?: "")
                 .append("\n")
             node.children.forEach { walk(it, depth + 1) }
         }
@@ -174,7 +174,7 @@ object Render {
             append(selectorOf(node))
                 .append(" ")
                 .append(node.role ?: node.typeName)
-                .append(node.text?.let { " \"${it.take(40)}\"" } ?: "")
+                .append(node.text?.let { " \"${it.clipCodePoints(40)}\"" } ?: "")
                 .append("\n")
             if (node.suspectedMultiRegion) {
                 append("    ! suspectedMultiRegion: self-drawn control\n")
@@ -186,7 +186,7 @@ object Render {
             }
             for (region in node.regions) {
                 val where = region.rects.firstOrNull()?.let { "[${rect(it)}]" } ?: "(no rect)"
-                append("    - ${region.source} \"${region.label?.take(40) ?: ""}\"")
+                append("    - ${region.source} \"${region.label?.clipCodePoints(40) ?: ""}\"")
                     .append(region.target?.let { " -> $it" } ?: "")
                     .append(region.color?.let { " color=$it" } ?: "")
                     .append(" $where\n")

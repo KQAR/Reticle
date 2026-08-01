@@ -133,7 +133,7 @@ public enum Render {
             guard let node = snapshot.nodes[ref] else { return }
             let s = sel(testId: node.testId, resourceId: node.resourceId, ref: node.ref)
             let label = node.text ?? node.contentDescription
-            let labelPart = label.map { " \"\(String($0.prefix(30)))\"" } ?? ""
+            let labelPart = label.map { " \"\($0.clipCodePoints(30))\"" } ?? ""
             out += String(repeating: "  ", count: depth) + "\(s) \(node.role ?? node.typeName)\(labelPart)\n"
             for c in node.children { walk(c, depth + 1) }
         }
@@ -147,7 +147,7 @@ public enum Render {
             if depth > maxDepth { return }
             guard let node = tree.nodes[ref] else { return }
             let s = sel(testId: node.testId, resourceId: node.resourceId, ref: node.ref)
-            let labelPart = node.label.map { " \"\(String($0.prefix(30)))\"" } ?? ""
+            let labelPart = node.label.map { " \"\($0.clipCodePoints(30))\"" } ?? ""
             out += String(repeating: "  ", count: depth) + "\(s) \(node.role)\(labelPart)\n"
             for c in node.children { walk(c, depth + 1) }
         }
@@ -184,7 +184,7 @@ public enum Render {
             if node.regions.isEmpty && !node.suspectedMultiRegion { continue }
             any = true
             let s = sel(testId: node.testId, resourceId: node.resourceId, ref: node.ref)
-            let textPart = node.text.map { " \"\(String($0.prefix(40)))\"" } ?? ""
+            let textPart = node.text.map { " \"\($0.clipCodePoints(40))\"" } ?? ""
             out += "\(s) \(node.role ?? node.typeName)\(textPart)\n"
             if node.suspectedMultiRegion {
                 out += "    ! suspectedMultiRegion: self-drawn control\n"
@@ -197,7 +197,7 @@ public enum Render {
                 let whereStr = rect.map { "[\($0.intDescription)]" } ?? "(no rect)"
                 let target = r.target.map { " -> \($0)" } ?? ""
                 let color = r.color.map { " color=\($0)" } ?? ""
-                out += "    - \(r.source.rawValue) \"\(r.label.map { String($0.prefix(40)) } ?? "")\"\(target)\(color) \(whereStr)\n"
+                out += "    - \(r.source.rawValue) \"\(r.label.map { $0.clipCodePoints(40) } ?? "")\"\(target)\(color) \(whereStr)\n"
             }
         }
         if !any { out = "(no multi-region nodes found)" }
