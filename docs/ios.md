@@ -131,7 +131,7 @@ platform-neutral and matches `reticle-core`'s `ActionTraceDiff` field-for-field.
 
 `reticle serve --target ios` puts iOS on the same host-side capture proxy as
 Android — `network.*` events, HTTPS MITM, and session mocks — within the same
-no-hook boundary (whistle's ceiling: no pinning bypass, no in-app trust
+no-hook boundary (Loom's ceiling: no pinning bypass, no in-app trust
 injection). Two host-side actions replace Android's `adb`:
 
 Routing is never auto-applied — an iOS target has no per-app proxy hook, so it

@@ -84,16 +84,10 @@ only, since prose cannot be diffed across languages.
   read-only web panel, best-effort action-trace ingestion from `act
   --trace-output`, and the Loom-backed network capture lane (traffic rules + flow
   replay).
-  Command surface: `doctor`/`devices`/`status`/`app launch|inject`/`act`/`mutate`/
-  `debug`/`ui`/`rule`/`replay`/`serve`/`version`.
-  Internally three stacked SwiftPM library targets: `ReticleHostShared`
-  (dependency-free `JSONValue`/event models/`HelperError`) ← `ReticleNetworkLane`
-  (the capture lane — runs Loom's `ProxyEngine`, normalizes flows, owns the
-  traffic-rule store + replay, reaching the session store only through the
-  `NetworkEventSink` protocol; transport/MITM/CA are Loom's, so the lane carries no
-  SwiftNIO of its own) ← `ReticleHostCore` (daemon, CLI, panel, host code), plus
-  the `ReticleHost` executable. Put new capture/rule code in the lane, not Core;
-  its end-to-end path is guarded by `scripts/e2e-proxy.sh`.
+  Command surface: `ReticleCLI.usage` is the source; the stacked SwiftPM library
+  targets are enumerated in `docs/architecture.md` (module layout). Put new
+  capture/rule code in the `ReticleNetworkLane` target, not Core; its end-to-end
+  path is guarded by `scripts/e2e-proxy.sh`.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.
