@@ -179,23 +179,23 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --type-delay <ms>`: pace the keystrokes for a field that loses them
     // out of the default single burst. `act type` reads the field back either
     // way and says what actually landed.
-    request.typeDelayMs = args.option("type-delay").flatMap { Int($0) }
+    request.typeDelayMs = try args.intOption("type-delay")
     // A selector tap re-resolves its point before dispatching by default, so a
     // rect made stale by an earlier relayout cannot send the touch to the
     // neighbouring control. `--settle` raises the budget for a target that is
     // genuinely animating in; `--no-settle` opts out of the confirm entirely.
     request.settle = args.flag("settle")
     request.noSettle = args.flag("no-settle")
-    request.settleTimeoutMs = args.option("settle-timeout").map { Int($0) ?? 2000 }
+    request.settleTimeoutMs = try args.intOption("settle-timeout")
     request.verify = args.option("verify")
-    request.verifyTimeoutMs = args.option("verify-timeout").map { Int($0) ?? 2000 }
+    request.verifyTimeoutMs = try args.intOption("verify-timeout")
     if let out = args.option("trace-output") {
         request.traceOutput = out
     } else if let out = automaticSessionTraceOutput() {
         request.traceOutput = out
         request.traceAuto = true
     }
-    request.traceDelayMs = args.option("trace-delay").map { Int($0) ?? 250 }
+    request.traceDelayMs = try args.intOption("trace-delay")
 
     let outcome = try backend.act(request)
     if JsonEnvelope.enabled(args) {
@@ -236,8 +236,8 @@ private func cmdActWait(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `--text` on a wait means "contains this substring", not `type`'s "send this
     // text". Renamed on the wire so a batch step can never be read as a type.
     request.textContains = args.option("text")
-    request.timeoutMs = args.option("timeout").map { Int($0) ?? 10_000 }
-    request.quietMs = args.option("quiet-for").map { Int($0) ?? 400 }
+    request.timeoutMs = try args.intOption("timeout")
+    request.quietMs = try args.intOption("quiet-for")
 
     let result = try backend.act(request)
     let outcome = result.outcome ?? "unknown"
@@ -309,8 +309,8 @@ func cmdActBatch(_ backend: HostBackend, _ args: Args) throws {
                 .appendingPathComponent(String(format: "step-%02d-%@", index + 1, gesture))
                 .path
         }
-        if let delay = args.option("trace-delay"), request.traceDelayMs == nil {
-            request.traceDelayMs = Int(delay) ?? 250
+        if let delay = try args.intOption("trace-delay"), request.traceDelayMs == nil {
+            request.traceDelayMs = delay
         }
         let result = try backend.act(request).raw
         // A `wait` step is the only step that can report a non-fatal
