@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 - 2026-08-01
 
-An audit batch with no new capability in it: twenty-one changes, every one of
+An audit batch with no new capability in it: eighteen code changes, every one of
 them a defect found by reading the code against the contracts it already claims
-to hold, or a hot path measured and made cheaper. Three classes dominate —
+to hold, or a hot path measured and made cheaper, plus a documentation pass over
+the same ground. Three classes dominate —
 selectors that silently pointed at the wrong node or no node, projections and
 waits that reported a partial reading as a complete one, and unbounded
 waits/writes that could hang a helper, a host, or the app being observed.
@@ -151,6 +152,29 @@ waits/writes that could hang a helper, a host, or the app being observed.
   the same act; there is no read-only probe, so `docs/boundaries.md` states it: a
   snapshot is not free on TextKit-2 screens, and a layout shift after observation
   must not be attributed to the app.
+
+- **The docs were audited against the code that shipped above.** Seven claims no
+  longer held — `--label`'s window scope, the command surface, the count of Swift
+  library targets, an `awaitRuntime` item already done, `whistle` where the engine
+  is Loom, a `ui subtree` that does not exist, four missing endpoints, and a map
+  node that put selector resolution in the helper. Three behaviors shipped with no
+  documentation at all and now have some: the projection truncation marker, the
+  `schemaVersion` refusal, and this release's own entry. Redundancy that had begun
+  to drift apart was given one owner — the launcher resolution order (four copies),
+  `act batch` in the skill (explained twice, the second copy filed under the
+  keyboard section), the mutation allowlist (stale where it was duplicated), and
+  the document map itself, which `AGENTS.md` now owns. `DESIGN.md` claimed a 1:1
+  correspondence with the panel's CSS tokens that was never implemented; it is
+  labelled a target spec now rather than described as current. `README.zh-CN.md`
+  had drifted past abridgement into missing capabilities and is back at parity.
+
+- **Docs-only changes no longer wait on the macOS build.** A `scope` job classifies
+  the diff and the ~14-minute Swift host + native-image job is skipped when nothing
+  outside `docs/`, `skills/`, `commands/`, top-level `*.md` and `LICENSE` changed.
+  The checks that actually verify documentation — architecture-map sync, translated
+  heading skeletons, manifest and version lockstep — run on every change, docs
+  included. The classifier fails open: an unknown diff range runs the full build.
+
 
 ## 0.13.0 - 2026-07-29
 
