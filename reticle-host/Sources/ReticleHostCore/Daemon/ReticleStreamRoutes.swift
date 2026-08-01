@@ -27,7 +27,14 @@ struct ReticleStreamRoutes: Sendable {
                 // Yield an (id, encoded) pair — both Sendable — encoding inside the
                 // subscriber closure as the original did, so the whole envelope
                 // isn't sent across the concurrency boundary.
-                let stream = AsyncStream<(String, Data)> { continuation in
+                // Bounded buffer, newest wins. The default policy is .unbounded,
+                // and a half-open subscriber (suspended laptop, hung panel tab —
+                // TCP still up, so writer.write never fails) stops draining while
+                // every event, network payloads included, accumulates on ITS
+                // buffer forever. 512 mirrors the EventStore ring; a stalled
+                // client that wakes up re-syncs from `since` ids, which is the
+                // recovery SSE already has for gaps.
+                let stream = AsyncStream<(String, Data)>(bufferingPolicy: .bufferingNewest(512)) { continuation in
                     let token = store.subscribe { event in
                         if let data = try? encoder.encode(event) {
                             continuation.yield((event.id, data))
