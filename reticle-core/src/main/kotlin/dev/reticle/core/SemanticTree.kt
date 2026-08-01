@@ -79,9 +79,13 @@ data class SemanticTree(
             //    Used both to reparent kept nodes and to lift a dropped node's
             //    children onto the kept node above them, so the tree stays
             //    connected through kept nodes only.
+            //    Guarded against parentRef cycles: a snapshot can come from disk
+            //    or a buggy agent, and an unguarded upward walk on a cyclic one
+            //    never terminates.
             fun nearestKeptAncestor(ref: String): String? {
+                val seen = HashSet<String>()
                 var cur = from.nodes[ref]?.parentRef
-                while (cur != null) {
+                while (cur != null && seen.add(cur)) {
                     if (cur in kept) return cur
                     cur = from.nodes[cur]?.parentRef
                 }
@@ -90,9 +94,15 @@ data class SemanticTree(
 
             // 3. Kept children of a ref: its nearest kept descendants along each
             //    branch (skipping dropped intermediate nodes), preserving order.
+            //    Guarded against children cycles for the same reason as
+            //    [nearestKeptAncestor]: unguarded recursion on a malformed
+            //    snapshot overflows the stack.
             fun keptDescendants(ref: String): List<String> {
                 val out = ArrayList<String>()
+                val seen = HashSet<String>()
+                seen.add(ref)
                 fun collect(childRef: String) {
+                    if (!seen.add(childRef)) return
                     if (childRef in kept) {
                         out.add(childRef)
                     } else {

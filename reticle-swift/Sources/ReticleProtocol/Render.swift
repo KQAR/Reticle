@@ -266,9 +266,13 @@ public enum Render {
         // warns about. Falls back to all visible nodes when no window matched,
         // which also covers nodes outside any window.
         let windowRefs = (snapshot.root()?.children ?? []).filter { snapshot.nodes[$0]?.kind == .window }
+        // Guarded against parentRef cycles: a snapshot can come from disk or a
+        // buggy agent, and an unguarded upward walk on a cyclic one never
+        // terminates.
         func windowRef(of node: Node) -> String? {
+            var seen = Set<String>()
             var current: Node? = node
-            while let n = current {
+            while let n = current, seen.insert(n.ref).inserted {
                 if n.kind == .window { return n.ref }
                 current = n.parentRef.flatMap { snapshot.nodes[$0] }
             }
@@ -296,9 +300,12 @@ public enum Render {
         // child's text, and an alert button wraps a label with the same string at
         // nearly the same point. Drop any match that is an ANCESTOR of another and
         // keep the innermost; two matches in DIFFERENT subtrees stay ambiguous.
+        // Guarded like `windowRef(of:)`: a parentRef cycle must answer "no",
+        // not loop forever.
         func isAncestor(_ candidate: Node, of node: Node) -> Bool {
+            var seen = Set<String>()
             var current = node.parentRef.flatMap { snapshot.nodes[$0] }
-            while let n = current {
+            while let n = current, seen.insert(n.ref).inserted {
                 if n.ref == candidate.ref { return true }
                 current = n.parentRef.flatMap { snapshot.nodes[$0] }
             }

@@ -98,7 +98,12 @@ data class StyleObservation(
         fun from(snapshot: Snapshot, maxItems: Int = 500): StyleObservation {
             val units = StyleUnits(snapshot.platform, snapshot.screen)
             val items = ArrayList<StyleItem>()
+            // Seen-set, aligned with the Swift twin (which already had one): a
+            // children cycle in a malformed snapshot must not recurse forever,
+            // and a subtree reachable under two parents emits its items once.
+            val seen = HashSet<String>()
             fun visit(ref: String) {
+                if (!seen.add(ref)) return
                 val node = snapshot.nodes[ref] ?: return
                 val attributes = node.styleChannels.entries
                     .mapNotNull { (name, channel) ->

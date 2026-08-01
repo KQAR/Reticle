@@ -166,9 +166,13 @@ data class WaitProbe(
             // trees), fall back to every scrollable rather than silently none.
             val topWindow = windowRefs.lastOrNull { snapshot.nodes[it]?.isVisible == true }
 
+            // Guarded against parentRef cycles: this runs inside the wait poll
+            // loop, and an unguarded upward walk on a malformed snapshot would
+            // hang `act wait` forever.
             fun windowOf(ref: String): String? {
+                val seen = HashSet<String>()
                 var current = snapshot.nodes[ref]
-                while (current != null) {
+                while (current != null && seen.add(current.ref)) {
                     if (current.kind == NodeKind.window) return current.ref
                     current = current.parentRef?.let { snapshot.nodes[it] }
                 }
