@@ -294,13 +294,15 @@ internal object HelperDeviceCommands {
         val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         var via = "adb screencap"
-        val agentBytes = pkg?.let {
-            val client = runtimeClientFor(device, it, params)
-            if (client.probe() is RuntimeHealth.Healthy) captureAgentScreenshot(client)?.also {
-                via = "agent /screenshot"
-            } else {
-                null
-            }
+        // One client and one probe serve both the capture attempt and the
+        // degrade notes below; building a second client for the notes used to
+        // pay a second `adb forward` fork and a second probe in the same RPC.
+        val client = pkg?.let { runtimeClientFor(device, it, params) }
+        val agentUp = client != null && client.probe() is RuntimeHealth.Healthy
+        val agentBytes = if (agentUp) {
+            captureAgentScreenshot(client!!)?.also { via = "agent /screenshot" }
+        } else {
+            null
         }
         val bytes = agentBytes ?: device.screencap().also {
             if (it.isEmpty()) throw CliError("screencap returned no data (device ready?)")
@@ -308,7 +310,7 @@ internal object HelperDeviceCommands {
         return buildJsonObject {
             put("via", via)
             put("pngBase64", Base64.getEncoder().encodeToString(bytes))
-            val degraded = pkg?.let { screenshotDegrades(device, it, params, viaAgent = agentBytes != null) }
+            val degraded = if (agentUp) screenshotDegrades(client!!, viaAgent = agentBytes != null) else null
             if (!degraded.isNullOrEmpty()) {
                 put("degraded", buildJsonArray { degraded.forEach { add(it) } })
             }
@@ -327,15 +329,14 @@ internal object HelperDeviceCommands {
      *
      * Best-effort: a snapshot that cannot be fetched simply yields no note, since the
      * picture itself is already written.
+     *
+     * [client] is the client [screenshot] already built and probed healthy —
+     * reused so the notes cost one snapshot fetch, not a second forward + probe.
      */
     private fun screenshotDegrades(
-        device: DeviceController,
-        pkg: String,
-        params: JsonObject,
+        client: RuntimeClient,
         viaAgent: Boolean,
     ): List<String> = runCatching {
-        val client = runtimeClientFor(device, pkg, params)
-        if (client.probe() !is RuntimeHealth.Healthy) return emptyList()
         val snapshot = client.snapshot()
         val out = ArrayList<String>()
         for (node in snapshot.nodes.values) {

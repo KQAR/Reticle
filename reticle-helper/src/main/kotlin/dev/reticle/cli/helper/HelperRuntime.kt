@@ -17,18 +17,34 @@ import kotlinx.serialization.json.JsonObject
  * port is derived deterministically from the package, so re-driving the same app
  * reuses one forward). Access is single-threaded: the helper serves RPC lines
  * sequentially and cleanup runs after that loop.
+ *
+ * The registry is also a cache: forwards live on the adb server, so once one is
+ * recorded, later [runtimeClientFor] calls for the same (serial, hostPort ->
+ * devicePort) skip the `adb forward` fork entirely. That fork is on the hot
+ * path — the tap-confirm settle loop and the type read-back each build a fresh
+ * client per poll — so one `act type` used to pay it 6-8 times. A recorded
+ * forward that was killed externally is not fatal: [RuntimeClient] re-runs
+ * [RuntimeClient.setUpForward] once when a connection is refused.
  */
 internal object ForwardRegistry {
-    private val forwards = LinkedHashMap<Int, DeviceController>()
+    private data class Key(val serial: String?, val hostPort: Int)
 
-    fun record(device: DeviceController, hostPort: Int) {
-        forwards[hostPort] = device
+    private data class Entry(val device: DeviceController, val devicePort: Int)
+
+    private val forwards = LinkedHashMap<Key, Entry>()
+
+    /** Whether hostPort -> devicePort is already forwarded on [device]'s serial. */
+    fun has(device: DeviceController, hostPort: Int, devicePort: Int): Boolean =
+        forwards[Key(device.serialOrNull, hostPort)]?.devicePort == devicePort
+
+    fun record(device: DeviceController, hostPort: Int, devicePort: Int) {
+        forwards[Key(device.serialOrNull, hostPort)] = Entry(device, devicePort)
     }
 
     /** Best-effort removal of every forward set up this session. */
     fun cleanup() {
-        for ((hostPort, device) in forwards) {
-            runCatching { device.removeForward(hostPort) }
+        for ((key, entry) in forwards) {
+            runCatching { entry.device.removeForward(key.hostPort) }
         }
         forwards.clear()
     }
@@ -43,8 +59,14 @@ internal fun runtimeClientFor(
     val devicePort = params.intOrNull("port") ?: PortMap.derivePort(pkg)
     val hostPort = params.intOrNull("hostPort") ?: devicePort
     return RuntimeClient(device, hostPort, devicePort).also {
-        it.setUpForward()
-        ForwardRegistry.record(device, hostPort)
+        // Consult the registry before forking `adb forward`: the forward is
+        // already up when a client for the same mapping was built earlier in
+        // this session. See [ForwardRegistry] for why this matters and how a
+        // stale entry self-heals.
+        if (!ForwardRegistry.has(device, hostPort, devicePort)) {
+            it.setUpForward()
+            ForwardRegistry.record(device, hostPort, devicePort)
+        }
     }
 }
 
