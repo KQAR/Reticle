@@ -38,10 +38,21 @@ class Adb(
             // ByteArrayOutputStream while they may still be writing is a race.
             outThread.join(1000)
             errThread.join(1000)
+            // A reader still alive past its join means `out` may be mid-write:
+            // truncated stdout returned here reads as authoritative to callers
+            // (a clipped `pidof` becomes "app not running"), so discard it.
+            if (outThread.isAlive || errThread.isAlive) {
+                return CommandResult(124, "", "adb timed out after ${timeoutSeconds}s (output discarded: still draining)")
+            }
             return CommandResult(124, out.toString(Charsets.UTF_8), "adb timed out after ${timeoutSeconds}s")
         }
         outThread.join(1000)
         errThread.join(1000)
+        // Same race on the normal-exit path: a loaded host can leave the reader
+        // behind the pipe even after the process exits cleanly.
+        if (outThread.isAlive || errThread.isAlive) {
+            return CommandResult(124, "", "adb exited but its output could not be drained in time; output discarded")
+        }
         return CommandResult(process.exitValue(), out.toString(Charsets.UTF_8), err.toString(Charsets.UTF_8))
     }
 
@@ -72,8 +83,9 @@ class Adb(
         errThread.join(1000)
         // A non-zero exit (screencap dying mid-stream) leaves partial bytes
         // that would pass through as a valid-looking-but-truncated PNG; treat
-        // it like a timeout so callers' isEmpty guards catch it.
-        if (process.exitValue() != 0) return ByteArray(0)
+        // it like a timeout so callers' isEmpty guards catch it. A reader still
+        // alive past its join is the same truncation, just host-side.
+        if (process.exitValue() != 0 || outThread.isAlive) return ByteArray(0)
         return out.toByteArray()
     }
 

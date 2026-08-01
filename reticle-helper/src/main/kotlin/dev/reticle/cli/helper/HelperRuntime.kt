@@ -15,8 +15,7 @@ import kotlinx.serialization.json.JsonObject
  * which outlives the helper process, so without this they leak — one per distinct
  * package driven — and pile up across sessions. Idempotent per host port (the
  * port is derived deterministically from the package, so re-driving the same app
- * reuses one forward). Access is single-threaded: the helper serves RPC lines
- * sequentially and cleanup runs after that loop.
+ * reuses one forward).
  *
  * The registry is also a cache: forwards live on the adb server, so once one is
  * recorded, later [runtimeClientFor] calls for the same (serial, hostPort ->
@@ -25,6 +24,10 @@ import kotlinx.serialization.json.JsonObject
  * client per poll — so one `act type` used to pay it 6-8 times. A recorded
  * forward that was killed externally is not fatal: [RuntimeClient] re-runs
  * [RuntimeClient.setUpForward] once when a connection is refused.
+ *
+ * Cleanup runs both after the RPC loop and from a JVM shutdown hook (its own
+ * thread), so access is synchronized and cleanup is idempotent — the second
+ * call finds an empty registry and does nothing.
  */
 internal object ForwardRegistry {
     private data class Key(val serial: String?, val hostPort: Int)
@@ -34,14 +37,17 @@ internal object ForwardRegistry {
     private val forwards = LinkedHashMap<Key, Entry>()
 
     /** Whether hostPort -> devicePort is already forwarded on [device]'s serial. */
+    @Synchronized
     fun has(device: DeviceController, hostPort: Int, devicePort: Int): Boolean =
         forwards[Key(device.serialOrNull, hostPort)]?.devicePort == devicePort
 
+    @Synchronized
     fun record(device: DeviceController, hostPort: Int, devicePort: Int) {
         forwards[Key(device.serialOrNull, hostPort)] = Entry(device, devicePort)
     }
 
     /** Best-effort removal of every forward set up this session. */
+    @Synchronized
     fun cleanup() {
         for ((key, entry) in forwards) {
             runCatching { entry.device.removeForward(key.hostPort) }
@@ -84,16 +90,43 @@ internal fun assertHealthy(client: RuntimeClient, pkg: String) {
     }
 }
 
-/** Poll /runtime until the agent for [pkg] answers healthy, else throw. */
-internal fun awaitRuntime(client: RuntimeClient, pkg: String, attempts: Int = 40): RuntimeInfo {
-    repeat(attempts) {
-        when (val health = client.probe()) {
-            is RuntimeHealth.Healthy -> if (health.info.packageName == pkg) return health.info
-            else -> {}
-        }
-        Thread.sleep(250)
+/**
+ * Poll /runtime until the agent for [pkg] answers healthy, else throw.
+ *
+ * The budget is a wall-clock deadline, not an attempt count: a probe against an
+ * [RuntimeHealth.Unresponsive] port burns its whole read timeout per attempt,
+ * so a fixed count of them stretched to minutes of wall clock while a healthy
+ * port used the same count in ten seconds. The clock and sleep are injected so
+ * the deadline is testable without waiting it out.
+ */
+internal fun awaitRuntime(
+    client: RuntimeClient,
+    pkg: String,
+    timeoutMs: Long = 15_000L,
+    nowMs: () -> Long = System::currentTimeMillis,
+    sleep: (Long) -> Unit = { Thread.sleep(it) },
+): RuntimeInfo {
+    val deadline = nowMs() + timeoutMs
+    var last: RuntimeHealth? = null
+    while (nowMs() < deadline) {
+        val health = client.probe()
+        last = health
+        if (health is RuntimeHealth.Healthy && health.info.packageName == pkg) return health.info
+        sleep(250)
     }
-    throw CliError("timed out waiting for the runtime of '$pkg' to come up after inject")
+    throw CliError(
+        "timed out after ${timeoutMs}ms waiting for the runtime of '$pkg' to come up after inject" +
+            " (last probe: ${describeHealth(last)})"
+    )
+}
+
+/** The last-observed probe state, phrased for the awaitRuntime timeout error. */
+private fun describeHealth(health: RuntimeHealth?): String = when (health) {
+    null -> "never probed"
+    is RuntimeHealth.Healthy -> "healthy, but serving '${health.info.packageName}'"
+    is RuntimeHealth.Unreachable -> "unreachable (connection refused)"
+    is RuntimeHealth.Unresponsive -> "unresponsive (${health.detail})"
+    is RuntimeHealth.Foreign -> "foreign server (${health.sample})"
 }
 
 /** A selector or raw point resolved to the exact screen coordinate adb will tap. */
