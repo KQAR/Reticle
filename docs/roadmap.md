@@ -2,12 +2,13 @@
 
 **English** | [简体中文](roadmap.zh-CN.md)
 
-Four docs, four jobs. `README.md` is how to use Reticle; `docs/architecture.md`
+Four core docs, four jobs. `README.md` is how to use Reticle; `docs/architecture.md`
 is how it works today; `docs/boundaries.md` is the **Honest boundaries** table, the
 canonical list of what is structurally unreachable; **this file is where it is
 going**: what
 is left, in priority order, and which decisions are already settled so they are not
-re-litigated.
+re-litigated. Two scoped satellites hang off them and are not part of that four:
+`docs/ios.md` (the iOS seam) and `DESIGN.md` (the web panel's visual tokens).
 
 Status: 2026-08-01, tracking 0.13.0. The capture/drive/evidence backbone is complete
 and cross-platform; the **boundary-case sweep** (fifteen points) closed on

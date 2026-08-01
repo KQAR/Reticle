@@ -15,7 +15,11 @@ lives in two copies (the JSON and a verbatim block inside the page);
 `scripts/validate_architecture_map.py --fix` resyncs them and the bare script is
 a CI gate, so they cannot drift again. `docs/roadmap.md` and its `zh-CN` twin are
 checked the same way by `scripts/validate_translations.py` — heading skeletons
-only, since prose cannot be diffed across languages.
+only, since prose cannot be diffed across languages. Two scoped satellites sit
+beside those four: `docs/ios.md` owns the iOS seam (what `--target ios` supports,
+simulator vs real device, the iOS-only caveats), and `DESIGN.md` owns the web
+panel's visual language — the token spec (colors, type, surface ladder) the
+`GET /panel` CSS is meant to converge on, not a transcript of what it ships today.
 
 ## Current Shape
 
@@ -109,11 +113,9 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   `scripts/validate_plugin.py` covers BOTH pairs.
 - `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled.
   `reticle` IS the Swift host; the launcher resolves/execs `reticle-host` with the
-  native `reticle-helper` beside it. Default path ALWAYS uses the prebuilt release
-  (SHA256-verified, cached under `~/.reticle/cli` or downloaded from Releases) and
-  never silently builds from source; if the download fails it hard-stops with
-  guidance. Order: `$RETICLE_HOST` → `$RETICLE_HOME/bin` → `RETICLE_FROM_SOURCE=1`
-  (opt-in source build: Swift host + native helper) → prebuilt release.
+  native `reticle-helper` beside it. The resolution order and its env overrides
+  are documented once, in README.md -> **How the CLI is obtained** — edit there,
+  not here. What is AGENTS' job is the packaging end of it:
   `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
   agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
   arm64 only.
@@ -191,9 +193,12 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   exit (`ReticleProbeRegistry.clear()` / `Reticle.clearProbes()`). A probe nothing
   removes stays addressable on every later screen, which reads as a stale target
   rather than as a leak.
-- Runtime mutation is allowlisted (`alpha`, `visibility`, `text`,
-  `backgroundColor`, `enabled`). Compose nodes are intentionally not mutable;
-  drive declarative UI through app-owned state.
+- Runtime mutation is allowlisted — Compose nodes are intentionally not mutable;
+  drive declarative UI through app-owned state. Do not restate the allowlist here:
+  it is `allowedProperties` in
+  `reticle-agent/android/src/main/kotlin/dev/reticle/agent/MutationEngine.kt`, and
+  `skills/reticle/SKILL.md` -> **Logs and live UI patching** carries the
+  agent-facing copy. Adding a property means touching both, in that order.
 
 ## Toolchain
 
