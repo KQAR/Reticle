@@ -107,18 +107,20 @@ class SelectorResolver(
      *   - but several views stacked on the SAME rect are one target, not several
      *     — see [coincident].
      *
-     * Scoped to the topmost window, so a menu item wins over identical text left
-     * behind on the screen underneath it.
+     * Scoped to the highest window that has a match, so a menu item wins over
+     * identical text left behind on the screen underneath it — see
+     * [inHighestWindowWithMatch].
      */
     private fun labelMatch(label: String): LabelHit? {
-        val candidates = inHighestWindowWithAny(
-            documentOrder().filter { it.isVisible && it.frame != null }
-        )
         fun textOf(node: Node) = node.text ?: node.contentDescription
-        val exact = candidates.filter { textOf(it)?.trim() == label }
-        val matches = exact.ifEmpty {
-            candidates.filter { textOf(it)?.contains(label, ignoreCase = true) == true }
+        fun matchesIn(candidates: List<Node>): List<Node> {
+            val exact = candidates.filter { textOf(it)?.trim() == label }
+            return exact.ifEmpty {
+                candidates.filter { textOf(it)?.contains(label, ignoreCase = true) == true }
+            }
         }
+        val visible = documentOrder().filter { it.isVisible && it.frame != null }
+        val matches = inHighestWindowWithMatch(visible, ::matchesIn)
         // Nested duplicates are not an ambiguity: a row container repeats its
         // child's text, and an alert button wraps a label with the same string at
         // (almost) the same point. Drop any match that is an ANCESTOR of another
@@ -192,24 +194,31 @@ class SelectorResolver(
     }
 
     /**
-     * Keep only the candidates that live in the HIGHEST-stacked window containing
-     * any of them. A popup's item must win over the same words left on the screen
-     * behind it — but "topmost window" alone is the wrong rule: the system keyboard
-     * is itself a window in the scene on iOS, so hard-scoping to the top window
-     * would hide the app's own content whenever the keyboard is up. Preferring the
-     * highest window that HAS a match gives the popup precedence without ever
-     * emptying the candidate set.
+     * The matches from the HIGHEST-stacked window that has one. A popup's item
+     * must win over the same words left on the screen behind it — but "topmost
+     * window" alone is the wrong rule: the system keyboard is itself a window in
+     * the scene on iOS, so hard-scoping to the top window would hide the app's
+     * own content whenever the keyboard is up. The window scope therefore keys
+     * on windows that MATCH, not windows that merely have visible nodes (every
+     * window does — that stricter reading is exactly the top-window trap).
+     * Falls back to matching across all of [nodes] when no window matched, which
+     * also covers nodes outside any window.
      */
-    private fun inHighestWindowWithAny(nodes: List<Node>): List<Node> {
+    private fun inHighestWindowWithMatch(
+        nodes: List<Node>,
+        matchesIn: (List<Node>) -> List<Node>,
+    ): List<Node> {
         val windowRefs = snapshot.root()?.children
             ?.filter { snapshot.nodes[it]?.kind == NodeKind.window }
-            ?: return nodes
-        if (windowRefs.isEmpty()) return nodes
+            ?: return matchesIn(nodes)
+        if (windowRefs.isEmpty()) return matchesIn(nodes)
         val byWindow = nodes.groupBy { windowRefOf(it) }
         for (ref in windowRefs.asReversed()) {
-            byWindow[ref]?.takeIf { it.isNotEmpty() }?.let { return it }
+            val scoped = byWindow[ref] ?: continue
+            val found = matchesIn(scoped)
+            if (found.isNotEmpty()) return found
         }
-        return nodes
+        return matchesIn(nodes)
     }
 
     private fun windowRefOf(node: Node): String? {

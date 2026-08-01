@@ -250,10 +250,14 @@ public enum Render {
     /// [labelMatch], plus whether the match came from several views stacked on one
     /// rect — the caller reports that in `source` rather than hiding it.
     public static func labelHit(_ snapshot: Snapshot, _ label: String) throws -> LabelHit? {
-        // Scope to the HIGHEST-stacked window that contains any candidate, not
-        // simply the top window: on iOS the system keyboard is itself a window in
-        // the scene, so a strict "top window only" rule would empty the candidate
-        // set whenever it is up. This gives a popup precedence without that risk.
+        // Scope to the HIGHEST-stacked window whose candidates MATCH, not simply
+        // the top window: on iOS the system keyboard is itself a window in the
+        // scene, so a strict "top window only" rule would empty the candidate set
+        // whenever it is up. The scope must key on windows that match — every
+        // window has visible nodes (its own chrome at least), so "highest window
+        // with any candidate" degenerates into the top-window trap this comment
+        // warns about. Falls back to all visible nodes when no window matched,
+        // which also covers nodes outside any window.
         let windowRefs = (snapshot.root()?.children ?? []).filter { snapshot.nodes[$0]?.kind == .window }
         func windowRef(of node: Node) -> String? {
             var current: Node? = node
@@ -266,16 +270,21 @@ public enum Render {
         let visible = orderedRefs(snapshot).compactMap { snapshot.nodes[$0] }.filter {
             $0.isVisible && $0.frame != nil
         }
-        var candidates = visible
+        func textOf(_ node: Node) -> String? { node.text ?? node.contentDescription }
+        func matchesIn(_ candidates: [Node]) -> [Node] {
+            let exact = candidates.filter { textOf($0)?.trimmingCharacters(in: .whitespacesAndNewlines) == label }
+            return exact.isEmpty
+                ? candidates.filter { textOf($0)?.range(of: label, options: .caseInsensitive) != nil }
+                : exact
+        }
+        var matches: [Node] = []
         for ref in windowRefs.reversed() {
             let scoped = visible.filter { windowRef(of: $0) == ref }
-            if !scoped.isEmpty { candidates = scoped; break }
+            if scoped.isEmpty { continue }
+            let found = matchesIn(scoped)
+            if !found.isEmpty { matches = found; break }
         }
-        func textOf(_ node: Node) -> String? { node.text ?? node.contentDescription }
-        let exact = candidates.filter { textOf($0)?.trimmingCharacters(in: .whitespacesAndNewlines) == label }
-        let matches = exact.isEmpty
-            ? candidates.filter { textOf($0)?.range(of: label, options: .caseInsensitive) != nil }
-            : exact
+        if matches.isEmpty { matches = matchesIn(visible) }
         // Nested duplicates are not an ambiguity: a row container repeats its
         // child's text, and an alert button wraps a label with the same string at
         // nearly the same point. Drop any match that is an ANCESTOR of another and
