@@ -110,8 +110,9 @@ struct ActivationEngine {
         }
         if let ref = selector.ref, let v = index[ref] { return (ref, v) }
         if let point = selector.point {
+            // Numeric ref order, not lexicographic — see RefOrder.
             let cg = CGPoint(x: point.x, y: point.y)
-            for (ref, view) in index.sorted(by: { $0.key > $1.key }) {
+            for (ref, view) in RefOrder.descending(index) {
                 if let window = view.window {
                     let local = window.convert(cg, to: view)
                     if view.point(inside: local, with: nil) && (view is UIControl) { return (ref, view) }
