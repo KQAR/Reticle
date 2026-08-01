@@ -22,6 +22,8 @@ class InjectorGuardRestoreTest {
     private class RelaunchRefusingDevice : DeviceController {
         val shellCommands = mutableListOf<String>()
 
+        override val serialOrNull: String? = "test-serial"
+
         override fun shell(command: String, timeoutSeconds: Long): CommandResult {
             shellCommands.add(command)
             if (command.startsWith("monkey ")) throw CliError("monkey refused")

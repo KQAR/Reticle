@@ -15,6 +15,14 @@ package dev.reticle.cli.platform
  * device-construction point.
  */
 interface DeviceController {
+    /**
+     * The device serial this controller is bound to, or null for the
+     * single-attached-device default. Used as an identity key (e.g. by the
+     * forward registry): two controllers with the same serial drive the same
+     * device even when they are distinct instances.
+     */
+    val serialOrNull: String?
+
     /** Run a raw device tool subcommand (Android: `adb <args>`). */
     fun run(vararg args: String, timeoutSeconds: Long = 30): CommandResult
 
