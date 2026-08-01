@@ -26,6 +26,13 @@ struct HelperRpcResponse: Codable, Sendable {
 
 struct ReticleHelperRoutes: Sendable {
     let helper: HelperCalling?
+    /// Where the synchronous `helper.call` blocks. The call holds the helper's
+    /// `callLock` for up to its full timeout, and the Swift cooperative pool is
+    /// only about as wide as the core count — a handful of concurrent broker
+    /// requests against a wedged helper parked there would freeze EVERY other
+    /// route (events, SSE, panel, rules) for the duration. A dedicated serial
+    /// queue matches the lock's one-at-a-time reality and keeps the pool free.
+    private let callQueue = DispatchQueue(label: "reticle.helper-broker.call")
 
     func register(on router: Router<BasicRequestContext>) {
         guard let helper else { return }
@@ -49,13 +56,15 @@ struct ReticleHelperRoutes: Sendable {
                 )
             }
             let params = body.params?.mapValues(\.anyValue) ?? [:]
-            let response = await Task.detached {
-                do {
-                    return HelperRpcResponse.success(try helper.call(body.method, params))
-                } catch {
-                    return HelperRpcResponse.failure(error)
+            let response = await withCheckedContinuation { continuation in
+                callQueue.async {
+                    do {
+                        continuation.resume(returning: HelperRpcResponse.success(try helper.call(body.method, params)))
+                    } catch {
+                        continuation.resume(returning: HelperRpcResponse.failure(error))
+                    }
                 }
-            }.value
+            }
             return try jsonResponse(response)
         }
     }

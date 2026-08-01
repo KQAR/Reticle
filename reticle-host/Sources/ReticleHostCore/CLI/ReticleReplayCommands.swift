@@ -73,7 +73,10 @@ private final class DaemonFlowClient {
     private let baseURL: URL
     private let timeout: TimeInterval
 
-    init(discovery: DaemonDiscovery = DaemonDiscovery(), timeout: TimeInterval = 40.0) throws {
+    // The lane's worst honest path is 10s fetching the source flow + 35s for the
+    // replay itself (LoomCaptureLane.replay), so the client budget sits above
+    // 45s — the daemon's real answer must beat this generic timeout.
+    init(discovery: DaemonDiscovery = DaemonDiscovery(), timeout: TimeInterval = 50.0) throws {
         guard let info = discovery.readLive() else {
             throw HelperError("reticle serve is not running; start it before using reticle replay flow")
         }
@@ -110,7 +113,10 @@ private final class DaemonFlowClient {
             box.set(.success(data))
         }
         task.resume()
-        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+        // Wait slightly longer than URLSession's own timeout so its specific
+        // error (connection refused, host down, …) surfaces first, instead of
+        // this generic "timed out" racing it (matches IosAgentHTTP).
+        if semaphore.wait(timeout: .now() + timeout + 1) == .timedOut {
             task.cancel()
             throw HelperError("daemon replay API timed out")
         }

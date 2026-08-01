@@ -17,6 +17,24 @@ private final class EchoBackend: HelperCalling, @unchecked Sendable {
     }
 }
 
+/// Thread-safe tally of concurrent `start()` outcomes.
+private final class OutcomeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Result<Void, Error>] = []
+
+    func append(_ result: Result<Void, Error>) {
+        lock.lock()
+        results.append(result)
+        lock.unlock()
+    }
+
+    var successes: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.filter { if case .success = $0 { true } else { false } }.count
+    }
+}
+
 private func temporarySocketPath() -> String {
     // Keep it short: sockaddr_un caps paths at ~104 bytes.
     "/tmp/reticle-helperd-test-\(UUID().uuidString.prefix(8)).sock"
@@ -126,6 +144,40 @@ struct HelperDaemonTests {
         #expect(throws: (any Error).self) { try loser.start() }
         // The loser must not have unlinked the winner's socket.
         #expect(FileManager.default.fileExists(atPath: path))
+    }
+
+    @Test func concurrentColdStartsElectExactlyOneListener() throws {
+        // The cold-start race: two daemons start on the same path at once. The
+        // flock around probe→unlink→bind→listen must elect exactly one winner,
+        // and the loser must not have unlinked the winner's live socket.
+        for _ in 0..<5 {
+            let backend = EchoBackend()
+            let path = temporarySocketPath()
+            let servers = [makeServer(backend: backend, socketPath: path),
+                           makeServer(backend: backend, socketPath: path)]
+            let outcomes = OutcomeBox()
+            let started = DispatchSemaphore(value: 0)
+            for server in servers {
+                Thread {
+                    do {
+                        try server.start()
+                        outcomes.append(.success(()))
+                    } catch {
+                        outcomes.append(.failure(error))
+                    }
+                    started.signal()
+                }.start()
+            }
+            started.wait()
+            started.wait()
+            defer { servers.forEach { $0.stop() } }
+            #expect(outcomes.successes == 1)
+            // The winner is reachable through the socket file it bound.
+            let client = try #require(SocketHelperClient(socketPath: path, serial: nil, callTimeout: 5))
+            defer { client.close() }
+            let result = try client.call("ping")
+            #expect(result["echoedMethod"] as? String == "ping")
+        }
     }
 
     @Test func staleSocketFileIsReboundAfterACrash() throws {

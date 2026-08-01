@@ -44,7 +44,7 @@ public enum ReticleCLI {
 
     private static func runServe(_ args: Args) -> Int32 {
         do {
-            let runtime = ServeRuntime(options: ServeOptions(args: args))
+            let runtime = ServeRuntime(options: try ServeOptions(args: args))
             try runtime.run()
             return 0
         } catch {
