@@ -44,6 +44,12 @@ object Helper {
         // RETICLE_DEBUG. Real errors still surface as `ok:false` RPC responses.
         val debug = System.getenv("RETICLE_DEBUG") == "1"
         if (debug) System.err.println("reticle-helper: ready (JSONL stdio RPC)")
+        // The forwards must not leak when the exit is anything but a clean stdin
+        // EOF — a SIGTERM from the host, or an IOException escaping the loop
+        // (broken pipe on out.flush), skips the cleanup below and leaves every
+        // forward of the session on the resident adb server. The hook covers
+        // those paths; cleanup() is idempotent, so both may run.
+        Runtime.getRuntime().addShutdownHook(Thread { ForwardRegistry.cleanup() })
         generateSequence(::readLine).forEach { line ->
             if (line.isBlank()) return@forEach
             val response = handleLine(line)

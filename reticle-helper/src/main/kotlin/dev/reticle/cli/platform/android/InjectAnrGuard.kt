@@ -44,9 +44,15 @@ internal object InjectAnrGuard {
         private val previous: String?,
         /** False when the device refused the marking — nothing to undo. */
         val active: Boolean,
+        /**
+         * True when the target was ALREADY the marked debug app before install
+         * ran — a developer set it themselves. That marking predates us and must
+         * outlive us: restore leaves it alone rather than clearing it.
+         */
+        private val preexisting: Boolean = false,
     ) {
         fun restore() {
-            if (!active) return
+            if (!active || preexisting) return
             runCatching {
                 if (previous != null) device.shell("am set-debug-app --persistent $previous")
                 else device.shell("am clear-debug-app")
@@ -72,7 +78,14 @@ internal object InjectAnrGuard {
         val previous = runCatching { readDebugApp(device) }.getOrNull()
         val set = runCatching { device.shell("am set-debug-app --persistent $packageName") }.getOrNull()
         val active = set?.ok == true && !set.stdout.contains("Exception") && !set.stderr.contains("Exception")
-        return Installed(device, previous?.takeIf { it != packageName }, active)
+        // previous == target: the developer marked the app themselves, so undoing
+        // "our" marking would clear theirs — restore must be a no-op instead.
+        return Installed(
+            device,
+            previous?.takeIf { it != packageName },
+            active,
+            preexisting = previous == packageName,
+        )
     }
 
     /**
