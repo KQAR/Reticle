@@ -357,7 +357,8 @@ design). Deal with the prompt first; don't retry taps.
 `--label` is for controls the framework builds without ids: `Spinner` dropdown rows
 and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at
 all. It matches visible text / the a11y label (exact, then substring) in the topmost
-window and **refuses an ambiguous match** rather than tapping the first candidate.
+window that has a match and **refuses an ambiguous match** rather than tapping the
+first candidate.
 Two matches that are NOT an ambiguity: a nested duplicate (a row container repeating
 its child's text — the innermost wins), and several views stacked on the same rect
 (an iOS `UIPickerView` draws its magnifier bands as separate table views, so a row

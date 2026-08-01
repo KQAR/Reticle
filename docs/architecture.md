@@ -153,11 +153,15 @@ Endpoints (see `reticle-core/Protocol.kt`):
 
 ```
 GET  /runtime        RuntimeInfo
+GET  /report         UiReport (snapshot + semantics + compact, one round trip)
 GET  /snapshot       Snapshot (full view tree)
 GET  /semantics      SemanticTree
 GET  /compact        CompactObservation
 GET  /logs           LogBatch (app-authored bridge)
 GET  /screenshot     image/png
+GET  /keyboard       KeyboardInfo (system IME state, probed in-process)
+POST /keyboard/hide  KeyboardHideResult (no body; InputMethodManager, settled state)
+POST /editor-action  EditorActionResult (no body; focused field's IME action)
 POST /mutate         MutationResult  (body: MutationRequest)
 POST /clipboard      "ok"            (body: raw UTF-8 text; stages non-ASCII input)
 ```
@@ -492,7 +496,7 @@ semantic node. If you want the semantic projection instead, read
 
 The split, restated:
 
-- `ui node` / `ui subtree` → **view tree** (`Node`)
+- `ui node` / `ui tree` / `ui outline` → **view tree** (`Node`)
 - `ui tree --semantics` → **semantic tree** (`SemanticNode`)
 
 Only the **action** path (`act tap`) is semantic-first; the **inspection**

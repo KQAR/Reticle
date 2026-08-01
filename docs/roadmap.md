@@ -9,7 +9,7 @@ going**: what
 is left, in priority order, and which decisions are already settled so they are not
 re-litigated.
 
-Status: 2026-07-27, tracking 0.11.0. The capture/drive/evidence backbone is complete
+Status: 2026-08-01, tracking 0.13.0. The capture/drive/evidence backbone is complete
 and cross-platform; the **boundary-case sweep** (fifteen points) closed on
 2026-07-25. What remains is listed under [What's left](#whats-left) — no section of
 this document is a to-do list except that one.
@@ -89,15 +89,12 @@ nothing at all — and an item with nothing needs that step before it is built
 
 ### 1. Long-session hygiene — S, by construction
 
-E2E runs are long, and two known leaks bite exactly there.
+E2E runs are long, and the one known leak bites exactly there.
 
 - **`network-bodies/` grows without eviction.** A body artifact is written per flow
   and never dropped, so a long verification session leaks disk. Eviction must be
   coupled to event-ring eviction: a body is evidence a live event still references,
   so it cannot be dropped underneath it.
-- **`awaitRuntime` polls with fixed attempts × sleep**, not a wall-clock deadline
-  (`HelperRuntime.kt`) — inconsistent with `Injector.connectWithHandshake` and
-  `HelperVerify.pollForChange`, and an unresponsive probe overshoots its budget.
 
 ### 2. Test coverage where a bug has already hidden — M
 

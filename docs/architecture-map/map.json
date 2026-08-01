@@ -92,7 +92,7 @@
       "kind": "executable",
       "layer": "host",
       "sub": "GraalVM native · no JDK",
-      "detail": "The Android host layer, in Kotlin: adb wrapper, JDWP injector (Injector.kt + Jdwp.kt, a dependency-free JDWP client), input backend, loopback client and selector resolution. NOT a user-facing CLI — its only entry points are helper (a long-lived JSONL RPC server), version and help. The three platform seams sit behind the dev.reticle.cli.platform SPI.",
+      "detail": "The Android host layer, in Kotlin: adb wrapper, JDWP injector (Injector.kt + Jdwp.kt, a dependency-free JDWP client), input backend, loopback client and selector diagnostics (resolution itself is reticle-core's SelectorResolver.kt, beside its Swift twin). NOT a user-facing CLI — its only entry points are helper (a long-lived JSONL RPC server), version and help. The three platform seams sit behind the dev.reticle.cli.platform SPI.",
       "x": 300, "y": 258, "w": 240, "h": 56
     },
     {
