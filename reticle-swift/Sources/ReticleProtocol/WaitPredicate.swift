@@ -183,9 +183,13 @@ public struct WaitProbe: Codable, Sendable {
         // silently none.
         let topWindow = windowRefs.last { snapshot.nodes[$0]?.isVisible == true }
 
+        // Guarded against parentRef cycles: this runs inside the wait poll
+        // loop, and an unguarded upward walk on a malformed snapshot would hang
+        // `act wait` forever.
         func windowOf(_ ref: String) -> String? {
+            var walked = Set<String>()
             var current = snapshot.nodes[ref]
-            while let node = current {
+            while let node = current, walked.insert(node.ref).inserted {
                 if node.kind == .window { return node.ref }
                 current = node.parentRef.flatMap { snapshot.nodes[$0] }
             }

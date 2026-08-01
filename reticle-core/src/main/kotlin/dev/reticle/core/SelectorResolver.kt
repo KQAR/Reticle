@@ -186,10 +186,15 @@ class SelectorResolver(
         return frames.all { a -> frames.all { b -> b.contains(a.centerX, a.centerY) } }
     }
 
-    /** Is [candidate] a proper ancestor of [node]? */
+    /**
+     * Is [candidate] a proper ancestor of [node]? Guarded against parentRef
+     * cycles — a snapshot can come from disk or a buggy agent, and an unguarded
+     * upward walk on a cyclic one never terminates.
+     */
     private fun isAncestor(candidate: Node, node: Node): Boolean {
+        val seen = HashSet<String>()
         var current = node.parentRef?.let { snapshot.nodes[it] }
-        while (current != null) {
+        while (current != null && seen.add(current.ref)) {
             if (current.ref == candidate.ref) return true
             current = current.parentRef?.let { snapshot.nodes[it] }
         }
@@ -225,8 +230,11 @@ class SelectorResolver(
     }
 
     private fun windowRefOf(node: Node): String? {
+        // Guarded like [isAncestor]: a parentRef cycle must yield "no window",
+        // not an infinite loop.
+        val seen = HashSet<String>()
         var current: Node? = node
-        while (current != null) {
+        while (current != null && seen.add(current.ref)) {
             if (current.kind == NodeKind.window) return current.ref
             current = current.parentRef?.let { snapshot.nodes[it] }
         }
