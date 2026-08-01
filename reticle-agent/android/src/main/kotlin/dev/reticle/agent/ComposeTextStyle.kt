@@ -47,12 +47,15 @@ object ComposeTextStyle {
     }
 
     /**
-     * [densityScale] is `Configuration.densityDpi / 160`, [fontScale] the system
-     * font scale: an sp value renders at `sp * densityScale * fontScale` px, the
-     * figure `TextView.getTextSize()` reports for the same text.
+     * [layout] is the node's `TextLayoutResult`, fetched once by the caller —
+     * the semantics action that produces it re-runs text layout, so one fetch
+     * is shared with [ComposeTextRegions]. [densityScale] is
+     * `Configuration.densityDpi / 160`, [fontScale] the system font scale: an
+     * sp value renders at `sp * densityScale * fontScale` px, the figure
+     * `TextView.getTextSize()` reports for the same text.
      */
-    fun probe(semanticsNode: Any, densityScale: Float, fontScale: Float): Result {
-        val layout = SemanticsReflect.textLayoutResult(semanticsNode) ?: return Result.EMPTY
+    fun probe(layout: Any?, densityScale: Float, fontScale: Float): Result {
+        if (layout == null) return Result.EMPTY
         val input = ReticleReflect.invokeNoArgByPrefix(layout, "getLayoutInput") ?: return Result.EMPTY
         val style = ReticleReflect.invokeNoArgByPrefix(input, "getStyle")
             ?: return Result(

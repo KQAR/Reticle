@@ -2,6 +2,8 @@ package dev.reticle.agent
 
 import android.graphics.drawable.ColorDrawable
 import android.view.View
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Small reflection/inspection helpers for reading stable selectors and scalar
@@ -10,15 +12,39 @@ import android.view.View
 object ReticleReflect {
 
     /**
+     * Cache of resolved methods keyed by (declaring class, lookup key).
+     * `getMethods()` clones the class's whole Method array on every call, and
+     * these helpers run on the main thread — several times per View
+     * ([shapeMetrics]) and per Compose text node ([ComposeTextStyle]) per
+     * snapshot. Absent methods are cached too ([MISSING]), so a runtime whose
+     * shape doesn't match never rescans either.
+     */
+    private val methodCache = ConcurrentHashMap<String, Any>()
+    private val MISSING = Any()
+
+    /**
+     * Resolve a method on [target]'s class once, via [find] on a miss. [key]
+     * must encode everything [find] matches on (name, arity, prefix marker).
+     */
+    internal fun cachedMethod(target: Any, key: String, find: (Class<*>) -> Method?): Method? {
+        val cls = target.javaClass
+        val cacheKey = "${cls.name}#$key"
+        methodCache[cacheKey]?.let { return it as? Method }
+        val m = find(cls)
+        methodCache[cacheKey] = m ?: MISSING
+        return m
+    }
+
+    /**
      * Call a public no-arg method by name, or null if it isn't there / throws.
      * Used to read Compose value types (AnnotatedString ranges, link
      * annotations) without a compile-time dependency on them.
      */
     fun invokeNoArg(target: Any, name: String): Any? {
         return try {
-            target.javaClass.methods
-                .firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
-                ?.invoke(target)
+            cachedMethod(target, name) { cls ->
+                cls.methods.firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
+            }?.invoke(target)
         } catch (_: Throwable) {
             null
         }
@@ -92,12 +118,14 @@ object ReticleReflect {
      */
     fun invokeNoArgByPrefix(target: Any, prefix: String): Any? {
         return try {
-            target.javaClass.methods
-                .firstOrNull {
+            // "$prefix-*" keeps the prefix lookups in a namespace of their own,
+            // so "getFontSize" by prefix and by exact name never collide.
+            cachedMethod(target, "$prefix-*") { cls ->
+                cls.methods.firstOrNull {
                     it.parameterTypes.isEmpty() &&
                         (it.name == prefix || it.name.startsWith("$prefix-"))
                 }
-                ?.invoke(target)
+            }?.invoke(target)
         } catch (_: Throwable) {
             null
         }
