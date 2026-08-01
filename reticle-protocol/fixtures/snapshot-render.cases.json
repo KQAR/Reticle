@@ -428,7 +428,8 @@
      "#player.surface view [0,1200 1080x400] tappable pixels:unavailable",
      "#wheel.hour picker [0,1700 360x300] tappable wheel:selection-only",
      "@numberpicker_input textField \"11\" [60,1800 240x100]",
-     "#wheel.year view [400,1700 360x300] tappable wheel:opaque"
+     "#wheel.year view [400,1700 360x300] tappable wheel:opaque",
+     "#wheel.minute picker [760,1700 320x300] tappable wheel:opaque"
     ]
    },
    "snapshot": {
@@ -477,7 +478,8 @@
        "kernel",
        "video",
        "wheelA",
-       "wheelB"
+       "wheelB",
+       "wheelC"
       ],
       "parentRef": "r0"
      },
@@ -597,6 +599,40 @@
       "isInteractive": true,
       "suspectedWheel": true,
       "parentRef": "w1"
+     },
+     "wheelC": {
+      "$comment": "A NumberPicker whose selection child was cleared to whitespace: blank is NO text, so this must read opaque, not selection-only.",
+      "ref": "wheelC",
+      "kind": "view",
+      "typeName": "android.widget.NumberPicker",
+      "role": "picker",
+      "testId": "wheel.minute",
+      "frame": {
+       "x": 760,
+       "y": 1700,
+       "width": 320,
+       "height": 300
+      },
+      "isInteractive": true,
+      "suspectedWheel": true,
+      "children": [
+       "wheelCInput"
+      ],
+      "parentRef": "w1"
+     },
+     "wheelCInput": {
+      "ref": "wheelCInput",
+      "kind": "view",
+      "typeName": "android.widget.EditText",
+      "role": "textField",
+      "text": " ",
+      "frame": {
+       "x": 800,
+       "y": 1800,
+       "width": 240,
+       "height": 100
+      },
+      "parentRef": "wheelC"
      }
     }
    }
