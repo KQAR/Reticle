@@ -168,23 +168,39 @@ private fun collapseWrappers(snapshot: Snapshot, items: List<CompactItem>): Fold
             n.custom["domCssSelector"] != null
     }
     fun area(item: CompactItem): Double = item.frame?.let { it.width * it.height } ?: 0.0
-    fun related(a: CompactItem, b: CompactItem): Boolean {
-        val na = node(a) ?: return false
-        val nb = node(b) ?: return false
-        if (na.parentRef != null && na.parentRef == nb.parentRef) return true
-        fun descends(from: Node, ancestorRef: String): Boolean {
-            var current = from.parentRef?.let { snapshot.nodes[it] }
-            val seen = HashSet<String>()
-            while (current != null && seen.add(current.ref)) {
-                if (current.ref == ancestorRef) return true
-                current = current.parentRef?.let { snapshot.nodes[it] }
-            }
-            return false
+
+    // Ancestor sets are memoized per ref: `related` runs once per
+    // (anonymous, named) pair, and this function is on the wait poll's hot
+    // path (every 100-250ms) — walking the parent chain with a fresh HashSet
+    // per PAIR made a long recycling list cost millions of allocations per
+    // poll. One walk per ref, O(1) membership per pair, same cycle guard.
+    val ancestorSets = HashMap<String, Set<String>>()
+    fun ancestorsOf(node: Node): Set<String> = ancestorSets.getOrPut(node.ref) {
+        val out = HashSet<String>()
+        var current = node.parentRef?.let { snapshot.nodes[it] }
+        while (current != null && out.add(current.ref)) {
+            current = current.parentRef?.let { snapshot.nodes[it] }
         }
-        return descends(na, nb.ref) || descends(nb, na.ref)
+        out
+    }
+    fun related(na: Node, nb: Node): Boolean {
+        if (na.parentRef != null && na.parentRef == nb.parentRef) return true
+        return nb.ref in ancestorsOf(na) || na.ref in ancestorsOf(nb)
     }
 
-    val named = items.filter { identified(it) && area(it) > 0.0 }
+    // Named candidates with node, frame and area resolved ONCE — the anchor
+    // scan re-derived all three per pair. Entries whose node is missing from
+    // the snapshot are excluded up front: `related` could never hold for them
+    // (order among the rest is preserved, so anchor choice is unchanged).
+    class NamedEntry(val item: CompactItem, val node: Node, val frame: Rect, val area: Double)
+    val named = items.mapNotNull { item ->
+        if (!identified(item)) return@mapNotNull null
+        val frame = item.frame ?: return@mapNotNull null
+        val a = area(item)
+        if (a <= 0.0) return@mapNotNull null
+        val n = node(item) ?: return@mapNotNull null
+        NamedEntry(item, n, frame, a)
+    }
     if (named.isEmpty()) return Folded(items, 0)
     val absorbedInteractive = HashSet<String>()
     val dropped = HashSet<String>()
@@ -196,13 +212,12 @@ private fun collapseWrappers(snapshot: Snapshot, items: List<CompactItem>): Fold
         val self = area(item)
         if (self <= 0.0) continue
         val anchor = named.firstOrNull { other ->
-            val o = other.frame ?: return@firstOrNull false
-            val oa = area(other)
-            frame.contains(o.centerX, o.centerY) && oa <= self && self <= WRAPPER_AREA_RATIO * oa &&
-                related(item, other)
+            frame.contains(other.frame.centerX, other.frame.centerY) &&
+                other.area <= self && self <= WRAPPER_AREA_RATIO * other.area &&
+                related(n, other.node)
         } ?: continue
         dropped.add(item.ref)
-        if (item.isInteractive) absorbedInteractive.add(anchor.ref)
+        if (item.isInteractive) absorbedInteractive.add(anchor.item.ref)
     }
     if (dropped.isEmpty()) return Folded(items, 0)
     val kept = items.filterNot { it.ref in dropped }.map { item ->
