@@ -73,7 +73,7 @@ public enum SelectorResolution {
         // 1. A sub-region inside the selected node: the multi-region case that
         //    neither tree can express, since both collapse the row to one node.
         if let needle = selector.region, !needle.isEmpty {
-            guard let node = viewNode(snapshot, selector) else { return nil }
+            guard let node = try viewNode(snapshot, selector) else { return nil }
             return try resolveRegion(node: node, needle: needle)
         }
 
@@ -107,7 +107,7 @@ public enum SelectorResolution {
         }
 
         // 3. View-tree frames, for a node the semantic projection dropped.
-        if let node = viewNode(snapshot, selector), let frame = node.frame {
+        if let node = try viewNode(snapshot, selector), let frame = node.frame {
             return Resolved(point: center(frame), source: "view", ref: node.ref)
         }
         return nil
@@ -155,12 +155,16 @@ public enum SelectorResolution {
     /// whole-node path uses. One order for both paths: when the region path had
     /// its own (ref first), `--test-id X --ref Y` picked different nodes
     /// depending on whether `--region` was also present.
-    private static func viewNode(_ snapshot: Snapshot, _ selector: Selector) -> Node? {
+    private static func viewNode(_ snapshot: Snapshot, _ selector: Selector) throws -> Node? {
         if let testId = selector.testId { return firstNode(snapshot, { $0.testId == testId }) }
         if let resourceId = selector.resourceId { return firstNode(snapshot, { $0.resourceId == resourceId }) }
         if let css = selector.cssSelector { return firstNode(snapshot, { $0.domCssSelector() == css }) }
         if let ref = selector.ref { return snapshot.nodes[ref] }
-        if let label = selector.label { return try? Render.labelMatch(snapshot, label) }
+        // An ambiguous label PROPAGATES — the Kotlin twin throws here too. A
+        // `try?` would collapse "unknowable" into "absent", the exact lie
+        // `WaitVerdict` exists to prevent: the caller would read "the feature is
+        // missing" where the truth is "the selector cannot be trusted".
+        if let label = selector.label { return try Render.labelMatch(snapshot, label) }
         return nil
     }
 

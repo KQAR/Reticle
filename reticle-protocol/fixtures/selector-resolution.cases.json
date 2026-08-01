@@ -526,9 +526,36 @@
       }
     },
     {
+      "name": "an EMPTY region is no region at all: the whole-node path resolves",
+      "$comment": "region:\"\" (an empty field in a batch step) must not enter the region path — \"\" substring-matches the first labeled region on one platform while the other ignores it. Both must ignore it.",
+      "selector": {
+        "testId": "agreement",
+        "region": ""
+      },
+      "expect": {
+        "point": {
+          "x": 500.0,
+          "y": 1830.0
+        },
+        "source": "semantic:testId",
+        "ref": "n1"
+      }
+    },
+    {
       "name": "a label matching two different subtrees refuses to guess",
       "selector": {
         "label": "Rename"
+      },
+      "expect": {
+        "error": "ambiguousLabel"
+      }
+    },
+    {
+      "name": "an ambiguous label stays ambiguous when --region rides along",
+      "$comment": "The region path resolves its node through the same label rules; swallowing the ambiguity there (try?) would collapse 'unknowable' into 'absent' — the observer lie WaitVerdict exists to prevent.",
+      "selector": {
+        "label": "Rename",
+        "region": "anything"
       },
       "expect": {
         "error": "ambiguousLabel"

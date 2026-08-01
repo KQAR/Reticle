@@ -83,7 +83,13 @@ public struct CompactObservation: Codable, Sendable {
             var seen = Set<String>()
             func hasTextInside(_ ref: String) -> Bool {
                 guard let child = snapshot.nodes[ref], seen.insert(ref).inserted else { return false }
-                if ref != node.ref, !(child.text ?? "").isEmpty { return true }
+                // Blank counts as NO text, like the Kotlin twin's isNullOrBlank:
+                // a cleared NumberPicker input holds " ", and `selection-only`
+                // would send the agent to read a value that is whitespace.
+                if ref != node.ref,
+                   !(child.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return true
+                }
                 return child.children.contains(where: hasTextInside)
             }
             return hasTextInside(node.ref) ? "selection-only" : "opaque"
