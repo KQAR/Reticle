@@ -152,14 +152,13 @@ The same repo doubles as a Cursor plugin — the manifests under `.cursor-plugin
 mirror `.claude-plugin/` and share the identical `skills/` and `commands/`, so
 there is one source of truth for both editors. Add the marketplace and install
 `reticle` the same way you would any Cursor plugin; the launcher and CLI
-acquisition below are identical (the `reticle` CLI lands on PATH regardless of
-which editor installed it).
+acquisition below are identical.
 
 ### How the CLI is obtained
 
 `reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
 Android through a sibling **native helper** (`reticle-helper`, the Kotlin Android
-layer compiled by GraalVM native-image). **macOS 14+ arm64 (Apple Silicon) only.**
+layer compiled by GraalVM native-image).
 
 The launcher resolves it in this order (first hit wins):
 
@@ -176,10 +175,6 @@ By default Reticle always uses the prebuilt release — no toolchain required an
 **no silent source build**. If the download can't be obtained, the launcher
 stops with guidance rather than falling back. Verify with `reticle version`; run
 `reticle doctor` to check adb and devices. Pin a fork with `RETICLE_REPO`.
-
-Requirements on the host: Apple Silicon macOS 14+, a connected Android
-device/emulator with `adb`, and network for the prebuilt download (or
-`RETICLE_FROM_SOURCE=1` + Swift toolchain + a GraalVM).
 
 To develop or test locally without installing: `claude --plugin-dir ./` from the
 repo root.
@@ -553,10 +548,7 @@ failure. Step keys are the protocol field names, so every selector a single
 reticle act batch --package dev.reticle.sample --file steps.json \
   --trace-output reticle-batch
 
-# Stitch the recorded flow into a device-framed animated GIF: before-frames
-# show the gesture where it landed (tap ring / swipe arrow), after-frames the
-# result, captioned from the trace's gesture + selector. Host-local; works on
-# Android and iOS traces alike.
+# Stitch the recorded flow into a device-framed animated GIF (see above).
 reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 ```
 

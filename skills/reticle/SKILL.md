@@ -140,13 +140,9 @@ link the agent: you can still see the screen (and drive it via `adb`-backed
 `act`/`--point`) even when no structured tree is available.
 
 **Do not read a blank rect as "nothing was drawn."** The two capture paths are blind
-in complementary ways, and each says so: the in-process picture omits a
-`SurfaceView`'s content (its node is marked `pixels:unavailable`; on iOS the same
-mark lands on the keyboard's host window), while a device-level `screencap` of a
-`FLAG_SECURE` window comes back fully blank (that window is marked
-`screencap:blank`). `ui screenshot` prints a `degraded:` line for whatever the
-picture it just wrote is missing — when you see one, switch paths rather than
-concluding the screen is empty.
+in complementary ways and each says so (`pixels:unavailable`, `screencap:blank` —
+see **Honest boundaries** below for which path to switch to). `ui screenshot`
+prints a `degraded:` line for whatever the picture it just wrote is missing.
 
 ## Core workflow
 
@@ -314,15 +310,11 @@ background-image intrinsic dimensions are boundaries unless explicitly added
 later. CSS `background-image` itself is still visible as `domStyleBackgroundImage`.
 
 **Third-party WebView kernels have no DOM at all.** The bridge is typed on
-`android.webkit.WebView`, so an X5/TBS or UC kernel (a class that calls itself a
-WebView but is not the platform one) cannot be attached to: no `--css`, no styles,
-no piercing, at any level. This is structural, not a transient degrade — retrying
-or waiting will never produce DOM nodes. Reticle reports it instead of looking
-like an empty page: the node carries `dom:unsupported-kernel` (with the class name
-in `custom.domKernel`), and a `--css` miss on such a screen says so. Target those
-views as plain views (`--test-id` / `--point`); their in-page content is only
-reachable if the app exposes it some other way. iOS is unaffected — there is one
-web engine.
+`android.webkit.WebView`, so an X5/TBS or UC kernel cannot be attached to. This is
+structural, not a transient degrade — retrying or waiting will never produce DOM
+nodes. The node carries `dom:unsupported-kernel` with the class name in
+`custom.domKernel`, so it never looks like an empty page. iOS is unaffected —
+there is one web engine.
 
 ## Acting on the app
 
@@ -837,9 +829,8 @@ CONNECT tunnels cannot be path/body-modified. If a mock rule matches but
 its value is missing, Reticle records `network.error` and returns 502 rather
 than silently contacting upstream. `prefix` is a raw string prefix; use `exact`
 for short paths when a broader prefix could match unrelated endpoints.
-Use `--trace-output <dir>` only when you also want a copy outside the session.
-This is useful for longer demos, replayable validation, or tools that want to
-consume trace events. Do not start `serve` for a simple one-off screen read;
+
+Do not start `serve` for a simple one-off screen read;
 `ui report`, `ui node --live`, and `act --verify` stay the cheaper default paths
 — and actions record either way, so `reticle trace log` can reconstruct the run
 afterwards without the daemon.
@@ -924,13 +915,8 @@ each one.
   back what a whole run did, or `ui node --live` to read one node. Fall back to a
   full re-`ui report` only when you need the whole tree.
 - A dispatched action is not a landed one — but an empty diff is **two** findings
-  wearing one face, so do not report it as a miss on its own. `trace log` printing
-  `(no observable change between before and after …)` means either the gesture
-  reached no handler (re-target) or it reached one that answered where a snapshot
-  cannot see: a toast, a purely network round trip, another process's window.
-  Check the `! transient message shown:` line first — with a toast recovered the
-  wording changes to `(no other observable change …)`, which is evidence the
-  gesture did NOT miss.
+  wearing one face, so never report it as a miss on its own; read it as described
+  under **`trace log`** above.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.
