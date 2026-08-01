@@ -32,6 +32,7 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | `pixels:unavailable` | This node's pixels are missing from the **in-process** screenshot |
 | `screencap:blank` | This window blanks a **device-level** screenshot (`FLAG_SECURE`) |
 | `scroll:up,down` | The container has travel left, so an absent row may simply be unbound |
+| `(N more item(s) beyond this projection's cap …)` | The projection stopped listing before the tree ran out — `ui compact` keeps 200 items, `ui style` 500 (`N more style-bearing node(s) …`). Unlike a fold, the item is GONE from this view; it is still in the snapshot, reachable with `ui tree` / `ui node --ref`. Without the line a capped projection reads as the whole screen |
 | `! <property> unreadable: <reason>` | Rendered by `ui style` from `Node.styleGaps`: this node HAS that style property and no channel can read it. The property-granular form of this whole table — an absent key would read as "the app sets no corner radius" |
 | `act wait` → `UNKNOWABLE` + `reasons:` | A wait's predicate did not hold **and** one of the markers above made the answer unobservable. Distinct from `ABSENT`, which is an honest negative |
 
