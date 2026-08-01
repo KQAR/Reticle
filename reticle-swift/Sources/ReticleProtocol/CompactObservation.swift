@@ -165,22 +165,43 @@ private func collapseWrappers(_ snapshot: Snapshot, _ items: [CompactItem]) -> F
         guard let f = item.frame else { return 0 }
         return f.width * f.height
     }
-    func related(_ a: CompactItem, _ b: CompactItem) -> Bool {
-        guard let na = node(a), let nb = node(b) else { return false }
-        if let pa = na.parentRef, pa == nb.parentRef { return true }
-        func descends(_ from: Node, _ ancestorRef: String) -> Bool {
-            var current = from.parentRef.flatMap { snapshot.nodes[$0] }
-            var seen = Set<String>()
-            while let c = current, seen.insert(c.ref).inserted {
-                if c.ref == ancestorRef { return true }
-                current = c.parentRef.flatMap { snapshot.nodes[$0] }
-            }
-            return false
+    // Ancestor sets are memoized per ref: `related` runs once per
+    // (anonymous, named) pair, and this function is on the wait poll's hot
+    // path — walking the parent chain with a fresh Set per PAIR made a long
+    // list cost millions of allocations per poll. One walk per ref, O(1)
+    // membership per pair, same cycle guard. Kept identical to the Kotlin twin.
+    var ancestorSets: [String: Set<String>] = [:]
+    func ancestorsOf(_ node: Node) -> Set<String> {
+        if let cached = ancestorSets[node.ref] { return cached }
+        var out = Set<String>()
+        var current = node.parentRef.flatMap { snapshot.nodes[$0] }
+        while let c = current, out.insert(c.ref).inserted {
+            current = c.parentRef.flatMap { snapshot.nodes[$0] }
         }
-        return descends(na, nb.ref) || descends(nb, na.ref)
+        ancestorSets[node.ref] = out
+        return out
+    }
+    func related(_ na: Node, _ nb: Node) -> Bool {
+        if let pa = na.parentRef, pa == nb.parentRef { return true }
+        return ancestorsOf(na).contains(nb.ref) || ancestorsOf(nb).contains(na.ref)
     }
 
-    let named = items.filter { identified($0) && area($0) > 0 }
+    // Named candidates with node, frame and area resolved ONCE — the anchor
+    // scan re-derived all three per pair. Entries whose node is missing from
+    // the snapshot are excluded up front: `related` could never hold for them
+    // (order among the rest is preserved, so anchor choice is unchanged).
+    struct NamedEntry {
+        let item: CompactItem
+        let node: Node
+        let frame: Rect
+        let area: Double
+    }
+    let named: [NamedEntry] = items.compactMap { item in
+        guard identified(item), let frame = item.frame else { return nil }
+        let a = area(item)
+        guard a > 0, let n = node(item) else { return nil }
+        return NamedEntry(item: item, node: n, frame: frame, area: a)
+    }
     if named.isEmpty { return Folded(items: items, collapsed: 0) }
     var absorbedInteractive = Set<String>()
     var dropped = Set<String>()
@@ -192,14 +213,13 @@ private func collapseWrappers(_ snapshot: Snapshot, _ items: [CompactItem]) -> F
         let selfArea = area(item)
         if selfArea <= 0 { continue }
         let anchor = named.first { other in
-            guard let o = other.frame else { return false }
-            let oa = area(other)
-            return frame.contains(o.centerX, o.centerY) && oa <= selfArea
-                && selfArea <= wrapperAreaRatio * oa && related(item, other)
+            frame.contains(other.frame.centerX, other.frame.centerY)
+                && other.area <= selfArea && selfArea <= wrapperAreaRatio * other.area
+                && related(n, other.node)
         }
         guard let anchor else { continue }
         dropped.insert(item.ref)
-        if item.isInteractive { absorbedInteractive.insert(anchor.ref) }
+        if item.isInteractive { absorbedInteractive.insert(anchor.item.ref) }
     }
     if dropped.isEmpty { return Folded(items: items, collapsed: 0) }
     let kept = items.filter { !dropped.contains($0.ref) }.map { item -> CompactItem in
