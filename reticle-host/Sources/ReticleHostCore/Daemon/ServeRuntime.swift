@@ -31,16 +31,18 @@ public struct ServeOptions {
     public let helper: String?
     public let helperBroker: Bool
 
-    /// Creates daemon options with Reticle defaults.
-    public init(args: Args) {
+    /// Creates daemon options with Reticle defaults. Numeric flags that don't
+    /// parse throw by name — `--proxy-port abc` used to silently start the
+    /// proxy on 9090.
+    public init(args: Args) throws {
         session = args.option("session") ?? ServeOptions.defaultSessionName()
-        port = Int(args.option("port") ?? "") ?? 9876
-        eventLimit = Int(args.option("event-limit") ?? "") ?? 500
+        port = try args.intOption("port") ?? 9876
+        eventLimit = try args.intOption("event-limit") ?? 500
         rootDirectory = DaemonDiscovery.reticleHome().appendingPathComponent("sessions", isDirectory: true)
         discovery = DaemonDiscovery()
         target = args.option("target") ?? "android"
         serial = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
-        proxyPort = args.option("proxy-port").map { Int($0) ?? 9090 }
+        proxyPort = try args.intOption("proxy-port")
         proxyBind = args.option("proxy-bind") ?? "127.0.0.1"
         proxyDevice = args.option("proxy-device") == "true"
         proxyMitm = args.option("proxy-mitm") == "true"
@@ -53,8 +55,7 @@ public struct ServeOptions {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty } ?? []
-        proxyMaxRequestBodyBytes = args.option("proxy-max-request-body-mb")
-            .flatMap { Int($0) }
+        proxyMaxRequestBodyBytes = try args.intOption("proxy-max-request-body-mb")
             .map { $0 * 1024 * 1024 }
         proxyPhoneOnboard = args.option("proxy-phone-onboard") == "true"
         helper = resolveHelper(args)

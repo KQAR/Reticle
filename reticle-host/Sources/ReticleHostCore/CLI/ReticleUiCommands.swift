@@ -83,7 +83,7 @@ func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
     let result = try backend.render(RenderRequest(
         view: view,
         snapshotPath: snapshotPath,
-        depth: args.option("depth").map { Int($0) ?? 0 },
+        depth: try args.intOption("depth"),
         selector: args.hostSelector(["test-id", "resource-id", "css", "ref"]),
         package: package,
         // `--window top` (or a ref): a stacked screen puts two live windows in one

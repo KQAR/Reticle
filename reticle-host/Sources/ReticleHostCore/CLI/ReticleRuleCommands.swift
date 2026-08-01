@@ -355,7 +355,10 @@ private final class DaemonRuleClient {
             box.set(.success(data))
         }
         task.resume()
-        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+        // Wait slightly longer than URLSession's own timeout so its specific
+        // error (connection refused, host down, …) surfaces first, instead of
+        // this generic "timed out" racing it (matches IosAgentHTTP).
+        if semaphore.wait(timeout: .now() + timeout + 1) == .timedOut {
             task.cancel()
             throw HelperError("daemon rule API timed out")
         }

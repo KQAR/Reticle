@@ -45,6 +45,22 @@ final class HelperDaemonServer: @unchecked Sendable {
     /// another live daemon already owns the socket (the spawn-race loser path);
     /// a stale socket file left by a crash is unlinked and rebound.
     func start() throws {
+        // The probe→unlink→bind→listen sequence is a critical section: two
+        // cold-starting daemons can interleave so that B probes (nothing
+        // listening yet), A binds and listens, then B unlinks A's freshly bound
+        // socket and binds its own — leaving A serving an unlinked inode nobody
+        // can reach until its idle exit. An flock on a sibling `.lock` file
+        // serializes the sequence, so the loser always probes a fully live
+        // listener and takes the "already listening" path.
+        let lockFd = open(socketPath + ".lock", O_CREAT | O_RDWR, 0o644)
+        guard lockFd >= 0 else {
+            throw HelperError("open(\(socketPath).lock) failed: errno \(errno)")
+        }
+        defer { close(lockFd) } // closing the fd releases the flock
+        guard flock(lockFd, LOCK_EX) == 0 else {
+            let err = errno
+            throw HelperError("flock(\(socketPath).lock) failed: errno \(err)")
+        }
         var addr = try UnixSocket.makeAddress(socketPath)
         if FileManager.default.fileExists(atPath: socketPath) {
             if let probe = UnixSocket.connect(socketPath) {
