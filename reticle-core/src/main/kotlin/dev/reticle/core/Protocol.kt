@@ -21,6 +21,19 @@ import kotlinx.serialization.Serializable
  *   POST /editor-action   -> EditorActionResult (no body)
  *   POST /mutate          -> MutationResult   (body: MutationRequest)
  *   POST /clipboard       -> "ok"             (body: raw UTF-8 text)
+ *
+ * The Swift `Endpoints` in reticle-swift mirrors this list, with two
+ * deliberate asymmetries where the platform affordance exists on one side
+ * only:
+ *
+ * - `/editor-action` ([EDITOR_ACTION]) is Android-only; UIKit has no
+ *   equivalent "perform the return key's action" entry point, so `act type
+ *   --submit` on iOS goes through the HID return key.
+ * - `/activate` is iOS-only (`Endpoints.activate` on the Swift side, absent
+ *   here): it exists because host-side HID synthesis cannot reach a real iOS
+ *   device, which is not a problem Android has.
+ *
+ * Anything else in either list without a twin is drift, not design.
  */
 object Endpoints {
     const val RUNTIME = "/runtime"
@@ -54,6 +67,8 @@ object Endpoints {
     const val KEYBOARD_HIDE = "/keyboard/hide"
 
     /**
+     * Android-only (no iOS counterpart — see the object doc).
+     *
      * Perform the focused field's IME editor action (the keyboard's Done /
      * Next / Go / Search / Send key) from inside the app process. This is what
      * `act type --submit` prefers: TextView.onEditorAction() drives the app's

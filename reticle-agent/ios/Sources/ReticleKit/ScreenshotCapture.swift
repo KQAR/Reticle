@@ -20,8 +20,16 @@ struct ScreenshotCapture {
         }
     }
 
-    func capturePng() throws -> Data {
-        let windows = orderedWindows()
+    /// Both arguments are `nil` in production; they are the seams the tests come
+    /// in through. A unit-test process has no `UIWindowScene` (so `windows`
+    /// mirrors `SnapshotCapture`'s list argument) and no render server at all —
+    /// `drawHierarchy` always fails there — so `renderLayer` lets a test supply
+    /// window layers directly and exercise the compositing math.
+    func capturePng(
+        windows explicitWindows: [UIWindow]? = nil,
+        renderLayer: ((UIWindow, UIGraphicsImageRenderer) -> UIImage?)? = nil
+    ) throws -> Data {
+        let windows = explicitWindows ?? orderedWindows()
         guard let primaryScreen = windows.first?.screen ?? UIScreen.optionalMain else {
             throw ScreenshotError.noWindows
         }
@@ -31,6 +39,33 @@ struct ScreenshotCapture {
         layerFormat.opaque = false
         let layerRenderer = UIGraphicsImageRenderer(bounds: bounds, format: layerFormat)
 
+        // Composite into one bitmap we own, folding each window's layer in as
+        // soon as it is rendered. Collecting every layer first and compositing
+        // at the end held N full-screen bitmaps at once (~8 MB each at 3x on a
+        // large phone); this way the peak is the composite plus one layer.
+        let scale = primaryScreen.scale
+        let pixelWidth = Int((bounds.width * scale).rounded())
+        let pixelHeight = Int((bounds.height * scale).rounded())
+        guard pixelWidth > 0, pixelHeight > 0,
+              let composite = CGContext(
+                  data: nil,
+                  width: pixelWidth,
+                  height: pixelHeight,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+                      | CGBitmapInfo.byteOrder32Little.rawValue)
+        else {
+            throw ScreenshotError.encodeFailed
+        }
+        composite.setFillColor(UIColor.black.cgColor)
+        composite.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        // CoreGraphics is bottom-left origin and in pixels; flip and scale once
+        // so the UIKit draws below can use top-left points.
+        composite.translateBy(x: 0, y: CGFloat(pixelHeight))
+        composite.scaleBy(x: scale, y: -scale)
+
         // Render each window into its own transparent layer and composite only
         // the ones that actually drew. `drawHierarchy` black-fills the rect and
         // returns false when a window's content is not renderable in-process —
@@ -39,31 +74,38 @@ struct ScreenshotCapture {
         // shared context it blacked out every screenshot after the first
         // keyboard appearance. A window that fails to render is skipped
         // honestly rather than allowed to cover the app content below it.
-        var layers: [UIImage] = []
+        var composited = false
         for window in windows {
-            var drawn = false
-            let layer = layerRenderer.image { _ in
-                // Draw each window at its own screen origin so a presented sheet
-                // or alert renders over the base window.
-                drawn = window.drawHierarchy(in: window.frame, afterScreenUpdates: false)
-            }
-            if drawn { layers.append(layer) }
-        }
-        guard !layers.isEmpty else { throw ScreenshotError.noWindows }
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = primaryScreen.scale
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
-        let image = renderer.image { context in
-            UIColor.black.setFill()
-            context.fill(bounds)
-            for layer in layers {
+            autoreleasepool {
+                let rendered = renderLayer.map { $0(window, layerRenderer) }
+                    ?? defaultLayer(for: window, renderer: layerRenderer)
+                guard let layer = rendered else { return }
+                // Push per layer rather than around the whole loop: the layer
+                // renderer pushes a context of its own, and nesting ours inside
+                // it would leave the current-context stack to luck.
+                UIGraphicsPushContext(composite)
                 layer.draw(at: .zero)
+                UIGraphicsPopContext()
+                composited = true
             }
         }
+        guard composited else { throw ScreenshotError.noWindows }
+
+        guard let cgImage = composite.makeImage() else { throw ScreenshotError.encodeFailed }
+        let image = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
         guard let data = image.pngData() else { throw ScreenshotError.encodeFailed }
         return data
+    }
+
+    /// One window's layer, or nil when it refused to render in-process.
+    private func defaultLayer(for window: UIWindow, renderer: UIGraphicsImageRenderer) -> UIImage? {
+        var drawn = false
+        let layer = renderer.image { _ in
+            // Draw each window at its own screen origin so a presented sheet or
+            // alert renders over the base window.
+            drawn = window.drawHierarchy(in: window.frame, afterScreenUpdates: false)
+        }
+        return drawn ? layer : nil
     }
 
     private func orderedWindows() -> [UIWindow] {
