@@ -515,6 +515,12 @@ Replay re-sends from the capture engine's bounded in-memory ring, so an older
 exchange stays fully evidenced in `events.jsonl` while no longer being replayable;
 `GET /sessions/current/flows` stamps every result `replayableOnly` so an empty
 list reads as "nothing replayable matches" rather than "this never happened".
+The filter runs inside the engine's store — `host`, `method`, `urlContains`,
+`status`, `onlyErrors`, `sinceMillis`, plus `headerContains` (`x-env: staging`
+must hit one header on both halves) and `bodyContains` (raw bytes of what was
+*captured*, so a miss on a `bodyCaptureTruncated` flow proves nothing about the
+wire). An exchange imported into the engine from a HAR carries `importedFrom`
+rather than passing as something this session observed.
 
 ## Batching and quick smoke
 

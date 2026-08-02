@@ -1,5 +1,5 @@
 {
-  "originHash" : "3af36807c40db09786029b7220a62a9f6a803752ba61755f95bc4fa03d51c690",
+  "originHash" : "bb359d01ce323c6a24e5f62b8563b02a35f3ed031277b0d8d23086c303295eb4",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/KQAR/Loom.git",
       "state" : {
-        "revision" : "63891d50dedd0ea243756796c50eda4477ffa562",
-        "version" : "0.0.5"
+        "revision" : "50aa2901886610cf261fb653d66084a389a88ef0",
+        "version" : "0.0.12"
       }
     },
     {

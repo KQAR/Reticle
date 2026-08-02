@@ -35,6 +35,8 @@ struct ReticleFlowRoutes: Sendable {
                 statusMax: try exact ?? integer("statusMax"),
                 onlyErrors: string("onlyErrors") == "true",
                 since: (try integer("sinceMillis")).map { Date(timeIntervalSince1970: Double($0) / 1000) },
+                headerContains: string("headerContains"),
+                bodyContains: string("bodyContains"),
                 limit: (try integer("limit")) ?? 50
             )
             do {

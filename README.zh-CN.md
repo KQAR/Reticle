@@ -461,6 +461,11 @@ reticle replay flow <request-id> --set-headers '{"X-Debug":"1"}' --remove-header
 replay 是从捕获引擎的有界内存 ring 里重发的,所以更早的交换在 `events.jsonl` 里证据
 完整、但已经不能再重放;`GET /sessions/current/flows` 会给每个结果打上
 `replayableOnly`,让"空列表"读作"没有可重放的匹配项",而不是"这事没发生过"。
+过滤在引擎的 store 里跑:`host`、`method`、`urlContains`、`status`、
+`onlyErrors`、`sinceMillis`,外加 `headerContains`(`x-env: staging` 这种带冒号
+的写法要求同一个 header 上两半都命中)和 `bodyContains`(匹配**已捕获**的原始
+字节,所以在 `bodyCaptureTruncated` 的流上没命中并不能证明线上没有这串字节)。
+从 HAR 导入引擎的交换会带 `importedFrom`,不会冒充成本次会话观察到的流量。
 
 ## 批量动作与快速冒烟
 
