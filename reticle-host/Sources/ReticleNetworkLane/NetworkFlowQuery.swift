@@ -24,9 +24,22 @@ public struct NetworkFlowFilter: Sendable {
     public var onlyErrors: Bool
     /// Only flows started at or after this instant.
     public var since: Date?
-    // Header/body substring predicates exist in Loom on main but not in the pinned
-    // 0.0.5, so they are deliberately absent here rather than half-implemented
-    // Reticle-side over a different corpus.
+    /// Case-insensitive substring of a request or response header. Without a colon it
+    /// matches a header's name or its value (`authorization` finds the header,
+    /// `Bearer ey` finds the token); with one it splits into `name: value` and both
+    /// halves must hit the *same* header, so `x-env: staging` cannot be satisfied by
+    /// an `x-env` header plus an unrelated `staging` elsewhere. Loom's semantics
+    /// verbatim — this filter runs inside its store, not over a Reticle-side copy.
+    public var headerContains: String?
+    /// Case-insensitive substring of the captured request *or* response body, matched
+    /// over raw bytes (a non-UTF-8 payload is searched too).
+    ///
+    /// Matched against what was **captured**, not what was on the wire: a body past
+    /// the capture cap is recorded as a prefix, so a miss on a flow reporting
+    /// `bodyCaptureTruncated` is not proof the bytes never flowed. This is the one
+    /// predicate that costs more than a metadata scan — the store hydrates a
+    /// candidate's body only after every cheap predicate has already passed.
+    public var bodyContains: String?
     /// Newest-first cap on the result count. The filter runs over everything
     /// retained *before* this applies, so a match older than `limit` exchanges is
     /// still findable — the whole point of filtering next to the store.
@@ -40,6 +53,8 @@ public struct NetworkFlowFilter: Sendable {
         statusMax: Int? = nil,
         onlyErrors: Bool = false,
         since: Date? = nil,
+        headerContains: String? = nil,
+        bodyContains: String? = nil,
         limit: Int = 50
     ) {
         self.host = host
@@ -49,6 +64,8 @@ public struct NetworkFlowFilter: Sendable {
         self.statusMax = statusMax
         self.onlyErrors = onlyErrors
         self.since = since
+        self.headerContains = headerContains
+        self.bodyContains = bodyContains
         self.limit = max(1, min(limit, 500))
     }
 }
@@ -72,6 +89,11 @@ public struct NetworkFlowSummary: Codable, Equatable, Sendable {
     /// True when a capture cap clipped one of this flow's bodies — the same caveat
     /// the capture events carry, so a summary can't read as whole when it isn't.
     public let bodyCaptureTruncated: Bool?
+    /// Set when this exchange was imported into the engine (a HAR) instead of
+    /// observed on the wire this session, naming where it came from. Absent means
+    /// captured live. Imported flows are replayable like any other, which is exactly
+    /// why the list has to say which ones they are.
+    public let importedFrom: String?
 }
 
 /// The result set plus the caveats that make a miss readable.

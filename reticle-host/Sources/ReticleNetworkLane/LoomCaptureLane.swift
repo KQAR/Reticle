@@ -472,6 +472,12 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
         if let error = flow.error {
             payload.error = error
         }
+        // Imported traffic (a HAR loaded into the engine) rides the same live stream
+        // as captured traffic. It is still evidence — it can be inspected, diffed and
+        // replayed — but it is evidence of somebody else's session, so it says so.
+        if let importedFrom = flow.importedFrom {
+            payload.importedFrom = importedFrom
+        }
         // A rule that acted is recorded on the flow as the rule name, which we set to
         // the Reticle rule id (see `translate`). We look the rule back up to carry the
         // route that fired (`ruleAction`) and, for a mock route, its value id.
@@ -692,7 +698,8 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
             receiveMs: flow.receiveMS,
             requestBodyBytes: flow.request.fullBodyBytes ?? flow.request.body?.count,
             responseBodyBytes: flow.response?.fullBodyBytes ?? flow.response?.body?.count,
-            bodyCaptureTruncated: truncated ? true : nil
+            bodyCaptureTruncated: truncated ? true : nil,
+            importedFrom: flow.importedFrom
         )
     }
 

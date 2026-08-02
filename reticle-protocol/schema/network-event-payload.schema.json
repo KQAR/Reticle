@@ -140,6 +140,10 @@
       "description": "On a network.replay event, the source flow id this exchange was replayed from.",
       "type": "string"
     },
+    "importedFrom": {
+      "description": "Present when this exchange was imported into the capture engine (a HAR file) rather than observed on the wire this session, naming where it came from. Absent means captured live.",
+      "type": "string"
+    },
     "diff": {
       "description": "On a network.replay event, the diff of the replayed response vs the original. Header lists carry names only, never values.",
       "type": "object",
