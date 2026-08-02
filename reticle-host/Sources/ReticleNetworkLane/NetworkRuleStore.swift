@@ -456,6 +456,30 @@ public final class NetworkRuleStore: @unchecked Sendable {
 
     @discardableResult
     public func upsertRule(_ request: NetworkRuleRequest) throws -> NetworkRule {
+        let rule = try validatedRule(request)
+        lock.lock()
+        defer { lock.unlock() }
+        upsertLocked(rule, into: &rules)
+        try saveRulesLocked()
+        return rule
+    }
+
+    @discardableResult
+    public func upsertValue(_ request: NetworkMockValueRequest) throws -> NetworkMockValue {
+        try validateID(request.id, field: "value id")
+        lock.lock()
+        defer { lock.unlock() }
+        let existing = values.first { $0.id == request.id }
+        let value = try materializedValue(request, existing: existing)
+        upsertLocked(value, into: &values)
+        try saveValuesLocked()
+        return value
+    }
+
+    /// Validate + normalize a rule request into the record to store. Pure: takes
+    /// no lock and touches no state, so a batch (`importPackage`) can validate
+    /// everything up front and only then commit.
+    private func validatedRule(_ request: NetworkRuleRequest) throws -> NetworkRule {
         try validateID(request.id, field: "rule id")
         guard !request.method.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw NetworkRuleError.invalid("method is required")
@@ -468,38 +492,25 @@ public final class NetworkRuleStore: @unchecked Sendable {
             throw NetworkRuleError.invalid("url is not a valid regular expression: \(request.url)")
         }
         try validateActions(request.actions)
-        let host = normalizedHost(request.host)
-        let query = normalizedQuery(request.query)
-        lock.lock()
-        defer { lock.unlock() }
-        let rule = NetworkRule(
+        return NetworkRule(
             id: request.id,
             enabled: request.enabled ?? true,
             priority: request.priority ?? 0,
             method: request.method.uppercased(),
             url: request.url,
             match: match,
-            host: host,
-            query: query,
+            host: normalizedHost(request.host),
+            query: normalizedQuery(request.query),
             actions: request.actions
         )
-        if let index = rules.firstIndex(where: { $0.id == request.id }) {
-            rules[index] = rule
-        } else {
-            rules.append(rule)
-        }
-        try saveRulesLocked()
-        return rule
     }
 
-    @discardableResult
-    public func upsertValue(_ request: NetworkMockValueRequest) throws -> NetworkMockValue {
-        try validateID(request.id, field: "value id")
-
-        lock.lock()
-        defer { lock.unlock() }
-        let existingIndex = values.firstIndex(where: { $0.id == request.id })
-        let existing = existingIndex.map { values[$0] }
+    /// Validate a value request against whatever it replaces, write its body
+    /// file, and return the record to store. Call with the lock held.
+    private func materializedValue(
+        _ request: NetworkMockValueRequest,
+        existing: NetworkMockValue?
+    ) throws -> NetworkMockValue {
         let status = request.status ?? existing?.status ?? 200
         guard (100...599).contains(status) else {
             throw NetworkRuleError.invalid("status must be between 100 and 599")
@@ -518,20 +529,29 @@ public final class NetworkRuleStore: @unchecked Sendable {
         } else if existing == nil {
             try Data().write(to: bodiesDirectory.appendingPathComponent(bodyRef), options: [.atomic])
         }
-        let value = NetworkMockValue(
+        return NetworkMockValue(
             id: request.id,
             status: status,
             headers: headers,
             bodyRef: bodyRef,
             contentType: contentType
         )
-        if let index = existingIndex {
-            values[index] = value
+    }
+
+    private func upsertLocked(_ rule: NetworkRule, into list: inout [NetworkRule]) {
+        if let index = list.firstIndex(where: { $0.id == rule.id }) {
+            list[index] = rule
         } else {
-            values.append(value)
+            list.append(rule)
         }
-        try saveValuesLocked()
-        return value
+    }
+
+    private func upsertLocked(_ value: NetworkMockValue, into list: inout [NetworkMockValue]) {
+        if let index = list.firstIndex(where: { $0.id == value.id }) {
+            list[index] = value
+        } else {
+            list.append(value)
+        }
     }
 
     @discardableResult
@@ -602,30 +622,59 @@ public final class NetworkRuleStore: @unchecked Sendable {
         return NetworkRuleExport(rules: snapshot.0, values: exportedValues)
     }
 
+    /// Apply a whole exported package in one pass.
+    ///
+    /// Deliberately not a loop over `upsertValue`/`upsertRule`: that took the
+    /// lock and rewrote both index files 2N times for an N-entry package, and
+    /// fired `onChange` (a full rule re-sync into the capture lane) just as
+    /// often. This validates everything first, commits to copies, and persists
+    /// once per file — so a rejected entry anywhere in the package also leaves
+    /// the in-memory index untouched instead of half-applied.
     public func importPackage(_ package: NetworkRuleExport) throws {
         for value in package.values {
-            _ = try upsertValue(NetworkMockValueRequest(
-                id: value.id,
-                status: value.status,
-                headers: value.headers,
-                body: nil,
-                bodyBase64: value.bodyBase64,
-                contentType: value.contentType
+            try validateID(value.id, field: "value id")
+        }
+        let incomingRules = try package.rules.map {
+            try validatedRule(NetworkRuleRequest(
+                id: $0.id,
+                enabled: $0.enabled,
+                priority: $0.priority,
+                method: $0.method,
+                url: $0.url,
+                match: $0.match,
+                host: $0.host,
+                query: $0.query,
+                actions: $0.actions
             ))
         }
-        for rule in package.rules {
-            _ = try upsertRule(NetworkRuleRequest(
-                id: rule.id,
-                enabled: rule.enabled,
-                priority: rule.priority,
-                method: rule.method,
-                url: rule.url,
-                match: rule.match,
-                host: rule.host,
-                query: rule.query,
-                actions: rule.actions
-            ))
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        var nextValues = values
+        for value in package.values {
+            let materialized = try materializedValue(
+                NetworkMockValueRequest(
+                    id: value.id,
+                    status: value.status,
+                    headers: value.headers,
+                    body: nil,
+                    bodyBase64: value.bodyBase64,
+                    contentType: value.contentType
+                ),
+                existing: nextValues.first { $0.id == value.id }
+            )
+            upsertLocked(materialized, into: &nextValues)
         }
+        var nextRules = rules
+        for rule in incomingRules {
+            upsertLocked(rule, into: &nextRules)
+        }
+
+        values = nextValues
+        rules = nextRules
+        if !package.values.isEmpty { try saveValuesLocked() }
+        if !package.rules.isEmpty { try saveRulesLocked() }
     }
 
     public func resolve(_ request: NetworkRuleRequestContext) throws -> NetworkRuleResult? {

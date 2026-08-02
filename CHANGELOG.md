@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+The five findings the 2026-08-01 audit left as low priority, closed. No new
+capability; two of them change a reading, three are cost or clarity.
+
+- **A `real` metadata value spells the same on both agents.** `displayString()`
+  feeds `verify --custom` matching and trace diffs, and the two runtimes dressed
+  their digits differently: Kotlin `1.0E17` / `Infinity` / `NaN` against Swift
+  `1e+17` / `inf` / `nan`. An expectation written against an Android capture
+  therefore missed the identical iOS one. The Java spelling is now canonical on
+  both sides (it is a specified format; Swift's is not), pinned by twin tables in
+  `MetadataRealFormatTest` / `MetadataRealFormatTests`. Residual and documented:
+  for a few subnormals the runtimes still choose different digits.
+
+- **The two `Endpoints` lists say where they deliberately differ.** Each called
+  itself a mirror of the other while `/activate` existed only on iOS and
+  `/editor-action` only on Android, with nothing saying so — a reader had to
+  guess whether a missing endpoint was a platform fact or an unfinished port.
+  Both are annotated with the affordance that justifies them, and the doc now
+  states that anything else without a twin is drift.
+
+- **The in-process iOS screenshot no longer holds N full-screen bitmaps.** It
+  rendered every window into its own layer, kept them all, and composited at the
+  end — on a large phone at 3x that is ~8 MB per attached window, peaking inside
+  the app under observation. Windows are now folded into one bitmap as each is
+  rendered, so the peak is the composite plus one layer. `ScreenshotCaptureTests`
+  pins the compositing that moved into hand-written CoreGraphics: order,
+  orientation, scale, and the skip of a window that refuses to render.
+
+- **`screen.keyboard`'s pre-notification fallback stopped walking the tree.**
+  Before the first keyboard notification arrives (agent injected into an app that
+  has not focused a field yet), the monitor infers visibility from the first
+  responder — and it found it by recursing through every view of every window, on
+  every capture, forever, for an app that never focuses one. It asks UIKit's
+  responder chain directly now.
+
+- **`network rules import` writes once per file instead of 2N times.** An
+  N-entry package looped through the single-entry upsert, taking the store lock,
+  rewriting both index files and firing a full rule re-sync into the capture lane
+  for every rule and every value. The package is validated up front, applied to
+  copies, and persisted once — which also makes a rejected entry leave the index
+  untouched rather than half-applied.
+
 ## 0.14.0 - 2026-08-01
 
 An audit batch with no new capability in it: eighteen code changes, every one of

@@ -36,6 +36,22 @@ sealed class MetadataValue {
         is Text -> value
         is Bool -> value.toString()
         is Integer -> value.toString()
-        is Real -> value.toString()
+        is Real -> canonicalRealString(value)
+    }
+
+    companion object {
+        /**
+         * Canonical spelling of a `real`. `displayString()` feeds `verify
+         * --custom` matching and trace diffs, so the same value captured on
+         * either agent has to spell identically — and Swift's `String(Double)`
+         * dresses its digits differently (`1e+17` / `inf` / `nan`). This
+         * spelling is the canonical one because it is specified
+         * (`java.lang.Double.toString`: plain decimal with at least one
+         * fraction digit for `1e-3 <= |v| < 1e7`, `d.dddEn` otherwise,
+         * `NaN`/`Infinity`/`-Infinity`) where Swift's is not; the Swift side
+         * re-dresses its output to match in
+         * `MetadataValue.canonicalRealString`. Keep the two in lockstep.
+         */
+        fun canonicalRealString(value: Double): String = value.toString()
     }
 }
