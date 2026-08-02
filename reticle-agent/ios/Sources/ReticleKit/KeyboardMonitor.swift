@@ -76,24 +76,39 @@ final class KeyboardMonitor {
         return before
     }
 
-    private func textInputFirstResponder() -> UIView? {
-        for scene in UIApplication.shared.connectedScenes {
-            guard let windowScene = scene as? UIWindowScene else { continue }
-            for window in windowScene.windows {
-                if let responder = firstResponder(in: window), responder is UIKeyInput {
-                    return responder
-                }
-            }
-        }
-        return nil
+    /// The current first responder, if it takes keyboard input.
+    ///
+    /// Asks UIKit instead of walking the view tree: `sendAction(to: nil)`
+    /// delivers to the first responder directly, so this is O(1) where the walk
+    /// was O(views) — and it ran on *every* capture until the first keyboard
+    /// notification arrived, which for an app that never focuses a text field
+    /// is every capture, forever. It also sees responders the walk missed (a
+    /// view controller, or any non-view responder in the chain).
+    ///
+    /// Boundary: the dispatch goes to the key window's scene, so a first
+    /// responder in some *other* foreground scene (a multi-scene iPad app) is
+    /// not seen. It also finds nothing in a process with no connected scene,
+    /// which is why the unit tests skip that case rather than assert it — but
+    /// so did the walk, which enumerated the same (empty) scene list.
+    private func textInputFirstResponder() -> UIResponder? {
+        let probe = FirstResponderProbe()
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.reticleReportFirstResponder(_:)), to: nil, from: probe, for: nil)
+        guard let responder = probe.responder, responder is UIKeyInput else { return nil }
+        return responder
     }
+}
 
-    private func firstResponder(in view: UIView) -> UIView? {
-        if view.isFirstResponder { return view }
-        for subview in view.subviews {
-            if let found = firstResponder(in: subview) { return found }
-        }
-        return nil
+/// Carries the answer back out of the responder-chain dispatch above.
+private final class FirstResponderProbe {
+    var responder: UIResponder?
+}
+
+private extension UIResponder {
+    /// Prefixed because this is injected into a host app that may define
+    /// selectors of its own; the name has to stay unique in the ObjC runtime.
+    @objc func reticleReportFirstResponder(_ sender: Any?) {
+        (sender as? FirstResponderProbe)?.responder = self
     }
 }
 

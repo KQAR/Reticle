@@ -81,4 +81,50 @@ struct NetworkRuleStoreTests {
         #expect(reloaded.listRules().first?.actions.route.label == "block")
         #expect(reloaded.listRules().first?.actions.delayMs == 100)
     }
+
+    @Test func importAppliesTheWholePackageWithOneSyncPerFile() throws {
+        let store = try makeStore()
+        var syncs = 0
+        store.onChange = { syncs += 1 }
+        let package = NetworkRuleExport(
+            rules: (0..<5).map {
+                NetworkRule(id: "r\($0)", enabled: true, priority: 0, method: "GET",
+                            url: "/api/\($0)", match: .prefix, host: nil, query: nil,
+                            actions: NetworkRuleActions(route: .mock(valueId: "v\($0)")))
+            },
+            values: (0..<5).map {
+                NetworkMockExportValue(id: "v\($0)", status: 200, headers: [:],
+                                       contentType: "application/json",
+                                       bodyBase64: Data("{\"i\":\($0)}".utf8).base64EncodedString())
+            }
+        )
+        try store.importPackage(package)
+
+        #expect(store.listRules().count == 5)
+        #expect(store.listValues().count == 5)
+        // One values write + one rules write, not 2N.
+        #expect(syncs == 2)
+        let resolved = try store.resolve(
+            NetworkRuleRequestContext(method: "GET", url: "http://h/api/3", path: "/api/3"))
+        #expect(resolved?.rule.id == "r3")
+        #expect(resolved.flatMap { $0.body.map { String(decoding: $0, as: UTF8.self) } } == "{\"i\":3}")
+    }
+
+    @Test func aRejectedEntryLeavesTheIndexUntouched() throws {
+        let store = try makeStore()
+        try store.upsertRule(request(id: "keep", url: "/api", actions: NetworkRuleActions(route: .block)))
+        let bad = NetworkRuleExport(
+            rules: [
+                NetworkRule(id: "ok", enabled: true, priority: 0, method: "GET", url: "/a",
+                            match: .prefix, host: nil, query: nil,
+                            actions: NetworkRuleActions(route: .block)),
+                NetworkRule(id: "bad", enabled: true, priority: 0, method: "GET", url: "(",
+                            match: .regex, host: nil, query: nil,
+                            actions: NetworkRuleActions(route: .block)),
+            ],
+            values: []
+        )
+        #expect(throws: NetworkRuleError.self) { try store.importPackage(bad) }
+        #expect(store.listRules().map(\.id) == ["keep"])
+    }
 }

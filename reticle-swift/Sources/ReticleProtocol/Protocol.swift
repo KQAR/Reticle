@@ -1,7 +1,18 @@
 import Foundation
 
 /// Wire endpoints shared by the in-app server and the host. Mirrors
-/// reticle-core's `Endpoints`.
+/// reticle-core's `Endpoints` — with two deliberate asymmetries, because the
+/// underlying platform affordance exists on one side only:
+///
+/// - `activate` (`/activate`) is **iOS-only**. It has no Android counterpart:
+///   there, host-side HID synthesis reaches a real device, so an in-process
+///   activation path is not needed.
+/// - `/editor-action` is **Android-only** (`Endpoints.EDITOR_ACTION` in
+///   reticle-core, absent here). It drives `TextView.onEditorAction()`; UIKit
+///   has no equivalent "perform the return key's action" entry point, so
+///   `act type --submit` on iOS goes through the HID return key instead.
+///
+/// Anything else in either list without a twin is drift, not design.
 public enum Endpoints {
     public static let runtime = "/runtime"
     public static let report = "/report"
@@ -13,6 +24,7 @@ public enum Endpoints {
     public static let mutate = "/mutate"
     public static let clipboard = "/clipboard"
 
+    /// iOS-only (no Android counterpart — see the type doc).
     /// In-process control activation (POST, body: ActivationRequest). The agent
     /// resolves the selector to a control and fires its action from *inside* the
     /// app, so it works on a real device where host-side HID synthesis cannot
