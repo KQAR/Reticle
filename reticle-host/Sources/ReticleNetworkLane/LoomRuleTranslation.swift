@@ -142,7 +142,9 @@ extension LoomCaptureLane {
             statusMin: filter.statusMin,
             statusMax: filter.statusMax,
             onlyErrors: filter.onlyErrors,
-            since: filter.since
+            since: filter.since,
+            headerContains: filter.headerContains,
+            bodyContains: filter.bodyContains
         )
     }
 }

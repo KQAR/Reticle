@@ -95,6 +95,44 @@ struct LoomCaptureLaneTests {
         #expect(number(error!, "durationMs") == 300)
     }
 
+    // MARK: - Imported traffic
+
+    /// A HAR loaded into the engine arrives on the same live stream as real captures.
+    /// It stays in the evidence — it is replayable and diffable like any other flow —
+    /// but it must never read as something this session observed on the wire.
+    @Test func animportedFlowSaysWhereItCameFrom() {
+        let sink = RecordingSink()
+        defer { sink.cleanUp() }
+        let lane = makeLane(sink)
+
+        lane.handle(Flow(
+            request: CapturedRequest(method: "GET", url: "https://api.example.com/orders", headers: []),
+            startedAt: epoch,
+            outcome: .completed(CapturedResponse(statusCode: 200, headers: []), at: epoch.addingTimeInterval(0.1)),
+            importedFrom: "checkout-session.har"
+        ))
+
+        let request = sink.ofType("network.request").last
+        let response = sink.ofType("network.response").last
+        #expect(string(request!, "importedFrom") == "checkout-session.har")
+        #expect(string(response!, "importedFrom") == "checkout-session.har")
+    }
+
+    /// The label's absence is what makes its presence mean anything.
+    @Test func aLiveCaptureCarriesNoImportLabel() {
+        let sink = RecordingSink()
+        defer { sink.cleanUp() }
+        let lane = makeLane(sink)
+
+        lane.handle(Flow(
+            request: CapturedRequest(method: "GET", url: "https://api.example.com/orders", headers: []),
+            startedAt: epoch,
+            outcome: .completed(CapturedResponse(statusCode: 200, headers: []), at: epoch.addingTimeInterval(0.1))
+        ))
+
+        #expect(sink.ofType("network.response").last!.payload["importedFrom"] == nil)
+    }
+
     // MARK: - WebSocket frames
 
     @Test func openSocketEmitsFramesWithoutWaitingForClose() {

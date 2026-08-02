@@ -30,7 +30,7 @@ let package = Package(
         .package(path: "../reticle-swift"),
         // Loom's capture engine, consumed as an SPM library so the host network
         // lane doesn't maintain its own SwiftNIO proxy/MITM.
-        .package(url: "https://github.com/KQAR/Loom.git", exact: "0.0.5"),
+        .package(url: "https://github.com/KQAR/Loom.git", exact: "0.0.12"),
     ],
     targets: [
         // Dependency-free foundation shared by the host and the network lane:

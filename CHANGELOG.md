@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Loom 0.0.5 → 0.0.12, and the three things that upgrade changed.** The bump
+  itself is source-compatible (nothing in the engine API Reticle drives moved),
+  but the newer engine can now be handed a HAR — and imported exchanges ride the
+  same live flow stream as real captures, persist, and replay like any other.
+  Unlabelled, someone else's capture would have landed in `events.jsonl` reading
+  as evidence of what the app under test just did. `importedFrom` now names the
+  file it came from, on the `network.*` payload and on every
+  `GET /sessions/current/flows` summary; its absence is what makes a flow a live
+  capture, and the new boundaries row says so.
+
+  The same endpoint gains `headerContains` and `bodyContains`, which had been
+  left out with a comment saying they existed only on Loom's main branch. Both
+  are Loom's semantics verbatim rather than a Reticle-side reimplementation over
+  a different corpus: `x-env: staging` must hit one header on both halves, and
+  the body predicate matches what was *captured*, so a miss on a flow reporting
+  `bodyCaptureTruncated` proves nothing about the wire.
+
+  Third, `docs/boundaries.md` no longer calls Loom's flow-stream drops
+  "genuinely silent" — 0.0.12 counts them per subscriber and logs them. They
+  remain unreadable through any API, so the row stays; only its claim narrowed.
+
 The five findings the 2026-08-01 audit left as low priority, closed. No new
 capability; two of them change a reading, three are cost or clarity.
 

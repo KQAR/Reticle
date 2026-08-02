@@ -48,7 +48,8 @@ struct FlowQueryRouteTests {
 
         let url = URL(string: "http://127.0.0.1:\(server.port)/sessions/current/flows"
             + "?host=*.example.com&method=GET,POST&urlContains=/orders&status=404"
-            + "&onlyErrors=true&sinceMillis=1700000000000&limit=7")!
+            + "&onlyErrors=true&sinceMillis=1700000000000"
+            + "&headerContains=x-env:%20staging&bodyContains=orderId&limit=7")!
         let (_, response) = try await URLSession.shared.data(from: url)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
 
@@ -61,6 +62,10 @@ struct FlowQueryRouteTests {
         #expect(filter.statusMax == 404)
         #expect(filter.onlyErrors)
         #expect(filter.since == Date(timeIntervalSince1970: 1_700_000_000))
+        // Passed through verbatim, colon and space included: the `name: value` form
+        // is Loom's, and re-interpreting it here would fork the vocabulary.
+        #expect(filter.headerContains == "x-env: staging")
+        #expect(filter.bodyContains == "orderId")
         #expect(filter.limit == 7)
     }
 
@@ -77,6 +82,8 @@ struct FlowQueryRouteTests {
         #expect(filter.methods == nil)
         #expect(filter.statusMin == nil)
         #expect(filter.onlyErrors == false)
+        #expect(filter.headerContains == nil)
+        #expect(filter.bodyContains == nil)
         #expect(filter.limit == 50)
     }
 
@@ -105,7 +112,8 @@ struct FlowQueryRouteTests {
             requestId: "abc", method: "POST", url: "https://api.example.com/orders",
             host: "api.example.com", status: 500, error: nil, startMillis: 1_700_000_000_000,
             durationMs: 120, ttfbMs: 100, receiveMs: 20,
-            requestBodyBytes: 10, responseBodyBytes: 20, bodyCaptureTruncated: true
+            requestBodyBytes: 10, responseBodyBytes: 20, bodyCaptureTruncated: true,
+            importedFrom: nil
         )
         let querier = StubQuerier(result: NetworkFlowQueryResult(
             flows: [summary], truncatedToLimit: true, replayableOnly: true))
