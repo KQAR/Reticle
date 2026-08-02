@@ -86,6 +86,13 @@ struct NetworkEventPayload {
     var mockValueId: String?
     /// On a `network.replay` event, the source flow id this was replayed from.
     var replayedFrom: String?
+    /// Names the file this exchange was imported from (a HAR loaded into the capture
+    /// engine) when it did NOT happen on this machine's wire during this session.
+    /// Loom puts imported flows on the same live stream as captured ones — that is
+    /// deliberate on its side, they are meant to be inspectable and replayable the
+    /// same way — so without this field someone else's capture would read as evidence
+    /// of what the app under test just did.
+    var importedFrom: String?
     /// On a `network.replay` event, the diff of the replayed response vs the original.
     var diff: NetworkReplayDiff?
 
@@ -130,6 +137,7 @@ struct NetworkEventPayload {
         if let ruleAction { values["ruleAction"] = .string(ruleAction) }
         if let mockValueId { values["mockValueId"] = .string(mockValueId) }
         if let replayedFrom { values["replayedFrom"] = .string(replayedFrom) }
+        if let importedFrom { values["importedFrom"] = .string(importedFrom) }
         if let diff {
             var d: [String: JSONValue] = [
                 "statusChanged": .bool(diff.statusChanged),
