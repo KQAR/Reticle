@@ -887,10 +887,37 @@ echo "$FORM_COMPACT" | grep -q 'invalid:"Enter a valid postcode"' \
 # is both the signal that it IS a field and the only thing that says which one.
 echo "$FORM_COMPACT" | grep -q 'disabled placeholder:"City"' \
   || { echo "FAIL: a disabled input must be captured and marked disabled, not omitted"; exit 1; }
-# NOT asserted here: the same field flipping to enabled once the app unlocks it.
-# Driving that needs `act type` into a DOM input, which currently reports
-# `textLanded=unreadable` and lands nothing — docs/blind-agent-gaps.md, section B.
-# Asserting it now would pin a workaround; it belongs with that fix.
+
+# 7. The whole form driven with NO coordinates, and every step verified from the
+# field's own text. Three things had to be true at once for this to work, and each
+# was separately broken:
+#   - `--label` taps the field first (it was missing from `type`'s selector list,
+#     so the text went to whatever already held focus and still reported success);
+#   - `--label` matches a placeholder (an empty input on such a form has no id, no
+#     value and no accessible name — the grey prompt is the whole handle);
+#   - the read-back applies to DOM inputs at all (it was refused for every one of
+#     them while `value` and `placeholder` were captured as one string).
+R act type --package "$PKG" --label "First name" --text "Ada" | tee "$TMP/type-first.txt"
+grep -q "textLanded=exact" "$TMP/type-first.txt" \
+  || { echo "FAIL: a DOM input must be read back, not reported unreadable"; exit 1; }
+grep -q "text=Ada" "$TMP/type-first.txt" \
+  || { echo "FAIL: the read-back must report the field's own text"; exit 1; }
+grep -q "focusedVia=label" "$TMP/type-first.txt" \
+  || { echo "FAIL: type must TAP a --label target before dispatching"; exit 1; }
+R act type --package "$PKG" --label "Email" --text "ada@example.com" >/dev/null
+R act type --package "$PKG" --label "Postcode" --text "00-001" >/dev/null
+FILLED="$(R ui compact --live --package "$PKG")"
+echo "$FILLED" | grep -q '"Ada" .*placeholder:"First name"' \
+  || { echo "FAIL: the value and the placeholder must both be readable, side by side"; exit 1; }
+echo "$FILLED" | grep -q '"ada@example.com"' \
+  || { echo "FAIL: the email did not land in the email field"; exit 1; }
+
+# 8. The disabled field flips once the app unlocks it — the other half of 6, now
+# that a DOM field can actually be typed into.
+echo "$FILLED" | grep -q 'placeholder:"City"' \
+  || { echo "FAIL: the city field vanished after being enabled"; exit 1; }
+echo "$FILLED" | grep -q 'disabled placeholder:"City"' \
+  && { echo "FAIL: the city field must stop reading disabled once the app enables it"; exit 1; }
 
 echo "== COMPOUND FIELDS: type verifies focus, not dispatch =="
 # The shape real forms are built from: the unique id is on the WRAPPER and the

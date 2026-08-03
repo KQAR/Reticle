@@ -382,7 +382,7 @@ travel it fails loudly — that is the honest "nothing under that selector came 
 view", not a claim about the app.
 
 `act type` types **any** text. Give it a targeting selector (`--test-id`,
-`--css`, `--point`, …) and it taps that field first so the text lands in *that*
+`--label`, `--css`, `--point`, …) and it taps that field first so the text lands in *that*
 field; with no selector it types into whatever currently holds focus. Text is
 **inserted at the cursor** (standard Android input) — it does not clear the
 field, so clear first (or mutate the value) when you need replacement rather
@@ -455,6 +455,19 @@ and the field's actual `text=`:
 - `unreadable` — no read-back was possible; `textReadback=unavailable:<reason>`
   names why (no text channel on the field, runtime unreachable, field gone).
   **Never** a claim that it landed.
+
+**Web forms read back like any other field.** They used to be the one place this
+whole check did not apply: every DOM input answered
+`unavailable:dom-input-value-not-separable-from-placeholder`, so no `type` into a
+web form could be verified and the partial/none recovery — which only fires on a
+classified loss — could never fire there at all. Both are gone now that a DOM
+input's value and its placeholder are separate fields. Two consequences worth
+knowing: an empty input reads as **empty**, not as unreadable (the agents omit a
+blank value, so there is no `text` at all), and a DOM node that is not an input
+says `unavailable:dom-node-is-not-a-text-input` rather than the generic
+"no text field". The read-back also re-reads a DOM field up to three times: the
+characters go in through the IME and the page's own handlers run afterwards, so
+the first read can legitimately still show the old value.
 
 On `partial` / `none` — and only when the field was empty to begin with — `type`
 clears it and re-sends the text over the clipboard, which the app sees as one

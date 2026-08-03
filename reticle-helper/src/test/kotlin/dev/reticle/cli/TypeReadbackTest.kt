@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
@@ -165,5 +166,72 @@ class TypeReadbackTest {
             nodes = mapOf("app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application")),
         )
         assertNull(TypeReadback.refind(empty, before.nodes["r7"]!!))
+    }
+
+    /**
+     * A web form used to be structurally unreadable: `isTextField` returned false
+     * for every DOM node, so `type` into any web input reported
+     * `textLanded=unreadable` no matter what happened — and the partial/none
+     * recovery, which only fires on a classified loss, could never fire for a web
+     * form at all. The reason given (`dom-input-value-not-separable-from-
+     * placeholder`) was true while the bridge emitted `value || placeholder` as one
+     * string; it does not any more, and neither does the wall.
+     */
+    private fun domTree(value: String? = null, role: String = "textField"): Snapshot {
+        val nodes = LinkedHashMap<String, Node>()
+        nodes["app"] = Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("web"))
+        nodes["web"] = Node(
+            ref = "web", parentRef = "app", kind = NodeKind.view,
+            typeName = "android.webkit.WebView", role = "container",
+            frame = Rect(0.0, 200.0, 1080.0, 2000.0), isInteractive = true,
+            // The host view owns the platform focus while the caret is in the DOM.
+            isFocusable = true, isFocused = true, children = listOf("dom"),
+        )
+        nodes["dom"] = Node(
+            ref = "dom", parentRef = "web", kind = NodeKind.domNode,
+            typeName = "DOMElement", role = role, text = value,
+            frame = Rect(40.0, 400.0, 900.0, 100.0), isInteractive = true,
+            custom = mapOf("domPlaceholder" to MetadataValue.Text("Postcode")),
+        )
+        return Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+            rootRef = "app",
+            nodes = nodes,
+        )
+    }
+
+    @Test
+    fun aDomInputIsTheFieldToReadBack() {
+        // The WebView holds the platform focus, so the focus-first lookup finds no
+        // text field and the resolved target is the answer — as it is for Compose.
+        assertEquals("dom", TypeReadback.field(domTree(), targetRef = "dom")?.ref)
+    }
+
+    @Test
+    fun anEmptyDomInputIsEmptyNotUnreadable() {
+        // The agents omit a blank value, so an empty input carries no `text` at all.
+        // Reading that as "no text channel" turned the commonest state a field can
+        // be in into a missing check — and one that looks like a wall, not a zero.
+        val field = TypeReadback.field(domTree(value = null), targetRef = "dom")
+        assertEquals("dom", field?.ref)
+        assertNull(TypeReadback.valueOf(field!!))
+        // ...and the placeholder is NOT what comes back as the value.
+        assertEquals(
+            TypeReadback.Landed.EXACT,
+            TypeReadback.classify(before = "", after = "00-001", typed = "00-001").landed,
+        )
+    }
+
+    @Test
+    fun aDomElementThatIsNotATextInputSaysSoPrecisely() {
+        // A button or a wrapper div is not "no text field on screen" — it is this
+        // node not being an input, which is a different thing to tell the caller.
+        val snapshot = domTree(role = "button")
+        assertNull(TypeReadback.field(snapshot, targetRef = "dom"))
+        assertEquals(
+            TypeReadback.Unavailable.DOM_NOT_INPUT,
+            TypeReadback.whyUnreadable(snapshot, targetRef = "dom"),
+        )
     }
 }
