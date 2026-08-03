@@ -270,6 +270,26 @@ limit exists, what was measured, and which route was tried and rejected.
   slept device rejects `devicectl process launch` and suspends the app). A free
   developer account caps installs at 3 apps/device, and automatic signing needs
   the team's Apple ID actually signed into Xcode (a keychain cert is not enough).
+  Two more, measured on the same device: the first install of a given signing
+  identity needs a **manual trust** on the phone (Settings > General > VPN &
+  Device Management > the `Apple Development: …` profile) — until then
+  `devicectl process launch` fails with `invalid code signature, inadequate
+  entitlements or its profile has not been explicitly trusted`, which names three
+  causes for one interactive fix — and the device project's SwiftPM state lives
+  under its own DerivedData, so a fresh `-derivedDataPath` re-mirrors every
+  dependency from the network (lottie-ios is a ~176M full-history clone) even
+  though the simulator path already has it in `sample-app-ios/.build/checkouts`.
+  Pass `-clonedSourcePackagesDirPath <copy of that .build>` to reuse it; the
+  script does, into a temp copy, since Xcode rewrites `workspace-state.json`.
+- **`ui screenshot` on a real device is the agent's in-process render, with no
+  fallback.** `simctl io screenshot` is simulator-only, so the device path has
+  exactly one source: the app rendering its own windows into a borrowed context
+  (`via: agent`; validated on-device at native 1284×2778). What is NOT this app's
+  window is absent from the picture with no second path to recover it — the
+  **status bar** (SpringBoard draws it: bar is blank in the PNG), the system
+  keyboard's host window, and any other process's UI. On the simulator those are
+  recoverable with a device-level `xcrun simctl io <udid> screenshot`; on a device
+  they are not, and the `degraded:` line is the whole answer.
 - **SwiftUI addressability = accessibility.** A SwiftUI element surfaces as an
   `axElement` only when it is exposed through the platform accessibility tree
   (i.e. carries `.accessibilityIdentifier(...)` / a label). Elements with no
