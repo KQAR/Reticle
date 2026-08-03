@@ -127,6 +127,9 @@ public struct CompactObservation: Codable, Sendable {
                         isInteractive: node.isInteractive,
                         windowRef: currentWindow,
                         isFocused: node.isFocused,
+                        checked: node.checked,
+                        placeholder: node.domPlaceholder(),
+                        invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
                         wheel: wheelMarker(node),
@@ -268,6 +271,19 @@ public struct CompactItem: Codable, Sendable {
     /// True when this node holds input focus — where typed text will go. At most
     /// one item in an observation carries it.
     public var isFocused: Bool
+    /// Toggle state when this item is a checkable control, nil when it is not one.
+    /// Rendered as ` checked` / ` unchecked` / ` checked:mixed`. Nil and `.off`
+    /// are different answers and stay different: a consent row used to render
+    /// identically before and after a tap ticked it. See the Kotlin twin.
+    public var checked: CheckedState?
+    /// A DOM input's `placeholder`. Never merged into `label` — a placeholder is
+    /// what a field ASKS for, `label` is what it HOLDS, and folding the two made
+    /// an empty field and a filled one project identically.
+    public var placeholder: String?
+    /// Set when the field declares itself invalid (`aria-invalid`), carrying its
+    /// `aria-describedby` message (empty when it names none). Without it a
+    /// validation error is a sibling node belonging to nothing.
+    public var invalid: String?
     /// What sits on top of this node's tap point, when anything does: the ref
     /// of a higher z-order window (a dialog/popup covering a background page),
     /// or `CompactObservation.occluderKeyboard` for the system keyboard. A tap
@@ -308,6 +324,9 @@ public struct CompactItem: Codable, Sendable {
         isInteractive: Bool = false,
         windowRef: String? = nil,
         isFocused: Bool = false,
+        checked: CheckedState? = nil,
+        placeholder: String? = nil,
+        invalid: String? = nil,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
         wheel: String? = nil,
@@ -326,6 +345,9 @@ public struct CompactItem: Codable, Sendable {
         self.isInteractive = isInteractive
         self.windowRef = windowRef
         self.isFocused = isFocused
+        self.checked = checked
+        self.placeholder = placeholder
+        self.invalid = invalid
         self.occludedBy = occludedBy
         self.scroll = scroll
         self.wheel = wheel
@@ -347,6 +369,16 @@ public struct CompactItem: Codable, Sendable {
         if !isEnabled { state += " disabled" }
         if isInteractive { state += " tappable" }
         if isFocused { state += " focused" }
+        switch checked {
+        case .on: state += " checked"
+        case .off: state += " unchecked"
+        case .mixed: state += " checked:mixed"
+        case nil: break
+        }
+        if let placeholder { state += " placeholder:\"\(placeholder.clipCodePoints(40))\"" }
+        if let invalid {
+            state += invalid.isEmpty ? " invalid" : " invalid:\"\(invalid.clipCodePoints(40))\""
+        }
         if let occludedBy { state += " occluded-by:\(occludedBy)" }
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         if let wheel { state += " wheel:\(wheel)" }
@@ -359,7 +391,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case isFocused, windowRef, occludedBy, scroll, wheel
+        case isFocused, checked, placeholder, invalid, windowRef, occludedBy, scroll, wheel
         case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -375,6 +407,9 @@ public struct CompactItem: Codable, Sendable {
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         try c.encodeIfPresent(windowRef, forKey: .windowRef)
         if isFocused { try c.encode(isFocused, forKey: .isFocused) }
+        try c.encodeIfPresent(checked, forKey: .checked)
+        try c.encodeIfPresent(placeholder, forKey: .placeholder)
+        try c.encodeIfPresent(invalid, forKey: .invalid)
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
         try c.encodeIfPresent(wheel, forKey: .wheel)
@@ -396,6 +431,9 @@ public struct CompactItem: Codable, Sendable {
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         windowRef = try c.decodeIfPresent(String.self, forKey: .windowRef)
         isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
+        checked = try c.decodeIfPresent(CheckedState.self, forKey: .checked)
+        placeholder = try c.decodeIfPresent(String.self, forKey: .placeholder)
+        invalid = try c.decodeIfPresent(String.self, forKey: .invalid)
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
         wheel = try c.decodeIfPresent(String.self, forKey: .wheel)

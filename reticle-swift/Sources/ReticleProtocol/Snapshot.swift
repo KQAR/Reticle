@@ -20,6 +20,17 @@ public enum NodeKind: String, Codable, Sendable {
 /// render, while a `drawableReflect` read walked a private `Drawable` field and
 /// can be stale on a themed or animated background. A consumer comparing against
 /// a design needs to know which it is holding.
+/// Toggle state of a checkable control. See `Node.checked` — the absence of this
+/// value is itself an answer ("not a checkable control"), which is why the field
+/// is optional rather than a `Bool` defaulting to false.
+public enum CheckedState: String, Codable, Sendable {
+    case on
+    case off
+    /// A tri-state control (a "select all" that covers a partial selection):
+    /// `aria-checked="mixed"`, Android `ToggleableState.Indeterminate`.
+    case mixed
+}
+
 public enum StyleChannel: String, Codable, Sendable {
     /// A public field/getter on the platform view or its layer.
     case viewField
@@ -197,6 +208,14 @@ public struct Node: Codable, Sendable {
     /// Does this node hold input focus right now? At most one node in a tree does.
     /// The post-condition `act type` checks after tapping its target field.
     public var isFocused: Bool
+    /// Toggle state of a checkable control, or nil when this node is not
+    /// checkable at all.
+    ///
+    /// Nil and `.off` are deliberately different answers. "There is no checkbox
+    /// here" and "there is a checkbox and it is unticked" lead to opposite next
+    /// actions, and a plain `Bool` would have collapsed them — which is how a
+    /// consent row reads as unticked forever. See the Kotlin twin.
+    public var checked: CheckedState?
     public var custom: [String: MetadataValue]
     /// Where each style-bearing entry of `custom` was read from, keyed by the same
     /// property name. Absent for non-style properties, so it doubles as the
@@ -240,6 +259,7 @@ public struct Node: Codable, Sendable {
         isInteractive: Bool = false,
         isFocusable: Bool = false,
         isFocused: Bool = false,
+        checked: CheckedState? = nil,
         custom: [String: MetadataValue] = [:],
         styleChannels: [String: StyleChannel] = [:],
         styleGaps: [String: String] = [:],
@@ -265,6 +285,7 @@ public struct Node: Codable, Sendable {
         self.isInteractive = isInteractive
         self.isFocusable = isFocusable
         self.isFocused = isFocused
+        self.checked = checked
         self.custom = custom
         self.styleChannels = styleChannels
         self.styleGaps = styleGaps
@@ -285,6 +306,22 @@ public struct Node: Codable, Sendable {
     public func domUnavailable() -> Bool {
         if case .text(let v)? = custom["domStatus"] { return v == "unavailable" }
         return false
+    }
+
+    /// A DOM input's `placeholder` attribute, kept apart from its value.
+    public func domPlaceholder() -> String? {
+        if case .text(let v)? = custom["domPlaceholder"] { return v }
+        return nil
+    }
+
+    /// The message this field declares itself invalid with: `""` when it sets
+    /// `aria-invalid` and names nothing, the `aria-describedby` text when it does,
+    /// nil when the field does not declare itself invalid. Three states, because
+    /// "valid" and "invalid, reason not stated" are different readings.
+    public func domInvalidMessage() -> String? {
+        guard case .bool(true)? = custom["domInvalid"] else { return nil }
+        if case .text(let v)? = custom["domDescribedBy"] { return v }
+        return ""
     }
 
     /// True when this node is a **suspected third-party WebView kernel** (X5/TBS,
@@ -329,12 +366,19 @@ public struct Node: Codable, Sendable {
             || contentDescription != nil
             || !(text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || isInteractive
+            // A DISABLED input is not interactive and, on a form built from
+            // framework components, has no id, no label and no value — so every
+            // clause above is false and it used to be filtered out of the
+            // projection entirely. Measured: address fields disabled until a
+            // postcode unlocked them were absent from the compact view, which
+            // reads as "the app has no such field" rather than "not ready yet".
+            || domPlaceholder() != nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
         case text, testId, frame, isVisible, isEnabled, isInteractive
-        case isFocusable, isFocused, custom
+        case isFocusable, isFocused, checked, custom
         case styleChannels, styleGaps
         case children, regions, suspectedMultiRegion, suspectedWheel, charGrid, scroll
     }
@@ -361,6 +405,7 @@ public struct Node: Codable, Sendable {
         if isInteractive { try c.encode(isInteractive, forKey: .isInteractive) }
         if isFocusable { try c.encode(isFocusable, forKey: .isFocusable) }
         if isFocused { try c.encode(isFocused, forKey: .isFocused) }
+        try c.encodeIfPresent(checked, forKey: .checked)
         if !custom.isEmpty { try c.encode(custom, forKey: .custom) }
         if !styleChannels.isEmpty { try c.encode(styleChannels, forKey: .styleChannels) }
         if !styleGaps.isEmpty { try c.encode(styleGaps, forKey: .styleGaps) }
@@ -389,6 +434,7 @@ public struct Node: Codable, Sendable {
         isInteractive = try c.decodeIfPresent(Bool.self, forKey: .isInteractive) ?? false
         isFocusable = try c.decodeIfPresent(Bool.self, forKey: .isFocusable) ?? false
         isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
+        checked = try c.decodeIfPresent(CheckedState.self, forKey: .checked)
         custom = try c.decodeIfPresent([String: MetadataValue].self, forKey: .custom) ?? [:]
         styleChannels = try c.decodeIfPresent([String: StyleChannel].self, forKey: .styleChannels) ?? [:]
         styleGaps = try c.decodeIfPresent([String: String].self, forKey: .styleGaps) ?? [:]

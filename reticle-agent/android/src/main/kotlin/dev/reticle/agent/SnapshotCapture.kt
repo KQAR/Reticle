@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.TextView
+import dev.reticle.core.CheckedState
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
@@ -222,6 +223,7 @@ class SnapshotCapture(
             // moves no focus into it — the false positive this field exists to avoid.
             isFocusable = view.isFocusableInTouchMode,
             isFocused = view.isFocused,
+            checked = checkedStateOf(view),
             custom = style.values +
                 screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
                 foreignWebKernel(view),
@@ -372,6 +374,20 @@ class SnapshotCapture(
      * under its parent's honest `wheel:selection-only`. A wheel is a COLUMN; the text
      * inside one is its selection.
      */
+    /**
+     * Toggle state, for the views that have one. `Checkable` is the platform's
+     * own contract for it (`CheckBox`, `Switch`, `RadioButton`, `ToggleButton`),
+     * so this is a reading, not a heuristic.
+     *
+     * Null for everything else on purpose: reporting `off` for a plain `TextView`
+     * would make "not checkable" indistinguishable from "unticked", which is the
+     * confusion the tri-state exists to remove. See [CheckedState].
+     */
+    private fun checkedStateOf(view: View): CheckedState? {
+        val checkable = view as? android.widget.Checkable ?: return null
+        return if (checkable.isChecked) CheckedState.on else CheckedState.off
+    }
+
     private fun suspectedWheel(view: View): Boolean {
         if (view is TextView) return false
         return view is android.widget.NumberPicker || WHEEL_CLASS_NAME.containsMatchIn(view.javaClass.name)

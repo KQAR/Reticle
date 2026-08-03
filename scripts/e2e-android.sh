@@ -784,6 +784,85 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== WEB FORM SEMANTICS (role by type, placeholder, checked, invalid) =="
+# The shape the complex fixture is the opposite of: a form built out of framework
+# components, where no input carries an id, a data-testid or a value. What used to
+# come back was several identical `textField` lines separable only by y-coordinate,
+# every input type flattened to `textField`, and no toggle state anywhere — so the
+# only way to read a consent box was a screenshot.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario form >/dev/null 2>&1
+wait_compact "$PKG" "First name"
+FORM_COMPACT="$(R ui compact --live --package "$PKG")"
+echo "$FORM_COMPACT"
+
+# 1. An input's TYPE is its role. `domInputType` was already captured and then
+# discarded by the mapping, which turned a consent checkbox into a text field.
+echo "$FORM_COMPACT" | grep -q 'checkbox .*Accept the terms' \
+  || { echo "FAIL: input[type=checkbox] must project as role checkbox"; exit 1; }
+echo "$FORM_COMPACT" | grep -q 'radio .*Plan A' \
+  || { echo "FAIL: input[type=radio] must project as role radio"; exit 1; }
+echo "$FORM_COMPACT" | grep -q 'slider .*Volume' \
+  || { echo "FAIL: input[type=range] must project as role slider"; exit 1; }
+echo "$FORM_COMPACT" | grep -Eq 'button .*(Confirm|submit-form)' \
+  || { echo "FAIL: input[type=submit] must project as role button, not textField"; exit 1; }
+
+# 2. Toggle state is readable, and its THIRD state is the absent one. `unchecked`
+# and "no checkbox here" lead to opposite next actions.
+echo "$FORM_COMPACT" | grep -q 'Accept the terms.* unchecked' \
+  || { echo "FAIL: an unticked checkbox must render ' unchecked'"; exit 1; }
+echo "$FORM_COMPACT" | grep -q 'Plan A.* checked' \
+  || { echo "FAIL: a checked radio must render ' checked'"; exit 1; }
+echo "$FORM_COMPACT" | grep -q 'Select all consents.* checked:mixed' \
+  || { echo "FAIL: aria-checked=mixed must render ' checked:mixed'"; exit 1; }
+# The value-shadows-label case, asserted directly rather than only through the tap
+# above: this radio's `value` is "b" and its only human-readable name is its label.
+R act tap --package "$PKG" --label "Plan B" >/dev/null \
+  || { echo "FAIL: --label must reach a control whose value shadows its aria-label"; exit 1; }
+sleep 1
+R ui compact --live --package "$PKG" | grep -q 'Plan B.* checked' \
+  || { echo "FAIL: the radio --label selected did not become checked"; exit 1; }
+# The state must FOLLOW the app, not be captured once: tick it and read it back.
+# This tap is also the assertion for `--label` reaching an aria-labelled control:
+# these carry no id and no visible text, so `--label` is the only selector the
+# skill documents for them — and it used to match `text ?? contentDescription`,
+# a fallback, so the input's `value` shadowed its label and none of them resolved.
+R act tap --package "$PKG" --label "Accept the terms" >/dev/null
+R ui compact --live --package "$PKG" | grep -q 'Accept the terms.* checked' \
+  || { echo "FAIL: checked state must track the live control after a tap"; exit 1; }
+
+# 3. Placeholder is its own field, never folded into the value. Folding them made
+# an empty field and a filled one project identically — which is also why
+# `act type`'s read-back could not tell whether text had landed.
+echo "$FORM_COMPACT" | grep -q 'placeholder:"First name"' \
+  || { echo "FAIL: an empty input must carry its placeholder as placeholder:, not as its text"; exit 1; }
+echo "$FORM_COMPACT" | grep -q '"First name"' && \
+  echo "$FORM_COMPACT" | grep -Eq 'textField "First name"' \
+  && { echo "FAIL: a placeholder must not be projected as the field's VALUE"; exit 1; }
+
+# 4. The accessible name resolved through aria-labelledby, the way a screen reader
+# resolves it — a separate element, not an attribute on the input.
+echo "$FORM_COMPACT" | grep -q '"Document number"' \
+  || { echo "FAIL: aria-labelledby must resolve to the referenced element's text"; exit 1; }
+
+# 5. An invalid field says so AND carries its own message. Without the pairing the
+# error text is an ordinary sibling node belonging to nothing.
+echo "$FORM_COMPACT" | grep -q 'invalid:"Enter a valid postcode"' \
+  || { echo "FAIL: aria-invalid + aria-describedby must render as invalid:\"<message>\""; exit 1; }
+
+# 6. A DISABLED input is CAPTURED rather than absent. It used to fail every clause
+# of `hasTargetingSignal` at once — not interactive, no id, no label, no value — so
+# a form's not-yet-unlocked fields were missing from the projection entirely, which
+# reads as "the app has no such field" rather than "not ready yet". The placeholder
+# is both the signal that it IS a field and the only thing that says which one.
+echo "$FORM_COMPACT" | grep -q 'disabled placeholder:"City"' \
+  || { echo "FAIL: a disabled input must be captured and marked disabled, not omitted"; exit 1; }
+# NOT asserted here: the same field flipping to enabled once the app unlocks it.
+# Driving that needs `act type` into a DOM input, which currently reports
+# `textLanded=unreadable` and lands nothing — docs/blind-agent-gaps.md, section B.
+# Asserting it now would pin a workaround; it belongs with that fix.
+
 echo "== COMPOUND FIELDS: type verifies focus, not dispatch =="
 # The shape real forms are built from: the unique id is on the WRAPPER and the
 # EditText inside it reuses a generic one. A tap on the wrapper focuses nothing,

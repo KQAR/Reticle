@@ -115,11 +115,18 @@ class SelectorResolver(
      * [inHighestWindowWithMatch].
      */
     private fun labelMatch(label: String): LabelHit? {
-        fun textOf(node: Node) = node.text ?: node.contentDescription
+        // BOTH names, not one falling back to the other. A control that carries a
+        // value AND an accessible label — `<input type=radio value="b"
+        // aria-label="Plan B">` is the everyday case — had its label shadowed by
+        // the value, so `--label "Plan B"` could not resolve the very control whose
+        // only human-readable name is that label. Measured on a form fixture: every
+        // aria-labelled checkbox and radio was unreachable by `--label`, which is
+        // the selector the skill documents for exactly these controls.
+        fun namesOf(node: Node) = listOfNotNull(node.text, node.contentDescription)
         fun matchesIn(candidates: List<Node>): List<Node> {
-            val exact = candidates.filter { textOf(it)?.trim() == label }
+            val exact = candidates.filter { node -> namesOf(node).any { it.trim() == label } }
             return exact.ifEmpty {
-                candidates.filter { textOf(it)?.contains(label, ignoreCase = true) == true }
+                candidates.filter { node -> namesOf(node).any { it.contains(label, ignoreCase = true) } }
             }
         }
         val visible = documentOrder().filter { it.isVisible && it.frame != null }
