@@ -143,6 +143,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 
 ## Architecture Rules
 
+- This repository is public: name nothing outside it — no third-party app names,
+  no account-specific ids (team, udid, host) — in the tree, commit messages, or
+  PR descriptions; record the OS version and entitlements instead, and pass ids
+  on the command line.
 - The agent observes app state. It is not the place where input events are
   synthesized — real input comes from the host via `adb shell input`.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
