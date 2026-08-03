@@ -30,6 +30,10 @@
             </intent-filter>
         </activity>
         <activity
+            android:name="dev.reticle.sample.NestedWebViewScenarioActivity"
+            android:exported="false"
+            android:label="Nested WebViews" />
+        <activity
             android:name="dev.reticle.sample.CheckoutScenarioActivity"
             android:exported="false"
             android:label="Checkout Controls" />

@@ -784,6 +784,35 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== DOM GEOMETRY UNDER ZOOM AND STACKING (coordinate taps, not activation) =="
+# Every other web fixture renders 1:1 in a single full-bleed WebView — the one
+# arrangement where a wrong page-to-device fold and a right one agree. These two
+# don't, and both assert with a COORDINATE tap: DOM activation would fire the
+# handler even if the reported geometry were nonsense, so it proves nothing here.
+#
+# 1. Zoom. A zoomed WebView keeps its LAYOUT viewport (`window.innerWidth`) and
+# scales only what it paints, so a fold derived from innerWidth alone looks like it
+# must be off by the zoom factor. It is not — this pins that it stays right.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario scaled >/dev/null 2>&1
+wait_compact "$PKG" "scaled.target"
+R act tap --package "$PKG" --test-id scaled.target >/dev/null
+wait_compact "$PKG" "Scaled target hit" \
+  || { echo "FAIL: a coordinate tap under zoom did not land on the element"; exit 1; }
+
+# 2. Two live WebViews in one window, the second inset on BOTH axes and its target
+# deep into its own page — so the rect is only right if the overlay's own container
+# offset and the page offset are both accumulated. A rect computed against the
+# backdrop's origin is plausible, and lands on the backdrop.
+open_scenario scenario.nestedWebViews nested.overlayButton
+R act tap --package "$PKG" --test-id nested.overlayButton >/dev/null
+wait_compact "$PKG" "Overlay hit" \
+  || { echo "FAIL: a coordinate tap in a stacked WebView did not land on the overlay"; exit 1; }
+# And the backdrop underneath was NOT the thing that got hit.
+R ui compact --live --package "$PKG" | grep -q "Backdrop hit" \
+  && { echo "FAIL: the tap fell through to the backdrop WebView"; exit 1; }
+
 echo "== WEB FORM SEMANTICS (role by type, placeholder, checked, invalid) =="
 # The shape the complex fixture is the opposite of: a form built out of framework
 # components, where no input carries an id, a data-testid or a value. What used to
