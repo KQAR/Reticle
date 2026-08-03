@@ -22,12 +22,23 @@ object SampleWebFixtures {
 
     private const val SCENARIO_COMPLEX = "complex"
     private const val SCENARIO_FORM = "form"
+    private const val SCENARIO_SCALED = "scaled"
 
     data class Fixture(
         val heightPx: Int,
         val baseUrl: String,
         val html: String? = null,
         val remoteUrl: String? = null,
+        /**
+         * `WebView.setInitialScale` percent, when this fixture is deliberately
+         * rendered at a zoom other than 1.
+         *
+         * The layout viewport (`window.innerWidth`) does NOT change under zoom —
+         * only the visual one does — so a page-to-device scale derived from
+         * `innerWidth` alone is wrong by exactly this factor, and wrong in a way
+         * that produces plausible rectangles rather than an error.
+         */
+        val initialScalePercent: Int? = null,
     )
 
     fun resolve(intent: Intent): Fixture {
@@ -38,6 +49,7 @@ object SampleWebFixtures {
         return when (intent.getStringExtra(EXTRA_WEB_SCENARIO)) {
             SCENARIO_COMPLEX -> complexFixture(heightPx = 900)
             SCENARIO_FORM -> formFixture(heightPx = 900)
+            SCENARIO_SCALED -> scaledFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -85,6 +97,7 @@ object SampleWebFixtures {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 fixture.heightPx,
             )
+            fixture.initialScalePercent?.let(::setInitialScale)
             if (fixture.remoteUrl != null) {
                 loadUrl(fixture.remoteUrl)
             } else {
@@ -117,6 +130,41 @@ object SampleWebFixtures {
             heightPx = heightPx,
             baseUrl = "https://reticle.dev/sample/form",
             html = formHtml,
+        )
+
+    /**
+     * The same page rendered at a zoom other than 1 — the case every other web
+     * fixture is blind to, because they all render at exactly 1:1 where a wrong
+     * scale factor and a right one agree.
+     *
+     * A zoomed WebView keeps its LAYOUT viewport (`window.innerWidth`) and scales
+     * only what is painted, so a frame derived from `frameWidth / innerWidth`
+     * lands short of where the element actually is, by the zoom factor, growing
+     * with distance from the origin. It never errors: the rect is plausible, the
+     * tap "succeeds", and the flow silently does not advance.
+     */
+    fun scaledFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/scaled",
+            html = scaledHtml,
+            initialScalePercent = 130,
+        )
+
+    /** The host page of [NestedWebViewScenarioActivity], underneath the overlay. */
+    fun nestedBackdropFixture(): Fixture =
+        Fixture(
+            heightPx = ViewGroup.LayoutParams.MATCH_PARENT,
+            baseUrl = "https://reticle.dev/sample/nested-backdrop",
+            html = nestedBackdropHtml,
+        )
+
+    /** The second web container, stacked over the backdrop at an offset. */
+    fun nestedOverlayFixture(): Fixture =
+        Fixture(
+            heightPx = ViewGroup.LayoutParams.MATCH_PARENT,
+            baseUrl = "https://reticle.dev/sample/nested-overlay",
+            html = nestedOverlayHtml,
         )
 
     private fun complexFixture(heightPx: Int): Fixture =
@@ -386,6 +434,69 @@ object SampleWebFixtures {
                 postcode.setAttribute('aria-invalid', postcode.value.length === 0 ? 'true' : 'false');
               });
             </script>
+          </body>
+        </html>
+    """.trimIndent()
+
+
+
+    private val scaledHtml: String = """
+        <!doctype html>
+        <html>
+          <head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;font-family:sans-serif">
+            <div style="height:300px"></div>
+            <!--
+              Far enough down the page that a scale error is unmistakable: the error
+              is proportional to the offset, so a target near the origin would pass
+              under both the right factor and the wrong one.
+              The onclick is the point of the whole fixture - only a COORDINATE tap
+              that lands on the real pixels can fire it, so a wrong rect cannot pass.
+            -->
+            <button id="scaled-target" data-testid="scaled.target"
+              style="margin:0 40px;padding:20px 30px;font-size:20px"
+              onclick="document.getElementById('scaled-status').innerText='Scaled target hit'">
+              Deep target
+            </button>
+            <p id="scaled-status" data-testid="scaled.status">Not hit</p>
+          </body>
+        </html>
+    """.trimIndent()
+
+
+
+    private val nestedBackdropHtml: String = """
+        <!doctype html>
+        <html>
+          <head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;font-family:sans-serif;background:#eef">
+            <h2 id="backdrop-title" data-testid="nested.backdropTitle">Host page</h2>
+            <button id="backdrop-button" data-testid="nested.backdropButton"
+              style="margin:20px;padding:16px"
+              onclick="this.innerText='Backdrop hit'">Backdrop action</button>
+          </body>
+        </html>
+    """.trimIndent()
+
+    private val nestedOverlayHtml: String = """
+        <!doctype html>
+        <html>
+          <head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;font-family:sans-serif;background:#fff">
+            <div style="height:220px"></div>
+            <!--
+              Deep enough into its own page that this element's rect can only be
+              right if BOTH the overlay container's screen offset and the page
+              offset are added. The onclick makes a coordinate tap the verdict:
+              a rect computed against the backdrop's origin is plausible and wrong,
+              and lands on the backdrop instead.
+            -->
+            <button id="overlay-button" data-testid="nested.overlayButton"
+              style="margin:0 30px;padding:18px 26px;font-size:18px"
+              onclick="document.getElementById('overlay-status').innerText='Overlay hit'">
+              Overlay action
+            </button>
+            <p id="overlay-status" data-testid="nested.overlayStatus">Not hit</p>
           </body>
         </html>
     """.trimIndent()

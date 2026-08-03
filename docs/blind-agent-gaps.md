@@ -45,7 +45,7 @@ Every gap below happened with everything working.
 | **An unselected dropdown has no node at all** | Five select controls on one screen. Before selection each is present ONLY as `label "…" [102,596 284x57]` — no `button`, no `select`, no `combobox`, nothing marked `tappable`. After a value is chosen the same control materialises as `button "<selected value>"` | The agent reads five labels and has no executable next step. The control's trigger region exists on screen and in the DOM; it is simply absent from the projection | Emit the trigger as an interactive node in its EMPTY state, with `role=combobox` + `expanded=false`. Failing that, mark the `label` itself `tappable` and point it at the trigger rect |
 | **`act type` on a DOM input is refused by the focus guard** | `error: resolved 'semantic:ref' -> rNNN but the tap did not focus a text field (focus is on an unrelated node). Typing now would send the text into whatever holds focus while reporting success, so it is refused.` Hit on 7 separate fields across 3 screens | The guard is correct on the View channel and **wrong on the DOM channel**: Android focus legitimately sits on the host `WebView` while the caret is in a DOM input, so the guard can never be satisfied. The only way through is `tap --point` followed by a selector-less `type` — i.e. abandoning semantic targeting for the whole form | Treat `focusLanded=ancestor` as landed when the resolved target is a DOM node (this is already the documented meaning of `ancestor`), or read `document.activeElement` over the bridge and compare it to the target |
 | **A cross-origin iframe's contents are empty AND unannounced** | A third-party widget captured as `rNNN iframe "<title>" [57,624 964x1689]` with `childRefs = None`. Four consecutive steps inside it — pick an item from a list, tick a consent, advance twice — were done by measuring pixels off screenshots | The emptiness is a real boundary ([boundaries.md](boundaries.md) row *Cross-origin iframes*) and is not the defect. The defect is that it is **silent**: an empty iframe is indistinguishable from one that has not finished loading, so the agent has no cue to stop retrying and switch tactics, and no statement that coordinates are the only remaining path | Emit `iframe:cross-origin` on the compact line, and have `act` fail against a selector inside that subtree with a message that names the wall and states the coordinate fallback explicitly |
-| **DOM frames in a nested WebView are offset from where the element actually renders** | An `input` reported at frame centre `(653,1540)`. Tapping there registered on the element (trace diff shows its computed background and transform changing) but did not activate it. The rendered control was at `(748,1678)` — **Δx 95, Δy 138** | This is the most dangerous row in the file because **it does not fail loudly**. The tap "succeeds", the trace shows a diff, and the flow silently does not advance. A blind agent has no way to detect it and no way to correct it | Accumulate container offset and scale correctly for a WebView that is not the first one in the hierarchy. Add a regression fixture with two live WebViews stacked |
+| **A DOM rect that was correct at capture time, tapped after a relayout** *(cause revised — see below)* | An `input` reported at frame centre `(653,1540)`; a coordinate tap there changed its computed background and transform but did not complete the step, while a tap at `(748,1678)`, measured off a screenshot, did | Originally filed as a broken coordinate fold for a non-first WebView. **Two candidate mechanisms have since been falsified with fixtures** (below), and the reading consistent with the trace is a stale rect across a relayout — which Reticle already handles via `--settle` / `rectMoved`, and which that run never used on those taps | Nothing to fix until it is reproduced. What the investigation DID buy is coverage: `scaled` and `nested-webviews` fixtures now pin the two mechanisms that were suspected, so if either ever does break it fails a test instead of a flow |
 
 ## B. Gaps that force reading a screenshot
 
@@ -92,6 +92,34 @@ regression — not when a patch exists. `scenario` names below are sections of
 Still open on the same row: `placeholder`/`name`/`aria-*` are captured but a form
 whose inputs set *none* of them still has only its rect. That is a page with no
 semantic layer at all, and no capture change can invent one.
+
+### A note on the coordinate row, and on filing causes
+
+The nested-WebView row above was filed with a cause attached — "the fold drops a
+non-first WebView's container offset" — and that cause was wrong. Two mechanisms
+were tested against real fixtures on a device and both came back clean:
+
+- **Zoom.** A WebView at `setInitialScale(130)`: the layout viewport does not change
+  under zoom, so a page-to-device scale derived from `innerWidth` looked like it had
+  to be off by the zoom factor. It is not — `frameWidth / innerWidth` already
+  absorbs it, and a coordinate tap on a target 300 CSS-px down the page lands.
+- **A second, offset WebView.** Two live WebViews in one window, the overlay inset
+  24dp left and 220dp down, with a target 220 CSS-px into its own page. Both the
+  container offset and the page offset are accumulated correctly and a coordinate
+  tap fires the overlay's own `onclick`, not the backdrop's.
+
+What remains consistent with the original trace is an ordinary stale rect: the
+screenshot the `(748,1678)` point came from was taken several actions before the
+snapshot the `(653,1540)` rect came from, with a tap in between that could relayout
+the card. Reticle has an answer for that (`--settle`, and `rectMoved` when the
+first read was stale); the run simply did not use it there.
+
+The row stays in this file — the observation was real and is not explained — but
+with the cause withdrawn. **A gap is filed on what was measured; a cause is a
+separate claim and has to earn its own evidence.** Two fixtures are the residue of
+getting that wrong here, and they are worth keeping: every other web fixture renders
+at 1:1 in a single full-bleed WebView, where wrong arithmetic and right arithmetic
+agree.
 
 ## The rule
 

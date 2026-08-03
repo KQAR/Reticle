@@ -89,6 +89,12 @@ enum class SampleScenario(
         testId = "scenario.webview",
         activityClass = WebViewScenarioActivity::class.java,
     ),
+    NestedWebViews(
+        title = "Nested WebViews",
+        subtitle = "A second web container stacked over the host page at an offset",
+        testId = "scenario.nestedWebViews",
+        activityClass = NestedWebViewScenarioActivity::class.java,
+    ),
     Login(
         title = "Login keyboard trap",
         subtitle = "Bottom submit button that the soft keyboard covers",
