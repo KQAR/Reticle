@@ -281,11 +281,20 @@ public enum Render {
         let visible = orderedRefs(snapshot).compactMap { snapshot.nodes[$0] }.filter {
             $0.isVisible && $0.frame != nil
         }
-        func textOf(_ node: Node) -> String? { node.text ?? node.contentDescription }
+        // BOTH names, not one falling back to the other. A control that carries a
+        // value AND an accessible label — `<input type=radio value="b"
+        // aria-label="Plan B">` is the everyday case — had its label shadowed by
+        // the value, so `--label "Plan B"` could not resolve the very control whose
+        // only human-readable name is that label. See the Kotlin twin.
+        func namesOf(_ node: Node) -> [String] { [node.text, node.contentDescription].compactMap { $0 } }
         func matchesIn(_ candidates: [Node]) -> [Node] {
-            let exact = candidates.filter { textOf($0)?.trimmingCharacters(in: .whitespacesAndNewlines) == label }
+            let exact = candidates.filter { node in
+                namesOf(node).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines) == label }
+            }
             return exact.isEmpty
-                ? candidates.filter { textOf($0)?.range(of: label, options: .caseInsensitive) != nil }
+                ? candidates.filter { node in
+                    namesOf(node).contains { $0.range(of: label, options: .caseInsensitive) != nil }
+                }
                 : exact
         }
         var matches: [Node] = []

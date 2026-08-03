@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+- **A form screen no longer needs a screenshot to be read.** Measured driving a
+  real multi-step onboarding flow: an `<input type="checkbox">` came back as
+  `role: textField` with `domInputType: "checkbox"` sitting right beside it on the
+  same node — the fact was captured and then discarded by the role mapping — and
+  no node anywhere carried a toggle state, so the only way to tell whether a tap
+  had ticked a consent box was to look at the picture. Four changes, one shape:
+  an input's **type is its role** (`checkbox` / `radio` / `slider`, and `button`
+  for `submit`/`button`/`reset`/`image`); `checked` is a first-class **tri-state**
+  on `Node` where `null` means "not a checkable control" — kept distinct from
+  `off` because "there is no checkbox" and "there is a checkbox and it is
+  unticked" lead to opposite next actions — sourced from Android `Checkable`,
+  Compose `ToggleableState`/`Selected`, DOM `checked`, and
+  `aria-checked`/`aria-pressed` for a control a framework built out of divs;
+  `placeholder` is **its own field** rather than a fallback folded into the value,
+  which is what made an empty field and a filled one project identically (and
+  what made `act type`'s read-back structurally unable to say whether text had
+  landed); and `aria-invalid` + `aria-describedby` project as
+  ` invalid:"<message>"`, so a validation error stops being a sibling node
+  belonging to nothing. A DOM input also now carries its `name`, its
+  `placeholder`, and an accessible name resolved the way a screen reader resolves
+  it (`aria-label` → `aria-labelledby` → `title`/`alt`) — on a form built from
+  framework components, with no `id` and no value on any input, those are the only
+  handles that tell several identical fields apart. Pinned by `FormSemanticsTest`
+  / `FormSemanticsTests` on both platforms and by a new **WEB FORM SEMANTICS**
+  e2e section driving a `form` fixture that deliberately sets no id, no
+  `data-testid` and no value anywhere — the complex fixture sets all three, so it
+  could never reproduce the screen this came from.
+
+- **`--label` could not resolve the controls it exists for.** It matched
+  `text ?? contentDescription` — a fallback, not both — so any control carrying a
+  value *and* an accessible label had the label shadowed by the value.
+  `<input type="radio" value="b" aria-label="Plan B">` is the everyday shape of
+  that, and `--label "Plan B"` could not resolve it: on a form fixture every
+  aria-labelled checkbox and radio was unreachable through the one selector the
+  skill documents for exactly these controls (they carry no id and no visible
+  text of their own). Both names are matched now, exact-then-substring as before.
+
+- **A disabled input was filtered out of the projection.** It fails every clause
+  of `hasTargetingSignal` at once — not interactive, no id, no label, no value —
+  so a form's not-yet-unlocked fields were simply absent from `ui compact`, which
+  reads as "the app has no such field" rather than "not ready yet". Measured on an
+  address form where the city and street fields unlock once a postcode is entered.
+  A `placeholder` is now a targeting signal in its own right: it is both the
+  evidence that the node IS a field and the only thing that says which one.
+
 ## 0.16.0 - 2026-08-03
 
 - **Commands are scenarios now, not verbs.** `/reticle:tap` dispatched one gesture

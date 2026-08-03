@@ -3,6 +3,7 @@ package dev.reticle.agent
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import dev.reticle.core.CheckedState
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
@@ -144,6 +145,7 @@ object WebViewBridge {
             isVisible = frame.width > 0.0 && frame.height > 0.0,
             isEnabled = !disabled,
             isInteractive = !disabled && element.optBoolean("interactive", false),
+            checked = checkedStateOf(element.optString("checked")),
             custom = metadata,
             // Computed CSS is the DOM's style channel. The values keep their own
             // suffixes ("14px", "1.5") and are NOT converted: a page's zoom and
@@ -156,6 +158,19 @@ object WebViewBridge {
             children = childRefs,
         )
         return ref
+    }
+
+    /**
+     * The script reports a tri-state as a string so an absent third state stays
+     * absent on the wire ("" = not a checkable control). Anything unrecognised
+     * maps to null for the same reason: a value nobody understands is not
+     * evidence that a box is unticked.
+     */
+    private fun checkedStateOf(raw: String?): CheckedState? = when (raw) {
+        "true" -> CheckedState.on
+        "false" -> CheckedState.off
+        "mixed" -> CheckedState.mixed
+        else -> null
     }
 
     private fun metadataFor(
@@ -189,6 +204,14 @@ object WebViewBridge {
             putBool("domImageComplete", "imageComplete")
         }
         putText("domInputType", element.optString("inputType"))
+        // The semantic handles a component-framework form actually carries. A
+        // page whose inputs set no id and no value projects five identical
+        // `textField` lines without these; the placeholder is usually the only
+        // thing that says which one is the email field.
+        putText("domPlaceholder", element.optString("placeholder"))
+        putText("domName", element.optString("formName"))
+        putText("domDescribedBy", element.optString("describedBy"))
+        if (element.optBoolean("invalid", false)) map["domInvalid"] = MetadataValue.Bool(true)
         putText("domMarginTop", element.optString("marginTop"))
         putText("domMarginRight", element.optString("marginRight"))
         putText("domMarginBottom", element.optString("marginBottom"))
