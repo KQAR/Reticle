@@ -593,19 +593,18 @@ internal object HelperDeviceCommands {
         // as unreadable: an empty field is the overwhelmingly common case, and the
         // channel proves itself either way on the read AFTER typing.
         val had = TypeReadback.valueOf(field) ?: ""
-        Thread.sleep(READBACK_SETTLE_MS)
-        val after = readFieldText(device, pkg, params, field)
+        val after = settledFieldText(device, pkg, params, field, had)
             ?: return Readback(
                 TypeReadback.Landed.UNREADABLE,
                 unavailable = TypeReadback.Unavailable.GONE,
             )
-        val landedText = TypeReadback.valueOf(after)
-        if (landedText == null) {
-            return Readback(
-                TypeReadback.Landed.UNREADABLE,
-                unavailable = TypeReadback.Unavailable.NO_TEXT_CHANNEL,
-            )
-        }
+        // A text field publishing no text reads as EMPTY, not as unreadable. The
+        // agents emit a blank value as absent, so an empty input has no `text` at
+        // all — and calling that "no text channel" turned the commonest state a
+        // field can be in into a missing check. `field` has already established
+        // that this node IS a text input; whether it holds anything is the answer,
+        // not a reason to stop.
+        val landedText = TypeReadback.valueOf(after) ?: ""
         val verdict = TypeReadback.classify(had, landedText, typed)
         if (!TypeReadback.isLoss(verdict.landed)) {
             return Readback(verdict.landed, verdict.landedChars, landedText)
@@ -694,6 +693,40 @@ internal object HelperDeviceCommands {
         field: Node,
     ): Node? = liveSnapshot(device, pkg, params)?.let { TypeReadback.refind(it, field) }
 
+    /**
+     * The field's text once it has stopped arriving — up to [READBACK_ATTEMPTS]
+     * reads, returning as soon as the value differs from [had].
+     *
+     * One read after a fixed sleep is enough for a View, which is updated
+     * synchronously by the key events. It is not enough for a DOM input: the
+     * characters go in through the IME, the page's own handlers run, and the
+     * traversal script reads whatever the DOM held at that instant — measured, a
+     * field that ended up holding `00-001` read back empty on the first attempt.
+     * Reporting that as "the field exposes no text" would be a false negative on
+     * the very check that exists to catch false positives, and it would send the
+     * clipboard recovery in to re-type text that had in fact landed.
+     *
+     * Bounded, and it never waits for a value it wants: a field that genuinely did
+     * not change costs the full budget and is then classified as such, which is the
+     * honest reading of "nothing arrived".
+     */
+    private fun settledFieldText(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        field: Node,
+        had: String,
+    ): Node? {
+        var last: Node? = null
+        repeat(READBACK_ATTEMPTS) {
+            Thread.sleep(READBACK_SETTLE_MS)
+            val node = readFieldText(device, pkg, params, field) ?: return last
+            last = node
+            if ((TypeReadback.valueOf(node) ?: "") != had) return node
+        }
+        return last
+    }
+
     /** A fresh snapshot, or null when the runtime cannot answer for one. */
     private fun liveSnapshot(device: DeviceController, pkg: String, params: JsonObject): Snapshot? =
         runCatching {
@@ -721,8 +754,19 @@ internal object HelperDeviceCommands {
         runCatching { client.screenshotBytes() }.getOrNull()
 
     /** Params [resolveInputTarget]/[selectorFrom] read as a targeting selector. */
+    /**
+     * Every selector `type` will TAP before dispatching text. A selector missing
+     * from this list is not rejected — it is silently ignored, and the text goes to
+     * whatever already held focus while the result still names the selector.
+     *
+     * `label` was missing, which is the worst place for it to be missing: a control
+     * with no id and no visible text of its own — a checkbox, an aria-labelled input
+     * on a component-framework form — has `--label` as its ONLY documented handle,
+     * so `act type --label "Postcode"` typed into the previous field and reported
+     * success. Measured on the web form fixture.
+     */
     private val SELECTOR_KEYS = listOf(
-        "alias", "point", "testId", "resourceId", "css", "cssSelector", "ref", "region",
+        "alias", "point", "testId", "resourceId", "css", "cssSelector", "ref", "region", "label",
     )
 
     /** Time for a tapped field to take focus before we dispatch text. */
@@ -734,6 +778,14 @@ internal object HelperDeviceCommands {
      * so the read must sit behind that work rather than race it.
      */
     private const val READBACK_SETTLE_MS = 250L
+
+    /**
+     * How many times [settledFieldText] re-reads before taking the field's text as
+     * final. Three at 250ms is ~750ms worst case, paid only by a `type` whose field
+     * really did not change — the case that was already going to be reported as a
+     * loss.
+     */
+    private const val READBACK_ATTEMPTS = 3
 
     /**
      * A field longer than this is not cleared for a recovery attempt. One DEL per

@@ -178,6 +178,13 @@ internal object TypeReadback {
         // as its own property precisely so a typed value is not confused with the
         // label `Text` holds on a Material `TextField`.
         NodeKind.composeSemantics -> node.custom.containsKey(EDITABLE_TEXT)
+        // A DOM input's `text` IS its value now. It used to be `value || placeholder`
+        // as one string, which made an empty field indistinguishable from one showing
+        // its placeholder — so no before/after comparison over it could be trusted and
+        // this branch returned false, i.e. every web form was structurally unreadable.
+        // The two are separate fields since the DOM input-semantics change, so the
+        // comparison is sound and the read-back applies here like anywhere else.
+        NodeKind.domNode -> node.role == "textField"
         else -> false
     }
 
@@ -209,11 +216,15 @@ internal object TypeReadback {
         const val COMPOSE_VALUE = "compose-field-value-not-captured"
 
         /**
-         * The DOM bridge emits `el.value || el.placeholder` as one `text`, so an
-         * empty input is indistinguishable from one holding its placeholder text
-         * and no before/after comparison over it can be trusted.
+         * A DOM element the caller aimed at that is not a text input — a `<button>`,
+         * a checkbox, a wrapper `<div>`. There is no value to compare.
+         *
+         * Note what this is NOT: it used to be `dom-input-value-not-separable-from-
+         * placeholder`, which applied to EVERY DOM node because the bridge emitted
+         * `value || placeholder` as one string. That was a real wall while it lasted
+         * and it made every web form unreadable; it is gone, and so is the reason.
          */
-        const val DOM_VALUE = "dom-input-value-not-separable-from-placeholder"
+        const val DOM_NOT_INPUT = "dom-node-is-not-a-text-input"
     }
 
     /**
@@ -228,7 +239,7 @@ internal object TypeReadback {
             // A Compose node with no `EditableText`: either not a field at all, or a
             // Compose version too old for the property the bridge reads.
             NodeKind.composeSemantics -> Unavailable.COMPOSE_VALUE
-            NodeKind.domNode -> Unavailable.DOM_VALUE
+            NodeKind.domNode -> Unavailable.DOM_NOT_INPUT
             else -> Unavailable.NO_FIELD
         }
     }
