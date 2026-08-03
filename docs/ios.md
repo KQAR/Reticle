@@ -171,6 +171,21 @@ Settings). Verified on an iPhone 13 Pro Max / iOS 26: a Safari fetch of
 `https://example.com` surfaced a decrypted `GET … 200` event targeted
 `ios:<ecid>`.
 
+**Getting the CA onto the phone without AirDrop: `--proxy-phone-onboard true`.**
+Loom serves a provisioning page on the LAN carrying the CA (PEM + DER), its
+SHA-256 fingerprint and the proxy address, and `serve` prints the URL, the
+fingerprint and a QR encoding that URL (also written to
+`~/.reticle/phone-onboard-qr.png`) — scan it on the phone and install from Safari
+instead of shuttling a `.cer` around. Three properties worth knowing before you
+reach for it: it **rebinds the proxy to `0.0.0.0` itself**, so `--proxy-bind` is
+not needed alongside it; it fails with `no LAN IPv4 address` when the Mac is on
+neither Wi-Fi nor Ethernet, since the phone has to route to it; and the
+provisioning server plus the LAN-wide bind stay up for the daemon's whole life,
+so it is a for-the-run exposure exactly like `--proxy-bind 0.0.0.0`. The phone's
+Wi-Fi proxy is still yours to set (step 1 above) — the page provisions trust,
+not routing. Read the printed fingerprint against what the phone shows before
+trusting.
+
 MITM decryption is allowlist-gated (`--proxy-ssl-hosts host,*.host`) on both;
 hosts not listed pass through as opaque CONNECT tunnels. Captured traffic is
 attributed to `ios:<udid|ecid>` in the timeline.

@@ -40,6 +40,24 @@ and `--proxy-ssl-hosts`; Reticle generates a local CA under
 Android 11+ still requires the user to confirm CA trust in Settings, and apps
 that ignore user CAs or pin certificates remain opaque.
 
+**Routing a real phone is the user's step, in every case — but the CA does not
+have to be.** `--proxy-device` only auto-configures Android (through
+`adb reverse`, restored on exit); for iOS it prints the exact steps and mutates
+nothing, because the simulator path is a host-wide system proxy and the device
+path is the phone's Wi-Fi setting — both have a blast radius, and a dead daemon
+would otherwise strand the device on a closed port. Relay those printed steps as
+they are rather than paraphrasing them.
+
+To hand the phone its CA without AirDropping a `.cer`, add
+`--proxy-phone-onboard true`: Loom serves a LAN provisioning page with the CA and
+its SHA-256 fingerprint, and `serve` prints the URL, the fingerprint and a QR (also
+at `~/.reticle/phone-onboard-qr.png`) to scan. It **rebinds the proxy to
+`0.0.0.0` itself** (no `--proxy-bind` needed), needs the Mac on Wi-Fi/Ethernet
+(else `no LAN IPv4 address`), and keeps that LAN-wide bind for the daemon's whole
+life — say so when you suggest it, and tell the user to check the printed
+fingerprint against the phone before trusting. It provisions **trust, not
+routing**: the Wi-Fi proxy still has to be set on the phone.
+
 For Android HTTPS debugging, prefer the debug-flavor trust path. Tell the user
 explicitly that this requires an app source change and a rebuild/reinstall, but
 only affects the debug variant when placed under the debug source set. Add a
