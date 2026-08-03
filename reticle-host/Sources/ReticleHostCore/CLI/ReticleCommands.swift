@@ -403,7 +403,12 @@ func printVerify(_ v: [String: Any]) {
             print("  \(field): \(before) -> \(after)")
         }
     } else {
-        print("verify \(sel): no change")
+        // Say WHAT was compared. `--verify` watches the one node the selector
+        // names, so a tap that replaced the whole screen printed
+        // "verify @x: no change" beside a trace recording 101 changes — which
+        // reads as "the tap did nothing", the opposite of what happened.
+        print("verify \(sel): this node's watched fields are unchanged "
+            + "(--verify watches only \(sel); read `trace log` for what the action changed elsewhere)")
     }
 }
 

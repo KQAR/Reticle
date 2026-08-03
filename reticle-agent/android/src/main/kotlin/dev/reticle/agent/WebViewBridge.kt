@@ -251,6 +251,9 @@ object WebViewBridge {
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
         if (element.optBoolean("clipped", false)) map["domClipped"] = MetadataValue.Bool(true)
+        if (element.optBoolean("crossOriginFrame", false)) {
+            map["domCrossOriginFrame"] = MetadataValue.Bool(true)
+        }
         putText("domHasPopup", element.optString("hasPopup"))
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.
