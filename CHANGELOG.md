@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **A screen covered by another one, inside a single window, now says so.**
+  Occlusion was window-level only: it scanned the windows above a node's own and
+  stopped there. That misses the shape a hybrid app really has — a second screen
+  pushed over a still-alive one *within* one window — and the miss is the
+  silent-wrong-answer kind. Measured on a fixture of two web containers in one
+  `FrameLayout`: the covered page's button projected as an ordinary `tappable`
+  node, a tap on it reported `settled=1`, and nothing happened, because the touch
+  went to the cover. `occludedBy` now also considers a later-drawn sibling whose
+  rect covers the node's tap point — sibling order is draw order, so it is the
+  same relation the window loop already used, one level down, and walking only the
+  ancestor chain keeps it O(depth × siblings). The cover must be **interactive**,
+  which is the honest limit rather than a shortcut: Android hands a touch to the
+  topmost child that consumes it, so a decorative transparent frame does not
+  occlude and is not reported as doing so. The fixture ships both variants, and
+  the inset one is the false-positive guard: its genuinely visible controls carry
+  no marker and still tap through.
+
 - **A node clipped out of its container is not "visible".** An `overflow: hidden`
   roller or a scroll port lays its other items well outside itself, and
   `getComputedStyle` reports them as perfectly ordinary — `display` and

@@ -65,6 +65,37 @@ public struct CompactObservation: Codable, Sendable {
         let windowOrder = Dictionary(uniqueKeysWithValues: windowRefs.enumerated().map { ($1, $0) })
         let keyboardFrame = (snapshot.screen.keyboard?.visible == true) ? snapshot.screen.keyboard?.frame : nil
 
+        /// A sibling drawn AFTER this node's branch, covering its tap point.
+        ///
+        /// Occlusion used to be window-level only, which misses the shape a hybrid
+        /// app really has: a second screen pushed over a still-alive one *inside one
+        /// window*. Measured on a fixture — two web containers in one `FrameLayout`,
+        /// the second full-bleed — the covered page's button projected as an ordinary
+        /// `tappable` node, a tap on it reported `settled=1`, and nothing happened.
+        ///
+        /// Sibling order is draw order, so this is the same relation the window loop
+        /// uses, one level down; walking only the ancestor chain keeps it
+        /// O(depth x siblings). The cover must be **interactive**, which is the honest
+        /// limit: a touch falls through a view that does not consume it. See the
+        /// Kotlin twin.
+        func laterSiblingCovering(_ node: Node, _ cx: Double, _ cy: Double) -> String? {
+            var current = node
+            var parent = current.parentRef.flatMap { snapshot.nodes[$0] }
+            var seen = Set<String>()
+            while let p = parent, seen.insert(p.ref).inserted {
+                if let position = p.children.firstIndex(of: current.ref) {
+                    for i in stride(from: p.children.count - 1, to: position, by: -1) {
+                        guard let above = snapshot.nodes[p.children[i]],
+                              above.isVisible, above.isInteractive else { continue }
+                        if above.frame?.contains(cx, cy) == true { return above.ref }
+                    }
+                }
+                current = p
+                parent = current.parentRef.flatMap { snapshot.nodes[$0] }
+            }
+            return nil
+        }
+
         func occluderOf(_ node: Node, windowRef: String?) -> String? {
             guard let frame = node.frame else { return nil }
             let cx = frame.centerX
@@ -77,7 +108,7 @@ public struct CompactObservation: Codable, Sendable {
                 guard let above = snapshot.nodes[windowRefs[i]], above.isVisible else { continue }
                 if above.frame?.contains(cx, cy) == true { return above.ref }
             }
-            return nil
+            return laterSiblingCovering(node, cx, cy)
         }
 
         /// How much of a wheel column is readable, or nil when this is not one.
