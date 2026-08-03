@@ -201,6 +201,29 @@ object SemanticsReflect {
         configValue(node, keyName)?.toString()
 
     /**
+     * Toggle state of a Compose control, or null when it has none.
+     *
+     * Two independent keys carry it and a control sets one or the other:
+     * `ToggleableState` (a `Checkbox` / `Switch`, tri-state) and `Selected` (a
+     * `RadioButton` / selectable row, boolean). `ToggleableState` is read by
+     * name because its enum lives in Compose's foundation and reflecting the
+     * type would pin a Compose version; the constant names (`On` / `Off` /
+     * `Indeterminate`) are the public API.
+     */
+    fun checkedState(node: Any): String? {
+        configValue(node, "ToggleableState")?.toString()?.let { raw ->
+            return when (raw) {
+                "On" -> "on"
+                "Off" -> "off"
+                "Indeterminate" -> "mixed"
+                else -> null
+            }
+        }
+        val selected = configValue(node, "Selected") as? Boolean ?: return null
+        return if (selected) "on" else "off"
+    }
+
+    /**
      * Reads a SemanticsProperties key value from the node's config. The config
      * is iterable over Map.Entry<SemanticsPropertyKey, Object>; each key has a
      * getName() we match against [keyName].

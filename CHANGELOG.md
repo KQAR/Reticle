@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- **A form screen no longer needs a screenshot to be read.** Measured driving a
+  real multi-step onboarding flow: an `<input type="checkbox">` came back as
+  `role: textField` with `domInputType: "checkbox"` sitting right beside it on the
+  same node — the fact was captured and then discarded by the role mapping — and
+  no node anywhere carried a toggle state, so the only way to tell whether a tap
+  had ticked a consent box was to look at the picture. Four changes, one shape:
+  an input's **type is its role** (`checkbox` / `radio` / `slider`, and `button`
+  for `submit`/`button`/`reset`/`image`); `checked` is a first-class **tri-state**
+  on `Node` where `null` means "not a checkable control" — kept distinct from
+  `off` because "there is no checkbox" and "there is a checkbox and it is
+  unticked" lead to opposite next actions — sourced from Android `Checkable`,
+  Compose `ToggleableState`/`Selected`, DOM `checked`, and
+  `aria-checked`/`aria-pressed` for a control a framework built out of divs;
+  `placeholder` is **its own field** rather than a fallback folded into the value,
+  which is what made an empty field and a filled one project identically (and
+  what made `act type`'s read-back structurally unable to say whether text had
+  landed); and `aria-invalid` + `aria-describedby` project as
+  ` invalid:"<message>"`, so a validation error stops being a sibling node
+  belonging to nothing. A DOM input also now carries its `name`, its
+  `placeholder`, and an accessible name resolved the way a screen reader resolves
+  it (`aria-label` → `aria-labelledby` → `title`/`alt`) — on a form built from
+  framework components, with no `id` and no value on any input, those are the only
+  handles that tell several identical fields apart. Pinned by `FormSemanticsTest`
+  / `FormSemanticsTests` on both platforms and by a new **WEB FORM SEMANTICS**
+  e2e section driving a `form` fixture that deliberately sets no id, no
+  `data-testid` and no value anywhere — the complex fixture sets all three, so it
+  could never reproduce the screen this came from.
+
 ## 0.16.0 - 2026-08-03
 
 - **Commands are scenarios now, not verbs.** `/reticle:tap` dispatched one gesture

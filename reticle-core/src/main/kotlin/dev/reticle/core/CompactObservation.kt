@@ -110,6 +110,9 @@ data class CompactObservation(
                             isInteractive = node.isInteractive,
                             windowRef = currentWindow,
                             isFocused = node.isFocused,
+                            checked = node.checked,
+                            placeholder = node.domPlaceholder(),
+                            invalid = node.domInvalidMessage(),
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,
                             wheel = wheelMarkerFor(snapshot, node),
@@ -274,6 +277,31 @@ data class CompactItem(
      */
     val isFocused: Boolean = false,
     /**
+     * Toggle state when this item is a checkable control, null when it is not one.
+     * Rendered as ` checked` / ` unchecked` / ` checked:mixed`.
+     *
+     * Null and `off` are different answers and the projection keeps them apart:
+     * a consent row used to render identically before and after a tap ticked it,
+     * so the only way to read the state was a screenshot.
+     */
+    val checked: CheckedState? = null,
+    /**
+     * A DOM input's `placeholder`, when it has one. Rendered as
+     * ` placeholder:"…"` — never merged into [label], because a placeholder is
+     * what the field is ASKING for and [label] is what it HOLDS. Folding the two
+     * together made an empty field and a filled one project identically.
+     */
+    val placeholder: String? = null,
+    /**
+     * Set when the field declares itself invalid (`aria-invalid`), carrying the
+     * message its `aria-describedby` points at (empty string when it declares
+     * invalidity with no message). Rendered as ` invalid` / ` invalid:"…"`.
+     *
+     * Without it a validation error is an ordinary sibling node and nothing says
+     * which field it belongs to.
+     */
+    val invalid: String? = null,
+    /**
      * What sits on top of this node's tap point, when anything does: the ref of
      * a higher z-order window (a dialog/popup covering a background page), or
      * [CompactObservation.OCCLUDER_KEYBOARD] for the system keyboard. A tap
@@ -329,6 +357,16 @@ data class CompactItem(
             if (!isEnabled) append(" disabled")
             if (isInteractive) append(" tappable")
             if (isFocused) append(" focused")
+            when (checked) {
+                CheckedState.on -> append(" checked")
+                CheckedState.off -> append(" unchecked")
+                CheckedState.mixed -> append(" checked:mixed")
+                null -> Unit
+            }
+            placeholder?.let { append(" placeholder:\"${it.clipCodePoints(40)}\"") }
+            invalid?.let {
+                if (it.isEmpty()) append(" invalid") else append(" invalid:\"${it.clipCodePoints(40)}\"")
+            }
             occludedBy?.let { append(" occluded-by:$it") }
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
             wheel?.let { append(" wheel:").append(it) }

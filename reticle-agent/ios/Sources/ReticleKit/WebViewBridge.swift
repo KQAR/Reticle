@@ -121,6 +121,7 @@ enum WebViewBridge {
             isVisible: frame.width > 0 && frame.height > 0,
             isEnabled: !disabled,
             isInteractive: !disabled && bool(element["interactive"]),
+            checked: checkedState(str(element["checked"])),
             custom: domMetadata,
             // Computed CSS is the DOM's style channel — the same tagging the Android
             // bridge applies, so a WKWebView and an android.webkit.WebView answer
@@ -163,6 +164,14 @@ enum WebViewBridge {
             putBool("domImageComplete", "imageComplete")
         }
         putText("domInputType", "inputType")
+        // The semantic handles a component-framework form actually carries. A
+        // page whose inputs set no id and no value projects several identical
+        // `textField` lines without these; the placeholder is usually the only
+        // thing that says which one is the email field.
+        putText("domPlaceholder", "placeholder")
+        putText("domName", "formName")
+        putText("domDescribedBy", "describedBy")
+        if bool(element["invalid"]) { map["domInvalid"] = .bool(true) }
         putText("domMarginTop", "marginTop")
         putText("domMarginRight", "marginRight")
         putText("domMarginBottom", "marginBottom")
@@ -188,6 +197,19 @@ enum WebViewBridge {
         map["domScaleX"] = .real(fold.scaleX)
         map["domScaleY"] = .real(fold.scaleY)
         return map
+    }
+
+    /// The script reports a tri-state as a string so an absent third state stays
+    /// absent on the wire (nil = not a checkable control). Anything unrecognised
+    /// maps to nil for the same reason: a value nobody understands is not
+    /// evidence that a box is unticked.
+    private static func checkedState(_ raw: String?) -> CheckedState? {
+        switch raw {
+        case "true": return .on
+        case "false": return .off
+        case "mixed": return .mixed
+        default: return nil
+        }
     }
 
     private static func str(_ value: Any?) -> String? {

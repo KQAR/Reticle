@@ -21,6 +21,7 @@ object SampleWebFixtures {
     const val EXTRA_WEB_SCENARIO = "reticle.webScenario"
 
     private const val SCENARIO_COMPLEX = "complex"
+    private const val SCENARIO_FORM = "form"
 
     data class Fixture(
         val heightPx: Int,
@@ -36,6 +37,7 @@ object SampleWebFixtures {
         }
         return when (intent.getStringExtra(EXTRA_WEB_SCENARIO)) {
             SCENARIO_COMPLEX -> complexFixture(heightPx = 900)
+            SCENARIO_FORM -> formFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -95,6 +97,26 @@ object SampleWebFixtures {
             heightPx = heightPx,
             baseUrl = "https://reticle.dev/sample/basic",
             html = basicCheckoutHtml,
+        )
+
+    /**
+     * The shape a form built out of framework components actually has, which the
+     * complex fixture is the opposite of: every input there carries an id, a
+     * `data-testid` AND a value, so it can never reproduce the screen that
+     * motivated this — five inputs projecting as five identical `textField` lines
+     * distinguishable only by y-coordinate.
+     *
+     * Nothing here sets an id or a `data-testid`. What each field DOES carry is
+     * what such a form really carries: a `placeholder`, a `name`, and sometimes an
+     * `aria-label`. Plus the input types whose role used to be flattened to
+     * `textField`, a field that declares itself invalid and names its own error,
+     * and a field that starts disabled.
+     */
+    fun formFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/form",
+            html = formHtml,
         )
 
     private fun complexFixture(heightPx: Int): Fixture =
@@ -280,6 +302,94 @@ object SampleWebFixtures {
           </body>
         </html>
     """.trimIndent()
+
+
+    private val formHtml: String = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body { font-family: sans-serif; margin: 16px; }
+              .row { margin: 14px 0; }
+              input, select { display: block; width: 90%; padding: 8px; font-size: 15px; }
+              .error { color: #d93025; font-size: 13px; }
+              [disabled] { background: #eee; color: #999; }
+            </style>
+          </head>
+          <body>
+            <h1>Form fixture</h1>
+
+            <!--
+              No id, no data-testid, no value. The placeholder and the name are the
+              only handles these three have, which is exactly the case the tree used
+              to answer with three indistinguishable lines.
+            -->
+            <div class="row"><input name="given-name" placeholder="First name"></div>
+            <div class="row"><input name="family-name" placeholder="Last name"></div>
+            <div class="row"><input name="email" type="email" placeholder="Email"></div>
+
+            <!--
+              A field whose accessible name comes from a separate element rather
+              than from aria-label - the resolution a screen reader does and the
+              tree did not.
+            -->
+            <div class="row">
+              <span id="doc-label">Document number</span>
+              <input name="document" aria-labelledby="doc-label" placeholder="ABC 123456">
+            </div>
+
+            <!--
+              Invalid, and it says what is wrong. Without the aria pairing the error
+              below is an ordinary sibling div belonging to nothing.
+            -->
+            <div class="row">
+              <input name="postcode" placeholder="Postcode"
+                aria-invalid="true" aria-describedby="postcode-error">
+              <p id="postcode-error" class="error">Enter a valid postcode</p>
+            </div>
+
+            <!--
+              Disabled until the postcode above is filled, so a run can assert that a
+              disabled input is CAPTURED (rather than absent) and that it flips.
+            -->
+            <div class="row"><input name="city" placeholder="City" disabled></div>
+
+            <!--
+              The input types whose role used to be flattened to `textField`. The
+              consent box starts unticked so `checked` has both states in one run.
+            -->
+            <div class="row">
+              <input name="consent" type="checkbox" aria-label="Accept the terms">
+              <input name="plan" type="radio" value="a" aria-label="Plan A" checked>
+              <input name="plan" type="radio" value="b" aria-label="Plan B">
+              <input name="volume" type="range" aria-label="Volume" min="0" max="10" value="5">
+              <input name="submit-form" type="submit" value="Confirm">
+            </div>
+
+            <!--
+              A tri-state "select all", the case a plain boolean cannot carry.
+            -->
+            <div class="row">
+              <span role="checkbox" aria-checked="mixed" tabindex="0"
+                aria-label="Select all consents">Select all</span>
+            </div>
+
+            <script>
+              // The city field unlocks once the postcode has content - the
+              // enable-on-dependency shape, so `isEnabled` is observed flipping
+              // rather than only ever read as a constant.
+              var postcode = document.querySelector('input[name=postcode]');
+              var city = document.querySelector('input[name=city]');
+              postcode.addEventListener('input', function() {
+                city.disabled = postcode.value.length === 0;
+                postcode.setAttribute('aria-invalid', postcode.value.length === 0 ? 'true' : 'false');
+              });
+            </script>
+          </body>
+        </html>
+    """.trimIndent()
+
 
     // Shared modal-overlay styling for the two web dialog fixtures.
     private val modalCss: String = """
