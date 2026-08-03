@@ -26,7 +26,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.sampleios
-        DEVELOPMENT_TEAM: D66CSW78K2
+        # No DEVELOPMENT_TEAM here on purpose: a device build needs YOUR team, so
+        # pass it on the command line (`xcodebuild DEVELOPMENT_TEAM=<id>`, which
+        # scripts/e2e-ios-device.sh does from its first argument). A checked-in id
+        # would be someone else's and only misleads.
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: "1.0"
