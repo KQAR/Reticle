@@ -30,6 +30,10 @@ class NestedWebViewScenarioActivity : AppCompatActivity() {
         title = "Nested WebViews"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
+        // Two shapes from one activity, because a non-exported activity cannot be
+        // started with extras from the shell — the scenario list is the only way in.
+        val fullBleed = intent.getBooleanExtra(EXTRA_FULL_BLEED, false)
+        title = if (fullBleed) "Nested WebViews (covered)" else "Nested WebViews"
         val root = FrameLayout(this)
 
         val backdrop = SampleWebFixtures.createWebView(
@@ -52,11 +56,19 @@ class NestedWebViewScenarioActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ).apply {
-                // Inset on both axes: an offset dropped from either one puts the
-                // reported rect on the backdrop's coordinates instead of this
-                // view's, which is exactly the failure being pinned.
-                leftMargin = dp(24)
-                topMargin = dp(220)
+                // Inset on both axes by default: an offset dropped from either one
+                // puts the reported rect on the backdrop's coordinates instead of
+                // this view's, which is exactly the geometry failure being pinned.
+                //
+                // With `reticle.nestedFullBleed`, the overlay covers the backdrop
+                // COMPLETELY — the other shape a hybrid app really has, where a
+                // second screen is pushed over a still-alive one inside one window.
+                // Both trees stay live and flat projections interleave them by
+                // geometry, with nothing saying which one the user is looking at.
+                if (!fullBleed) {
+                    leftMargin = dp(24)
+                    topMargin = dp(220)
+                }
             }
         }
 
@@ -72,4 +84,9 @@ class NestedWebViewScenarioActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        /** Make the overlay cover the backdrop completely. */
+        const val EXTRA_FULL_BLEED = "reticle.nestedFullBleed"
+    }
 }

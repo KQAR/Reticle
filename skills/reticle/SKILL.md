@@ -616,7 +616,7 @@ and switch tactics — retrying, waiting, or re-capturing will not change it.**
 | `dom:unsupported-kernel` | A third-party WebView kernel (X5/UC). There is no DOM for it at any level | Target it as a plain view (`--test-id` / `--point`); `--css` will never match |
 | `pixels:unavailable` | These pixels are missing from the in-process screenshot (Android `SurfaceView`, iOS keyboard window) | Use a device-level capture if you need the picture |
 | `screencap:blank` | A `FLAG_SECURE` window blanks device-level captures | Use the in-process capture (`--package`, agent up) |
-| `occluded-by:<ref>` / `occluded-by:keyboard` | Something is on top of your target's tap point | Dismiss it (`act hide-keyboard`) or target the thing on top |
+| `occluded-by:<ref>` / `occluded-by:keyboard` | Something is on top of your target's tap point — a higher window, the keyboard, **or a later-drawn sibling in the same window** (a second screen pushed over a still-alive one, which is what a hybrid app does) | Dismiss it (`act hide-keyboard`) or target the thing on top |
 | `scroll:up,down` on a container + selector miss | The row may simply not be bound yet | `act scroll-to`, then tap |
 | `act wait` → `UNKNOWABLE` | The predicate did not hold, and the screen was in a state where it could not have been seen. **Not** a negative | Read `reasons:` and switch tactics — never conclude the app lacks the thing |
 
