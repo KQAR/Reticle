@@ -1,7 +1,7 @@
 {
   "name": "reticle",
   "displayName": "Reticle",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Runtime UI evidence + action harness for Android and iOS apps. Read the live view / accessibility / Compose-semantics / SwiftUI / WebView DOM tree, resolve exact selectors (CSS and per-phrase tap regions), drive real input (adb on Android; CoreSimulator HID or in-process activation on iOS), record before/after action traces, mock and replay network traffic, live-patch UI properties without rebuilding, and inject the runtime into an app that does not link the agent.",
   "author": {
     "name": "KQAR"
