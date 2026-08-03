@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 - 2026-08-03
 
 - **Loom 0.0.5 → 0.0.12, and the three things that upgrade changed.** The bump
   itself is source-compatible (nothing in the engine API Reticle drives moved),
@@ -63,6 +63,38 @@ capability; two of them change a reading, three are cost or clarity.
   for every rule and every value. The package is validated up front, applied to
   copies, and persisted once — which also makes a rejected entry leave the index
   untouched rather than half-applied.
+
+- **The real-device sample build works again, and a device screenshot says what
+  it is.** The iOS sample has two build routes — SwiftPM for the simulator,
+  xcodegen for a device — and only the SwiftPM manifest carried the `lottie-ios`
+  dependency, so the device project had been failing at `Unable to find module
+  dependency: 'Lottie'` since the Lottie scenarios landed (`Bundle.module`, which
+  only SwiftPM synthesizes, would have failed right after). `e2e-ios.sh` never
+  caught it because it only exercises the SwiftPM route. Both are fixed, and
+  `e2e-ios-device.sh` now passes `-clonedSourcePackagesDirPath` at a copy of the
+  simulator path's checkouts: Xcode keeps SPM state under its own DerivedData and
+  does not share the `swift build` cache, so a fresh derived path re-mirrored
+  `lottie-ios` (~176M, full history) from the network for bytes already on disk —
+  measured at 14 minutes and still cloning, against a ~1 minute build reusing
+  them.
+
+  Validated end to end on an iPhone 13 Pro Max / iOS 26, which is what lets
+  `docs/ios.md` and the skill state the boundary rather than imply it:
+  `ui screenshot` on a **device** is the agent's in-process render with **no**
+  fallback, because `simctl io` is simulator-only. Anything that is not this
+  app's own window is absent from the PNG with nothing to switch to — the status
+  bar (SpringBoard draws it), the keyboard's host window, another process's
+  sheet. On the simulator a device-level capture still recovers those.
+
+- **The skill's own description no longer hides iOS from itself.** The
+  frontmatter still said "Inspect and drive a RUNNING **Android** app … when the
+  task involves an Android app", while the body carried a full iOS section and
+  every command took `--target ios`. That text is the gate for whether the skill
+  loads at all, so an iOS request matched nothing and none of the iOS content
+  below was reachable. It now names both platforms, SwiftUI accessibility beside
+  Compose semantics, XCUITest beside Espresso/UiAutomator, the network-rule
+  capability it had omitted, and the one asymmetry a caller plans around: a real
+  iOS device is observation + in-process activation, not HID.
 
 ## 0.14.0 - 2026-08-01
 
