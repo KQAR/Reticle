@@ -139,12 +139,10 @@ install:
 This makes the `reticle` CLI available on the Bash PATH and adds:
 
 - the **`reticle`** skill — teaches the agent when and how to inspect/drive a
-  running Android app;
+  running Android or iOS app;
 - **`/reticle:report`** — capture a runtime UI report and summarize the screen;
-- **`/reticle:tap`** — tap an element by selector (or by phrase via `--region`)
-  and verify the result;
-- **`/reticle:inject`** — start the runtime inside a debuggable app that does not
-  link the agent.
+- **`/reticle:verify`** — drive a flow end to end and assert on the captured
+  evidence, step by step.
 
 ### Install in Cursor
 
