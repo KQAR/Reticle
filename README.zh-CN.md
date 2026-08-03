@@ -122,8 +122,7 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
 
 - **`reticle`** skill——教 agent 何时以及如何检查/驱动一个运行中的应用;
 - **`/reticle:report`**——捕获一份运行时 UI 报告并概括当前屏幕;
-- **`/reticle:tap`**——按选择器(或通过 `--region` 按短语)点击某元素并验证结果;
-- **`/reticle:inject`**——在未链接 agent 的可调试应用里启动运行时。
+- **`/reticle:verify`**——端到端驱动一条流程,再逐步基于捕获到的证据下判断。
 
 ### 在 Cursor 中安装
 

@@ -126,10 +126,12 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
   arm64 only.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
-- `commands/report.md`, `commands/tap.md`, `commands/inject.md` — slash commands
-  (`/reticle:report`, `/reticle:tap`, `/reticle:inject`). Thin wrappers: each one
-  defers to the skill for the workflow instead of restating it, so the two cannot
-  drift apart.
+- `commands/report.md`, `commands/verify.md` — slash commands (`/reticle:report`,
+  `/reticle:verify`). Thin wrappers: each one defers to the skill for the workflow
+  instead of restating it, so the two cannot drift apart. A command must be a
+  whole **scenario** ("what is on screen", "does this flow work"), never a single
+  verb — a lone tap or inject is a step inside a goal, and the skill already
+  routes those, so a command for one only adds a drift surface.
 
 Validate after changing any manifest/skill/command: `claude plugin validate .`
 locally. CI runs a dependency-free check instead
