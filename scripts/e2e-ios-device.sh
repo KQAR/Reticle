@@ -57,8 +57,22 @@ fi
 
 echo "== build + sign SampleApp for device (team $TEAM) =="
 ( cd "$ROOT/sample-app-ios/xcode" && xcodegen generate >/dev/null )
+# Reuse the SwiftPM checkouts the simulator path already has. Xcode keeps its own
+# SPM state under DerivedData and does NOT share the `swift build` cache, so a
+# fresh DerivedData re-mirrors every dependency — lottie-ios alone is a ~176M
+# full-history clone, minutes of network for bytes already on disk. Point Xcode at
+# a COPY (not sample-app-ios/.build itself: Xcode rewrites workspace-state.json,
+# and the simulator path's state is not ours to churn).
+SPM_DIR="$ROOT/sample-app-ios/.build"
+CLONED_SPM=""
+if [ -d "$SPM_DIR/checkouts" ]; then
+  CLONED_SPM="$(mktemp -d)/spm"
+  cp -R "$SPM_DIR" "$CLONED_SPM"
+  echo "reusing SwiftPM checkouts from $SPM_DIR (copy: $CLONED_SPM)"
+fi
 xcodebuild -project "$ROOT/sample-app-ios/xcode/SampleAppIOS.xcodeproj" -scheme SampleApp \
   -destination "platform=iOS,id=$DEV_UDID" -derivedDataPath "$DD" -allowProvisioningUpdates \
+  ${CLONED_SPM:+-clonedSourcePackagesDirPath "$CLONED_SPM"} \
   DEVELOPMENT_TEAM="$TEAM" PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE" build >/dev/null
 APP="$DD/Build/Products/Debug-iphoneos/SampleApp.app"
 

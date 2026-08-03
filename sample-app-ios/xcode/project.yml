@@ -6,6 +6,12 @@ options:
 packages:
   ReticleAgentIOS:
     path: ../../reticle-agent/ios
+  # Mirrors sample-app-ios/Package.swift: the native-lottie scenarios need the
+  # real Lottie view, so the device project must carry the same dependency the
+  # SwiftPM (simulator) build does.
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios.git
+    from: 4.5.0
 targets:
   SampleApp:
     type: application
@@ -15,6 +21,8 @@ targets:
     dependencies:
       - package: ReticleAgentIOS
         product: ReticleKit
+      - package: Lottie
+        product: Lottie
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.sampleios
@@ -26,4 +34,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         SWIFT_VERSION: "5.0"
+        # SwiftPM synthesizes `Bundle.module`; an Xcode app target does not, and
+        # its resources land in the app bundle itself. The flag switches on the
+        # shim in BundleModuleShim.swift.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: RETICLE_XCODE_APP
         TARGETED_DEVICE_FAMILY: "1,2"
