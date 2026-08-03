@@ -3,6 +3,7 @@ package dev.reticle.cli
 import dev.reticle.core.Node
 import dev.reticle.core.Rect
 import dev.reticle.core.Render
+import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
 import java.io.File
 import java.security.MessageDigest
@@ -113,6 +114,20 @@ internal object OutlineRenderer {
         return entryFromJson(item, packageName)
     }
 
+    /**
+     * Does any part of this node's rect fall inside the display?
+     *
+     * Intersection, not containment: a row half off the bottom edge is still
+     * something a caller can tap, and the point of the check is to drop what is
+     * nowhere near the screen rather than to be strict about edges.
+     */
+    private fun onScreen(node: Node, screen: Size): Boolean {
+        val frame = node.frame ?: return false
+        if (frame.width <= 0.0 || frame.height <= 0.0) return false
+        return frame.x < screen.width && frame.y < screen.height &&
+            frame.x + frame.width > 0.0 && frame.y + frame.height > 0.0
+    }
+
     private fun collect(snapshot: Snapshot): List<Entry> {
         // Windows first (topmost first), geometry within a window. Numbering then
         // starts in the window the user is actually looking at, instead of being
@@ -120,8 +135,16 @@ internal object OutlineRenderer {
         // complaint: aliases were least useful exactly when the screen was stacked.
         val windowOrder = snapshot.windowRefs().withIndex().associate { (i, ref) -> ref to i }
         val windowOf = HashMap<String, String?>()
+        // On screen, not merely in the tree. `outline` is the ad-hoc "what can I
+        // act on right now" view and its aliases are meant to be tapped, so a node
+        // scrolled far past the fold is not a candidate: measured on a real home
+        // screen, a 1080x2412 device produced 135 aliases whose last entry sat at
+        // y=10800, while about 15 were actually visible. The rest were not wrong —
+        // they were unreachable without a scroll, numbered as though they were not.
+        val screen = snapshot.screen.size
         val nodes = snapshot.nodes.values
             .filter { it.isVisible && it.frame != null && (it.isInteractive || it.hasLabelOrSelector()) }
+            .filter { node -> onScreen(node, screen) }
             .onEach { windowOf[it.ref] = snapshot.windowRefOf(it.ref) }
             .sortedWith(
                 compareBy<Node>({ -(windowOf[it.ref]?.let { w -> windowOrder[w] } ?: -1) })

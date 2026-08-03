@@ -471,6 +471,21 @@ data class Node(
      * `reticle-protocol/fixtures/selector-resolution.cases.json` — reads it, and the
      * key/cast must be spelled once.
      */
+    /**
+     * How many DOM nodes were captured before the traversal hit its own node cap,
+     * or null when it walked the whole document.
+     *
+     * The projection's cap already announces itself
+     * (`(N more item(s) beyond this projection's cap …)`); the traversal's stopped
+     * silently, so a partial DOM read as the whole page — and unlike the
+     * projection's, nothing further down can recover what was never captured.
+     */
+    fun domCappedAt(): Long? {
+        val capped = (custom["domCapped"] as? MetadataValue.Bool)?.value ?: false
+        if (!capped) return null
+        return (custom["domCaptured"] as? MetadataValue.Integer)?.value ?: 0L
+    }
+
     /** The element's tag name, lowercased by the traversal script. */
     fun domTag(): String? = (custom["domTag"] as? MetadataValue.Text)?.value
 

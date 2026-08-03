@@ -23,6 +23,7 @@ object SampleWebFixtures {
     private const val SCENARIO_COMPLEX = "complex"
     private const val SCENARIO_FORM = "form"
     private const val SCENARIO_SCALED = "scaled"
+    private const val SCENARIO_CLIPPED = "clipped"
 
     data class Fixture(
         val heightPx: Int,
@@ -50,6 +51,7 @@ object SampleWebFixtures {
             SCENARIO_COMPLEX -> complexFixture(heightPx = 900)
             SCENARIO_FORM -> formFixture(heightPx = 900)
             SCENARIO_SCALED -> scaledFixture(heightPx = 900)
+            SCENARIO_CLIPPED -> clippedFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -165,6 +167,28 @@ object SampleWebFixtures {
             heightPx = ViewGroup.LayoutParams.MATCH_PARENT,
             baseUrl = "https://reticle.dev/sample/nested-overlay",
             html = nestedOverlayHtml,
+        )
+
+    /**
+     * Two things every other fixture is blind to, on one page.
+     *
+     * **Clipping.** An `overflow: hidden` roller whose items are laid out well
+     * outside it. `getComputedStyle` reports them as perfectly ordinary — display
+     * and visibility are untouched — and their rects land inside the WINDOW
+     * viewport, so nothing distinguishes them from what is on screen. The existing
+     * `hidden-display` / `hidden-visibility` nodes do not cover this: those are CSS
+     * hidden, which the traversal already drops. Measured on a real page, a 20-item
+     * animated counter put 18 unseeable digits into the tree and `--label "5"`
+     * then refused as ambiguous, citing three of them.
+     *
+     * **Volume.** Enough elements to trip the traversal's own node cap, which
+     * stopped silently — the projection's cap announces itself, this one did not.
+     */
+    fun clippedFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/clipped",
+            html = clippedHtml,
         )
 
     private fun complexFixture(heightPx: Int): Fixture =
@@ -553,6 +577,71 @@ object SampleWebFixtures {
               Overlay action
             </button>
             <p id="overlay-status" data-testid="nested.overlayStatus">Not hit</p>
+          </body>
+        </html>
+    """.trimIndent()
+
+
+
+    private val clippedHtml: String = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body { font-family: sans-serif; margin: 16px; }
+              /* The shape of an animated counter: one visible digit, the rest of
+                 the strip laid out above and below and clipped away. */
+              .roller { height: 40px; overflow: hidden; width: 40px; border: 1px solid #ccc; }
+              .roller ul { list-style: none; margin: 0; padding: 0; position: relative; top: -200px; }
+              .roller li { height: 40px; line-height: 40px; text-align: center; }
+              /* A SCROLLABLE clip, which is a different situation from a hidden one:
+                 the rows below the fold can be brought into view. */
+              .scroller { height: 80px; overflow-y: auto; border: 1px solid #ccc; }
+              .scroller div { height: 40px; }
+              .cell { display: inline-block; width: 18px; height: 18px; font-size: 9px; }
+            </style>
+          </head>
+          <body>
+            <h1 id="clipped-title" data-testid="clipped.title">Clipped fixture</h1>
+
+            <p>The only 5 a user can see is the button below.</p>
+            <button id="visible-five" data-testid="clipped.visibleFive"
+              onclick="this.innerText='Five hit'">5</button>
+
+            <!-- Only "5" is inside the 40px window; the other nine are clipped. -->
+            <div class="roller" id="roller">
+              <ul>
+                <li>0</li><li>1</li><li>2</li><li>3</li><li>4</li>
+                <li>5</li><li>6</li><li>7</li><li>8</li><li>9</li>
+              </ul>
+            </div>
+
+            <div class="scroller" id="scroller">
+              <div id="scroll-row-1">Row one</div>
+              <div id="scroll-row-2">Row two</div>
+              <div id="scroll-row-3">Row three</div>
+              <div id="scroll-row-4">Row four</div>
+            </div>
+
+            <div id="bulk"></div>
+
+            <script>
+              // Past the traversal's node cap, so the truncation has to announce
+              // itself rather than presenting a partial tree as the whole screen.
+              //
+              // They have to be SMALL: the walk already drops anything outside the
+              // window viewport, so a stack of full-width rows falls off the bottom
+              // long before the cap is reached. Tiling tiny cells keeps 400+ of them
+              // on screen at once, which is the only way to exercise it.
+              var bulk = document.getElementById('bulk');
+              for (var i = 0; i < 420; i++) {
+                var cell = document.createElement('span');
+                cell.className = 'cell';
+                cell.appendChild(document.createTextNode(String(i % 10)));
+                bulk.appendChild(cell);
+              }
+            </script>
           </body>
         </html>
     """.trimIndent()

@@ -325,6 +325,16 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// How many DOM nodes were captured before the traversal hit its own node cap,
+    /// nil when it walked the whole document. Unlike the projection's cap, the
+    /// nodes past this one were never captured, so nothing further down can reach
+    /// them. See the Kotlin twin.
+    public func domCappedAt() -> Int64? {
+        guard case .bool(true)? = custom["domCapped"] else { return nil }
+        if case .integer(let n)? = custom["domCaptured"] { return n }
+        return 0
+    }
+
     /// The element's tag name, lowercased by the traversal script.
     public func domTag() -> String? {
         if case .text(let v)? = custom["domTag"] { return v }

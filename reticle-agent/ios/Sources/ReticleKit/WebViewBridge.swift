@@ -105,6 +105,10 @@ enum WebViewBridge {
         let tag = str(element["tag"])?.lowercased() ?? ""
         let role = str(element["role"]) ?? (tag.isEmpty ? "dom" : tag)
         let disabled = bool(element["disabled"])
+        // Laid out entirely outside a clipping ancestor's box: on screen in the
+        // document's coordinates, and unseeable. Treated as not visible, which is
+        // the treatment every other invisible node already gets.
+        let clipped = bool(element["clipped"])
         let frame = fold.rect(for: element)
 
         let domMetadata = metadata(for: element, tag: tag, fold: fold)
@@ -118,7 +122,7 @@ enum WebViewBridge {
             text: str(element["text"]),
             testId: str(element["testId"]),
             frame: frame,
-            isVisible: frame.width > 0 && frame.height > 0,
+            isVisible: frame.width > 0 && frame.height > 0 && !clipped,
             isEnabled: !disabled,
             isInteractive: !disabled && bool(element["interactive"]),
             checked: checkedState(str(element["checked"])),
@@ -169,6 +173,7 @@ enum WebViewBridge {
         // page whose inputs set no id and no value projects several identical
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
+        if bool(element["clipped"]) { map["domClipped"] = .bool(true) }
         putText("domHasPopup", "hasPopup")
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.
