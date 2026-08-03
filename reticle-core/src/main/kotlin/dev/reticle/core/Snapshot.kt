@@ -464,7 +464,17 @@ data class Node(
             resourceId != null ||
             contentDescription != null ||
             !text.isNullOrBlank() ||
-            isInteractive
+            isInteractive ||
+            // A DISABLED input is not interactive and, on a form built from
+            // framework components, carries no id, no label and no value — so
+            // every other clause above is false and it used to be filtered out of
+            // the projection entirely. Measured: an address form's city/street
+            // fields, disabled until a postcode unlocked them, were simply not on
+            // screen as far as the compact view was concerned, which reads as "the
+            // app does not have those fields" rather than "they are not ready yet".
+            // The placeholder is both the signal that it IS a field and the only
+            // thing that says which one.
+            domPlaceholder() != null
 }
 
 /**
