@@ -144,6 +144,16 @@ in complementary ways and each says so (`pixels:unavailable`, `screencap:blank` 
 see **Honest boundaries** below for which path to switch to). `ui screenshot`
 prints a `degraded:` line for whatever the picture it just wrote is missing.
 
+On **iOS** the fallback is narrower, so say which path produced the picture:
+`reticle --target ios ui screenshot --package <bundle-id> --output shot.png`
+prints `via agent` or `via simctl`. The device-level path is `simctl io`, which is
+**simulator-only** — on a **real device** the agent's in-process render is the only
+source (over the `iproxy` tunnel; the app must be foreground, since a suspended app
+loses its loopback socket). So on a device, anything that is not this app's own
+window is simply absent with nothing to switch to: the **status bar**, the system
+keyboard's host window, another process's sheet. Report that as a boundary, never
+as "the screen was empty."
+
 ## Core workflow
 
 ```bash
