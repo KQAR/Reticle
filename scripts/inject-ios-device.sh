@@ -8,7 +8,8 @@
 # linked path is simpler and is the recommended route; this exists for the
 # "drive a debug build I can't touch the source of" case.
 #
-# Why this shape (validated on MabilisCash / iPhone 13 Pro Max / iOS 26.0):
+# Why this shape (validated on a self-signed debug build, iPhone 13 Pro Max /
+# iOS 26.0):
 #   - Injection is only possible because a debug build we sign has
 #     get-task-allow=true (AMFI precondition). A production/App-Store build cannot
 #     be injected — this is Apple's security model, not a Reticle limit.
