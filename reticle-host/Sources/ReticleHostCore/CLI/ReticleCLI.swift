@@ -6,6 +6,36 @@ public enum ReticleCLI {
     public static let version = ReticleVersion.current
     public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|trace|rule|replay|serve|version> [--serial <id>] [options]"
 
+    /// What each command is for, and the subcommands that are otherwise only
+    /// discoverable by guessing one and reading the error.
+    ///
+    /// `--help` used to print the one-line usage and nothing else, and a command
+    /// with subcommands answered a missing one with `unknown app subcommand:
+    /// <none>` — an error about what you did not type, rather than a list of what
+    /// you could.
+    public static let help = """
+    \(usage)
+
+      doctor                  adb + device readiness (flags offline/unauthorized)
+      devices                 list attached devices
+      status                  runtime health + identity for one package
+      app launch|inject       start a linked app, or load the runtime into a
+                              running debuggable one over JDWP
+      ui report|compact|tree|outline|node|style|regions|screenshot
+                              capture and project the running UI
+      act tap|swipe|drag|type|scroll-to|wait|batch|activate|hide-keyboard
+                              drive real input
+      mutate                  live-patch an allowlisted view property
+      debug logs|logcat       app-authored runtime logs, and the agent's own
+      trace log|replay        read back what a recorded run did
+      rule / replay           network mocking and request replay
+      serve                   session daemon + read-only web panel
+      version                 print the release
+
+    Every command takes --serial <id> (or ANDROID_SERIAL) and --json.
+    iOS: pass --target ios.
+    """
+
     /// Runs the Reticle CLI and returns a process exit code.
     public static func run(_ argv: [String]) -> Int32 {
         // A write to a dead helper's stdin pipe (or a closed client socket)
@@ -14,7 +44,7 @@ public enum ReticleCLI {
         signal(SIGPIPE, SIG_IGN)
         let args = Args(argv)
         guard let command = args.positional(0) else {
-            writeError("\(usage)\n")
+            writeError("\(help)\n")
             return 2
         }
 
@@ -23,7 +53,7 @@ public enum ReticleCLI {
             print("reticle \(version)")
             return 0
         case "help", "--help", "-h":
-            print(usage)
+            print(help)
             return 0
         case "serve":
             return runServe(args)
@@ -158,7 +188,14 @@ public enum ReticleCLI {
             switch args.positional(1) {
             case "launch": try cmdLaunch(backend, args)
             case "inject": try cmdInject(backend, args)
-            default: throw HelperError("unknown app subcommand: \(args.positional(1) ?? "<none>")")
+            default:
+                // Name what IS available. A missing subcommand answered with
+                // "unknown app subcommand: <none>" is an error about what the
+                // caller did not type rather than a list of what they could.
+                throw HelperError(
+                    "usage: reticle app <launch|inject> --package <pkg>"
+                        + (args.positional(1).map { "\n  (got '\($0)')" } ?? "")
+                )
             }
         case "inject": try cmdInject(backend, args)
         case "launch": try cmdLaunch(backend, args)

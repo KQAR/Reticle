@@ -174,6 +174,7 @@ enum WebViewBridge {
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
         if bool(element["clipped"]) { map["domClipped"] = .bool(true) }
+        if bool(element["crossOriginFrame"]) { map["domCrossOriginFrame"] = .bool(true) }
         putText("domHasPopup", "hasPopup")
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.

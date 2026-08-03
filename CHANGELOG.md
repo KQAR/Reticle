@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **A cross-origin frame says why it is empty, and it is finally exercised.** The
+  absence was already a documented boundary — `contentDocument` throws by browser
+  policy and nothing in an app can override it — but it was a *silent* one, and an
+  empty frame is byte-for-byte what a frame that has not finished loading looks
+  like. A caller that cannot tell those apart retries, waits, and ends up measuring
+  pixels: measured on a real third-party widget, four consecutive steps done by
+  coordinate because nothing in the tree said to stop trying. The frame now carries
+  `iframe:cross-origin`. `docs/boundaries.md` recorded this case as **not
+  exercised** ("needs a second origin, and both suites run offline"); a `data:` URL
+  gets an OPAQUE origin, so both twins — a pierced `srcdoc` frame and a genuinely
+  cross-origin one — now sit on one screen with no network.
+
+- **`--verify` says what it compared.** It printed `verify @x: no change` beside a
+  trace recording 101 changes, because it watches only the node the selector names
+  and the tap had replaced the whole screen. That reads as "the tap did nothing" —
+  the opposite of what happened. It now says which node's fields were unchanged and
+  points at `trace log` for the rest.
+
+- **`--help` lists the commands.** It printed the one-line usage and nothing else,
+  and a command with subcommands answered a missing one with `unknown app
+  subcommand: <none>` — an error about what you did not type rather than a list of
+  what you could. Both now name what exists.
+
 - **A screen covered by another one, inside a single window, now says so.**
   Occlusion was window-level only: it scanned the windows above a node's own and
   stopped there. That misses the shape a hybrid app really has — a second screen

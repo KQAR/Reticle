@@ -168,6 +168,7 @@ public struct CompactObservation: Codable, Sendable {
                         wheel: wheelMarker(node),
                         domUnavailable: node.domUnavailable(),
                         domCappedAt: node.domCappedAt(),
+                        crossOriginFrame: node.domCrossOriginFrame(),
                         domKernelUnsupported: node.domKernelUnsupported(),
                         pixelsUnavailable: node.pixelsUnavailable(),
                         screencapBlank: node.screencapBlank()
@@ -347,6 +348,11 @@ public struct CompactItem: Codable, Sendable {
     /// carrying how many nodes it did capture. Rendered as ` dom:capped(N)`. The
     /// nodes past it were never captured, so no `ui tree` can reach them.
     public var domCappedAt: Int64?
+    /// True when this is a frame whose document is unreadable by browser policy.
+    /// Rendered as ` iframe:cross-origin`. The absence it explains is
+    /// indistinguishable from a frame still loading, so without it the honest
+    /// answer reads as "try again". See the Kotlin twin.
+    public var crossOriginFrame: Bool
     /// True when this node is a suspected third-party WebView kernel (X5/UC): no
     /// DOM bridge exists for it at all — a structural boundary, not a degrade.
     public var domKernelUnsupported: Bool
@@ -380,6 +386,7 @@ public struct CompactItem: Codable, Sendable {
         wheel: String? = nil,
         domUnavailable: Bool = false,
         domCappedAt: Int64? = nil,
+        crossOriginFrame: Bool = false,
         domKernelUnsupported: Bool = false,
         pixelsUnavailable: Bool = false,
         screencapBlank: Bool = false
@@ -404,6 +411,7 @@ public struct CompactItem: Codable, Sendable {
         self.wheel = wheel
         self.domUnavailable = domUnavailable
         self.domCappedAt = domCappedAt
+        self.crossOriginFrame = crossOriginFrame
         self.domKernelUnsupported = domKernelUnsupported
         self.pixelsUnavailable = pixelsUnavailable
         self.screencapBlank = screencapBlank
@@ -442,6 +450,7 @@ public struct CompactItem: Codable, Sendable {
         if let wheel { state += " wheel:\(wheel)" }
         if domUnavailable { state += " dom:unavailable" }
         if let domCappedAt { state += " dom:capped(\(domCappedAt))" }
+        if crossOriginFrame { state += " iframe:cross-origin" }
         if domKernelUnsupported { state += " dom:unsupported-kernel" }
         if pixelsUnavailable { state += " pixels:unavailable" }
         if screencapBlank { state += " screencap:blank" }
@@ -451,7 +460,7 @@ public struct CompactItem: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
         case isFocused, checked, expanded, hasPopup, placeholder, invalid, windowRef, occludedBy, scroll, wheel
-        case domUnavailable, domCappedAt, domKernelUnsupported, pixelsUnavailable, screencapBlank
+        case domUnavailable, domCappedAt, crossOriginFrame, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -476,6 +485,7 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(wheel, forKey: .wheel)
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
         try c.encodeIfPresent(domCappedAt, forKey: .domCappedAt)
+        if crossOriginFrame { try c.encode(crossOriginFrame, forKey: .crossOriginFrame) }
         if domKernelUnsupported { try c.encode(domKernelUnsupported, forKey: .domKernelUnsupported) }
         if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
         if screencapBlank { try c.encode(screencapBlank, forKey: .screencapBlank) }
@@ -503,6 +513,7 @@ public struct CompactItem: Codable, Sendable {
         wheel = try c.decodeIfPresent(String.self, forKey: .wheel)
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
         domCappedAt = try c.decodeIfPresent(Int64.self, forKey: .domCappedAt)
+        crossOriginFrame = try c.decodeIfPresent(Bool.self, forKey: .crossOriginFrame) ?? false
         domKernelUnsupported = try c.decodeIfPresent(Bool.self, forKey: .domKernelUnsupported) ?? false
         pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false
         screencapBlank = try c.decodeIfPresent(Bool.self, forKey: .screencapBlank) ?? false

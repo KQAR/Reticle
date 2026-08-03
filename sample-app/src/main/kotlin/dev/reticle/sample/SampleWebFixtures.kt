@@ -322,6 +322,16 @@ object SampleWebFixtures {
                 srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'
                   onclick='this.innerText=&quot;Frame clicked&quot;'>Inside frame</button>">
               </iframe>
+              <!--
+                The cross-origin twin of the frame above, and the reason it can
+                exist offline at all: a `data:` URL gets an OPAQUE origin, so
+                `contentDocument` throws exactly as it would for another host. Its
+                content must be ABSENT and the frame must SAY why — an empty frame
+                is otherwise byte-for-byte what one that has not loaded looks like.
+              -->
+              <iframe id="foreign-frame" data-testid="complex.foreignFrame"
+                src="data:text/html,%3Cbutton%20id%3D%22foreign-button%22%3EInside%20foreign%20frame%3C%2Fbutton%3E">
+              </iframe>
               <p id="hidden-display">Hidden by display</p>
               <p id="hidden-visibility">Hidden by visibility</p>
             </section>
