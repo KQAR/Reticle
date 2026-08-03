@@ -109,12 +109,33 @@
     if (tag === "option") return el.selected ? "true" : "false";
     return "";
   }
-  function interactive(el) {
+  // A click handler bound in JS is not readable from the page (getEventListeners
+  // is a devtools API), so a control a component framework built out of divs
+  // publishes no handler to find. What it DOES publish is these — and without them
+  // an unopened dropdown is a label with no executable next step, which is the
+  // single largest source of coordinate taps measured on a real form.
+  function hasPopup(el) {
+    var value = clean(el.getAttribute("aria-haspopup"), 40).toLowerCase();
+    if (!value || value === "false") return "";
+    // The attribute's bare form means "menu"; anything else names the popup.
+    return value === "true" ? "menu" : value;
+  }
+  function interactive(el, pointerOrigin) {
     var tag = el.tagName.toLowerCase();
     if (/^(a|button|input|select|textarea|summary)$/.test(tag)) return true;
     var role = clean(el.getAttribute("role"), 40);
-    if (/^(button|link|checkbox|radio|tab|switch|menuitem)$/.test(role)) return true;
+    // Widget roles that take a click. `combobox`/`option`/`treeitem` are how a
+    // div-built select names itself, and were missing.
+    if (/^(button|link|checkbox|radio|tab|switch|menuitem|combobox|option|treeitem|menuitemcheckbox|menuitemradio)$/.test(role)) return true;
     if (el.hasAttribute("onclick") || el.tabIndex >= 0) return true;
+    // A control that declares it opens something is a control you can open.
+    if (hasPopup(el)) return true;
+    if (el.hasAttribute("aria-expanded")) return true;
+    // Weakest of the signals and the only inferred one: the page telling a human
+    // "this is clickable". Kept because a framework-built trigger often declares
+    // nothing else — and confined to where the pointer STARTS, since `cursor` is
+    // inherited and marking every descendant would turn one control into four.
+    if (pointerOrigin) return true;
     return el.getAttribute("contenteditable") === "true";
   }
   function styleValue(style, key, max) {
@@ -127,25 +148,29 @@
     var local = selectorFor(el);
     return prefix ? prefix + " >>> " + local : local;
   }
-  function walk(el, prefix, offset) {
+  function walk(el, prefix, offset, parentCursor) {
     if (!el || count >= MAX) return null;
     var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
     var style = win.getComputedStyle(el);
     if (!style || style.display === "none" || style.visibility === "hidden") return null;
+    var cursor = styleValue(style, "cursor");
+    // `cursor` is inherited, so a pointer on a wrapper computes as pointer on every
+    // descendant. Only the node where it starts is the control.
+    var pointerOrigin = cursor === "pointer" && parentCursor !== "pointer";
     var rect = el.getBoundingClientRect();
     var left = rect.left + offset.x;
     var top = rect.top + offset.y;
     var chain = chainFor(el, prefix);
     var children = [];
     for (var i = 0; i < el.children.length && count < MAX; i++) {
-      var child = walk(el.children[i], prefix, offset);
+      var child = walk(el.children[i], prefix, offset, cursor);
       if (child) children.push(child);
     }
     // Pierce an OPEN shadow root: same coordinate space as the host,
     // selectors chain through the host.
     if (el.shadowRoot) {
       for (var s = 0; s < el.shadowRoot.children.length && count < MAX; s++) {
-        var shadowChild = walk(el.shadowRoot.children[s], chain, offset);
+        var shadowChild = walk(el.shadowRoot.children[s], chain, offset, cursor);
         if (shadowChild) children.push(shadowChild);
       }
     }
@@ -156,7 +181,7 @@
     try { frameDoc = el.contentDocument; } catch (e) { frameDoc = null; }
     if (frameDoc && frameDoc.body) {
       var frameOffset = { x: left + el.clientLeft, y: top + el.clientTop };
-      var frameBody = walk(frameDoc.body, chain, frameOffset);
+      var frameBody = walk(frameDoc.body, chain, frameOffset, cursor);
       if (frameBody) children.push(frameBody);
     }
     var inViewport = rect.width > 0 && rect.height > 0 &&
@@ -194,7 +219,17 @@
       imageComplete: image ? !!image.complete : false,
       inputType: clean(el.getAttribute("type"), 40),
       disabled: !!el.disabled || el.getAttribute("aria-disabled") === "true",
-      interactive: interactive(el),
+      interactive: interactive(el, pointerOrigin),
+      hasPopup: hasPopup(el),
+      // "" when the element declares no expanded state at all — which is a
+      // different fact from "closed", and the one that says this is not a
+      // disclosure control.
+      expanded: el.hasAttribute("aria-expanded")
+        ? (clean(el.getAttribute("aria-expanded"), 40).toLowerCase() === "true" ? "true" : "false")
+        : "",
+      // Recorded only where it STARTS, and only as the weak signal it is: the page
+      // said pointer, nothing declared a role.
+      pointerOrigin: !!pointerOrigin,
       left: left + window.scrollX,
       top: top + window.scrollY,
       width: rect.width,

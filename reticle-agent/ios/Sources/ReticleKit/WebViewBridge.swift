@@ -122,6 +122,7 @@ enum WebViewBridge {
             isEnabled: !disabled,
             isInteractive: !disabled && bool(element["interactive"]),
             checked: checkedState(str(element["checked"])),
+            expanded: expandedState(str(element["expanded"])),
             custom: domMetadata,
             // Computed CSS is the DOM's style channel — the same tagging the Android
             // bridge applies, so a WKWebView and an android.webkit.WebView answer
@@ -168,6 +169,10 @@ enum WebViewBridge {
         // page whose inputs set no id and no value projects several identical
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
+        putText("domHasPopup", "hasPopup")
+        // Only where the pointer STARTS, and only as the weak signal it is: the
+        // page said "clickable" and nothing declared a role.
+        if bool(element["pointerOrigin"]) { map["domCursor"] = .text("pointer") }
         putText("domPlaceholder", "placeholder")
         putText("domName", "formName")
         putText("domDescribedBy", "describedBy")
@@ -208,6 +213,16 @@ enum WebViewBridge {
         case "true": return .on
         case "false": return .off
         case "mixed": return .mixed
+        default: return nil
+        }
+    }
+
+    /// `nil` when the element declares no `aria-expanded` at all — a different
+    /// fact from "closed", and the one that says this is not a disclosure control.
+    private static func expandedState(_ raw: String?) -> Bool? {
+        switch raw {
+        case "true": return true
+        case "false": return false
         default: return nil
         }
     }

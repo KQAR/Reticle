@@ -888,6 +888,41 @@ echo "$FORM_COMPACT" | grep -q 'invalid:"Enter a valid postcode"' \
 echo "$FORM_COMPACT" | grep -q 'disabled placeholder:"City"' \
   || { echo "FAIL: a disabled input must be captured and marked disabled, not omitted"; exit 1; }
 
+# 6b. A dropdown built out of divs, driven end to end with no coordinates. Before
+# this the trigger was in the tree as a plain node with nothing marked tappable, so
+# the agent had a label and no executable next step — the single largest source of
+# coordinate taps measured on a real form. A click handler bound in JS is not
+# readable from the page, so the signals used are the ones the page DOES publish:
+# `aria-haspopup` / `aria-expanded` / a widget `role`, and — where nothing else is
+# declared — `cursor: pointer` at the node where it STARTS.
+echo "$FORM_COMPACT" | grep -q 'combobox .*tappable collapsed popup:listbox' \
+  || { echo "FAIL: an unopened div-built dropdown must be tappable and say it is shut"; exit 1; }
+# `cursor` is inherited, so a pointer on a wrapper computes as pointer on every
+# descendant. Marking all of them would turn one control into four.
+echo "$FORM_COMPACT" | grep -q '#pointer-root .*tappable' \
+  || { echo "FAIL: the node where a pointer cursor starts must be tappable"; exit 1; }
+echo "$FORM_COMPACT" | grep -q '#pointer-leaf .*tappable' \
+  && { echo "FAIL: an inherited pointer cursor must not make every descendant tappable"; exit 1; }
+# Open it. A caption and the control it names share one string here (the control
+# takes its name from the caption via aria-labelledby); resolving that to the
+# ACTIONABLE one is what keeps `--label` usable for the control it exists to reach.
+R act tap --package "$PKG" --label "Education" >/dev/null \
+  || { echo "FAIL: --label must resolve a caption/control pair to the control"; exit 1; }
+sleep 1
+OPENED="$(R ui compact --live --package "$PKG" --window top)"
+echo "$OPENED" | grep -q 'combobox .*expanded' \
+  || { echo "FAIL: the trigger must report itself expanded after the tap"; exit 1; }
+echo "$OPENED" | grep -q 'option "University" .*tappable' \
+  || { echo "FAIL: the options must materialise as tappable nodes once opened"; exit 1; }
+# Pick one, and take the app's own committed state as the verdict.
+R act tap --package "$PKG" --label "University" >/dev/null
+sleep 1
+PICKED="$(R ui compact --live --package "$PKG" --window top)"
+echo "$PICKED" | grep -q 'combobox .*collapsed' \
+  || { echo "FAIL: the dropdown did not close after a selection"; exit 1; }
+echo "$PICKED" | grep -q '"University"' \
+  || { echo "FAIL: the selected value did not reach the trigger"; exit 1; }
+
 # 7. The whole form driven with NO coordinates, and every step verified from the
 # field's own text. Three things had to be true at once for this to work, and each
 # was separately broken:
