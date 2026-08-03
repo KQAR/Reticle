@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Two web fixtures for the arrangements every other one is blind to.** All
+  existing web coverage renders 1:1 in a single full-bleed WebView — the one shape
+  where a wrong page-to-device fold and a right one agree, so neither zoom nor
+  container stacking was ever exercised. `scaled` renders at
+  `setInitialScale(130)` with its target 300 CSS-px down the page; the new
+  **Nested WebViews** scenario puts two live WebViews in one window with the
+  overlay inset on both axes and its target 220 CSS-px into its own page. Both
+  assert with a **coordinate** tap against the page's own `onclick` — DOM
+  activation would fire the handler even if the reported geometry were nonsense.
+  Both pass, which is the point: they were written to reproduce a suspected
+  coordinate-fold defect and instead **falsified** it. `docs/blind-agent-gaps.md`
+  records the cause being withdrawn while the original observation stays open — a
+  gap is filed on what was measured, a cause is a separate claim and has to earn
+  its own evidence.
+
 - **A form screen no longer needs a screenshot to be read.** Measured driving a
   real multi-step onboarding flow: an `<input type="checkbox">` came back as
   `role: textField` with `domInputType: "checkbox"` sitting right beside it on the
