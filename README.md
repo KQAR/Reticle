@@ -366,6 +366,18 @@ per-host leaf certificates on demand. Add `--proxy-install-ca` to push
 not trust user CAs, do not opt into user CAs via Network Security Config, or use
 certificate pinning remain opaque.
 
+**iOS routing is never mutated for you**, on either the simulator or a device: the
+simulator shares the host network (so it would mean a host-wide system proxy) and
+a device rides its Wi-Fi setting, and a daemon that dies mid-run would strand
+either one on a closed port. `--proxy-device` therefore *prints* the exact set and
+undo commands for the target and changes nothing itself. For the CA on a real
+phone, `--proxy-phone-onboard true` beats shuttling a `.cer` around: Loom serves a
+LAN provisioning page and `serve` prints its URL, the CA's SHA-256 fingerprint and
+a QR to scan (also written to `~/.reticle/phone-onboard-qr.png`). It rebinds the
+proxy to `0.0.0.0` itself, needs the Mac on Wi-Fi/Ethernet, and holds that
+LAN-wide bind for the daemon's whole life — and it provisions trust only, so the
+phone's Wi-Fi proxy is still yours to set. See `docs/ios.md` → **Network capture**.
+
 A proxied request body is buffered in memory before it is forwarded upstream, so
 it is capped at 64 MiB by default; a larger upload is rejected with `413` and a
 `network.error` event rather than growing the daemon's memory. Raise or lower the

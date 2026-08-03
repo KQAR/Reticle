@@ -29,6 +29,22 @@ when you need precise selectors, coordinates, or live UI state.
 
 The CLI is on PATH as `reticle` while this plugin is enabled.
 
+## What is here, and what to open when
+
+This file is the whole read-and-drive path: bring the runtime up, capture a
+screen, pick a selector, act, and read the markers. The heavier machinery lives in
+`references/` next to this file — **read one only when its row describes what you
+are doing**, since none of it is needed to inspect a screen or tap a button:
+
+| Open | When |
+| --- | --- |
+| `references/flows-and-waiting.md` | The check spans several steps (`act batch`, gates), or what you assert on arrives late (`act wait`) |
+| `references/action-traces.md` | You need to reconstruct what a run did — evidence packages, `trace log`, replay |
+| `references/keyboard.md` | Typing is involved, a field will not focus, or the keyboard is covering the target |
+| `references/webview-dom-and-style.md` | The target is inside a WebView, or the question is computed style / geometry |
+| `references/daemon-and-panel.md` | A run needs a durable timeline across many commands, a browser-visible panel, or network capture |
+| `references/network-rules.md` | The app must see a different network — mock, block, map to another origin, add latency |
+
 ## Install (how the `reticle` binary is obtained)
 
 `reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
@@ -265,69 +281,9 @@ reticle ui compact --live --package <pkg>                      # whole screen, l
 reticle ui compact --live --package <pkg> --window top          # only the top window
 ```
 
-## Style evidence (`ui style`)
-
-When the task is "does this match the design", "did the spacing drift", or "does
-this hold up on a smaller screen", read `ui style`. It gives, per node: the frame
-in raw units AND dp AND a share of the screen; padding, colours, font
-size/weight/family/style, line height, letter spacing, text alignment, corner
-radius, border; and text sizes additionally in **sp**, which divides out the system
-font scale.
-
-```bash
-reticle ui style --live --package <pkg>
-```
-
-Two things to relay rather than smooth over:
-
-- **`[channel]`** after each value is where it was read (`viewField`,
-  `textLayout`, `computedStyle`, `drawableReflect`). A `drawableReflect` value came
-  from a background `Drawable` and is the weakest of the four.
-- **`! <property> unreadable: <reason>`** means that node HAS the property and no
-  channel can read it — NOT that the app left it unset. Reporting it as "not set"
-  is the specific mistake this line exists to prevent. Today: Compose
-  `background`/`clip`/`border` (`compose-draw-modifier`) and an Android
-  `Typeface`'s family name.
-
-**Reticle does not compare.** It emits magnitudes; deciding what they ought to be,
-what tolerance passes, and which regions are exempt (status bar, toolbar) is YOUR
-call as the caller — state your tolerance and your exemptions explicitly in the
-verdict you write, rather than presenting them as something Reticle found.
-
-## Embedded WebView DOM
-
-Reticle folds visible WebView DOM elements into the same snapshot as `domNode`s.
-Use CSS selectors when the target is inside a WebView:
-
-```bash
-reticle ui node --live --package <pkg> --css '#checkout button.pay'
-reticle act tap --package <pkg> --css '#checkout button.pay' --verify 'css=#status'
-```
-
-DOM nodes include the screen-space `frame` plus useful `custom` metadata:
-
-- DOM identity: `domTag`, `domId`, `domClass`, `domCssSelector`, `domHref`,
-  `domSrc`, `domSrcset`, `domSizes`, `domInputType`.
-- Computed layout/style: `domMargin*`, `domStyleDisplay`, `domStyleVisibility`,
-  `domStyleOpacity`, `domStylePosition`, `domStyleZIndex`, `domStyleOverflow*`,
-  `domStyleColor`, `domStyleBackgroundColor`, `domStyleBackgroundImage`,
-  `domStyleFont*`, `domStyleLineHeight`, `domStyleTextAlign`,
-  `domStylePadding*`, `domStyleBorder*Width`, `domStyleBorderRadius`,
-  `domStyleTransform`, `domStylePointerEvents`.
-- Image resources for `<img>`: `domImageCurrentSrc`,
-  `domImageNaturalWidth`, `domImageNaturalHeight`, `domImageComplete`.
-
-The DOM bridge is read-only and snapshot-based. It captures the current document's
-visible DOM. iframe inner documents, shadow-root internals, pseudo-elements, and
-background-image intrinsic dimensions are boundaries unless explicitly added
-later. CSS `background-image` itself is still visible as `domStyleBackgroundImage`.
-
-**Third-party WebView kernels have no DOM at all.** The bridge is typed on
-`android.webkit.WebView`, so an X5/TBS or UC kernel cannot be attached to. This is
-structural, not a transient degrade — retrying or waiting will never produce DOM
-nodes. The node carries `dom:unsupported-kernel` with the class name in
-`custom.domKernel`, so it never looks like an empty page. iOS is unaffected —
-there is one web engine.
+A WebView target, or a question about computed style / box geometry rather than
+which node to tap: `references/webview-dom-and-style.md` (`ui style`, `ui node
+--css`, how DOM nodes fold into the tree).
 
 ## Acting on the app
 
@@ -507,346 +463,22 @@ for), falling back to `KEYCODE_ENTER` when the agent is unreachable; iOS sends
 a HID Return. For OTP/login flows this replaces the `type` → `hide-keyboard` →
 `tap submit` three-step with one command.
 
-## Waiting for an async boundary (`act wait`)
+Beyond a single gesture, in the order you usually need them:
 
-`--verify` can only watch a node that **already** resolves, so "tap, then a NEW
-screen appears" is inexpressible with it. `act wait` is that primitive — the one
-`act` gesture that dispatches no input. Use it instead of a blind sleep whenever a
-network call, navigation transition, or animation sits between two steps.
-
-```bash
-reticle act wait --package <pkg> --for '#cart.total'                 # appear
-reticle act wait --package <pkg> --for '#spinner' --gone             # disappear
-reticle act wait --package <pkg> --for '#checkout.status' --text 'Paid'
-reticle act wait --package <pkg> --idle                              # screen stops changing
-reticle act wait --package <pkg> --for 'css=#pay' --timeout 15000
-```
-
-`--for` takes the same token grammar as `--verify` (`#testId`, `@resourceId`,
-`css=…`, `ref=…`, a bare ref), or use the ordinary `--test-id` / `--css` flags.
-It refuses `--point` (a raw coordinate always "resolves", so there is nothing to
-wait for) and `--alias` (an alias describes the screen a wait exists to watch
-change). Use `--idle` when you do **not** know the next screen's selectors yet —
-that is the case a blind sleep was covering.
-
-**Read the outcome, which is three-state, not two:**
-
-| Outcome | Means | Do this |
-| --- | --- | --- |
-| `RESOLVED` | The predicate held. The very next `act` resolves the same way | Proceed — but read `caveats:` |
-| `ABSENT` | It did not hold, and nothing prevented seeing it. An honest negative | You may act on this ("it is not there") |
-| `UNKNOWABLE` | It did not hold, and it **could not have been seen** | Switch tactics per `reasons:`. Conclude NOTHING about the app |
-
-The distinction is the whole point: `UNKNOWABLE` shows up when another process's
-window holds focus, a list has not bound the row, a DOM is unreadable, a `--label`
-is ambiguous, or the screen never settled. Treating it as `ABSENT` is how you end
-up reporting a working feature as broken.
-
-`caveats:` never change the outcome but must not be ignored — chiefly
-`occluded-by:keyboard` (it resolved, and a tap would still land on the keyboard)
-and `resolved-but-not-visible`. The success test is **resolution through the same
-path an `act` uses**, not visibility, which is why a covered or hidden-but-targetable
-node still reports `RESOLVED`.
-
-Every result carries the predicate it was given, `polls`/`treeChanges`, whatever
-`observedText` was actually on the node, and a `next:` line with concrete
-follow-up commands. A timeout is **not** a failure: `--json` stays
-`{"ok":true,…}`. For shell/CI, `--strict` projects the outcome onto exit codes
-(`0` resolved, `3` absent, `4` unknowable — 3 and 4 are deliberately distinct).
-
-A `wait` step also works inside `act batch` — see **`act batch`** below; that is
-the usual way to make a recorded flow deterministic instead of sleep-padded.
-
-## The system keyboard (IME) — state and dismissal
-
-The keyboard is **another process's window**: it never appears in the node
-tree, and nodes it covers still read as `tappable`. Reticle surfaces it in
-three places so you never tap into the keys by accident:
-
-- Every snapshot carries `screen.keyboard` (`visible` + screen-coordinate
-  `frame`), and `ui compact` leads with a `keyboard: visible … (dismiss with
-  \`act hide-keyboard\`)` header when it's up.
-- Compact items whose tap point is covered are marked `occluded-by:keyboard`
-  — the same marker used when a dialog/popup window covers a background item
-  (`occluded-by:<windowRef>`). Never tap an occluded item; dismiss the
-  occluder first (hide the keyboard, or act inside the top window).
-- `act type` results include `keyboardVisible=true/false` when the runtime is
-  reachable — typing almost always leaves the keyboard up over the bottom of
-  the screen (submit buttons live there).
-
-```bash
-reticle act type --package <pkg> --test-id login.code --text "123456"
-# … keyboardVisible=true
-reticle act hide-keyboard --package <pkg>   # in-app IMM dismiss; reports wasVisible + settled state
-reticle act tap  --package <pkg> --test-id login.submit
-```
-
-`act hide-keyboard` uses the in-process InputMethodManager (deterministic;
-answers with the settled post-hide state). If the agent is unreachable it falls
-back to `KEYCODE_ESCAPE`, which — unlike a BACK key — does not navigate back
-when the keyboard is already gone.
-
-All of this works identically on iOS (`--target ios`): the agent tracks the
-keyboard notification stream and dismisses via `resignFirstResponder`, so
-`act hide-keyboard` needs no HID surface and works on real devices too.
-Simulator caveat: with "Connect Hardware Keyboard" enabled (Simulator.app
-I/O > Keyboard), iOS never shows the software keyboard at all — disable it
-and reboot the sim device if `keyboardVisible` stays false after typing.
-
-## `act batch` — deterministic multi-step flows
-
-Use `act batch --file steps.json` for short, deterministic multi-step flows.
-The file is a JSON array; each object is one normal act RPC using helper-style
-keys. **Every selector a single `act` takes works in a step** — `testId`,
-`resourceId`, `css`, `ref`, `point` ("x,y"), `alias`, `region` — plus `text`
-and `submit` for type, `from`/`to`/`duration` for swipe/drag, `verify`, and
-optional `delayMs` after that step.
-
-A `wait` step works inside a batch like any other gesture. Add `"strict": true`
-to make it a **gate**: the batch stops there if the predicate did not resolve
-(without it, the batch records the outcome and carries on). Note the wire name
-`textContains`, so a wait step can never be misread as a `type`:
-
-```json
-[
-  { "gesture": "type", "testId": "checkout.name", "text": "Ada" },
-  { "gesture": "type", "testId": "login.code", "text": "123456", "submit": true },
-  { "gesture": "tap",  "testId": "checkout.payButton", "verify": "testId=checkout.status" },
-  { "gesture": "wait", "testId": "checkout.status", "textContains": "Paid", "strict": true },
-  { "gesture": "tap",  "resourceId": "btnWithdraw" }
-]
-```
-
-```bash
-reticle act batch --package <pkg> --file steps.json --trace-output reticle-batch
-```
-
-Batch is host-side sequencing: it stops on the first failing step and still uses
-the same tap/swipe/drag/type backend as individual `act` commands.
-
-**`--verify` — act and check the result in one command.** Add `--verify` to any
-`act` and Reticle captures the watched node before the gesture, acts, then polls
-until it changes (or a ~2s budget elapses) and prints the before→after diff.
-Bare `--verify` watches the node you're acting on; `--verify <selector>` watches a
-*different* node (tap a control, watch its effect). This is the "tap → did it
-change?" loop in one call — no follow-up `ui report` + grep:
-
-```bash
-reticle act tap --package <pkg> --test-id submit --verify              # watch the tapped node
-reticle act tap --package <pkg> --point 292,1273 --verify "@rata"      # tap a tab, watch #rata
-#   => verify @rata: changed (1 field)
-#        text: 3414,20 zł -> 6072,49 zł
-```
-
-A selector token is `#testId`, `@resourceId`, or a bare `ref` (the key=
-spellings `testId=…`, `resourceId=…`, `ref=…` work too). "No change" is an
-honest result, not a failure — it means the node didn't move within the budget
-(raise it with `--verify-timeout <ms>`). For WebView DOM nodes, use
-`css=<selector>` as the verify token:
-
-```bash
-reticle act tap --package <pkg> --css '#style-target' --verify 'css=#style-target'
-```
-
-## Action traces
-
-**Every `act` records by default** — no flag, no `serve` needed. Reticle writes
-one subdirectory per action under the current session containing:
-
-- `trace.json` — manifest with gesture, selector, resolved point/source/ref, the
-  gesture's own inputs (`params`, including a `type`'s text), and a ranked
-  before→after diff.
-- `before.snapshot.json` / `after.snapshot.json` — full trees around the action.
-- `before.screenshot.png` / `after.screenshot.png` when the agent screenshot path
-  is available.
-
-Pass `--trace-output <dir>` only to put the artifacts somewhere specific (a bug
-report, a `replay gif` input). `RETICLE_NO_AUTO_TRACE=1` turns auto-recording off.
-
-**`trace log` — read a run back cheaply.** This is the command to reach for
-instead of opening trace files. A snapshot is 100KB+; the digest is a few lines
-per action and answers "what did this run do" on its own:
-
-```bash
-reticle trace log                       # the current recording
-reticle trace log reticle-batch         # or any trace directory
-reticle trace log --changes 12 --json   # more per-action detail / machine-readable
-```
-
-```
-1  19:11:48  tap  testId=checkout.payButton  →540,1176 semantic:testId
-    ~ r36 text "Cart: 3 items" → "Paid!" [testId=checkout.status role=text]
-    evidence 1785150708052-tap/, 2 snapshots, 2 screenshots
-
-2  19:11:55  tap  testId=scenario.login  →540,2320 semantic:testId
-    (no observable change between before and after — usually the gesture hit
-     nothing, but an app can also answer out of tree or purely over the network)
-```
-
-How to read it:
-
-- `+` appeared, `-` disappeared, `~` changed. The `[testId=… role=…]` names the
-  node, so a bare `r36` never needs a snapshot lookup. It is attached once per
-  ref, not repeated on that node's other changes.
-- Changes are **ranked**, so the ones shown are the ones that mattered:
-  appearances and text before geometry, addressable nodes before anonymous
-  containers.
-- `(no observable change between before and after)` means the action dispatched
-  and the screen did not move. That is a real finding — not an empty result — but
-  it is **two** findings wearing one face: the gesture reached no handler
-  (re-target), or it reached one that answered somewhere a snapshot cannot see
-  (do **not** re-target — read the answer). Before concluding a miss, check the
-  `! transient message` line below, and consider a purely network answer.
-- `! transient message shown: "…"` is a **toast** the action raised, read from the
-  system Toast Queue. It leads the step because when an action is answered by a
-  toast, the toast IS the answer — and when one is present the empty-diff line
-  changes to `(no other observable change …)`, because the gesture demonstrably
-  did not miss. `! transient toast raised [custom-view]` means the app drew the
-  toast itself, so its text is a node in the changes right below.
-- `…N more (…)` is what the digest omitted; `! manifest kept X of Y` is what the
-  capture already dropped. Both snapshots stay on disk, so raise `--changes` or
-  open the trace directory when you need the rest.
-
-`trace log` reads only. It asserts nothing: to state an expectation use
-`act … --verify` or `act wait --strict`.
-
-**`replay gif` — turn a recorded flow into a shareable artifact.** Once a flow
-has trace packages on disk, stitch them into a device-framed animated GIF for
-bug reports and PR comments — each step shows its before-screenshot with the
-gesture drawn on it (tap ring / swipe arrow) and its after-screenshot, captioned
-`2/5 tap testId=checkout.payButton · Δ12`:
-
-```bash
-reticle act batch --package <pkg> --file steps.json --trace-output reticle-flow
-reticle replay gif reticle-flow                      # => reticle-flow/replay.gif
-reticle replay gif reticle-flow --output flow.gif --width 480 --frame-ms 600
-```
-
-It is host-local (no device needed) and works on Android and iOS traces alike.
-Steps recorded without screenshots are skipped with a stderr note.
-
-## Session event bus
-
-Use `reticle serve` when you need a durable local timeline across multiple
-commands or a browser-visible evidence panel. It creates
-`~/.reticle/sessions/<session>/events.jsonl` and exposes REST/SSE plus a
-display-only panel on localhost via Hummingbird:
-
-```bash
-reticle serve --session demo --port 9876 --proxy-port 9090
-open http://127.0.0.1:9876/panel
-curl -N http://127.0.0.1:9876/events/stream
-```
-
-When the daemon is running, ordinary `act ...` commands automatically write trace
-packages under the current session and publish `action.trace` events. The panel
-shows a vertical evidence timeline: screenshot/snapshot evidence cards, actions,
-and manifest diffs are flattened into time-ordered nodes. Diff previews rank
-visible text/label/state changes ahead of structural churn, and missing
-screenshot artifacts show inline failures. Its session picker can switch from the
-live current session to static historical sessions under `~/.reticle/sessions`.
-When `--proxy-port` is supplied, the daemon also records `network.*` events and
-renders them in the panel's network lane. Network cards are grouped by request id
-and show method, URL, status, duration, headers, body refs, and text previews for
-captured bodies; sensitive header values are redacted. Mocked responses are
-marked with a `MOCK` badge and show copyable mock rule/value ids. Use the
-filter buttons for MOCK, ERROR, MITM, and TUNNEL when a session has many network
-events. Add `--proxy-device --serial <id>` to configure Android global proxy through
-`adb reverse`; the daemon restores the previous proxy setting on exit. HTTPS
-decryption is opt-in via `--proxy-mitm`
-and `--proxy-ssl-hosts`; Reticle generates a local CA under
-`~/.reticle/proxy-ca` unless `--proxy-ca-dir` is supplied. Use
-`--proxy-install-ca` to push the CA file and open Android Security settings.
-Android 11+ still requires the user to confirm CA trust in Settings, and apps
-that ignore user CAs or pin certificates remain opaque.
-
-For Android HTTPS debugging, prefer the debug-flavor trust path. Tell the user
-explicitly that this requires an app source change and a rebuild/reinstall, but
-only affects the debug variant when placed under the debug source set. Add a
-debug-only `network_security_config` that trusts user CAs, then reference it
-from the debug manifest/application merge:
-
-```xml
-<!-- app/src/debug/res/xml/network_security_config.xml -->
-<network-security-config>
-  <debug-overrides>
-    <trust-anchors>
-      <certificates src="user" />
-      <certificates src="system" />
-    </trust-anchors>
-  </debug-overrides>
-</network-security-config>
-```
-
-```xml
-<!-- app/src/debug/AndroidManifest.xml, or an equivalent debug-only manifest merge -->
-<application android:networkSecurityConfig="@xml/network_security_config" />
-```
-
-Do not present root/system CA installation or runtime trust-manager patching as
-the default Reticle workflow. Those are environment-specific escape hatches.
-The normal path is: debug build trusts user CA, user installs/confirms the
-Reticle CA, then Reticle runs `--proxy-mitm --proxy-ssl-hosts <host>`.
-
-Use `reticle rule` only while `reticle serve` is running. Rule configuration is
-stored under the current session as separate rule/value files: `rules.json`,
-`rule-values.json`, and `rule-values/<valueId>.body`. A rule chooses traffic
-(`method`, `url`, `match`, `priority`) and applies an **action**; a mock action
-points at a reusable value that owns the fixed response (`status`, `headers`,
-body file). Rules can also be narrowed with `--host api.example.test` or
-`--host '*.example.test'`, and `--query '{"page":"1"}'` requires those query
-key/value pairs while allowing extra query parameters.
-
-Pick the action with `--action` (defaults to `mock`, or `mapRemote` when
-`--map-to` is present):
-
-- `mock` — reply with a stored value (network stub / canned response).
-- `block` — fail the connection (network-failure evidence).
-- `mapRemote --map-to https://staging.example.com [--keep-host-header]` — re-target
-  the request at another origin, keeping path + query.
-- `passthrough` — fetch upstream unchanged (only useful with a modifier below).
-
-Modifiers compose with any action: `--delay-ms 3000` (latency, for loading/timeout
-states), `--set-request-headers '{"X-Debug":"1"}'` / `--remove-request-headers
-'["Authorization"]'` (and the `-response-` variants), and `--request-subs` /
-`--response-subs` (a JSON array of `{field,match,replacement[,isRegex,caseSensitive]}`
-find/replace substitutions).
-
-```bash
-reticle rule set --id users --action mock --value-id users-ok \
-  --method GET --url /api/users --match prefix --priority 100 \
-  --status 200 --headers '{"Content-Type":"application/json"}' \
-  --body '{"users":[]}'
-reticle rule set --id kill-analytics --action block --method ANY --url /track --match prefix
-reticle rule set --id to-staging --map-to https://staging.example.test \
-  --method ANY --url /api --match prefix
-reticle rule set --id slow-home --action passthrough --delay-ms 3000 \
-  --method GET --url /api/home --match prefix
-reticle rule disable --id users
-reticle rule value set --id users-ok --status 500 --body '{"error":"down"}'
-reticle rule test --method GET --url 'http://api.test/api/users?page=1'
-reticle rule export --output /tmp/reticle-rules.json
-reticle rule clear
-reticle rule import --input /tmp/reticle-rules.json
-reticle rule list
-```
-
-Use `--body` for inline UTF-8 text. Use `--body-file <path>` for files; the CLI
-sends file bytes as base64 so binary or non-UTF-8 mock bodies survive
-export/import.
-
-For HTTP traffic, rules apply directly in the host proxy. For HTTPS, they only
-apply after MITM decryption (`--proxy-mitm --proxy-ssl-hosts <host>` plus app CA
-trust, normally via the debug-only `network_security_config` above); opaque
-CONNECT tunnels cannot be path/body-modified. If a mock rule matches but
-its value is missing, Reticle records `network.error` and returns 502 rather
-than silently contacting upstream. `prefix` is a raw string prefix; use `exact`
-for short paths when a broader prefix could match unrelated endpoints.
+- the effect lands late (network, navigation, animation), or the flow is several
+  steps that must not run past a failure — `references/flows-and-waiting.md`
+  (`act wait`, `act batch` with `"strict"` gates);
+- typing, a field that will not focus, or the keyboard covering the target —
+  `references/keyboard.md`;
+- read back what a whole run did, without re-capturing — `references/action-traces.md`
+  (`trace log`, the per-action evidence packages, replay).
 
 Do not start `serve` for a simple one-off screen read;
 `ui report`, `ui node --live`, and `act --verify` stay the cheaper default paths
 — and actions record either way, so `reticle trace log` can reconstruct the run
-afterwards without the daemon.
+afterwards without the daemon. When you do need it (a durable timeline, the
+panel, network capture): `references/daemon-and-panel.md`, and
+`references/network-rules.md` to make the app see a different network.
 
 ## Multi-region controls (one View, several tap targets)
 
@@ -929,7 +561,7 @@ each one.
   full re-`ui report` only when you need the whole tree.
 - A dispatched action is not a landed one — but an empty diff is **two** findings
   wearing one face, so never report it as a miss on its own; read it as described
-  under **`trace log`** above.
+  under **`trace log`** in `references/action-traces.md`.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.
