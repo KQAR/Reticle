@@ -6,7 +6,7 @@
 decisions are already settled so they are not re-litigated. `AGENTS.md` maps the
 other documents and what each one owns.
 
-Status: 2026-08-01, tracking 0.14.0. The capture/drive/evidence backbone is complete
+Status: 2026-08-03, tracking 0.15.0. The capture/drive/evidence backbone is complete
 and cross-platform; the **boundary-case sweep** (fifteen points) closed on
 2026-07-25. What remains is listed under [What's left](#whats-left) — no section of
 this document is a to-do list except that one.
