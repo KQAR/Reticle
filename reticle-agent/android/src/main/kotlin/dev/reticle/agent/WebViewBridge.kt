@@ -45,7 +45,8 @@ object WebViewBridge {
     ) {
         if (pending.isEmpty() || Looper.myLooper() == Looper.getMainLooper()) return
         for (capture in pending) {
-            val refs = captureOne(capture, density, handler, nodes, makeRef)
+            val walk = captureOne(capture, density, handler, nodes, makeRef)
+            val refs = walk.refs
             val parent = nodes[capture.parentRef] ?: continue
             if (refs.isEmpty()) {
                 // Say so, rather than leaving an absence to be interpreted. A DOM
@@ -60,9 +61,36 @@ object WebViewBridge {
                 )
                 continue
             }
-            nodes[capture.parentRef] = parent.copy(children = parent.children + refs)
+            // The traversal's own node cap, said out loud. The projection's cap
+            // already announces itself; this one stopped silently, so a partial DOM
+            // read as the whole page.
+            val extra = if (walk.capped) {
+                mapOf(
+                    DOM_CAPPED_KEY to MetadataValue.Bool(true),
+                    DOM_CAPTURED_KEY to MetadataValue.Integer(walk.captured),
+                )
+            } else {
+                emptyMap()
+            }
+            nodes[capture.parentRef] = parent.copy(
+                children = parent.children + refs,
+                custom = parent.custom + extra,
+            )
         }
     }
+
+    /** Set on a web view host whose DOM walk stopped at the traversal cap. */
+    const val DOM_CAPPED_KEY = "domCapped"
+
+    /** How many DOM nodes were captured before that cap was reached. */
+    const val DOM_CAPTURED_KEY = "domCaptured"
+
+    /** One web view's DOM walk: what it produced, and whether it ran out of budget. */
+    private data class Walk(
+        val refs: List<String>,
+        val capped: Boolean = false,
+        val captured: Long = 0L,
+    )
 
     private fun captureOne(
         pending: Pending,
@@ -70,14 +98,18 @@ object WebViewBridge {
         handler: Handler,
         nodes: MutableMap<String, Node>,
         makeRef: () -> String,
-    ): List<String> {
-        val encoded = evaluateDomScript(pending.webView, handler) ?: return emptyList()
-        val payload = decodeJavascriptString(encoded) ?: return emptyList()
-        val json = runCatching { JSONObject(payload) }.getOrNull() ?: return emptyList()
-        val root = json.optJSONObject("root") ?: return emptyList()
+    ): Walk {
+        val encoded = evaluateDomScript(pending.webView, handler) ?: return Walk(emptyList())
+        val payload = decodeJavascriptString(encoded) ?: return Walk(emptyList())
+        val json = runCatching { JSONObject(payload) }.getOrNull() ?: return Walk(emptyList())
+        val root = json.optJSONObject("root") ?: return Walk(emptyList())
         val fold = CoordinateFold.from(json, pending.webViewFrame, density)
         val ref = visit(root, pending.parentRef, fold, nodes, makeRef)
-        return ref?.let { listOf(it) } ?: emptyList()
+        return Walk(
+            refs = ref?.let { listOf(it) } ?: emptyList(),
+            capped = json.optBoolean("capped", false),
+            captured = json.optLong("captured"),
+        )
     }
 
     private fun evaluateDomScript(webView: WebView, handler: Handler): String? {
@@ -129,6 +161,11 @@ object WebViewBridge {
         val selector = element.optString("selector").nullIfBlank()
         val testId = element.optString("testId").nullIfBlank()
         val disabled = element.optBoolean("disabled", false)
+        // Laid out entirely outside a clipping ancestor's box. Not visible, in the
+        // plain sense: `compact` omits it, the semantic tree keeps it, and it stops
+        // padding projections and poisoning `--label` — the same treatment every
+        // other invisible node already gets.
+        val clipped = element.optBoolean("clipped", false)
         val frame = fold.rectFor(element)
 
         val metadata = metadataFor(element, selector, fold)
@@ -142,7 +179,7 @@ object WebViewBridge {
             text = element.optString("text").nullIfBlank(),
             testId = testId,
             frame = frame,
-            isVisible = frame.width > 0.0 && frame.height > 0.0,
+            isVisible = frame.width > 0.0 && frame.height > 0.0 && !clipped,
             isEnabled = !disabled,
             isInteractive = !disabled && element.optBoolean("interactive", false),
             checked = checkedStateOf(element.optString("checked")),
@@ -213,6 +250,7 @@ object WebViewBridge {
         // page whose inputs set no id and no value projects five identical
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
+        if (element.optBoolean("clipped", false)) map["domClipped"] = MetadataValue.Bool(true)
         putText("domHasPopup", element.optString("hasPopup"))
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.

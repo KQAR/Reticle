@@ -23,6 +23,10 @@ public enum WebViewDomScript {
     (function() {
       var MAX = 300;
       var count = 0;
+      // Set when the walk stopped at MAX rather than at the end of the document. The
+      // projection's own cap announces itself; this one used to stop silently, so a
+      // partial tree read as the whole screen.
+      var capped = false;
       function clean(value, max) {
         if (value == null) return "";
         return String(value).replace(/\\s+/g, " ").trim().slice(0, max || 160);
@@ -170,8 +174,28 @@ public enum WebViewDomScript {
         var local = selectorFor(el);
         return prefix ? prefix + " >>> " + local : local;
       }
-      function walk(el, prefix, offset, parentCursor) {
-        if (!el || count >= MAX) return null;
+      // Intersection of every clipping ancestor's box, in the element's own document
+      // coordinates. null = nothing clips this subtree.
+      function intersect(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        var left = Math.max(a.left, b.left);
+        var top = Math.max(a.top, b.top);
+        var right = Math.min(a.right, b.right);
+        var bottom = Math.min(a.bottom, b.bottom);
+        return { left: left, top: top, right: right, bottom: bottom };
+      }
+      // Fully outside its clip — not merely cut in half. Conservative on purpose: a
+      // partially visible row is visible, and calling it hidden would be worse than
+      // the problem being fixed.
+      function outsideClip(rect, clip) {
+        if (!clip) return false;
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        return rect.right <= clip.left || rect.left >= clip.right ||
+          rect.bottom <= clip.top || rect.top >= clip.bottom;
+      }
+      function walk(el, prefix, offset, parentCursor, clip) {
+        if (!el || count >= MAX) { if (el) capped = true; return null; }
         var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
         var style = win.getComputedStyle(el);
         if (!style || style.display === "none" || style.visibility === "hidden") return null;
@@ -180,19 +204,35 @@ public enum WebViewDomScript {
         // descendant. Only the node where it starts is the control.
         var pointerOrigin = cursor === "pointer" && parentCursor !== "pointer";
         var rect = el.getBoundingClientRect();
+        // A `position: fixed` box is laid out against the viewport and is NOT clipped
+        // by an ancestor's overflow — a CSS rule, not a guess.
+        var ownClip = styleValue(style, "position") === "fixed" ? null : clip;
+        var clipped = outsideClip(rect, ownClip);
+        // This element clips its own children when it has a scroll port of any kind.
+        var overflowX = styleValue(style, "overflowX");
+        var overflowY = styleValue(style, "overflowY");
+        var childClip = (overflowX && overflowX !== "visible") || (overflowY && overflowY !== "visible")
+          ? intersect(ownClip, { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom })
+          : ownClip;
         var left = rect.left + offset.x;
         var top = rect.top + offset.y;
         var chain = chainFor(el, prefix);
         var children = [];
-        for (var i = 0; i < el.children.length && count < MAX; i++) {
-          var child = walk(el.children[i], prefix, offset, cursor);
+        for (var i = 0; i < el.children.length; i++) {
+          // The budget check lives here rather than in the loop condition: as a
+          // condition it short-circuits BEFORE `walk` is entered, so the walk never
+          // learns it ran out and the cap stayed silent — which is the whole thing
+          // this flag exists to stop.
+          if (count >= MAX) { capped = true; break; }
+          var child = walk(el.children[i], prefix, offset, cursor, childClip);
           if (child) children.push(child);
         }
         // Pierce an OPEN shadow root: same coordinate space as the host,
         // selectors chain through the host.
         if (el.shadowRoot) {
-          for (var s = 0; s < el.shadowRoot.children.length && count < MAX; s++) {
-            var shadowChild = walk(el.shadowRoot.children[s], chain, offset, cursor);
+          for (var s = 0; s < el.shadowRoot.children.length; s++) {
+            if (count >= MAX) { capped = true; break; }
+            var shadowChild = walk(el.shadowRoot.children[s], chain, offset, cursor, childClip);
             if (shadowChild) children.push(shadowChild);
           }
         }
@@ -203,7 +243,7 @@ public enum WebViewDomScript {
         try { frameDoc = el.contentDocument; } catch (e) { frameDoc = null; }
         if (frameDoc && frameDoc.body) {
           var frameOffset = { x: left + el.clientLeft, y: top + el.clientTop };
-          var frameBody = walk(frameDoc.body, chain, frameOffset, cursor);
+          var frameBody = walk(frameDoc.body, chain, frameOffset, cursor, null);
           if (frameBody) children.push(frameBody);
         }
         var inViewport = rect.width > 0 && rect.height > 0 &&
@@ -252,6 +292,12 @@ public enum WebViewDomScript {
           // Recorded only where it STARTS, and only as the weak signal it is: the page
           // said pointer, nothing declared a role.
           pointerOrigin: !!pointerOrigin,
+          // Laid out entirely outside a clipping ancestor's box: on screen in the
+          // document's coordinates, and unseeable. `getComputedStyle` reports such an
+          // element as perfectly ordinary — display and visibility are untouched — so
+          // without this a 10-item counter strip puts nine unseeable digits into the
+          // tree, where they poison `--label` and pad every projection.
+          clipped: !!clipped,
           left: left + window.scrollX,
           top: top + window.scrollY,
           width: rect.width,
@@ -289,12 +335,17 @@ public enum WebViewDomScript {
           children: children
         };
       }
+      // The walk runs FIRST: object literals evaluate in source order, so reading
+      // `capped` beside `root` would read it before the walk that sets it.
+      var root = walk(document.body || document.documentElement, "", { x: 0, y: 0 }, "", null);
       return JSON.stringify({
         viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
         viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,
         scrollX: window.scrollX || window.pageXOffset || 0,
         scrollY: window.scrollY || window.pageYOffset || 0,
-        root: walk(document.body || document.documentElement, "", { x: 0, y: 0 })
+        capped: capped,
+        captured: count,
+        root: root
       });
     })();
 
