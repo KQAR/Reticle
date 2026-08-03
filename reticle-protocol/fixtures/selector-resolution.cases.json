@@ -1,8 +1,8 @@
 {
-  "$comment": "Authoritative decision table for the ACTION path's selector resolution — the order documented in docs/architecture.md 'Selector resolution order'. Read by BOTH the Kotlin (reticle-helper SelectorResolutionContractTest, driving SelectorResolver) and Swift (ReticleProtocol SelectorResolutionContractTests, driving SelectorResolution) suites, so the Android helper and the iOS host cannot drift on where a tap lands. Before this table existed they HAD drifted, in seven ways: iOS never consulted the semantic tree, the two disagreed on whether a --region miss taps the whole node or fails, region label matching was case-sensitive on one side only, node lookup precedence differed between the whole-node and region paths, and first-match lookups iterated an unordered dictionary (nondeterministic per process in Swift). Adding a branch to either resolver without a case here leaves it unpinned on one platform.",
+  "$comment": "Authoritative decision table for the ACTION path's selector resolution \u2014 the order documented in docs/architecture.md 'Selector resolution order'. Read by BOTH the Kotlin (reticle-helper SelectorResolutionContractTest, driving SelectorResolver) and Swift (ReticleProtocol SelectorResolutionContractTests, driving SelectorResolution) suites, so the Android helper and the iOS host cannot drift on where a tap lands. Before this table existed they HAD drifted, in seven ways: iOS never consulted the semantic tree, the two disagreed on whether a --region miss taps the whole node or fails, region label matching was case-sensitive on one side only, node lookup precedence differed between the whole-node and region paths, and first-match lookups iterated an unordered dictionary (nondeterministic per process in Swift). Adding a branch to either resolver without a case here leaves it unpinned on one platform.",
   "$rules": [
-    "0. An explicit --point wins over everything else and is returned verbatim — it is the escape hatch for when resolution cannot work, so nothing may override it. (Both hosts already short-circuited it before capture; the shared resolver now says so too.)",
-    "1. --region <needle> inside the selected node: a discovered region whose LABEL contains the needle (case-insensitive), then a region whose SOURCE is named (case-insensitive; for label-less channels like touchDelegate), then the char grid (substring matched VERBATIM — the on-screen text, in any language). A --region that matches nothing is an ERROR, never a silent whole-node tap: the caller asked for a phrase and must not be handed the checkbox instead.",
+    "0. An explicit --point wins over everything else and is returned verbatim \u2014 it is the escape hatch for when resolution cannot work, so nothing may override it. (Both hosts already short-circuited it before capture; the shared resolver now says so too.)",
+    "1. --region <needle> inside the selected node: a discovered region whose LABEL contains the needle (case-insensitive), then a region whose SOURCE is named (case-insensitive; for label-less channels like touchDelegate), then the char grid (substring matched VERBATIM \u2014 the on-screen text, in any language). A --region that matches nothing is an ERROR, never a silent whole-node tap: the caller asked for a phrase and must not be handed the checkbox instead.",
     "2. The semantic tree, by testId -> resourceId -> cssSelector -> ref -> label.",
     "3. The view tree, by the SAME precedence, for nodes the semantic projection dropped.",
     "Every first-match lookup walks the tree in document order (DFS from the root, then any orphan refs in sorted order), so duplicate ids resolve to the same node on both platforms and across runs.",
@@ -46,7 +46,8 @@
           "n2",
           "n3",
           "n4",
-          "n5"
+          "n5",
+          "n40"
         ]
       },
       "n1": {
@@ -143,7 +144,7 @@
         }
       },
       "n2": {
-        "$comment": "Duplicate testId with n7, and n2 comes first in document order — so it must win on BOTH platforms.",
+        "$comment": "Duplicate testId with n7, and n2 comes first in document order \u2014 so it must win on BOTH platforms.",
         "ref": "n2",
         "parentRef": "w1",
         "kind": "view",
@@ -178,7 +179,8 @@
             "_type": "text",
             "value": "#web-pay"
           }
-        }
+        },
+        "children": []
       },
       "n4": {
         "$comment": "Carries a targeting signal but NO frame: resolution must miss rather than invent a point or crash.",
@@ -190,7 +192,7 @@
         "isInteractive": true
       },
       "n5": {
-        "$comment": "Same words as the popup row below, but in the BACKGROUND window — the window scoping must not let it become an ambiguity.",
+        "$comment": "Same words as the popup row below, but in the BACKGROUND window \u2014 the window scoping must not let it become an ambiguity.",
         "ref": "n5",
         "parentRef": "w1",
         "kind": "view",
@@ -205,7 +207,7 @@
         "isInteractive": true
       },
       "w2": {
-        "$comment": "The topmost window (last in the root's children) — a popup.",
+        "$comment": "The topmost window (last in the root's children) \u2014 a popup.",
         "ref": "w2",
         "parentRef": "r0",
         "kind": "window",
@@ -318,7 +320,7 @@
         "isInteractive": true
       },
       "orphan1": {
-        "$comment": "Reachable from no root child (a detached window captured out of band). Resolvable by ref, and iterated last in sorted order — never before a rooted node.",
+        "$comment": "Reachable from no root child (a detached window captured out of band). Resolvable by ref, and iterated last in sorted order \u2014 never before a rooted node.",
         "ref": "orphan1",
         "kind": "view",
         "typeName": "android.widget.TextView",
@@ -369,6 +371,66 @@
           "y": 1100.0,
           "width": 147.0,
           "height": 24.0
+        }
+      },
+      "n40": {
+        "$comment": "A DOM wrapper carrying a class, so a structural --css can match through it.",
+        "ref": "n40",
+        "parentRef": "w1",
+        "kind": "domNode",
+        "typeName": "DOMElement",
+        "role": "div",
+        "frame": {
+          "x": 100.0,
+          "y": 500.0,
+          "width": 400.0,
+          "height": 200.0
+        },
+        "children": [
+          "n41"
+        ],
+        "custom": {
+          "domTag": {
+            "_type": "text",
+            "value": "div"
+          },
+          "domClass": {
+            "_type": "text",
+            "value": "form-row wide"
+          },
+          "domCssSelector": {
+            "_type": "text",
+            "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(2)"
+          }
+        }
+      },
+      "n41": {
+        "$comment": "The input inside it: no id, class only \u2014 the shape a component framework emits.",
+        "ref": "n41",
+        "parentRef": "n40",
+        "kind": "domNode",
+        "typeName": "DOMElement",
+        "role": "textField",
+        "frame": {
+          "x": 120.0,
+          "y": 540.0,
+          "width": 360.0,
+          "height": 80.0
+        },
+        "isInteractive": true,
+        "custom": {
+          "domTag": {
+            "_type": "text",
+            "value": "input"
+          },
+          "domClass": {
+            "_type": "text",
+            "value": "ep-input"
+          },
+          "domCssSelector": {
+            "_type": "text",
+            "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(2) > input.ep-input:nth-of-type(1)"
+          }
         }
       }
     }
@@ -468,7 +530,7 @@
     },
     {
       "name": "duplicate testIds resolve to the first in document order",
-      "$comment": "n2 (background window) precedes n7 (popup). Both sides used to read an unordered map here — in Swift that is randomized per process, so this case could flip between runs.",
+      "$comment": "n2 (background window) precedes n7 (popup). Both sides used to read an unordered map here \u2014 in Swift that is randomized per process, so this case could flip between runs.",
       "selector": {
         "testId": "dup.button"
       },
@@ -512,7 +574,7 @@
     },
     {
       "name": "a label only in a LOWER window still resolves when another window is on top",
-      "$comment": "'First' lives only in w1 while the popup w2 is stacked above it — the iOS keyboard scenario. The window scope keys on windows that MATCH; a scope that keys on windows with any visible node degenerates to 'top window only' and blinds every label under an overlay.",
+      "$comment": "'First' lives only in w1 while the popup w2 is stacked above it \u2014 the iOS keyboard scenario. The window scope keys on windows that MATCH; a scope that keys on windows with any visible node degenerates to 'top window only' and blinds every label under an overlay.",
       "selector": {
         "label": "First"
       },
@@ -527,7 +589,7 @@
     },
     {
       "name": "an EMPTY region is no region at all: the whole-node path resolves",
-      "$comment": "region:\"\" (an empty field in a batch step) must not enter the region path — \"\" substring-matches the first labeled region on one platform while the other ignores it. Both must ignore it.",
+      "$comment": "region:\"\" (an empty field in a batch step) must not enter the region path \u2014 \"\" substring-matches the first labeled region on one platform while the other ignores it. Both must ignore it.",
       "selector": {
         "testId": "agreement",
         "region": ""
@@ -552,7 +614,7 @@
     },
     {
       "name": "an ambiguous label stays ambiguous when --region rides along",
-      "$comment": "The region path resolves its node through the same label rules; swallowing the ambiguity there (try?) would collapse 'unknowable' into 'absent' — the observer lie WaitVerdict exists to prevent.",
+      "$comment": "The region path resolves its node through the same label rules; swallowing the ambiguity there (try?) would collapse 'unknowable' into 'absent' \u2014 the observer lie WaitVerdict exists to prevent.",
       "selector": {
         "label": "Rename",
         "region": "anything"
@@ -563,7 +625,7 @@
     },
     {
       "name": "a label matching several views stacked on ONE rect is not ambiguous",
-      "why": "Measured on an iOS simulator: UIPickerView draws its magnifier bands as separate table views, so the row under the selection exists 3x at one spot ('09' at 50,487 / 50,487 / 42,487) and `--label \"09\"` was refused — for exactly the values worth tapping. Every candidate's tap point falls inside every other's rect, so a tap resolves identically whichever is picked. The source says `label:coincident` rather than pretending it was a clean single match.",
+      "why": "Measured on an iOS simulator: UIPickerView draws its magnifier bands as separate table views, so the row under the selection exists 3x at one spot ('09' at 50,487 / 50,487 / 42,487) and `--label \"09\"` was refused \u2014 for exactly the values worth tapping. Every candidate's tap point falls inside every other's rect, so a tap resolves identically whichever is picked. The source says `label:coincident` rather than pretending it was a clean single match.",
       "selector": {
         "label": "09"
       },
@@ -618,7 +680,7 @@
     },
     {
       "name": "region by discovered label, case-insensitively",
-      "$comment": "iOS matched region labels case-sensitively and fell through to the char grid, which is verbatim — so 'terms' resolved to a DIFFERENT rect than 'Terms' there and the same rect on Android.",
+      "$comment": "iOS matched region labels case-sensitively and fell through to the char grid, which is verbatim \u2014 so 'terms' resolved to a DIFFERENT rect than 'Terms' there and the same rect on Android.",
       "selector": {
         "testId": "agreement",
         "region": "terms"
@@ -723,6 +785,94 @@
         },
         "source": "point",
         "ref": null
+      }
+    },
+    {
+      "name": "a class-only css selector resolves structurally, not by captured path",
+      "selector": {
+        "cssSelector": ".ep-input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "a tag+class compound resolves",
+      "selector": {
+        "cssSelector": "input.ep-input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "a descendant combinator walks the captured parent chain",
+      "selector": {
+        "cssSelector": ".form-row input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "a child combinator requires the immediate parent",
+      "selector": {
+        "cssSelector": "div.form-row > input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "a child combinator that skips a level does not match",
+      "selector": {
+        "cssSelector": "body > input"
+      },
+      "expect": {
+        "miss": true
+      }
+    },
+    {
+      "name": "a full captured path still matches verbatim, colons and all",
+      "selector": {
+        "cssSelector": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(2) > input.ep-input:nth-of-type(1)"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "an unsupported css construct is refused, not answered as a miss",
+      "selector": {
+        "cssSelector": "input[type=text]"
+      },
+      "expect": {
+        "error": "unsupportedCss"
       }
     }
   ]

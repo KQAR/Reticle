@@ -217,7 +217,10 @@ public enum Render {
         }
         if let css = selector.cssSelector {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] })
-                .first(where: { $0.domCssSelector() == css }) { return n }
+                .first(where: { node in
+                    node.domCssSelector() == css
+                        || (node.kind == .domNode && ((try? CssSelectorMatch.matches(snapshot, node, css)) ?? false))
+                }) { return n }
         }
         if let ref = selector.ref { return snapshot.nodes[ref] }
         if let label = selector.label { return try? labelMatch(snapshot, label) }

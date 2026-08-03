@@ -87,10 +87,18 @@ public enum SelectorResolution {
            let r = resolved(semantic.findByResourceId(resourceId), "semantic:resourceId") {
             return r
         }
-        if let css = selector.cssSelector,
-           let node = firstNode(snapshot, { $0.domCssSelector() == css }),
-           let frame = node.frame {
-            return Resolved(point: center(frame), source: "dom:css", ref: node.ref)
+        if let css = selector.cssSelector {
+            // Through the shared matcher: an exact captured path first, then a real
+            // structural match. Only a verbatim path used to resolve, so every short
+            // form the docs promise silently missed.
+            //
+            // `try`, not `try?`: a selector the matcher does not implement must
+            // PROPAGATE. Swallowing it turns "not understood" into "no such
+            // element", which are different answers and lead to opposite next
+            // actions — the shared fixture pins exactly this.
+            if let node = try CssSelectorMatch.find(snapshot, css), let frame = node.frame {
+                return Resolved(point: center(frame), source: "dom:css", ref: node.ref)
+            }
         }
         if let ref = selector.ref,
            let node = semantic.node(ref), let frame = node.frame {
@@ -158,7 +166,7 @@ public enum SelectorResolution {
     private static func viewNode(_ snapshot: Snapshot, _ selector: Selector) throws -> Node? {
         if let testId = selector.testId { return firstNode(snapshot, { $0.testId == testId }) }
         if let resourceId = selector.resourceId { return firstNode(snapshot, { $0.resourceId == resourceId }) }
-        if let css = selector.cssSelector { return firstNode(snapshot, { $0.domCssSelector() == css }) }
+        if let css = selector.cssSelector { return try CssSelectorMatch.find(snapshot, css) }
         if let ref = selector.ref { return snapshot.nodes[ref] }
         // An ambiguous label PROPAGATES — the Kotlin twin throws here too. A
         // `try?` would collapse "unknowable" into "absent", the exact lie
