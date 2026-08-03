@@ -784,6 +784,60 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== CLIPPED NODES AND THE TRAVERSAL'S OWN CAP =="
+# Two things every other web fixture is blind to. Both are about a tree that looks
+# complete and is not.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario clipped >/dev/null 2>&1
+wait_compact "$PKG" "Clipped fixture"
+CLIPPED_COMPACT="$(R ui compact --live --package "$PKG" --window top)"
+
+# 1. An `overflow: hidden` roller whose items are laid out well outside it.
+# `getComputedStyle` reports them as perfectly ordinary — display and visibility
+# untouched — and their rects land inside the WINDOW viewport, so nothing told them
+# apart from what is on screen. Measured on a real page, a 10-item counter strip put
+# nine unseeable digits into the tree, where they padded every projection and were
+# cited as `--label` ambiguities.
+CLIPPED_DIGITS="$(echo "$CLIPPED_COMPACT" | grep -c 'li "' || true)"
+[ "$CLIPPED_DIGITS" -le 4 ] \
+  || { echo "FAIL: clipped roller items must not be projected as visible (got $CLIPPED_DIGITS)"; exit 1; }
+# The one the user CAN see is untouched — the check must not have eaten the row.
+echo "$CLIPPED_COMPACT" | grep -q 'clipped.visibleFive' \
+  || { echo "FAIL: the visible control was dropped by the clipping check"; exit 1; }
+# A scrollable clip behaves the same way: the row below the fold is not visible now.
+echo "$CLIPPED_COMPACT" | grep -q 'scroll-row-4' \
+  && { echo "FAIL: a row scrolled out of an overflow container must not read as visible"; exit 1; }
+echo "$CLIPPED_COMPACT" | grep -q 'scroll-row-1' \
+  || { echo "FAIL: the rows inside the scroll port must stay visible"; exit 1; }
+
+# 2. The traversal's own node cap, said out loud. The projection's cap already
+# announces itself; this one stopped silently, so a partial DOM read as the whole
+# page — and unlike the projection's, nothing downstream can recover nodes that
+# were never captured.
+echo "$CLIPPED_COMPACT" | grep -qE 'webView .*dom:capped\([0-9]+\)' \
+  || { echo "FAIL: a DOM walk that hit its cap must say so on the host node"; exit 1; }
+
+# 3. `ui outline` numbers what is ON SCREEN, not the whole scrollable tree. Measured
+# on a real home screen: 135 aliases whose last entry sat at y=10800 on a 2412-tall
+# device, about 15 of them actually visible.
+boot_app "$PKG"
+R ui outline --live --package "$PKG" > "$TMP/outline.txt"
+/usr/bin/python3 - "$TMP/outline.txt" <<'OUTLINE_PY' || exit 1
+import re, sys
+ys = []
+for line in open(sys.argv[1]):
+    if not line.startswith("@"):
+        continue
+    m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
+    if m:
+        ys.append(int(m.group(2)))
+beyond = [y for y in ys if y >= 2000]
+if beyond:
+    print(f"FAIL: outline numbered {len(beyond)} alias(es) starting below the screen: {beyond[:5]}")
+    sys.exit(1)
+OUTLINE_PY
+
 echo "== CSS SELECTORS ARE MATCHED, NOT STRING-COMPARED =="
 # `--css` used to be a string comparison against each node's captured
 # `domCssSelector` — the full ancestor path — so only a verbatim copy of that path

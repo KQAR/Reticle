@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **A node clipped out of its container is not "visible".** An `overflow: hidden`
+  roller or a scroll port lays its other items well outside itself, and
+  `getComputedStyle` reports them as perfectly ordinary — `display` and
+  `visibility` untouched — with rects that land inside the WINDOW viewport. Nothing
+  told them apart from what is on screen. Measured on a real page, a 10-item
+  animated counter put nine unseeable digits into the tree, where they padded every
+  projection and got cited as `--label` ambiguities for a value the user could see
+  exactly once. Such a node is now not visible, which is the treatment every other
+  invisible node already gets: `ui compact` omits it, the semantic tree keeps it,
+  and `custom.domClipped` names why. Deliberately conservative — a partially
+  visible row stays visible, and a `position: fixed` box escapes an ancestor's
+  overflow, as CSS says.
+
+- **`ui outline` numbers what is on screen.** It numbered the whole scrollable
+  content: measured on a real home screen, 135 aliases whose last entry sat at
+  y=10800 on a 2412-tall device, with about 15 actually visible. The aliases exist
+  to be tapped, and one that needs a scroll first was numbered as though it did
+  not.
+
+- **A DOM walk that runs out of budget says so.** The traversal caps itself at 300
+  nodes and used to stop silently, so a partial DOM read as the whole page. It now
+  marks its host `dom:capped(N)` with the count it did capture. The distinction
+  from the projection's cap matters: nodes past the projection's are still in the
+  snapshot and reachable with `ui tree` / `ui node --ref`, while nodes past this
+  one were never captured at all. Found while writing the fixture for it: the
+  budget check sat in the child loop's CONDITION, so it short-circuited before the
+  walk was entered and the walk never learned it had run out — the flag would have
+  shipped always-false.
+
 - **`--css` matches a selector now; it used to compare strings.** Resolution was
   an equality test against each node's captured `domCssSelector` — the complete
   ancestor path the traversal script emits — so only a verbatim copy of that path

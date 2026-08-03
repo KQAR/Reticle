@@ -119,6 +119,7 @@ data class CompactObservation(
                             scroll = node.scroll,
                             wheel = wheelMarkerFor(snapshot, node),
                             domUnavailable = node.domUnavailable(),
+                            domCappedAt = node.domCappedAt(),
                             domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
                             screencapBlank = node.screencapBlank(),
@@ -347,6 +348,15 @@ data class CompactItem(
      */
     val domUnavailable: Boolean = false,
     /**
+     * Set when this web view's DOM walk stopped at the traversal's node cap,
+     * carrying how many nodes it did capture. Rendered as ` dom:capped(N)`.
+     *
+     * Distinct from the projection cap in one way that matters: the nodes past
+     * this one were never captured at all, so no `ui tree` or `ui node --ref` can
+     * reach them. Narrow the page or scroll, rather than looking for them.
+     */
+    val domCappedAt: Long? = null,
+    /**
      * True when this node's pixels are missing from an IN-PROCESS screenshot (an
      * Android `SurfaceView`, an iOS keyboard host window). The picture is not a
      * second opinion for these — it silently omits them.
@@ -396,6 +406,7 @@ data class CompactItem(
             scroll?.describe()?.takeIf { it.isNotEmpty() }?.let { append(" ").append(it) }
             wheel?.let { append(" wheel:").append(it) }
             if (domUnavailable) append(" dom:unavailable")
+            domCappedAt?.let { append(" dom:capped($it)") }
             if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")
             if (screencapBlank) append(" screencap:blank")
