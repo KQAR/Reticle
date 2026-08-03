@@ -1,28 +1,31 @@
 ---
 name: reticle
 description: >-
-  Inspect and drive a RUNNING Android app from its live runtime, not its source
-  or a screenshot. Use when the task involves an Android app on a connected
-  device/emulator and you need to: read the on-screen view / semantic /
-  Jetpack Compose semantics tree or embedded WebView DOM, find a stable selector
-  or exact tap coordinates, tap/swipe/type real input, target a specific phrase
-  or link inside a multi-region control (e.g. an agreement row), inspect DOM CSS
-  styles or image resources, read back what a recorded run did (`trace log`),
-  show a read-only local Web panel for a multi-action evidence timeline, read app
+  Inspect and drive a RUNNING Android or iOS app from its live runtime, not its
+  source or a screenshot. Use when the task involves an app on a connected
+  device / emulator / simulator and you need to: read the on-screen view /
+  semantic / Jetpack Compose or SwiftUI accessibility tree or embedded WebView
+  DOM, find a stable selector or exact tap coordinates, tap/swipe/type real
+  input, target a specific phrase or link inside a multi-region control (e.g. an
+  agreement row), inspect DOM CSS styles or image resources, read back what a
+  recorded run did (`trace log`), show a read-only local Web panel for a
+  multi-action evidence timeline, mock or replay network traffic, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
-  rebuilding.
-  Triggers: "inspect the running Android app", "tap the … button on device",
-  "what's on screen", "drive the app", "find the element", "test the agreement
-  checkbox", "change this label at runtime", adb/UiAutomator/Espresso-style UI
+  rebuilding. iOS needs `--target ios`; on a real iOS device the paths are
+  observation + in-process activation, not HID.
+  Triggers: "inspect the running app", "tap the … button on device", "what's on
+  screen", "drive the app", "find the element", "test the agreement checkbox",
+  "change this label at runtime", adb/UiAutomator/Espresso/XCUITest-style UI
   verification.
 ---
 
-# Reticle — Android runtime UI evidence + action harness
+# Reticle — runtime UI evidence + action harness (Android + iOS)
 
 Reticle inspects the app that is **actually running** and drives real input. It
-runs a tiny HTTP server inside the app process (loopback) and a host CLI talks
-to it over `adb forward`. Prefer Reticle over guessing from screenshots when you
-need precise selectors, coordinates, or live UI state.
+runs a tiny HTTP server inside the app process (loopback) and a host CLI talks to
+it — over `adb forward` on Android, the shared host loopback on an iOS simulator,
+`iproxy` over USB on an iOS device. Prefer Reticle over guessing from screenshots
+when you need precise selectors, coordinates, or live UI state.
 
 The CLI is on PATH as `reticle` while this plugin is enabled.
 
