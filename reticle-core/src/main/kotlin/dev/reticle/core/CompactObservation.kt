@@ -163,6 +163,7 @@ data class CompactObservation(
                             wheel = wheelMarkerFor(snapshot, node),
                             domUnavailable = node.domUnavailable(),
                             domCappedAt = node.domCappedAt(),
+                            crossOriginFrame = node.domCrossOriginFrame(),
                             domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
                             screencapBlank = node.screencapBlank(),
@@ -400,6 +401,15 @@ data class CompactItem(
      */
     val domCappedAt: Long? = null,
     /**
+     * True when this is a frame whose document is unreadable by browser policy.
+     * Rendered as ` iframe:cross-origin`.
+     *
+     * The marker exists because the absence it explains is indistinguishable from
+     * a frame that is still loading — so without it the honest answer ("nothing in
+     * here is reachable; coordinates are the only path") reads as "try again".
+     */
+    val crossOriginFrame: Boolean = false,
+    /**
      * True when this node's pixels are missing from an IN-PROCESS screenshot (an
      * Android `SurfaceView`, an iOS keyboard host window). The picture is not a
      * second opinion for these — it silently omits them.
@@ -450,6 +460,7 @@ data class CompactItem(
             wheel?.let { append(" wheel:").append(it) }
             if (domUnavailable) append(" dom:unavailable")
             domCappedAt?.let { append(" dom:capped($it)") }
+            if (crossOriginFrame) append(" iframe:cross-origin")
             if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")
             if (screencapBlank) append(" screencap:blank")
