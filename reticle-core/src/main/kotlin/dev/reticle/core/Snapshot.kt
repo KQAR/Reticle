@@ -312,6 +312,18 @@ data class Node(
      * ticked it was a screenshot.
      */
     val checked: CheckedState? = null,
+    /**
+     * Disclosure state of a control that opens something (`aria-expanded`), or
+     * null when this node declares none.
+     *
+     * Null and `false` are different facts for the same reason [checked] keeps its
+     * third state: "this is not a disclosure control" and "it is one and it is
+     * shut" lead to opposite next actions. Reading it is also the only way to
+     * verify that a tap on a dropdown trigger did anything — a div-built select
+     * materialises its options only once opened, so before the tap there is
+     * nothing to diff against.
+     */
+    val expanded: Boolean? = null,
     /** Scalar reflected properties, e.g. alpha, backgroundColor, elevation. */
     val custom: Map<String, MetadataValue> = emptyMap(),
     /**
@@ -391,6 +403,17 @@ data class Node(
      */
     fun domUnavailable(): Boolean =
         (custom["domStatus"] as? MetadataValue.Text)?.value == "unavailable"
+
+    /**
+     * What kind of popup this control declares it opens (`aria-haspopup`), or null.
+     * `listbox` for a div-built select, `menu` for the attribute's bare `true`.
+     *
+     * A hint the PAGE published, not one Reticle inferred — which is what makes it
+     * worth acting on: a control that says it opens a listbox is one whose options
+     * appear after a tap, so an empty tree under it is expected rather than
+     * evidence that nothing is there.
+     */
+    fun domHasPopup(): String? = (custom["domHasPopup"] as? MetadataValue.Text)?.value
 
     /** A DOM input's `placeholder` attribute, kept apart from its value. */
     fun domPlaceholder(): String? = (custom["domPlaceholder"] as? MetadataValue.Text)?.value

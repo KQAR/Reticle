@@ -111,6 +111,8 @@ data class CompactObservation(
                             windowRef = currentWindow,
                             isFocused = node.isFocused,
                             checked = node.checked,
+                            expanded = node.expanded,
+                            hasPopup = node.domHasPopup(),
                             placeholder = node.domPlaceholder(),
                             invalid = node.domInvalidMessage(),
                             occludedBy = occluderOf(node, currentWindow),
@@ -286,6 +288,23 @@ data class CompactItem(
      */
     val checked: CheckedState? = null,
     /**
+     * Disclosure state when this item declares one, null when it does not.
+     * Rendered as ` expanded` / ` collapsed`.
+     *
+     * The state that makes a dropdown drivable: a div-built select materialises
+     * its options only once opened, so before the tap there is nothing to diff
+     * against and this is the only evidence a tap did anything.
+     */
+    val expanded: Boolean? = null,
+    /**
+     * What kind of popup this item declares it opens (`aria-haspopup`), null
+     * otherwise. Rendered as ` popup:<kind>`.
+     *
+     * The cue that an empty subtree is EXPECTED rather than a capture failure:
+     * a control saying it opens a listbox has its options after a tap, not before.
+     */
+    val hasPopup: String? = null,
+    /**
      * A DOM input's `placeholder`, when it has one. Rendered as
      * ` placeholder:"…"` — never merged into [label], because a placeholder is
      * what the field is ASKING for and [label] is what it HOLDS. Folding the two
@@ -363,6 +382,12 @@ data class CompactItem(
                 CheckedState.mixed -> append(" checked:mixed")
                 null -> Unit
             }
+            when (expanded) {
+                true -> append(" expanded")
+                false -> append(" collapsed")
+                null -> Unit
+            }
+            hasPopup?.let { append(" popup:").append(it) }
             placeholder?.let { append(" placeholder:\"${it.clipCodePoints(40)}\"") }
             invalid?.let {
                 if (it.isEmpty()) append(" invalid") else append(" invalid:\"${it.clipCodePoints(40)}\"")

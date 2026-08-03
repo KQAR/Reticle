@@ -142,16 +142,26 @@ class SelectorResolver(
         // and keep the innermost. Two matches in DIFFERENT subtrees stay ambiguous
         // — that is the case worth refusing.
         val leaves = matches.filter { node -> matches.none { isAncestor(node, it) } }
+        // A caption and the control it names are not an ambiguity either. A form
+        // states a field's name in a separate element and points the control at it
+        // (`aria-labelledby`, `<label for>`), so ONE string legitimately belongs to
+        // two nodes in different subtrees — and only one of them does anything when
+        // tapped. Measured: a div-built dropdown and its `<span>` caption both
+        // answered to "Education", the refusal fired, and the only way left was a
+        // coordinate — for the exact control this file exists to make reachable.
+        // Narrow to the single actionable match; two of THOSE is still a refusal.
+        val actionable = leaves.filter { it.isInteractive }
+        val candidates = if (actionable.size == 1) actionable else leaves
         return when {
-            leaves.isEmpty() -> null
-            leaves.size == 1 -> LabelHit(leaves.first(), coincident = false)
+            candidates.isEmpty() -> null
+            candidates.size == 1 -> LabelHit(candidates.first(), coincident = false)
             // Same place, several layers: not an ambiguity. Measured on an iOS
             // simulator, `UIPickerView` draws its magnifier bands as separate
             // table views, so the row under the selection exists 3× at one spot
             // ('09' at 50,487 / 50,487 / 42,487) — and `--label "09"` on the wheel
             // the docs say is tappable was REFUSED, precisely for the values
             // nearest the selection, which are the ones worth tapping.
-            coincident(leaves) -> LabelHit(leaves.first(), coincident = true)
+            coincident(candidates) -> LabelHit(candidates.first(), coincident = true)
             else -> throw AmbiguousLabelException(
                 "label '$label' matched ${leaves.size} visible nodes " +
                     leaves.take(6).joinToString(", ") { n ->
