@@ -412,6 +412,31 @@ one** focusable input, `type` re-aims at it once and reports `retargetedTo=<ref>
 with two it refuses rather than guessing which field you meant. `ui compact` marks
 the focused node ` focused`, and `ui node` carries `isFocusable` per node.
 
+**A form's own state is on the line, not in the screenshot.** `ui compact` renders
+four things a form screen otherwise made you look at pixels for:
+
+- ` checked` / ` unchecked` / ` checked:mixed` — a checkable control's state. A node
+  that is **not** checkable prints nothing here, and that silence is the third
+  answer: "there is no checkbox" and "there is a checkbox and it is unticked" lead
+  to opposite next actions. Sources are readings, not guesses — an Android
+  `Checkable` view, Compose's `ToggleableState`/`Selected`, a DOM
+  `input[type=checkbox|radio]`, or `aria-checked`/`aria-pressed` on a control a
+  framework built out of divs;
+- ` placeholder:"…"` — what an input is *asking* for, kept apart from the quoted
+  label, which is what it *holds*. The two used to be folded together, so an empty
+  field and a filled one printed identically;
+- ` invalid` / ` invalid:"…"` — the field declares itself invalid
+  (`aria-invalid`), with the message its `aria-describedby` names. Without it a
+  validation error is a sibling node belonging to nothing;
+- an `<input>`'s **type is its role**: `checkbox`, `radio`, `slider`, `button` for
+  `submit`/`button`/`reset`/`image`. Only a genuine text input reads `textField`.
+
+A DOM input also carries `custom.domName` (its `name` attribute) and
+`custom.domPlaceholder`, and its accessible name resolves through `aria-label` →
+`aria-labelledby` → `title`/`alt`. On a form built from framework components — no
+`id`, no `data-testid`, no value — those are the only handles that tell several
+identical fields apart.
+
 **`type` also reads the TEXT back (Android).** `chars=N` counts what was *sent*.
 A field that reformats its value on every change (and re-renders something bound
 to it) can lose characters out of the `adb input text` burst: measured,

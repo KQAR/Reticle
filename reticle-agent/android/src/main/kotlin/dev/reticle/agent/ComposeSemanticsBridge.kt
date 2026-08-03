@@ -1,6 +1,7 @@
 package dev.reticle.agent
 
 import android.view.View
+import dev.reticle.core.CheckedState
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
@@ -32,6 +33,14 @@ object ComposeSemanticsBridge {
     // Scanning javaClass.methods on every capture is a full array walk per
     // Compose host; resolve once per (class, name), like SemanticsReflect does.
     private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
+
+    /** Compose's own state names, mapped onto the shared tri-state. */
+    private fun checkedStateOf(raw: String?): CheckedState? = when (raw) {
+        "on" -> CheckedState.on
+        "off" -> CheckedState.off
+        "mixed" -> CheckedState.mixed
+        else -> null
+    }
 
     private fun cachedMethod(target: Any, name: String): java.lang.reflect.Method? {
         val key = "${target.javaClass.name}#$name"
@@ -153,6 +162,7 @@ object ComposeSemanticsBridge {
             frame = frame,
             isVisible = frame == null || (frame.width > 0 && frame.height > 0),
             isInteractive = SemanticsReflect.hasClickAction(semanticsNode),
+            checked = checkedStateOf(SemanticsReflect.checkedState(semanticsNode)),
             regions = textRegions.regions,
             charGrid = textRegions.charGrid,
             scroll = SemanticsReflect.scrollInfo(semanticsNode),

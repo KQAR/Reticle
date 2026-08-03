@@ -212,6 +212,26 @@ enum class StyleChannel {
     drawableReflect,
 }
 
+/**
+ * Toggle state of a checkable control. See [Node.checked].
+ *
+ * Modelled as a nullable enum rather than a `Boolean` because the absence of a
+ * value is itself an answer: "this node is not a checkable control" and "this
+ * node is a checkbox and it is unticked" lead to opposite next actions, and a
+ * `Boolean` defaulting to false collapses them into the second one.
+ */
+@Serializable
+enum class CheckedState {
+    on,
+    off,
+
+    /**
+     * A tri-state control — a "select all" covering a partial selection.
+     * `aria-checked="mixed"`, Compose `ToggleableState.Indeterminate`.
+     */
+    mixed,
+}
+
 @Serializable
 enum class NodeKind {
     application,
@@ -276,6 +296,22 @@ data class Node(
      * somewhere else.
      */
     val isFocused: Boolean = false,
+    /**
+     * Toggle state of a checkable control, or null when this node is not
+     * checkable at all. See [CheckedState] for why the third state is `null`
+     * rather than `false`.
+     *
+     * Sources, in the order each platform offers one: an Android [Checkable]
+     * view (`CheckBox`, `Switch`, `RadioButton`), Compose's `ToggleableState` /
+     * `Selected` semantics, a DOM `input[type=checkbox|radio]`'s `checked`
+     * property, then `aria-checked` / `aria-pressed` for a control a framework
+     * built out of divs.
+     *
+     * The shape this exists for: a consent row projected as `role: checkbox`
+     * with no state anywhere on the node, so the only way to read whether a tap
+     * ticked it was a screenshot.
+     */
+    val checked: CheckedState? = null,
     /** Scalar reflected properties, e.g. alpha, backgroundColor, elevation. */
     val custom: Map<String, MetadataValue> = emptyMap(),
     /**
@@ -355,6 +391,24 @@ data class Node(
      */
     fun domUnavailable(): Boolean =
         (custom["domStatus"] as? MetadataValue.Text)?.value == "unavailable"
+
+    /** A DOM input's `placeholder` attribute, kept apart from its value. */
+    fun domPlaceholder(): String? = (custom["domPlaceholder"] as? MetadataValue.Text)?.value
+
+    /**
+     * The message this field declares itself invalid with: `""` when it sets
+     * `aria-invalid` and points at nothing, the `aria-describedby` text when it
+     * does, and null when the field does not declare itself invalid at all.
+     *
+     * Three states rather than two because "valid" and "invalid, reason not
+     * stated" are different readings, and only the first means there is nothing
+     * to fix.
+     */
+    fun domInvalidMessage(): String? {
+        val invalid = (custom["domInvalid"] as? MetadataValue.Bool)?.value ?: false
+        if (!invalid) return null
+        return (custom["domDescribedBy"] as? MetadataValue.Text)?.value ?: ""
+    }
 
     /**
      * True when this node's pixels are NOT in an in-process screenshot: an Android

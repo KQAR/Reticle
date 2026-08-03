@@ -31,22 +31,83 @@
     }
     return parts.join(" > ");
   }
+  // An <input>'s type IS its role. Reading every input as a text field was
+  // measured turning a bank consent checkbox into `role: textField` while
+  // `domInputType` sat right beside it saying `checkbox` — the fact was
+  // captured and then thrown away by the mapping.
+  var INPUT_ROLES = {
+    checkbox: "checkbox",
+    radio: "radio",
+    submit: "button",
+    button: "button",
+    reset: "button",
+    image: "button",
+    range: "slider",
+    color: "colorPicker",
+    file: "filePicker"
+  };
   function roleFor(el) {
     var explicit = clean(el.getAttribute("role"), 40);
     if (explicit) return explicit;
     var tag = el.tagName.toLowerCase();
     if (tag === "a") return "link";
     if (tag === "button") return "button";
-    if (tag === "input" || tag === "textarea") return "textField";
+    if (tag === "input") {
+      var type = clean(el.getAttribute("type"), 40).toLowerCase();
+      return INPUT_ROLES[type] || "textField";
+    }
+    if (tag === "textarea") return "textField";
     if (tag === "select") return "picker";
     if (/^h[1-6]$/.test(tag)) return "heading";
     return tag;
   }
+  // A field's VALUE only. Placeholder used to be folded in here as a fallback,
+  // which made an empty field and a filled one project identically — and made
+  // `act type`'s read-back structurally unable to tell whether text landed
+  // (`dom-input-value-not-separable-from-placeholder`). It is its own key now.
   function textFor(el) {
     var tag = el.tagName.toLowerCase();
     if (tag === "body" || tag === "html") return "";
-    if (tag === "input" || tag === "textarea") return clean(el.value || el.placeholder, 160);
+    if (tag === "input" || tag === "textarea") return clean(el.value, 160);
     return clean(el.innerText || el.textContent, 160);
+  }
+  // The accessible name, in the order a screen reader resolves it. A form built
+  // out of framework components often sets NONE of id / data-testid / value, and
+  // then the label is the only thing that tells five identical text fields apart.
+  function nameFor(el) {
+    var label = clean(el.getAttribute("aria-label"), 160);
+    if (label) return label;
+    var referenced = textOfReferenced(el, "aria-labelledby");
+    if (referenced) return referenced;
+    return clean(el.getAttribute("title") || el.getAttribute("alt"), 160);
+  }
+  function textOfReferenced(el, attribute) {
+    var ids = clean(el.getAttribute(attribute), 200);
+    if (!ids) return "";
+    var doc = el.ownerDocument || document;
+    var parts = [];
+    ids.split(/\s+/).forEach(function(id) {
+      var target = null;
+      try { target = doc.getElementById(id); } catch (e) { target = null; }
+      if (target) parts.push(clean(target.innerText || target.textContent, 160));
+    });
+    return clean(parts.join(" "), 160);
+  }
+  // Tri-state on purpose: "" means this element is not checkable at all, which
+  // is a different fact from "checkable and off". Only the second is a state an
+  // agent may act on.
+  function checkedFor(el) {
+    var tag = el.tagName.toLowerCase();
+    var type = clean(el.getAttribute("type"), 40).toLowerCase();
+    if (tag === "input" && (type === "checkbox" || type === "radio")) {
+      return el.checked ? "true" : "false";
+    }
+    var aria = clean(el.getAttribute("aria-checked"), 40).toLowerCase();
+    if (aria === "true" || aria === "false" || aria === "mixed") return aria;
+    var pressed = clean(el.getAttribute("aria-pressed"), 40).toLowerCase();
+    if (pressed === "true" || pressed === "false") return pressed;
+    if (tag === "option") return el.selected ? "true" : "false";
+    return "";
   }
   function interactive(el) {
     var tag = el.tagName.toLowerCase();
@@ -113,8 +174,16 @@
       selector: chain,
       testId: clean(el.getAttribute("data-testid") || el.getAttribute("data-test-id") || id, 120),
       role: roleFor(el),
-      name: clean(el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt"), 160),
+      name: nameFor(el),
       text: textFor(el),
+      placeholder: clean(el.getAttribute("placeholder"), 160),
+      formName: clean(el.getAttribute("name"), 120),
+      checked: checkedFor(el),
+      // The field/error pairing a form states in markup. Without it an error
+      // string is an ordinary sibling div and nothing says which input it is
+      // about.
+      invalid: el.getAttribute("aria-invalid") === "true",
+      describedBy: textOfReferenced(el, "aria-describedby"),
       href: clean(el.getAttribute("href"), 200),
       src: clean(el.getAttribute("src"), 500),
       srcset: clean(el.getAttribute("srcset"), 500),
