@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.16.0 - 2026-08-03
+
+- **Commands are scenarios now, not verbs.** `/reticle:tap` dispatched one gesture
+  and `/reticle:inject` was a precondition — neither is a task anyone asks for, and
+  both were restatement of skill content, which is exactly the drift the
+  thin-wrapper rule exists to prevent. Both are **removed**. `/reticle:report`
+  stays (a complete intent, and the entry point every flow starts from), and
+  `/reticle:verify` is new: drive a flow end to end, then assert on the evidence
+  Reticle captured, step by step. It absorbs both deletions — inject becomes step
+  one's repair, a tap becomes one step of the batch — and makes the awkward
+  readings mandatory rather than optional: an empty diff is two findings wearing
+  one face, `window: UNFOCUSED` voids the step under it, `charGrid` is an
+  approximation, and a boundary that blocked the check is not the app failing it.
+
+- **The skill loads ~35% less to say the same thing.** `SKILL.md` was 941 lines /
+  ~13.5k tokens, and all of it entered context on every trigger — including "what's
+  on screen", for which the rule engine, the MITM CA setup, the session event bus,
+  `act batch` and the trace formats are dead weight. It is now 573 lines / ~8.9k,
+  and those ~400 lines live in `skills/reticle/references/*.md`, read on demand.
+  What makes it work rather than just move text: the index is keyed on **when** to
+  open a file, not on what it contains, and every seam where material left carries
+  an inline pointer at the place in the flow where it would have been wanted.
+  `validate_plugin.py` now guards the failure mode this introduces — a reference
+  nothing points at is never loaded, a pointer at a missing file is a dangling
+  instruction, and both are silent.
+
+- **`--proxy-phone-onboard` was shipping and documented nowhere.** It prints a LAN
+  provisioning URL, the CA's SHA-256 fingerprint and a QR
+  (`~/.reticle/phone-onboard-qr.png`) so a real phone can scan-and-install the CA —
+  while `docs/ios.md` steered the reader down the manual route (AirDrop a `.cer`,
+  install, enable full trust). Now recorded with the three properties a caller needs
+  first, read off Loom 0.0.12 rather than assumed: it rebinds the proxy to `0.0.0.0`
+  itself (so `--proxy-bind` beside it is redundant), it fails with `no LAN IPv4
+  address` when the Mac is on neither Wi-Fi nor Ethernet, and the provisioning
+  server plus that LAN-wide bind stay up for the daemon's whole life. It provisions
+  **trust, not routing** — the phone's Wi-Fi proxy is still the user's step. Both
+  READMEs also stopped describing capture as if Android were the only target: iOS
+  routing is deliberately never mutated, because the simulator would mean a
+  host-wide proxy, a device rides its Wi-Fi setting, and a daemon dying mid-run
+  would strand either on a closed port.
+
+- **Nothing in a public repo may name something outside it.** A comment credited the
+  injection route to a third-party app, and the device project pinned a
+  `DEVELOPMENT_TEAM` that could only ever be the wrong one (every caller passes it
+  on the command line). Both gone; the rule is in `AGENTS.md`, covering commit
+  messages and PR descriptions too, since those are as public as the tree.
+
 ## 0.15.0 - 2026-08-03
 
 - **Loom 0.0.5 → 0.0.12, and the three things that upgrade changed.** The bump
