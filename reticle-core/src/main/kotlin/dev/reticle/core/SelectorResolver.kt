@@ -122,7 +122,12 @@ class SelectorResolver(
         // only human-readable name is that label. Measured on a form fixture: every
         // aria-labelled checkbox and radio was unreachable by `--label`, which is
         // the selector the skill documents for exactly these controls.
-        fun namesOf(node: Node) = listOfNotNull(node.text, node.contentDescription)
+        // ...and the placeholder, which for an empty input is the ONLY text on
+        // screen. `--label` is documented as matching what a user can see, and on a
+        // form built from framework components an empty field has no id, no value
+        // and no accessible name — the grey prompt inside it is the whole handle.
+        fun namesOf(node: Node) =
+            listOfNotNull(node.text, node.contentDescription, node.domPlaceholder())
         fun matchesIn(candidates: List<Node>): List<Node> {
             val exact = candidates.filter { node -> namesOf(node).any { it.trim() == label } }
             return exact.ifEmpty {
