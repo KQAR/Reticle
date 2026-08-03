@@ -366,6 +366,13 @@ public struct Node: Codable, Sendable {
             || contentDescription != nil
             || !(text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || isInteractive
+            // A DISABLED input is not interactive and, on a form built from
+            // framework components, has no id, no label and no value — so every
+            // clause above is false and it used to be filtered out of the
+            // projection entirely. Measured: address fields disabled until a
+            // postcode unlocked them were absent from the compact view, which
+            // reads as "the app has no such field" rather than "not ready yet".
+            || domPlaceholder() != nil
     }
 
     private enum CodingKeys: String, CodingKey {

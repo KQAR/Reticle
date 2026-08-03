@@ -30,6 +30,23 @@
   `data-testid` and no value anywhere — the complex fixture sets all three, so it
   could never reproduce the screen this came from.
 
+- **`--label` could not resolve the controls it exists for.** It matched
+  `text ?? contentDescription` — a fallback, not both — so any control carrying a
+  value *and* an accessible label had the label shadowed by the value.
+  `<input type="radio" value="b" aria-label="Plan B">` is the everyday shape of
+  that, and `--label "Plan B"` could not resolve it: on a form fixture every
+  aria-labelled checkbox and radio was unreachable through the one selector the
+  skill documents for exactly these controls (they carry no id and no visible
+  text of their own). Both names are matched now, exact-then-substring as before.
+
+- **A disabled input was filtered out of the projection.** It fails every clause
+  of `hasTargetingSignal` at once — not interactive, no id, no label, no value —
+  so a form's not-yet-unlocked fields were simply absent from `ui compact`, which
+  reads as "the app has no such field" rather than "not ready yet". Measured on an
+  address form where the city and street fields unlock once a postcode is entered.
+  A `placeholder` is now a targeting signal in its own right: it is both the
+  evidence that the node IS a field and the only thing that says which one.
+
 ## 0.16.0 - 2026-08-03
 
 - **Commands are scenarios now, not verbs.** `/reticle:tap` dispatched one gesture
