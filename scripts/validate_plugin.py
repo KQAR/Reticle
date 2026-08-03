@@ -169,6 +169,30 @@ def check_version_lockstep():
         )
 
 
+def check_skill_references():
+    """Progressive disclosure only works if the pointers resolve both ways.
+
+    SKILL.md is the loaded-every-time file and `references/*.md` are read on
+    demand — so a reference nothing points at is dead weight the model never sees,
+    and a pointer at a missing file is a dangling instruction. Both are silent.
+    """
+    skill = os.path.join(ROOT, "skills", "reticle", "SKILL.md")
+    ref_dir = os.path.join(ROOT, "skills", "reticle", "references")
+    if not os.path.isfile(skill) or not os.path.isdir(ref_dir):
+        return
+    with open(skill, encoding="utf-8") as f:
+        text = f.read()
+    pointed = set(re.findall(r"references/([A-Za-z0-9._-]+\.md)", text))
+    present = {n for n in os.listdir(ref_dir) if n.endswith(".md")}
+    for missing in sorted(pointed - present):
+        errors.append(f"SKILL.md points at references/{missing}, which does not exist")
+    for orphan in sorted(present - pointed):
+        errors.append(
+            f"references/{orphan} exists but SKILL.md never points at it — "
+            "the model would never load it"
+        )
+
+
 def main():
     validate_plugin(load(CLAUDE_PLUGIN), ".claude-plugin/plugin.json")
     validate_marketplace(load(CLAUDE_MARKET), ".claude-plugin/marketplace.json")
@@ -182,6 +206,7 @@ def main():
 
     collect_code_versions()
     check_version_lockstep()
+    check_skill_references()
 
     if errors:
         print("Plugin manifest validation FAILED:")
