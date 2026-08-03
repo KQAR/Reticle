@@ -784,6 +784,32 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== A CROSS-ORIGIN FRAME SAYS WHY IT IS EMPTY =="
+# boundaries.md listed this as "not exercised (needs a second origin, and both
+# suites run offline)". A `data:` URL gets an OPAQUE origin, so it is a genuinely
+# cross-origin frame that needs no network — both twins now sit on one screen.
+#
+# The absence itself is the old boundary and is not the defect. The defect was that
+# it was SILENT: an empty frame is byte-for-byte what one that has not finished
+# loading looks like, so a caller retries, waits, and ends up measuring pixels off a
+# screenshot. Measured on a real third-party widget: four consecutive steps done by
+# coordinate because nothing in the tree said to stop trying.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario complex >/dev/null 2>&1
+wait_compact "$PKG" "complex.iframeButton"
+FRAMES="$(R ui compact --live --package "$PKG" --window top)"
+echo "$FRAMES" | grep -q 'complex.foreignFrame .*iframe:cross-origin' \
+  || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
+# Its content stays absent — the marker explains the boundary, it does not lift it.
+echo "$FRAMES" | grep -q "Inside foreign frame" \
+  && { echo "FAIL: a cross-origin frame's content must not be readable"; exit 1; }
+# And the same-origin twin beside it is still pierced and still unmarked.
+echo "$FRAMES" | grep -q 'complex.iframeButton' \
+  || { echo "FAIL: the same-origin frame must still be pierced"; exit 1; }
+echo "$FRAMES" | grep -q 'complex.iframe .*iframe:cross-origin' \
+  && { echo "FAIL: a same-origin frame must not be marked cross-origin"; exit 1; }
+
 echo "== A SCREEN COVERED BY ANOTHER, INSIDE ONE WINDOW =="
 # Occlusion was window-level only, which misses the shape a hybrid app really has:
 # a second screen pushed over a still-alive one inside ONE window. Measured on this

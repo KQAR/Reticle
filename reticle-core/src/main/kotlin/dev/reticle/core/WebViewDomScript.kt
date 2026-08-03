@@ -95,6 +95,9 @@ object WebViewDomScript {
           // which made an empty field and a filled one project identically — and made
           // `act type`'s read-back structurally unable to tell whether text landed
           // (`dom-input-value-not-separable-from-placeholder`). It is its own key now.
+          function tagOf(el) {
+            return el.tagName ? el.tagName.toLowerCase() : "";
+          }
           function textFor(el) {
             var tag = el.tagName.toLowerCase();
             if (tag === "body" || tag === "html") return "";
@@ -244,7 +247,20 @@ object WebViewDomScript {
             // the frame viewport, so accumulate the frame's page offset.
             // Cross-origin frames throw / return null — they stay opaque.
             var frameDoc = null;
-            try { frameDoc = el.contentDocument; } catch (e) { frameDoc = null; }
+            var crossOrigin = false;
+            if (tagOf(el) === "iframe") {
+              try {
+                frameDoc = el.contentDocument;
+              } catch (e) {
+                frameDoc = null;
+              }
+              // Reached only for a frame: `contentDocument` either throws (Chrome) or
+              // returns null (some engines) when the origin differs, and both look exactly
+              // like "the frame has not loaded yet" from the outside. A caller with no way
+              // to tell those apart retries, waits, and eventually measures pixels off a
+              // screenshot — which is what a third-party payment/bank widget costs today.
+              if (!frameDoc) crossOrigin = true;
+            }
             if (frameDoc && frameDoc.body) {
               var frameOffset = { x: left + el.clientLeft, y: top + el.clientTop };
               var frameBody = walk(frameDoc.body, chain, frameOffset, cursor, null);
@@ -302,6 +318,9 @@ object WebViewDomScript {
               // without this a 10-item counter strip puts nine unseeable digits into the
               // tree, where they poison `--label` and pad every projection.
               clipped: !!clipped,
+              // A frame whose document this page may not read. Structural — no wait or
+              // retry clears it — so it is stated rather than left as an empty subtree.
+              crossOriginFrame: !!crossOrigin,
               left: left + window.scrollX,
               top: top + window.scrollY,
               width: rect.width,

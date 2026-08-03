@@ -335,6 +335,15 @@ public struct Node: Codable, Sendable {
         return 0
     }
 
+    /// True when this is an `<iframe>` whose document the page may not read — a
+    /// structural browser-policy boundary. Previously unmarked, and its absence is
+    /// byte-for-byte what a frame still loading looks like, so a caller retried and
+    /// eventually measured pixels. See the Kotlin twin.
+    public func domCrossOriginFrame() -> Bool {
+        if case .bool(let v)? = custom["domCrossOriginFrame"] { return v }
+        return false
+    }
+
     /// The element's tag name, lowercased by the traversal script.
     public func domTag() -> String? {
         if case .text(let v)? = custom["domTag"] { return v }

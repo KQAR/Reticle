@@ -486,6 +486,20 @@ data class Node(
         return (custom["domCaptured"] as? MetadataValue.Integer)?.value ?: 0L
     }
 
+    /**
+     * True when this is an `<iframe>` whose document the page may not read.
+     *
+     * A structural boundary — browser policy, which nothing in the app can
+     * override — and previously an unmarked one: the frame element was captured
+     * with its rect and no children, which is byte-for-byte what a frame that has
+     * not finished loading looks like. A caller that cannot tell those apart
+     * retries, waits, and ends up measuring pixels off a screenshot. Measured on a
+     * real third-party widget: four consecutive steps done by coordinate because
+     * the tree gave no reason to stop trying.
+     */
+    fun domCrossOriginFrame(): Boolean =
+        (custom["domCrossOriginFrame"] as? MetadataValue.Bool)?.value ?: false
+
     /** The element's tag name, lowercased by the traversal script. */
     fun domTag(): String? = (custom["domTag"] as? MetadataValue.Text)?.value
 
