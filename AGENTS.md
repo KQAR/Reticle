@@ -143,6 +143,18 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 
 ## Architecture Rules
 
+- **This repository is PUBLIC, and nothing in it may name something outside it.**
+  Boundaries and gotchas are usually discovered while driving some real app on
+  some real device, and the temptation is to write down where it was measured —
+  an employer's app name, a signing team id, a device udid/ECID, an internal
+  host, a ticket id. None of that is evidence a reader can use: what carries the
+  finding is the OS version, the widget family, the build's entitlements. Say
+  "a self-signed debug build, iPhone 13 Pro Max / iOS 26.0", never which app it
+  was. Same rule for commit messages, PR descriptions and release notes, which
+  are just as public as the tree. Credentials and account-specific ids belong on
+  the command line or in the environment, never as a checked-in default (see
+  `sample-app-ios/xcode/project.yml`, which deliberately has no
+  `DEVELOPMENT_TEAM`).
 - The agent observes app state. It is not the place where input events are
   synthesized — real input comes from the host via `adb shell input`.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
