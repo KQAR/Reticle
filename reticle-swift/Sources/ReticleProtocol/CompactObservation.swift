@@ -136,6 +136,7 @@ public struct CompactObservation: Codable, Sendable {
                         scroll: node.scroll,
                         wheel: wheelMarker(node),
                         domUnavailable: node.domUnavailable(),
+                        domCappedAt: node.domCappedAt(),
                         domKernelUnsupported: node.domKernelUnsupported(),
                         pixelsUnavailable: node.pixelsUnavailable(),
                         screencapBlank: node.screencapBlank()
@@ -311,6 +312,10 @@ public struct CompactItem: Codable, Sendable {
     /// its budget). Without it, "no DOM nodes" and "this web view is empty" are the
     /// same observation.
     public var domUnavailable: Bool
+    /// Set when this web view's DOM walk stopped at the traversal's node cap,
+    /// carrying how many nodes it did capture. Rendered as ` dom:capped(N)`. The
+    /// nodes past it were never captured, so no `ui tree` can reach them.
+    public var domCappedAt: Int64?
     /// True when this node is a suspected third-party WebView kernel (X5/UC): no
     /// DOM bridge exists for it at all — a structural boundary, not a degrade.
     public var domKernelUnsupported: Bool
@@ -343,6 +348,7 @@ public struct CompactItem: Codable, Sendable {
         scroll: ScrollInfo? = nil,
         wheel: String? = nil,
         domUnavailable: Bool = false,
+        domCappedAt: Int64? = nil,
         domKernelUnsupported: Bool = false,
         pixelsUnavailable: Bool = false,
         screencapBlank: Bool = false
@@ -366,6 +372,7 @@ public struct CompactItem: Codable, Sendable {
         self.scroll = scroll
         self.wheel = wheel
         self.domUnavailable = domUnavailable
+        self.domCappedAt = domCappedAt
         self.domKernelUnsupported = domKernelUnsupported
         self.pixelsUnavailable = pixelsUnavailable
         self.screencapBlank = screencapBlank
@@ -403,6 +410,7 @@ public struct CompactItem: Codable, Sendable {
         if let scroll, !scroll.describe().isEmpty { state += " " + scroll.describe() }
         if let wheel { state += " wheel:\(wheel)" }
         if domUnavailable { state += " dom:unavailable" }
+        if let domCappedAt { state += " dom:capped(\(domCappedAt))" }
         if domKernelUnsupported { state += " dom:unsupported-kernel" }
         if pixelsUnavailable { state += " pixels:unavailable" }
         if screencapBlank { state += " screencap:blank" }
@@ -412,7 +420,7 @@ public struct CompactItem: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
         case isFocused, checked, expanded, hasPopup, placeholder, invalid, windowRef, occludedBy, scroll, wheel
-        case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
+        case domUnavailable, domCappedAt, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -436,6 +444,7 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(scroll, forKey: .scroll)
         try c.encodeIfPresent(wheel, forKey: .wheel)
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
+        try c.encodeIfPresent(domCappedAt, forKey: .domCappedAt)
         if domKernelUnsupported { try c.encode(domKernelUnsupported, forKey: .domKernelUnsupported) }
         if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
         if screencapBlank { try c.encode(screencapBlank, forKey: .screencapBlank) }
@@ -462,6 +471,7 @@ public struct CompactItem: Codable, Sendable {
         scroll = try c.decodeIfPresent(ScrollInfo.self, forKey: .scroll)
         wheel = try c.decodeIfPresent(String.self, forKey: .wheel)
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
+        domCappedAt = try c.decodeIfPresent(Int64.self, forKey: .domCappedAt)
         domKernelUnsupported = try c.decodeIfPresent(Bool.self, forKey: .domKernelUnsupported) ?? false
         pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false
         screencapBlank = try c.decodeIfPresent(Bool.self, forKey: .screencapBlank) ?? false

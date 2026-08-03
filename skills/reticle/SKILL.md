@@ -237,7 +237,11 @@ those items are not printed at all, so never read a compact carrying that line a
 the whole screen; reach the rest with `ui tree` / `ui node --ref`.
 
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
-visible labelled/interactive nodes as `@1`, `@2`, ... and writes a short-lived
+**on-screen** labelled/interactive nodes as `@1`, `@2`, ... — on screen, not merely
+in the tree: it used to number the whole scrollable content, and measured on a real
+home screen that was 135 aliases whose last entry sat at y=10800 on a 2412-tall
+device, about 15 of them actually visible. A row below the fold is reached with
+`act scroll-to` and then re-outlined. and writes a short-lived
 alias cache for that package. Repeated vertical controls are annotated as
 `item i/n` so list rows can be compared without opening the full snapshot.
 `act --alias @N` re-resolves the cached entry against the **live** tree before
@@ -607,6 +611,7 @@ and switch tactics — retrying, waiting, or re-capturing will not change it.**
 | You see | It means | Do this |
 | --- | --- | --- |
 | `window: UNFOCUSED …` | Another process's window (permission prompt, biometric sheet, share sheet, Custom Tab) has input focus. It is in NO node of the tree and NOT in the agent's screenshot | Deal with that window first; don't tap into the void |
+| `dom:capped(N)` | This web view's DOM walk stopped at the traversal's own node cap after N nodes. Unlike the projection cap, the rest were never captured — no `ui tree` or `ui node --ref` can reach them | Narrow the page, or scroll and re-capture |
 | `dom:unavailable` | The DOM could not be read *at this moment* (a JS modal blocking the page thread, JS off, budget) | Dismiss the modal / re-capture — this one CAN clear |
 | `dom:unsupported-kernel` | A third-party WebView kernel (X5/UC). There is no DOM for it at any level | Target it as a plain view (`--test-id` / `--point`); `--css` will never match |
 | `pixels:unavailable` | These pixels are missing from the in-process screenshot (Android `SurfaceView`, iOS keyboard window) | Use a device-level capture if you need the picture |

@@ -217,4 +217,35 @@ class FormSemanticsTest {
             SelectorResolver(twoControls, SemanticTree.build(twoControls)).resolve(Selector(label = "Delete"))
         }
     }
+
+    @Test
+    fun aWebViewWhoseWalkRanOutOfBudgetSaysSo() {
+        // The projection's cap announces itself; the TRAVERSAL's stopped silently,
+        // so a partial DOM read as the whole page — and unlike the projection's,
+        // nothing further down can recover what was never captured.
+        val capped = snapshot(
+            Node(
+                ref = "web", parentRef = "root", kind = NodeKind.view,
+                typeName = "android.webkit.WebView", role = "container",
+                frame = Rect(0.0, 200.0, 1080.0, 2000.0), isInteractive = true,
+                custom = mapOf(
+                    "domCapped" to MetadataValue.Bool(true),
+                    "domCaptured" to MetadataValue.Integer(302L),
+                ),
+            ),
+        )
+        assertTrue(lineFor("web", capped).contains(" dom:capped(302)"), lineFor("web", capped))
+        assertEquals(302L, capped.node("web")!!.domCappedAt())
+
+        // A walk that finished says nothing, and must not read as a cap of zero.
+        val whole = snapshot(
+            Node(
+                ref = "web", parentRef = "root", kind = NodeKind.view,
+                typeName = "android.webkit.WebView", role = "container",
+                frame = Rect(0.0, 200.0, 1080.0, 2000.0), isInteractive = true,
+            ),
+        )
+        assertNull(whole.node("web")!!.domCappedAt())
+        assertTrue(!lineFor("web", whole).contains("dom:capped"))
+    }
 }
