@@ -15,8 +15,9 @@ that workflow applied to one screen:
 2. Bring the runtime up: `reticle app launch --package <pkg>`. On failure use
    `reticle status --package <pkg>` to classify why; the skill maps UNREACHABLE /
    UNRESPONSIVE / CONFLICT / FOREIGN to its fix. A debuggable Android app that
-   does not link the AAR needs `reticle app inject` instead — see
-   `/reticle:inject`. Report a failure honestly rather than fabricating output.
+   does not link the AAR needs `reticle app inject --package <pkg>` instead; the
+   skill's health-check table has the rest. Report a failure honestly rather than
+   fabricating output.
 3. `reticle ui report --package <pkg> --output reticle-report`.
 4. `reticle ui compact reticle-report/snapshot.json` — summarize the interactive
    and labelled elements, including embedded WebView DOM nodes.
