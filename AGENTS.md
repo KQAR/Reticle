@@ -125,7 +125,12 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
   agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
   arm64 only.
-- `skills/reticle/SKILL.md` — model-invoked skill describing the workflow.
+- `skills/reticle/SKILL.md` — model-invoked skill describing the workflow. It is
+  the read-and-drive path only; the heavier machinery sits in
+  `skills/reticle/references/*.md`, which the skill loads on demand through the
+  index table at its top. Put a new topic in `references/` unless it is needed to
+  inspect a screen or tap a button, and give it a row saying **when** to open it —
+  a reference nothing points at is unreachable.
 - `commands/report.md`, `commands/verify.md` — slash commands (`/reticle:report`,
   `/reticle:verify`). Thin wrappers: each one defers to the skill for the workflow
   instead of restating it, so the two cannot drift apart. A command must be a
