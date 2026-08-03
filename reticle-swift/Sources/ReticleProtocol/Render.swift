@@ -325,8 +325,18 @@ public enum Render {
             return false
         }
         let leaves = matches.filter { node in !matches.contains { isAncestor(node, of: $0) } }
-        if leaves.isEmpty { return nil }
-        if leaves.count == 1 { return LabelHit(node: leaves[0], coincident: false) }
+        // A caption and the control it names are not an ambiguity either. A form
+        // states a field's name in a separate element and points the control at it
+        // (`aria-labelledby`, `<label for>`), so ONE string legitimately belongs to
+        // two nodes in different subtrees — and only one of them does anything when
+        // tapped. Measured: a div-built dropdown and its `<span>` caption both
+        // answered to "Education" and the refusal fired, leaving a coordinate as the
+        // only way in — for the exact control this is meant to make reachable.
+        // Two ACTIONABLE matches is still a refusal. See the Kotlin twin.
+        let actionable = leaves.filter { $0.isInteractive }
+        let candidates = actionable.count == 1 ? actionable : leaves
+        if candidates.isEmpty { return nil }
+        if candidates.count == 1 { return LabelHit(node: candidates[0], coincident: false) }
         // Same place, several layers: not an ambiguity. Measured on an iOS
         // simulator, `UIPickerView` draws its magnifier bands as separate table
         // views, so the row under the selection exists 3× at one spot ('09' at
@@ -335,8 +345,8 @@ public enum Render {
         // selection, the ones worth tapping. A tap resolves identically whichever
         // is picked, so refusing protects nothing. Rects genuinely apart stay
         // ambiguous, which is the case the rule exists for.
-        if coincident(leaves) { return LabelHit(node: leaves[0], coincident: true) }
-        throw AmbiguousLabel(label: label, matches: leaves)
+        if coincident(candidates) { return LabelHit(node: candidates[0], coincident: true) }
+        throw AmbiguousLabel(label: label, matches: candidates)
     }
 
     /// Do all of these candidates sit on the SAME on-screen target? True when every

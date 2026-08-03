@@ -429,7 +429,30 @@ four things a form screen otherwise made you look at pixels for:
   (`aria-invalid`), with the message its `aria-describedby` names. Without it a
   validation error is a sibling node belonging to nothing;
 - an `<input>`'s **type is its role**: `checkbox`, `radio`, `slider`, `button` for
-  `submit`/`button`/`reset`/`image`. Only a genuine text input reads `textField`.
+  `submit`/`button`/`reset`/`image`. Only a genuine text input reads `textField`;
+- ` collapsed` / ` expanded` + ` popup:<kind>` — a control that opens something.
+  **This is how a dropdown built out of divs is driven.** Such a control has no
+  `<select>`, often no id and no tabindex, and its options do not exist in the DOM
+  until it is opened — so before the first tap there is nothing to diff against and
+  ` expanded` is the only evidence a tap did anything. `popup:listbox` is also the
+  cue that an empty subtree under it is EXPECTED rather than a capture failure. A
+  node declaring no disclosure state prints nothing here, which is again the third
+  answer.
+
+A click handler bound in JS cannot be read from a page (`getEventListeners` is a
+devtools API), so `tappable` on a framework-built control comes from what the page
+publishes: a widget `role` (`combobox`, `option`, `treeitem`, …), `aria-haspopup`,
+`aria-expanded`, `tabindex`, `onclick` — and, when none of those are declared,
+`cursor: pointer`. That last one is the page telling a human "this is clickable"
+and is the weakest of them; it is recorded as `custom.domCursor` so you can see
+when tappability rested on it. It is applied only at the node where the pointer
+**starts**: `cursor` is inherited, so a pointer on a wrapper computes as pointer on
+every descendant, and marking all of them would turn one control into four.
+
+`--label` resolves a **caption and the control it names** to the control. One
+string legitimately belongs to two nodes in different subtrees (`aria-labelledby`,
+`<label for>`) and only one of them does anything when tapped, so the single
+*actionable* match wins. Two actionable matches is still a refusal.
 
 A DOM input also carries `custom.domName` (its `name` attribute) and
 `custom.domPlaceholder`, and its accessible name resolves through `aria-label` →

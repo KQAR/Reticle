@@ -416,6 +416,36 @@ object SampleWebFixtures {
             </div>
 
             <!--
+              A dropdown built the way component frameworks build them: a div with a
+              click handler bound in JS, no <select>, no id, no tabindex, and its
+              options inserted only once it opens. Before that first tap there is
+              nothing in the tree but the label - which is the whole problem, since
+              the agent then has a label and no executable next step.
+              Two signals it DOES publish, and they are the fix: `aria-haspopup`
+              (declarative, authoritative) and `cursor: pointer` (what the page tells
+              a human, and inherited - so only the node where it STARTS counts).
+            -->
+            <div class="row">
+              <span id="edu-label">Education</span>
+              <div class="fake-select" role="combobox" aria-haspopup="listbox"
+                aria-expanded="false" aria-labelledby="edu-label"
+                style="cursor:pointer;border:1px solid #999;padding:10px">
+                <span class="fake-select__value">Choose one</span>
+              </div>
+              <div class="fake-options" hidden></div>
+            </div>
+
+            <!--
+              The inheritance trap, asserted rather than assumed: `cursor` is an
+              inherited property, so a pointer on a wrapper computes as pointer on
+              every descendant. Marking all of them tappable would turn one control
+              into four. Only the outermost node - where the pointer starts - is one.
+            -->
+            <div class="row" style="cursor:pointer" id="pointer-root">
+              <div><span id="pointer-leaf">Nested under a pointer wrapper</span></div>
+            </div>
+
+            <!--
               A tri-state "select all", the case a plain boolean cannot carry.
             -->
             <div class="row">
@@ -424,6 +454,32 @@ object SampleWebFixtures {
             </div>
 
             <script>
+              // The options exist only after the trigger is tapped - the shape that
+              // makes an unopened dropdown unreachable rather than merely empty.
+              var fakeSelect = document.querySelector('.fake-select');
+              var fakeOptions = document.querySelector('.fake-options');
+              fakeSelect.addEventListener('click', function() {
+                var open = fakeSelect.getAttribute('aria-expanded') === 'true';
+                fakeSelect.setAttribute('aria-expanded', open ? 'false' : 'true');
+                if (open) { fakeOptions.hidden = true; return; }
+                if (!fakeOptions.childNodes.length) {
+                  ['Primary', 'Secondary', 'University'].forEach(function(name) {
+                    var row = document.createElement('div');
+                    row.setAttribute('role', 'option');
+                    row.style.cursor = 'pointer';
+                    row.style.padding = '10px';
+                    row.appendChild(document.createTextNode(name));
+                    row.addEventListener('click', function() {
+                      fakeSelect.querySelector('.fake-select__value').textContent = name;
+                      fakeSelect.setAttribute('aria-expanded', 'false');
+                      fakeOptions.hidden = true;
+                    });
+                    fakeOptions.appendChild(row);
+                  });
+                }
+                fakeOptions.hidden = false;
+              });
+
               // The city field unlocks once the postcode has content - the
               // enable-on-dependency shape, so `isEnabled` is observed flipping
               // rather than only ever read as a constant.

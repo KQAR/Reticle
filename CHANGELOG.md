@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **A dropdown built out of divs is drivable without a screenshot.** The single
+  largest source of coordinate taps measured on a real form: five select controls
+  on one screen, each present before selection ONLY as a label — no `button`, no
+  `select`, nothing marked `tappable` — so an agent read five labels and had no
+  executable next step. A click handler bound in JS cannot be read from the page
+  (`getEventListeners` is a devtools API), so a framework-built trigger publishes
+  no handler to find; what it does publish is a widget `role`
+  (`combobox`/`option`/`treeitem`/… — all of which were missing from the
+  interactive set), `aria-haspopup`, `aria-expanded`, and — when nothing else is
+  declared — `cursor: pointer`. All of them now make a node `tappable`. The cursor
+  signal is the weakest and is treated as such: recorded as `custom.domCursor` so
+  you can see when tappability rested on it, and applied only at the node where the
+  pointer **starts**, because `cursor` is inherited and marking every descendant
+  would turn one control into four (asserted both ways on the fixture). `expanded`
+  joins `checked` as a first-class tri-state — a div-built select's options do not
+  exist until it opens, so before the tap there is nothing to diff against and this
+  is the only evidence a tap did anything — and ` popup:<kind>` says an empty
+  subtree under a control is EXPECTED rather than a capture failure.
+
+- **`--label` resolves a caption and the control it names to the control.** A form
+  states a field's name in a separate element and points the control at it
+  (`aria-labelledby`, `<label for>`), so one string legitimately belongs to two
+  nodes in different subtrees — and only one of them does anything when tapped.
+  The ambiguity refusal fired on exactly that pair, leaving a coordinate as the
+  only way into the control `--label` exists to reach. The single *actionable*
+  match now wins; two actionable matches is still a refusal, which is the case the
+  rule is for.
+
 - **A web form can be driven end to end without a single coordinate.** Three
   independent defects had to line up for that to be false, and all three were.
   `act type`'s read-back was refused for **every** DOM input

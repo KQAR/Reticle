@@ -146,6 +146,11 @@ object WebViewBridge {
             isEnabled = !disabled,
             isInteractive = !disabled && element.optBoolean("interactive", false),
             checked = checkedStateOf(element.optString("checked")),
+            expanded = when (element.optString("expanded")) {
+                "true" -> true
+                "false" -> false
+                else -> null
+            },
             custom = metadata,
             // Computed CSS is the DOM's style channel. The values keep their own
             // suffixes ("14px", "1.5") and are NOT converted: a page's zoom and
@@ -208,6 +213,12 @@ object WebViewBridge {
         // page whose inputs set no id and no value projects five identical
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
+        putText("domHasPopup", element.optString("hasPopup"))
+        // Only where the pointer STARTS, and only as the weak signal it is: the
+        // page said "clickable" and nothing declared a role.
+        if (element.optBoolean("pointerOrigin", false)) {
+            map["domCursor"] = MetadataValue.Text("pointer")
+        }
         putText("domPlaceholder", element.optString("placeholder"))
         putText("domName", element.optString("formName"))
         putText("domDescribedBy", element.optString("describedBy"))

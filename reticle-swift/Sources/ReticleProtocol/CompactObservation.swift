@@ -128,6 +128,8 @@ public struct CompactObservation: Codable, Sendable {
                         windowRef: currentWindow,
                         isFocused: node.isFocused,
                         checked: node.checked,
+                        expanded: node.expanded,
+                        hasPopup: node.domHasPopup(),
                         placeholder: node.domPlaceholder(),
                         invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
@@ -276,6 +278,14 @@ public struct CompactItem: Codable, Sendable {
     /// are different answers and stay different: a consent row used to render
     /// identically before and after a tap ticked it. See the Kotlin twin.
     public var checked: CheckedState?
+    /// Disclosure state when this item declares one, nil otherwise. Rendered as
+    /// ` expanded` / ` collapsed`. The only evidence a tap on a div-built dropdown
+    /// did anything, since its options do not exist until it opens.
+    public var expanded: Bool?
+    /// What kind of popup this item declares it opens (`aria-haspopup`), rendered
+    /// as ` popup:<kind>`. The cue that an empty subtree is expected, not a
+    /// capture failure.
+    public var hasPopup: String?
     /// A DOM input's `placeholder`. Never merged into `label` — a placeholder is
     /// what a field ASKS for, `label` is what it HOLDS, and folding the two made
     /// an empty field and a filled one project identically.
@@ -325,6 +335,8 @@ public struct CompactItem: Codable, Sendable {
         windowRef: String? = nil,
         isFocused: Bool = false,
         checked: CheckedState? = nil,
+        expanded: Bool? = nil,
+        hasPopup: String? = nil,
         placeholder: String? = nil,
         invalid: String? = nil,
         occludedBy: String? = nil,
@@ -346,6 +358,8 @@ public struct CompactItem: Codable, Sendable {
         self.windowRef = windowRef
         self.isFocused = isFocused
         self.checked = checked
+        self.expanded = expanded
+        self.hasPopup = hasPopup
         self.placeholder = placeholder
         self.invalid = invalid
         self.occludedBy = occludedBy
@@ -375,6 +389,12 @@ public struct CompactItem: Codable, Sendable {
         case .mixed: state += " checked:mixed"
         case nil: break
         }
+        switch expanded {
+        case .some(true): state += " expanded"
+        case .some(false): state += " collapsed"
+        case nil: break
+        }
+        if let hasPopup { state += " popup:\(hasPopup)" }
         if let placeholder { state += " placeholder:\"\(placeholder.clipCodePoints(40))\"" }
         if let invalid {
             state += invalid.isEmpty ? " invalid" : " invalid:\"\(invalid.clipCodePoints(40))\""
@@ -391,7 +411,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case isFocused, checked, placeholder, invalid, windowRef, occludedBy, scroll, wheel
+        case isFocused, checked, expanded, hasPopup, placeholder, invalid, windowRef, occludedBy, scroll, wheel
         case domUnavailable, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -408,6 +428,8 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(windowRef, forKey: .windowRef)
         if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         try c.encodeIfPresent(checked, forKey: .checked)
+        try c.encodeIfPresent(expanded, forKey: .expanded)
+        try c.encodeIfPresent(hasPopup, forKey: .hasPopup)
         try c.encodeIfPresent(placeholder, forKey: .placeholder)
         try c.encodeIfPresent(invalid, forKey: .invalid)
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
@@ -432,6 +454,8 @@ public struct CompactItem: Codable, Sendable {
         windowRef = try c.decodeIfPresent(String.self, forKey: .windowRef)
         isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         checked = try c.decodeIfPresent(CheckedState.self, forKey: .checked)
+        expanded = try c.decodeIfPresent(Bool.self, forKey: .expanded)
+        hasPopup = try c.decodeIfPresent(String.self, forKey: .hasPopup)
         placeholder = try c.decodeIfPresent(String.self, forKey: .placeholder)
         invalid = try c.decodeIfPresent(String.self, forKey: .invalid)
         occludedBy = try c.decodeIfPresent(String.self, forKey: .occludedBy)
