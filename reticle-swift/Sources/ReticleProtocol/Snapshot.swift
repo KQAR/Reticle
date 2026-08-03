@@ -216,6 +216,12 @@ public struct Node: Codable, Sendable {
     /// actions, and a plain `Bool` would have collapsed them — which is how a
     /// consent row reads as unticked forever. See the Kotlin twin.
     public var checked: CheckedState?
+    /// Disclosure state of a control that opens something (`aria-expanded`), nil
+    /// when it declares none. Nil and `false` are different facts, for the same
+    /// reason `checked` keeps its third state — and reading it is the only way to
+    /// verify a tap on a dropdown trigger, since a div-built select materialises
+    /// its options only once opened. See the Kotlin twin.
+    public var expanded: Bool?
     public var custom: [String: MetadataValue]
     /// Where each style-bearing entry of `custom` was read from, keyed by the same
     /// property name. Absent for non-style properties, so it doubles as the
@@ -260,6 +266,7 @@ public struct Node: Codable, Sendable {
         isFocusable: Bool = false,
         isFocused: Bool = false,
         checked: CheckedState? = nil,
+        expanded: Bool? = nil,
         custom: [String: MetadataValue] = [:],
         styleChannels: [String: StyleChannel] = [:],
         styleGaps: [String: String] = [:],
@@ -286,6 +293,7 @@ public struct Node: Codable, Sendable {
         self.isFocusable = isFocusable
         self.isFocused = isFocused
         self.checked = checked
+        self.expanded = expanded
         self.custom = custom
         self.styleChannels = styleChannels
         self.styleGaps = styleGaps
@@ -306,6 +314,15 @@ public struct Node: Codable, Sendable {
     public func domUnavailable() -> Bool {
         if case .text(let v)? = custom["domStatus"] { return v == "unavailable" }
         return false
+    }
+
+    /// What kind of popup this control declares it opens (`aria-haspopup`), nil
+    /// otherwise. A hint the PAGE published rather than one Reticle inferred, which
+    /// is what makes it actionable: an empty tree under such a control is expected
+    /// before it is opened. See the Kotlin twin.
+    public func domHasPopup() -> String? {
+        if case .text(let v)? = custom["domHasPopup"] { return v }
+        return nil
     }
 
     /// A DOM input's `placeholder` attribute, kept apart from its value.
@@ -378,7 +395,7 @@ public struct Node: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, parentRef, kind, typeName, role, resourceId, contentDescription
         case text, testId, frame, isVisible, isEnabled, isInteractive
-        case isFocusable, isFocused, checked, custom
+        case isFocusable, isFocused, checked, expanded, custom
         case styleChannels, styleGaps
         case children, regions, suspectedMultiRegion, suspectedWheel, charGrid, scroll
     }
@@ -406,6 +423,7 @@ public struct Node: Codable, Sendable {
         if isFocusable { try c.encode(isFocusable, forKey: .isFocusable) }
         if isFocused { try c.encode(isFocused, forKey: .isFocused) }
         try c.encodeIfPresent(checked, forKey: .checked)
+        try c.encodeIfPresent(expanded, forKey: .expanded)
         if !custom.isEmpty { try c.encode(custom, forKey: .custom) }
         if !styleChannels.isEmpty { try c.encode(styleChannels, forKey: .styleChannels) }
         if !styleGaps.isEmpty { try c.encode(styleGaps, forKey: .styleGaps) }
@@ -435,6 +453,7 @@ public struct Node: Codable, Sendable {
         isFocusable = try c.decodeIfPresent(Bool.self, forKey: .isFocusable) ?? false
         isFocused = try c.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
         checked = try c.decodeIfPresent(CheckedState.self, forKey: .checked)
+        expanded = try c.decodeIfPresent(Bool.self, forKey: .expanded)
         custom = try c.decodeIfPresent([String: MetadataValue].self, forKey: .custom) ?? [:]
         styleChannels = try c.decodeIfPresent([String: StyleChannel].self, forKey: .styleChannels) ?? [:]
         styleGaps = try c.decodeIfPresent([String: String].self, forKey: .styleGaps) ?? [:]

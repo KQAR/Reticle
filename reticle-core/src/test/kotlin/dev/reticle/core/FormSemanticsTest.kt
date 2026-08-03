@@ -3,6 +3,7 @@ package dev.reticle.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -145,5 +146,75 @@ class FormSemanticsTest {
         assertEquals("Required", roundTripped.node("field")!!.domInvalidMessage())
         // Omit-defaults: a node with no toggle state must not gain one on the wire.
         assertNull(roundTripped.node("field")!!.checked)
+    }
+
+    @Test
+    fun aDisclosureControlSaysWhetherItIsOpenAndWhatItOpens() {
+        // The state that makes a div-built dropdown drivable at all: its options do
+        // not exist until it is opened, so before the tap there is nothing to diff
+        // against and this is the only evidence the tap did anything.
+        val snap = snapshot(
+            Node(
+                ref = "shut", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "combobox", contentDescription = "Education",
+                frame = Rect(60.0, 400.0, 960.0, 120.0), isInteractive = true, expanded = false,
+                custom = mapOf("domHasPopup" to MetadataValue.Text("listbox")),
+            ),
+            Node(
+                ref = "open", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "combobox", contentDescription = "Job type",
+                frame = Rect(60.0, 700.0, 960.0, 120.0), isInteractive = true, expanded = true,
+                custom = mapOf("domHasPopup" to MetadataValue.Text("listbox")),
+            ),
+            field("plain", label = "Not a disclosure control"),
+        )
+
+        assertTrue(lineFor("shut", snap).contains(" collapsed"), "a shut control must say so")
+        assertTrue(lineFor("shut", snap).contains(" popup:listbox"), "and name what it opens")
+        assertTrue(lineFor("open", snap).contains(" expanded"), "an open control must say so")
+        // The third state again: declaring nothing is not the same as declaring shut.
+        val plain = lineFor("plain", snap)
+        assertTrue(!plain.contains("collapsed") && !plain.contains("expanded"), "not a disclosure control: $plain")
+        assertNull(snap.node("plain")!!.expanded)
+        assertNull(snap.node("plain")!!.domHasPopup())
+    }
+
+    @Test
+    fun aCaptionAndTheControlItNamesResolveToTheControl() {
+        // A form states a field's name in a separate element and points the control
+        // at it, so ONE string legitimately belongs to two nodes in different
+        // subtrees. Refusing that as ambiguous left a coordinate as the only way in,
+        // for exactly the controls `--label` exists to reach.
+        val snap = snapshot(
+            Node(
+                ref = "caption", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "span", text = "Education", frame = Rect(60.0, 380.0, 300.0, 40.0),
+            ),
+            Node(
+                ref = "control", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "combobox", contentDescription = "Education",
+                frame = Rect(60.0, 430.0, 960.0, 120.0), isInteractive = true, expanded = false,
+            ),
+        )
+        val resolver = SelectorResolver(snap, SemanticTree.build(snap))
+        val hit = resolver.resolve(Selector(label = "Education"))
+        assertEquals("control", hit?.ref, "the actionable match is the one a tap means")
+
+        // Two ACTIONABLE matches stay a refusal — that is the case the rule is for.
+        val twoControls = snapshot(
+            Node(
+                ref = "a", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "button", text = "Delete", frame = Rect(60.0, 380.0, 300.0, 100.0),
+                isInteractive = true,
+            ),
+            Node(
+                ref = "b", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "button", text = "Delete", frame = Rect(60.0, 900.0, 300.0, 100.0),
+                isInteractive = true,
+            ),
+        )
+        assertFailsWith<AmbiguousLabelException> {
+            SelectorResolver(twoControls, SemanticTree.build(twoControls)).resolve(Selector(label = "Delete"))
+        }
     }
 }
