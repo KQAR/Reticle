@@ -286,7 +286,11 @@ public enum Render {
         // aria-label="Plan B">` is the everyday case — had its label shadowed by
         // the value, so `--label "Plan B"` could not resolve the very control whose
         // only human-readable name is that label. See the Kotlin twin.
-        func namesOf(_ node: Node) -> [String] { [node.text, node.contentDescription].compactMap { $0 } }
+        // ...and the placeholder, which for an empty input is the ONLY text on
+        // screen. See the Kotlin twin.
+        func namesOf(_ node: Node) -> [String] {
+            [node.text, node.contentDescription, node.domPlaceholder()].compactMap { $0 }
+        }
         func matchesIn(_ candidates: [Node]) -> [Node] {
             let exact = candidates.filter { node in
                 namesOf(node).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines) == label }

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **A web form can be driven end to end without a single coordinate.** Three
+  independent defects had to line up for that to be false, and all three were.
+  `act type`'s read-back was refused for **every** DOM input
+  (`dom-input-value-not-separable-from-placeholder`) — true while the bridge
+  emitted `value || placeholder` as one string, and no longer true — which also
+  meant the partial/none clipboard recovery, which only fires on a classified
+  loss, could never fire for a web form at all. `--label` was missing from the
+  list of selectors `type` **taps** before dispatching, so `act type --label
+  "Postcode"` typed into whatever already held focus and reported success; that is
+  the worst place for the omission, since a control with no id and no visible text
+  of its own has `--label` as its only documented handle. And `--label` did not
+  match a `placeholder`, which on a component-framework form is the only text an
+  empty input has. Two smaller corrections fell out of measuring it: an empty
+  input now reads as **empty** rather than unreadable (the agents omit a blank
+  value, so there is no `text` at all — calling that "no text channel" turned the
+  commonest state a field can be in into a missing check), and a DOM field is
+  re-read up to 3× before its text is taken as final, because the characters go in
+  through the IME and the page's own handlers run afterwards. Measured: a field
+  that ended up holding `00-001` read back empty on the first attempt, which would
+  have sent the recovery in to re-type text that had already landed. The e2e now
+  fills the whole fixture through `--label` alone and asserts `textLanded=exact`
+  with the field's own text on every step.
+
 - **Two web fixtures for the arrangements every other one is blind to.** All
   existing web coverage renders 1:1 in a single full-bleed WebView — the one shape
   where a wrong page-to-device fold and a right one agree, so neither zoom nor
