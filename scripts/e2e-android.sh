@@ -784,6 +784,42 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== CSS SELECTORS ARE MATCHED, NOT STRING-COMPARED =="
+# `--css` used to be a string comparison against each node's captured
+# `domCssSelector` — the full ancestor path — so only a verbatim copy of that path
+# could ever match. Every short form the docs promise (`--css '#pay'`,
+# `--css 'input.some-class'`) silently missed on a real page, and the miss then
+# printed twelve complete ancestor chains of unrelated nodes as "candidates".
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario form >/dev/null 2>&1
+wait_compact "$PKG" "First name"
+
+# A class-only selector, on a page whose inputs carry no id at all.
+R ui node --live --package "$PKG" --css '.fake-select' >/dev/null \
+  || { echo "FAIL: a class-only css selector must resolve structurally"; exit 1; }
+# A descendant combinator, walking the captured parent chain.
+R ui node --live --package "$PKG" --css 'div.row input' >/dev/null \
+  || { echo "FAIL: a descendant css combinator must resolve"; exit 1; }
+# And it drives input, not just lookup.
+R act tap --package "$PKG" --css 'div.fake-select' >/dev/null \
+  || { echo "FAIL: act must accept a structural css selector"; exit 1; }
+sleep 1
+R ui compact --live --package "$PKG" --window top | grep -q 'combobox .*expanded' \
+  || { echo "FAIL: the css-resolved tap did not land on the trigger"; exit 1; }
+
+# A construct the matcher does not implement is REFUSED by name, never answered as
+# a miss: "not understood" and "no such element" lead to opposite next actions.
+UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>&1 || true)"
+echo "$UNSUPPORTED" | grep -q "attribute selectors" \
+  || { echo "FAIL: an unsupported css construct must be refused by name, got: $UNSUPPORTED"; exit 1; }
+
+# A miss offers only candidates that share something with the query, by their
+# shortest handle — not every captured path on the page.
+MISS="$(R ui node --live --package "$PKG" --css '.no-such-class' 2>&1 || true)"
+echo "$MISS" | grep -q "nth-of-type" \
+  && { echo "FAIL: a css miss must not dump full captured ancestor paths"; exit 1; }
+
 echo "== DOM GEOMETRY UNDER ZOOM AND STACKING (coordinate taps, not activation) =="
 # Every other web fixture renders 1:1 in a single full-bleed WebView — the one
 # arrangement where a wrong page-to-device fold and a right one agree. These two

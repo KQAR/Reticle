@@ -316,6 +316,17 @@ process's, e.g. a permission prompt — holds input focus. Nothing in the tree i
 tappable in that state, and the prompt itself is NOT in the tree (out of process, by
 design). Deal with the prompt first; don't retry taps.
 
+**`--css` matches, it does not string-compare.** It used to be an equality test
+against each node's captured `domCssSelector` — the whole ancestor path — so only a
+verbatim copy of that path resolved and every short form here missed on a real
+page. Supported now: type, `#id`, `.class` and their compounds, with descendant,
+child (`>`) and pierce (`>>>`) combinators; a full captured path still matches
+verbatim too. Anything else — attribute selectors, pseudo-classes (including the
+`:nth-of-type` inside captured paths), `*`, sibling combinators, selector lists —
+is **refused by name** rather than answered as a miss, because "not understood" and
+"no such element" lead to opposite next actions. A miss lists only candidates that
+share part of the query, by their shortest handle.
+
 `--label` is for controls the framework builds without ids: `Spinner` dropdown rows
 and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at
 all. It matches visible text / the a11y label (exact, then substring) in the topmost

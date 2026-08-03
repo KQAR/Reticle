@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **`--css` matches a selector now; it used to compare strings.** Resolution was
+  an equality test against each node's captured `domCssSelector` — the complete
+  ancestor path the traversal script emits — so only a verbatim copy of that path
+  could ever resolve. Both documented short forms missed on a real page:
+  `--css '#pay'` unless `#pay` happened to BE the whole path, and
+  `--css 'input.some-class'` on a page full of exactly such inputs. It is a
+  structural match over the tree Reticle already has (tag, id, classes, parent
+  chain): type, `#id`, `.class` and their compounds, with descendant, child (`>`)
+  and pierce (`>>>`) combinators — `>>>` being an ordinary descendant relationship
+  here, since pierced content is captured as children of its host. A full captured
+  path still matches verbatim, so a selector copied out of a snapshot keeps
+  working. Everything outside that grammar — attribute selectors, pseudo-classes
+  (including the `:nth-of-type` that appears inside captured paths), `*`, sibling
+  combinators, selector lists — is **refused by name** rather than answered as a
+  miss: "not understood" and "no such element" lead to opposite next actions. The
+  rule had also been written twice (the resolver's and the helper's `findNode`,
+  each with its own comparison); there is one matcher now, pinned for both
+  platforms by seven new cases in the shared selector fixture — which immediately
+  earned its keep by catching the Swift side swallowing the refusal into a miss.
+
+- **A `--css` miss stops dumping the page at you.** One miss printed twelve
+  COMPLETE ancestor chains — about 6 KB — and the twelve were an animated
+  counter's list items and a progress ring's `<circle>` elements: unranked, and
+  unrelated to what was asked for. It buried the one line that said what happened.
+  Candidates are now scored by how much of the query they actually carry (id
+  outweighs class outweighs tag), printed as the shortest handle that names them
+  rather than their lineage, and capped at six. A node sharing none of the query's
+  tokens is dropped entirely — an empty list, with a line saying so, is a better
+  answer than an arbitrary one.
+
 - **A dropdown built out of divs is drivable without a screenshot.** The single
   largest source of coordinate taps measured on a real form: five select controls
   on one screen, each present before selection ONLY as a label — no `button`, no
