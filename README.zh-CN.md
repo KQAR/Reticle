@@ -334,6 +334,15 @@ HTTPS,需显式开启 `--proxy-mitm --proxy-ssl-hosts <host[,host]>`。Reticle �
 Android 安全设置;Android 11+ 仍必须由用户在设置中确认 CA 信任。未信任用户 CA、未在
 Network Security Config 中信任用户 CA,或启用证书 pinning 的 app 仍无法解密。
 
+**iOS 的路由永远不由 Reticle 代改**,模拟器和真机都一样:模拟器共享宿主网络(改它等于
+改宿主全局代理),真机走的是手机 Wi-Fi 设置,而 daemon 中途挂掉会把任何一方撂在一个已
+关闭的端口上。因此 `--proxy-device` 只**打印**该目标的设置与撤销命令,自己不改任何状态。
+真机装 CA 不必来回传 `.cer`:加 `--proxy-phone-onboard true`,Loom 会在局域网上提供一个
+provisioning 页面,`serve` 打印它的 URL、CA 的 SHA-256 指纹和一个可扫的二维码(同时写到
+`~/.reticle/phone-onboard-qr.png`)。它会**自己**把代理 rebind 到 `0.0.0.0`,要求 Mac 处于
+Wi-Fi/以太网,并且这个 LAN-wide 绑定会持续到 daemon 结束;它只发信任、不发路由,手机的
+Wi-Fi 代理仍需你自己设。详见 `docs/ios.md` → **Network capture**。
+
 被代理的请求 body 在转发上游前先缓冲在内存里,因此默认封顶 64 MiB;更大的上传会以
 `413` + 一条 `network.error` 事件被拒,而不是把 daemon 的内存吃掉。上下调这个上限用
 `--proxy-max-request-body-mb <n>`。
