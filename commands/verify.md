@@ -18,11 +18,11 @@ decision table, and what each marker means.
    debuggable Android app that does not link the AAR needs
    `reticle app inject --package <pkg>` first. No device or no runtime — stop and
    say so rather than describing what the app probably does.
-2. **Baseline.** `reticle ui report --package <pkg> --output reticle-verify/before`
-   then `ui compact` on it (plus `ui regions` when a step targets one phrase in a
-   multi-region row). Pick stable handles here — `#testId` / `@resourceId` /
-   `css=` — and say which ones you chose. A selector invented from a screenshot is
-   not a selector.
+2. **Baseline.** Do what `/reticle:report` does, into `reticle-verify/before`
+   (capture + `ui compact`, plus `ui regions` when a step targets one phrase of a
+   multi-region row). What this step adds: pick the stable handles the run will
+   use — `#testId` / `@resourceId` / `css=` — and say which ones you chose. A
+   selector invented from a screenshot is not a selector.
 3. **Drive it with the post-conditions attached.** Prefer one
    `reticle act batch --package <pkg> --file steps.json --trace-output reticle-verify/trace`:
    put `"verify"` on the steps whose effect you are claiming, and make the
@@ -35,14 +35,13 @@ decision table, and what each marker means.
    marker) that settles it, and PASS / FAIL. Quote the field that changed
    (`text: 3414,20 zł -> 6072,49 zł`), not a summary of it.
 
-**Report the evidence you have, including the awkward parts.** An empty diff is
-two findings wearing one face (the gesture missed, *or* it landed and the app
-answered out of tree / over the network) — say which one the trace supports, or
-that it cannot tell them apart. `window: UNFOCUSED` means nothing in that tree was
-tappable and the step below it proves nothing. `pixels:unavailable` /
-`dom:unavailable` / `wheel:opaque` each name a channel that stayed shut. A
-`charGrid` resolution is an approximation, not a semantic match. `docs/boundaries.md`
-says which of these no retry will fix.
+Relay the markers as `/reticle:report` does. What only matters once a step is
+being *claimed*: an empty diff is two findings wearing one face (the gesture
+missed, *or* it landed and the app answered out of tree / over the network) — say
+which one the trace supports, or that it cannot tell them apart. `window:
+UNFOCUSED` voids the step under it: nothing in that tree was tappable, so the
+step proves nothing either way. A `charGrid` resolution is an approximation, not a
+semantic match.
 
 End with a verdict that a reader can check: the failing step (if any), the
 artifacts path, and — when a boundary blocked the check rather than the app
