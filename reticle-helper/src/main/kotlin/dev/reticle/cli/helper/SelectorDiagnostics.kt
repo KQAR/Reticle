@@ -1,6 +1,7 @@
 package dev.reticle.cli
 
 import dev.reticle.core.Node
+import dev.reticle.core.NodeKind
 import dev.reticle.core.Selector
 import dev.reticle.core.Snapshot
 
@@ -31,7 +32,7 @@ internal object SelectorDiagnostics {
         val candidates = when {
             selector.testId != null -> candidateList("testId", snapshot.nodes.values.mapNotNull { it.testId })
             selector.resourceId != null -> candidateList("resourceId", snapshot.nodes.values.mapNotNull { it.resourceId })
-            selector.cssSelector != null -> candidateList("css", snapshot.nodes.values.mapNotNull { it.domCssSelector() })
+            selector.cssSelector != null -> cssCandidateList(snapshot, selector.cssSelector!!)
             selector.ref != null -> candidateList("ref", snapshot.nodes.keys)
             else -> "Use one of: --test-id, --resource-id, --css, --ref, or --point x,y."
         }
@@ -95,6 +96,72 @@ internal object SelectorDiagnostics {
         selector.resourceId != null -> snapshot.nodes.values.firstOrNull { it.resourceId == selector.resourceId }
         selector.cssSelector != null -> snapshot.nodes.values.firstOrNull { it.domCssSelector() == selector.cssSelector }
         else -> null
+    }
+
+    /**
+     * Candidates for a `--css` miss, ranked and short.
+     *
+     * Measured on a live page, a single miss printed twelve COMPLETE ancestor
+     * chains — about 6 KB — and the twelve were an animated counter's list items
+     * and a progress ring's `<circle>`s: unranked, and unrelated to what was asked
+     * for. As a diagnostic it was worse than nothing, since it buried the one line
+     * that said what happened.
+     *
+     * So: score each DOM node by how much of the query it actually carries (id,
+     * classes, tag), print the shortest handle that names it rather than its
+     * lineage, and stop at six. A node with none of the query's tokens is not a
+     * candidate for it and is dropped entirely — an empty list is a better answer
+     * than an arbitrary one.
+     */
+    private fun cssCandidateList(snapshot: Snapshot, query: String): String {
+        val wanted = queryTokens(query)
+        val scored = snapshot.nodes.values
+            .filter { it.kind == NodeKind.domNode }
+            .map { it to cssScore(it, wanted) }
+            .filter { (_, score) -> score > 0 }
+            .sortedByDescending { (_, score) -> score }
+            .map { (node, _) -> shortCssHandle(node) }
+            .distinct()
+            .take(6)
+        if (scored.isEmpty()) {
+            val domNodes = snapshot.nodes.values.count { it.kind == NodeKind.domNode }
+            return if (domNodes == 0) {
+                "No DOM nodes were captured on this screen, so no css selector can match."
+            } else {
+                "None of the $domNodes captured DOM nodes carry any part of '$query' " +
+                    "(its id, classes or tag). Read the tree with `ui compact --live` " +
+                    "rather than guessing another selector."
+            }
+        }
+        return "css candidates sharing part of '$query': " + scored.joinToString(", ") { "'$it'" }
+    }
+
+    /** The id / class / tag names a query mentions, lowercased. */
+    private fun queryTokens(query: String): Set<String> =
+        query.split(' ', '>', '\t')
+            .flatMap { part -> part.split('#', '.') }
+            .map { it.substringBefore(':').trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+    private fun cssScore(node: Node, wanted: Set<String>): Int {
+        if (wanted.isEmpty()) return 0
+        var score = 0
+        // An id is the most specific thing a query can name, so it outweighs the rest.
+        node.domId()?.lowercase()?.let { if (it in wanted) score += 4 }
+        node.domClasses().forEach { if (it.lowercase() in wanted) score += 2 }
+        node.domTag()?.lowercase()?.let { if (it in wanted) score += 1 }
+        return score
+    }
+
+    /** The shortest selector that names this node, rather than its lineage. */
+    private fun shortCssHandle(node: Node): String {
+        node.domId()?.takeIf { it.isNotBlank() }?.let { return "#$it" }
+        val tag = node.domTag().orEmpty()
+        val classes = node.domClasses().take(2).joinToString("") { ".$it" }
+        if (tag.isNotEmpty() || classes.isNotEmpty()) return tag + classes
+        // Nothing nameable: fall back to the tail of the captured path, not all of it.
+        return node.domCssSelector()?.split(" > ")?.takeLast(2)?.joinToString(" > ") ?: node.ref
     }
 
     private fun candidateList(kind: String, raw: Iterable<String>): String {

@@ -335,6 +335,19 @@ class SelectorResolver(
 
     private fun center(rect: Rect) = Point(rect.centerX, rect.centerY)
 
+    /**
+     * Exact captured path first, then a real structural match.
+     *
+     * The exact comparison stays because a path copied verbatim out of a snapshot
+     * — `:nth-of-type` and all — is a legitimate way to name a node, and it costs
+     * one string compare. Everything a caller would actually TYPE (`#pay`,
+     * `input.form-control`, `form > .row input`) goes through the matcher, which
+     * used to match nothing at all: only a verbatim full path could ever equal the
+     * captured one, so the documented short forms silently missed on every page.
+     *
+     * A selector the matcher does not implement propagates its refusal rather than
+     * being answered "no match" — see [UnsupportedCssSelector].
+     */
     private fun nodeByCssSelector(cssSelector: String): Node? =
-        snapshot.firstNode { it.domCssSelector() == cssSelector }
+        CssSelectorMatch.find(snapshot, cssSelector)
 }

@@ -471,6 +471,19 @@ data class Node(
      * `reticle-protocol/fixtures/selector-resolution.cases.json` — reads it, and the
      * key/cast must be spelled once.
      */
+    /** The element's tag name, lowercased by the traversal script. */
+    fun domTag(): String? = (custom["domTag"] as? MetadataValue.Text)?.value
+
+    /** The element's `id` attribute. Also mirrored into [testId]. */
+    fun domId(): String? = (custom["domId"] as? MetadataValue.Text)?.value
+
+    /** The element's class list, split from the captured `class` attribute. */
+    fun domClasses(): List<String> =
+        (custom["domClass"] as? MetadataValue.Text)?.value
+            ?.split(' ', '\t', '\n')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
     fun domCssSelector(): String? =
         (custom["domCssSelector"] as? MetadataValue.Text)?.value
 

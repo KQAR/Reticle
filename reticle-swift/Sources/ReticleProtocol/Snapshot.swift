@@ -325,6 +325,24 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// The element's tag name, lowercased by the traversal script.
+    public func domTag() -> String? {
+        if case .text(let v)? = custom["domTag"] { return v }
+        return nil
+    }
+
+    /// The element's `id` attribute. Also mirrored into `testId`.
+    public func domId() -> String? {
+        if case .text(let v)? = custom["domId"] { return v }
+        return nil
+    }
+
+    /// The element's class list, split from the captured `class` attribute.
+    public func domClasses() -> [String] {
+        guard case .text(let v)? = custom["domClass"] else { return [] }
+        return v.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).map(String.init)
+    }
+
     /// A DOM input's `placeholder` attribute, kept apart from its value.
     public func domPlaceholder() -> String? {
         if case .text(let v)? = custom["domPlaceholder"] { return v }
