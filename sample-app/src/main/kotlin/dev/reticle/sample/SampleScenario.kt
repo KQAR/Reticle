@@ -10,6 +10,12 @@ enum class SampleScenario(
     val subtitle: String,
     val testId: String,
     private val activityClass: Class<out AppCompatActivity>,
+    /**
+     * Boolean extras the row passes to its activity. A non-exported activity
+     * cannot be started with extras from the shell, so a scenario that needs a
+     * variant gets its own row rather than an `am start` flag.
+     */
+    private val extras: Map<String, Boolean> = emptyMap(),
 ) {
     Checkout(
         title = "Checkout controls",
@@ -95,6 +101,13 @@ enum class SampleScenario(
         testId = "scenario.nestedWebViews",
         activityClass = NestedWebViewScenarioActivity::class.java,
     ),
+    NestedWebViewsCovered(
+        title = "Nested WebViews (covered)",
+        subtitle = "A second web container COVERING the host page — both trees stay live",
+        testId = "scenario.nestedWebViewsCovered",
+        activityClass = NestedWebViewScenarioActivity::class.java,
+        extras = mapOf(NestedWebViewScenarioActivity.EXTRA_FULL_BLEED to true),
+    ),
     Login(
         title = "Login keyboard trap",
         subtitle = "Bottom submit button that the soft keyboard covers",
@@ -144,5 +157,11 @@ enum class SampleScenario(
         activityClass = ForeignKernelScenarioActivity::class.java,
     );
 
-    fun intent(context: Context): Intent = Intent(context, activityClass)
+    fun intent(context: Context): Intent {
+        val intent = Intent(context, activityClass)
+        // NOT inside an `apply`: there, `extras` resolves to `Intent.getExtras()`
+        // rather than to this property.
+        for (entry in this.extras.entries) intent.putExtra(entry.key, entry.value)
+        return intent
+    }
 }

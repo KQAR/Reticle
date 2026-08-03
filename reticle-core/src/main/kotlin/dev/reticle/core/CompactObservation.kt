@@ -45,6 +45,47 @@ data class CompactObservation(
             val windowOrder = windowRefs.withIndex().associate { (i, ref) -> ref to i }
             val keyboardFrame = snapshot.screen.keyboard?.takeIf { it.visible }?.frame
 
+            /**
+             * A sibling drawn AFTER this node's branch, covering its tap point.
+             *
+             * Occlusion used to be window-level only, which misses the shape a
+             * hybrid app really has: a second screen pushed over a still-alive one
+             * *inside one window*. Measured on a fixture — two web containers in one
+             * `FrameLayout`, the second full-bleed — the covered page's button was
+             * projected as an ordinary `tappable` node, a tap on it reported
+             * `settled=1`, and nothing happened: the touch went to the cover.
+             *
+             * Sibling order IS draw order for a View tree, so "later child of a
+             * common ancestor" is the same relation the window loop above uses, one
+             * level down. Walking only the ancestor chain keeps it O(depth x
+             * siblings) rather than comparing every pair of nodes.
+             *
+             * Requires the cover to be **interactive**, which is the honest limit:
+             * Android hands a touch to the topmost child that consumes it, and a
+             * non-interactive view lets it fall through to what is underneath. A
+             * decorative transparent frame therefore does not occlude, and is not
+             * reported as doing so.
+             */
+            fun laterSiblingCovering(node: Node, cx: Double, cy: Double): String? {
+                var current = node
+                var parent = current.parentRef?.let { snapshot.nodes[it] }
+                val seen = HashSet<String>()
+                while (parent != null && seen.add(parent.ref)) {
+                    val siblings = parent.children
+                    val position = siblings.indexOf(current.ref)
+                    if (position >= 0) {
+                        for (i in siblings.size - 1 downTo position + 1) {
+                            val above = snapshot.nodes[siblings[i]] ?: continue
+                            if (!above.isVisible || !above.isInteractive) continue
+                            if (above.frame?.contains(cx, cy) == true) return above.ref
+                        }
+                    }
+                    current = parent
+                    parent = current.parentRef?.let { snapshot.nodes[it] }
+                }
+                return null
+            }
+
             fun occluderOf(node: Node, windowRef: String?): String? {
                 val frame = node.frame ?: return null
                 val cx = frame.centerX
@@ -58,8 +99,10 @@ data class CompactObservation(
                     if (!above.isVisible) continue
                     if (above.frame?.contains(cx, cy) == true) return above.ref
                 }
-                return null
+                return laterSiblingCovering(node, cx, cy)
             }
+
+
 
             /**
              * How much of a wheel column is readable, or null when this is not one.
