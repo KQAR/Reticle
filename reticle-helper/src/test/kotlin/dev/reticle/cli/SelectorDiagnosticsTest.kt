@@ -10,6 +10,7 @@ import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertTrue
 
 class SelectorDiagnosticsTest {
     @Test
@@ -24,14 +25,27 @@ class SelectorDiagnosticsTest {
     }
 
     @Test
-    fun nodeMissListsAvailableCssSelectors() {
+    fun aCssMissListsOnlyCandidatesThatShareSomethingWithTheQuery() {
+        // Measured on a live page, this used to print twelve COMPLETE ancestor
+        // chains (~6 KB) of an animated counter's list items and a progress ring's
+        // circles: unranked, unrelated, and burying the one line that said what
+        // happened. A node with none of the query's tokens is not a candidate for
+        // it, and an empty list is a better answer than an arbitrary one.
         val snapshot = sampleSnapshot()
 
-        val message = SelectorDiagnostics.nodeMiss(snapshot, Selector(cssSelector = "#missing"))
+        val unrelated = SelectorDiagnostics.nodeMiss(snapshot, Selector(cssSelector = "#missing"))
+        assertContains(unrelated, "no matching node for selector 'css=#missing'")
+        assertTrue(
+            !unrelated.contains("'#web-pay'"),
+            "a node sharing nothing with the query must not be offered as a candidate: $unrelated",
+        )
+        assertContains(unrelated, "None of the")
 
-        assertContains(message, "no matching node for selector 'css=#missing'")
-        assertContains(message, "css candidates")
-        assertContains(message, "'#web-pay'")
+        // ...and one that DOES share a token is offered, by the shortest handle
+        // that names it rather than by its whole lineage.
+        val related = SelectorDiagnostics.nodeMiss(snapshot, Selector(cssSelector = "button.web-pay"))
+        assertContains(related, "css candidates sharing part of 'button.web-pay'")
+        assertContains(related, "'#web-pay'")
     }
 
     private fun sampleSnapshot(): Snapshot = Snapshot(
@@ -64,7 +78,11 @@ class SelectorDiagnosticsTest {
                 text = "Pay",
                 frame = Rect(100.0, 200.0, 80.0, 40.0),
                 isInteractive = true,
-                custom = mapOf("domCssSelector" to MetadataValue.Text("#web-pay")),
+                custom = mapOf(
+                    "domCssSelector" to MetadataValue.Text("#web-pay"),
+                    "domTag" to MetadataValue.Text("button"),
+                    "domId" to MetadataValue.Text("web-pay"),
+                ),
             ),
         ),
     )

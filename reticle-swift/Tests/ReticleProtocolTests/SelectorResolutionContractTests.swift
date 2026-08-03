@@ -65,6 +65,10 @@ final class SelectorResolutionContractTests: XCTestCase {
                 outcome = "error:regionMiss"
             } catch is Render.AmbiguousLabel {
                 outcome = "error:ambiguousLabel"
+            } catch is UnsupportedCssSelector {
+                // A construct the matcher does not implement is a REFUSAL, never a
+                // miss — see the Kotlin twin.
+                outcome = "error:unsupportedCss"
             }
 
             let expected = expectation(c.expect)

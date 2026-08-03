@@ -87,6 +87,11 @@ class SelectorResolutionContractTest {
                 "error:regionMiss"
             } catch (e: SelectorResolutionException) {
                 "error:ambiguousLabel"
+            } catch (e: UnsupportedCssSelector) {
+                // A construct the matcher does not implement is a REFUSAL, never a
+                // miss: "not understood" and "no such element" lead to different
+                // next actions and only one of them means the element is absent.
+                "error:unsupportedCss"
             }
             if (actual != case.expected) {
                 failures += "  - ${case.name}\n      expected ${case.expected}\n      actual   $actual"
