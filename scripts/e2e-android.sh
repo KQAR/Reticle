@@ -784,6 +784,33 @@ echo "$SHADOW_COMPACT" | grep -q "Closed shadow action" \
 echo "$SHADOW_COMPACT" | grep -q "complex.closedShadowHost" \
   || { echo "FAIL: the closed shadow HOST element should still be captured"; exit 1; }
 
+echo "== A SCREEN COVERED BY ANOTHER, INSIDE ONE WINDOW =="
+# Occlusion was window-level only, which misses the shape a hybrid app really has:
+# a second screen pushed over a still-alive one inside ONE window. Measured on this
+# fixture before the fix — the covered page's button was projected as an ordinary
+# `tappable` node, a tap on it reported `settled=1`, and nothing happened, because
+# the touch went to the cover. That is the silent-wrong-answer shape.
+open_scenario scenario.nestedWebViewsCovered nested.overlayButton
+COVERED="$(R ui compact --live --package "$PKG" --window top)"
+echo "$COVERED" | grep -q 'nested.backdropButton .*occluded-by:' \
+  || { echo "FAIL: a control covered by a later sibling must say it is occluded"; exit 1; }
+echo "$COVERED" | grep -q 'nested.overlayButton .*occluded-by:' \
+  && { echo "FAIL: the covering page's own control must NOT read as occluded"; exit 1; }
+
+# And the inset variant is the false-positive guard: there the backdrop's top
+# controls are genuinely visible and must carry no marker, while the full-bleed
+# container whose own tap point IS under the cover still does.
+open_scenario scenario.nestedWebViews nested.overlayButton
+INSET="$(R ui compact --live --package "$PKG" --window top)"
+echo "$INSET" | grep -q 'nested.backdropButton .*occluded-by:' \
+  && { echo "FAIL: a genuinely visible control must not be marked occluded"; exit 1; }
+echo "$INSET" | grep -q 'nested.backdropWebView .*occluded-by:' \
+  || { echo "FAIL: a container whose own tap point is covered must still say so"; exit 1; }
+# The proof that the marker tracks reality: this tap works, and the covered one did not.
+R act tap --package "$PKG" --test-id nested.backdropButton >/dev/null
+wait_compact "$PKG" "Backdrop hit" \
+  || { echo "FAIL: the unmarked control was not actually tappable"; exit 1; }
+
 echo "== CLIPPED NODES AND THE TRAVERSAL'S OWN CAP =="
 # Two things every other web fixture is blind to. Both are about a tree that looks
 # complete and is not.
