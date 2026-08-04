@@ -878,16 +878,30 @@ boot_app "$PKG"
 R ui outline --live --package "$PKG" > "$TMP/outline.txt"
 /usr/bin/python3 - "$TMP/outline.txt" <<'OUTLINE_PY' || exit 1
 import re, sys
+# Judged against the screen height the outline itself reports, not a literal. The
+# rule is "on screen", and `onScreen` is an INTERSECTION test — so a row whose top
+# is on screen and whose bottom is past it is partially visible and must be kept.
+# A hardcoded 2000 read that as a failure on a 2400-tall emulator, where the home
+# list's tenth row starts at y=2204: the assertion was stricter than the rule.
+height = None
 ys = []
 for line in open(sys.argv[1]):
+    if line.startswith("Screen:"):
+        m = re.search(r"(\d+)x(\d+)", line)
+        if m:
+            height = int(m.group(2))
+        continue
     if not line.startswith("@"):
         continue
     m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
     if m:
         ys.append(int(m.group(2)))
-beyond = [y for y in ys if y >= 2000]
+if height is None:
+    print("FAIL: outline did not report the screen size, so 'on screen' cannot be judged")
+    sys.exit(1)
+beyond = [y for y in ys if y >= height]
 if beyond:
-    print(f"FAIL: outline numbered {len(beyond)} alias(es) starting below the screen: {beyond[:5]}")
+    print(f"FAIL: outline numbered {len(beyond)} alias(es) starting below the {height}px screen: {beyond[:5]}")
     sys.exit(1)
 OUTLINE_PY
 
