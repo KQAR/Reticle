@@ -31,6 +31,10 @@ public struct Args {
         idx < positionals.count ? positionals[idx] : nil
     }
 
+    /// Every `--name` the invocation carried, so a command can report the ones it
+    /// does not read instead of dropping them (see `CliFlags`).
+    public var optionNames: [String] { Array(options.keys) }
+
     /// Returns the value for a `--name` option, or `"true"` for bare flags.
     public func option(_ name: String) -> String? {
         options[name]

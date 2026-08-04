@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **A flag a command does not read is reported, not dropped; and a selector miss
+  names `--label`.** Two halves of the same measured loss. `act tap --package <pkg>
+  --text "Tak"` answered `could not resolve selector '<empty>' to a point`, which
+  reads as "your selector was empty" — the caller sees no connection to the flag
+  they typed, and `--text` IS accepted by `act type` and `act wait`, so "unknown
+  flag" was never the obvious reading. Every parsed `--flag` is now checked against
+  what the command actually reads, and an unaccepted one is refused by name, with
+  the commands that DO accept it: `unknown option --text for `act tap`. `--text` is
+  accepted by: act type, act wait.` Validation runs before the backend is built, so
+  nothing has touched the device when the answer comes back, and only the commands
+  with a stated table (`status`, `app`, `ui *`, `act *`, `mutate`, `debug`) are
+  validated — `rule` / `replay` / `trace` / `serve` are left alone, because a false
+  "unknown option" rejects a call that used to work. Separately, the selector-miss
+  message for an EMPTY selector listed `--test-id, --resource-id, --css, --ref,
+  --point` and omitted `--label`, which is how a whole flow ended up driven by
+  coordinates on screens whose only stable handle was the visible string (one dialog
+  had `tvCancel` holding "Yes"). It now names `--label "<visible text>"` first, on
+  both ports.
 - **`ui <view> --package <pkg>` means the live tree.** `ui compact` and `ui coverage`
   (and every other render view) rejected `--package` on its own and demanded
   `--live --package`, so the first command of a session was reliably a failed one —

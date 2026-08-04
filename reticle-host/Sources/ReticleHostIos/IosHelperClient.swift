@@ -695,6 +695,15 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             selector: selector
         ) else {
             throw HelperError("could not resolve a tap point from selector \(selector.describe())"
+                // The same omission the Android helper's message had: `--label` is
+                // what resolves a screen whose only stable handle is the visible
+                // string, and a miss that does not name it is how a flow ends up
+                // driven by coordinates.
+                + (selector.describe() == "<empty>"
+                    ? ". No selector was given. Use --label \"<visible text>\" when the on-screen "
+                        + "string is the only stable handle, or one of: --test-id, --resource-id, "
+                        + "--css, --ref, --alias @N, or --point x,y"
+                    : "")
                 + Self.scrollHint(snapshot))
         }
         return try Self.withReach(snapshot, resolved)
