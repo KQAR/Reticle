@@ -66,6 +66,47 @@ data class CompactObservation(
              * decorative transparent frame therefore does not occlude, and is not
              * reported as doing so.
              */
+            // A screen-sized interactive container occludes a point only where it
+            // actually DRAWS something there.
+            //
+            // Two shapes look identical to geometry and are opposites in practice. A
+            // second screen pushed over a live one inside one window really does eat
+            // the touch — that is the `nestedWebViewsCovered` fixture, and its cover
+            // has its own content at every point. A transparent full-screen frame
+            // does not: measured on a login screen carrying an in-app debug overlay,
+            // EVERY item came back `occluded-by:<overlay>` while every one of them
+            // was tappable, which makes the marker useless exactly where it matters.
+            //
+            // The distinguisher is content, not size: a cover with a node of its own
+            // at this point is a cover; a full-screen frame with nothing drawn here
+            // is scenery. Small occluders are taken at face value — a floating
+            // button 174px across is drawn where it says it is.
+            val screenArea = snapshot.screen.size.width * snapshot.screen.size.height
+            fun drawsAt(node: Node, cx: Double, cy: Double): Boolean {
+                val frame = node.frame ?: return false
+                if (frame.width * frame.height <= screenArea * ScreenCoverage.CONTAINER_AREA_FRACTION) {
+                    return true
+                }
+                // A web view is opaque to touch wherever it lies, whether or not its
+                // document happens to have an element at this exact point: the
+                // native view consumes the event before the page is consulted. So a
+                // second page pushed over a live one keeps occluding everything
+                // under it even where its own DOM is sparse.
+                if (node.role == "webView" || node.typeName.contains("WebView")) return true
+                val seen = HashSet<String>()
+                fun descendantAt(ref: String): Boolean {
+                    if (!seen.add(ref)) return false
+                    val child = snapshot.nodes[ref] ?: return false
+                    if (child.isVisible && child.frame?.contains(cx, cy) == true &&
+                        child.ref != node.ref
+                    ) {
+                        return true
+                    }
+                    return child.children.any(::descendantAt)
+                }
+                return node.children.any(::descendantAt)
+            }
+
             fun laterSiblingCovering(node: Node, cx: Double, cy: Double): String? {
                 var current = node
                 var parent = current.parentRef?.let { snapshot.nodes[it] }
@@ -77,6 +118,7 @@ data class CompactObservation(
                         for (i in siblings.size - 1 downTo position + 1) {
                             val above = snapshot.nodes[siblings[i]] ?: continue
                             if (!above.isVisible || !above.isInteractive) continue
+                            if (!drawsAt(above, cx, cy)) continue
                             if (above.frame?.contains(cx, cy) == true) return above.ref
                         }
                     }
