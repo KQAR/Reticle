@@ -57,3 +57,43 @@ final class DomRectCheckTests: XCTestCase {
         )
     }
 }
+
+/// `ui node --css` must tell "this syntax is not implemented" apart from "no such
+/// element". The iOS path used to collapse them — a per-node `try?` swallowed the
+/// matcher's refusal — so `--css 'div:hover'` reported a miss on iOS while the
+/// Android helper refused it by name. Caught by the iOS e2e suite's first run of the
+/// pseudo-class assertion.
+final class NodeLookupCssRefusalTests: XCTestCase {
+
+    func testAnUnsupportedConstructThrowsRatherThanMissing() {
+        XCTAssertThrowsError(try Render.findNode(tree(), Selector(cssSelector: "div:hover"))) { error in
+            XCTAssertTrue(error is UnsupportedCssSelector, "got \(error)")
+        }
+    }
+
+    func testARealMissIsStillAMiss() throws {
+        XCTAssertNil(try Render.findNode(tree(), Selector(cssSelector: "#no-such-id")))
+    }
+
+    func testASupportedSelectorStillResolves() throws {
+        let match = try Render.findNode(tree(), Selector(cssSelector: "div#row"))
+        XCTAssertEqual(match?.ref, "dom")
+    }
+
+    private func tree() -> Snapshot {
+        var nodes: [String: Node] = [:]
+        nodes["app"] = Node(ref: "app", kind: .application, typeName: "Application", children: ["dom"])
+        nodes["dom"] = Node(
+            ref: "dom", parentRef: "app", kind: .domNode, typeName: "DOMElement", role: "div",
+            frame: Rect(x: 0, y: 0, width: 100, height: 40),
+            custom: ["domTag": .text("div"), "domId": .text("row"), "domCssSelector": .text("#row")]
+        )
+        return Snapshot(
+            capturedAtMillis: 0,
+            platform: "ios",
+            screen: ScreenInfo(size: Size(width: 400, height: 900), density: 3.0),
+            rootRef: "app",
+            nodes: nodes
+        )
+    }
+}

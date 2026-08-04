@@ -162,7 +162,7 @@ public enum Render {
 
     static func node(_ snapshot: Snapshot, selector: Selector?) throws -> String {
         guard let selector else { throw RenderError.noSelector }
-        guard let match = findNode(snapshot, selector) else {
+        guard let match = try findNode(snapshot, selector) else {
             throw RenderError.nodeNotFound(selector.describe())
         }
         let data = try ReticleJSON.encodePretty(match)
@@ -212,10 +212,17 @@ public enum Render {
     }
 
     /// Resolve a node from the view tree by selector: testId, then resourceId,
-    /// then CSS selector (an exact match on a domNode's emitted
-    /// `domCssSelector`, mirroring the Kotlin helper), then ref. (Point is an
-    /// action concern, not an inspection one.)
-    public static func findNode(_ snapshot: Snapshot, _ selector: Selector) -> Node? {
+    /// then CSS selector (through the shared matcher, mirroring the Kotlin helper),
+    /// then ref. (Point is an action concern, not an inspection one.)
+    ///
+    /// Throws `UnsupportedCssSelector` for css syntax the matcher does not
+    /// implement, rather than answering "no node matched". Those are opposite next
+    /// actions — fix the selector vs conclude the element is absent — and this path
+    /// used to collapse them: the per-node `try?` swallowed the refusal, so
+    /// `ui node --css 'div:hover'` on iOS reported a miss while the Android helper
+    /// refused it by name. Caught by the iOS e2e suite the first time it ran the
+    /// pseudo-class assertion.
+    public static func findNode(_ snapshot: Snapshot, _ selector: Selector) throws -> Node? {
         if let testId = selector.testId {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { $0.testId == testId }) { return n }
         }
@@ -223,11 +230,9 @@ public enum Render {
             if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] }).first(where: { $0.resourceId == resourceId }) { return n }
         }
         if let css = selector.cssSelector {
-            if let n = orderedRefs(snapshot).lazy.compactMap({ snapshot.nodes[$0] })
-                .first(where: { node in
-                    node.domCssSelector() == css
-                        || (node.kind == .domNode && ((try? CssSelectorMatch.matches(snapshot, node, css)) ?? false))
-                }) { return n }
+            // The matcher itself, so an unsupported construct surfaces as the
+            // refusal it is and document order comes from one place.
+            if let n = try CssSelectorMatch.find(snapshot, css) { return n }
         }
         if let ref = selector.ref { return snapshot.nodes[ref] }
         if let label = selector.label { return try? labelMatch(snapshot, label) }
