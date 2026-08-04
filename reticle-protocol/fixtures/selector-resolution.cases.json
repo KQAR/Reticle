@@ -47,7 +47,8 @@
           "n3",
           "n4",
           "n5",
-          "n40"
+          "n40",
+          "n42"
         ]
       },
       "n1": {
@@ -401,6 +402,14 @@
           "domCssSelector": {
             "_type": "text",
             "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(2)"
+          },
+          "domNthOfType": {
+            "_type": "int",
+            "value": 2
+          },
+          "domNthChild": {
+            "_type": "int",
+            "value": 2
           }
         }
       },
@@ -430,6 +439,90 @@
           "domCssSelector": {
             "_type": "text",
             "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(2) > input.ep-input:nth-of-type(1)"
+          },
+          "domNthOfType": {
+            "_type": "int",
+            "value": 1
+          },
+          "domNthChild": {
+            "_type": "int",
+            "value": 1
+          }
+        }
+      },
+      "n42": {
+        "$comment": "A row AFTER n40 whose page position is 3, not 2: a hidden sibling sits between them and the traversal drops it. Counting captured children would call this one 2 and tap it for `:nth-of-type(2)` \u2014 which is why the index comes from the page.",
+        "ref": "n42",
+        "parentRef": "w1",
+        "kind": "domNode",
+        "typeName": "DOMElement",
+        "role": "div",
+        "frame": {
+          "x": 100.0,
+          "y": 700.0,
+          "width": 400.0,
+          "height": 200.0
+        },
+        "children": [
+          "n43"
+        ],
+        "custom": {
+          "domTag": {
+            "_type": "text",
+            "value": "div"
+          },
+          "domClass": {
+            "_type": "text",
+            "value": "form-row wide"
+          },
+          "domCssSelector": {
+            "_type": "text",
+            "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(3)"
+          },
+          "domNthOfType": {
+            "_type": "int",
+            "value": 3
+          },
+          "domNthChild": {
+            "_type": "int",
+            "value": 3
+          }
+        }
+      },
+      "n43": {
+        "$comment": "The third row's input: identical tag and class to n41, separable only by the row's index.",
+        "ref": "n43",
+        "parentRef": "n42",
+        "kind": "domNode",
+        "typeName": "DOMElement",
+        "role": "textField",
+        "frame": {
+          "x": 120.0,
+          "y": 740.0,
+          "width": 360.0,
+          "height": 80.0
+        },
+        "isInteractive": true,
+        "custom": {
+          "domTag": {
+            "_type": "text",
+            "value": "input"
+          },
+          "domClass": {
+            "_type": "text",
+            "value": "ep-input"
+          },
+          "domCssSelector": {
+            "_type": "text",
+            "value": "body:nth-of-type(1) > div.form-row.wide:nth-of-type(3) > input.ep-input:nth-of-type(1)"
+          },
+          "domNthOfType": {
+            "_type": "int",
+            "value": 1
+          },
+          "domNthChild": {
+            "_type": "int",
+            "value": 1
           }
         }
       }
@@ -870,6 +963,89 @@
       "name": "an unsupported css construct is refused, not answered as a miss",
       "selector": {
         "cssSelector": "input[type=text]"
+      },
+      "expect": {
+        "error": "unsupportedCss"
+      }
+    },
+    {
+      "name": "an nth-of-type step names one of two identical siblings",
+      "selector": {
+        "cssSelector": "div.form-row:nth-of-type(2) > input.ep-input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "...and the index actually selects: (3) is the other row's input",
+      "selector": {
+        "cssSelector": "div.form-row:nth-of-type(3) > input.ep-input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 780.0
+        },
+        "source": "dom:css",
+        "ref": "n43"
+      }
+    },
+    {
+      "name": "a captured path shortened by hand still resolves, nth and all",
+      "selector": {
+        "cssSelector": "div.form-row.wide:nth-of-type(2) > input.ep-input:nth-of-type(1)"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "an nth index no sibling is at is a miss, not a wrong node",
+      "selector": {
+        "cssSelector": "div.form-row:nth-of-type(9) > input.ep-input"
+      },
+      "expect": {
+        "miss": true
+      }
+    },
+    {
+      "name": "nth-child counts every sibling, and the page reported it too",
+      "selector": {
+        "cssSelector": "div.form-row:nth-child(2) > input.ep-input"
+      },
+      "expect": {
+        "point": {
+          "x": 300.0,
+          "y": 580.0
+        },
+        "source": "dom:css",
+        "ref": "n41"
+      }
+    },
+    {
+      "name": "a pseudo-class that is NOT positional is still refused by name",
+      "selector": {
+        "cssSelector": "input.ep-input:hover"
+      },
+      "expect": {
+        "error": "unsupportedCss"
+      }
+    },
+    {
+      "name": "an an+b nth expression is refused rather than approximated",
+      "selector": {
+        "cssSelector": "input.ep-input:nth-of-type(2n+1)"
       },
       "expect": {
         "error": "unsupportedCss"

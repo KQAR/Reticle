@@ -628,6 +628,17 @@ echo "$WEB_STYLE" | grep -qE "domStyle\\w+ +(auto|none|static|visible|0px) " \
 # elements are intentionally not captured.)
 "$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css "#role-button" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
+# `:nth-of-type(n)` matches here too — the index comes from the position the PAGE
+# reported (`domNthOfType`), which is what makes it the same answer on both ports
+# even though each walks its own WebView. The shared fixture
+# (reticle-protocol/fixtures/selector-resolution.cases.json) pins the semantics;
+# this pins the wiring through a real capture.
+IOS_NTH="$("$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css 'div:nth-of-type(1)' 2>&1)"
+echo "$IOS_NTH" | grep -q "domNthOfType" \
+  || { echo "FAIL: a captured DOM node must carry its page sibling position; got: $IOS_NTH"; exit 1; }
+IOS_HOVER="$("$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css 'div:hover' 2>&1 || true)"
+echo "$IOS_HOVER" | grep -q "':hover'" \
+  || { echo "FAIL: a non-positional pseudo-class must be refused by name; got: $IOS_HOVER"; exit 1; }
 # HID tap onto a folded DOM frame; the observable click below goes through DOM
 # activation, which is HID-independent.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"

@@ -260,6 +260,12 @@ object WebViewBridge {
         if (element.optBoolean("pointerOrigin", false)) {
             map["domCursor"] = MetadataValue.Text("pointer")
         }
+        // Page-truth sibling positions, so `:nth-of-type(n)` / `:nth-child(n)` can be
+        // MATCHED rather than refused. Counting the captured parent's children would
+        // answer with the n-th VISIBLE sibling — the walk drops hidden elements — and
+        // that is a silently-wrong tap, not an approximation.
+        putInteger("domNthOfType", "nthOfType")
+        putInteger("domNthChild", "nthChild")
         putText("domPlaceholder", element.optString("placeholder"))
         putText("domName", element.optString("formName"))
         putText("domDescribedBy", element.optString("describedBy"))

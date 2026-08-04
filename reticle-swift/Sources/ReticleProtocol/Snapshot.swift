@@ -368,6 +368,21 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// This element's 1-based position among siblings with the SAME tag, as the page
+    /// counted it. Read in the page rather than derived from the captured tree: the
+    /// walk drops hidden elements, so counting captured children would answer
+    /// `:nth-of-type(3)` with the third VISIBLE sibling and tap the wrong control.
+    public func domNthOfType() -> Int? {
+        if case .integer(let n)? = custom["domNthOfType"] { return Int(n) }
+        return nil
+    }
+
+    /// This element's 1-based position among ALL element siblings. See `domNthOfType`.
+    public func domNthChild() -> Int? {
+        if case .integer(let n)? = custom["domNthChild"] { return Int(n) }
+        return nil
+    }
+
     /// The message this field declares itself invalid with: `""` when it sets
     /// `aria-invalid` and names nothing, the `aria-describedby` text when it does,
     /// nil when the field does not declare itself invalid. Three states, because
