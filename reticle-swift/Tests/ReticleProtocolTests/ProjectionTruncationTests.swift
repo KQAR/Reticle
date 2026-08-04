@@ -34,6 +34,42 @@ final class ProjectionTruncationTests: XCTestCase {
         XCTAssertEqual(observation.truncatedItems, 2)
     }
 
+    func testTheCapSpendsItsBudgetOnControlsRatherThanOnWhateverIsFirst() {
+        // The Kotlin twin carries the measurement: a decorative digit-roller at the
+        // top of a hybrid form ate the whole budget and the projection showed no
+        // controls at all, though every one of them was in the snapshot.
+        var nodes: [String: Node] = [:]
+        for i in 1...6 {
+            nodes["d\(i)"] = Node(
+                ref: "d\(i)", parentRef: "root", kind: .view, typeName: "UILabel", role: "text",
+                text: "9 8 7 6 5 4 3 2 1 0",
+                frame: Rect(x: 0, y: Double(i) * 10.0, width: 40, height: 10)
+            )
+        }
+        nodes["submit"] = Node(
+            ref: "submit", parentRef: "root", kind: .view, typeName: "UIButton", role: "button",
+            text: "Confirm", testId: "submit",
+            frame: Rect(x: 0, y: 200, width: 400, height: 90), isInteractive: true
+        )
+        nodes["root"] = Node(
+            ref: "root", kind: .application, typeName: "Application",
+            children: (1...6).map { "d\($0)" } + ["submit"]
+        )
+        let snapshot = Snapshot(
+            capturedAtMillis: 0, platform: "ios",
+            screen: ScreenInfo(size: Size(width: 400, height: 900), density: 3.0),
+            rootRef: "root", nodes: nodes
+        )
+        let observation = CompactObservation.from(snapshot, maxItems: 3)
+        XCTAssertEqual(observation.items.count, 3)
+        XCTAssertTrue(
+            observation.items.contains { $0.ref == "submit" },
+            "the cap dropped the only control: \(observation.items.map(\.ref))"
+        )
+        let tops = observation.items.compactMap { $0.frame?.y }
+        XCTAssertEqual(tops, tops.sorted(), "the kept items must stay in document order")
+    }
+
     func testCompactWithinTheCapReportsNothingTruncated() {
         XCTAssertEqual(CompactObservation.from(snapshot(buttons: 3)).truncatedItems, 0)
     }

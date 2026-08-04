@@ -42,6 +42,21 @@
   were landing correctly. Pinned for both ports by
   `reticle-protocol/fixtures/tap-reach.cases.json` and exercised by the LONG LIST
   section of both e2e suites.
+- **The compact cap spends its budget on controls, not on whatever is first.**
+  `ui compact` caps its item list and says so, but it took the first N in document
+  order — which fails hardest on exactly the screens the cap exists for. Measured
+  on a hybrid form: the page opened with a decorative digit-roller (a `<ul>` of 27
+  hidden `<li>`s, each rendering as `9 8 7 6 5 4 3 2 1 0 …`, plus its wrappers) and
+  those ate the whole budget, so the projection showed a screen full of odometer
+  digits and NOT ONE of the form's inputs, labels or its submit button — all of
+  them present in the same snapshot. "There are no controls here" is the worst
+  thing a read command can say wrongly. The cap now fills by usefulness: controls
+  first (interactive, or a role only a control has — so a disabled input and a
+  JS-driven DOM checkbox still count), then nameable content (an id or a label),
+  then scenery. Each rank keeps document order inside itself, so the survivors
+  still read top to bottom; the selection changed, not the layout. On the real
+  capture that prompted this, a 40-item cap keeps 36 interactive items where the
+  old rule kept 8.
 
 - **A coordinate tap now says why it had to be one, and the screen can be asked how
   much of it is unreachable.** `act tap --point` was the one degraded path that
