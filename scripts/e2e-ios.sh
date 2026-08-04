@@ -122,6 +122,18 @@ HOLD="$(hold_launch "$LINKED_ID")"; sleep 2
 sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/checkout"
 "$HOST" --target ios ui compact "$TMP/checkout/snapshot.json"
+# A UIKit field's own prompt, projected through the same `placeholder:` marker as a
+# DOM input's. Without it a field's text is ambiguous — a prefilled value reads
+# exactly like a prompt showing through an empty field — and on a real form that
+# left a screenshot as the only way to tell.
+"$HOST" --target ios ui compact "$TMP/checkout/snapshot.json" \
+  | grep -q '#checkout.nameField .*placeholder:"Name on card"' \
+  || { echo "FAIL: a UITextField's placeholder must project like a DOM one"; exit 1; }
+# ...and it is a --label handle, since for an empty field it is the only text there.
+# A HID tap, not `activate`: label resolution is host-side (SelectorResolution),
+# while activation matches inside the agent.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Name on card" >/dev/null \
+  || { echo "FAIL: a native placeholder must be resolvable by --label"; exit 1; }
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
 # Style evidence. Two things are asserted because both were silent when wrong:
 # UIKit lengths are POINTS, already density-independent, so the projection must

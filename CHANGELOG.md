@@ -61,6 +61,22 @@
   forty). The recycling-list note is suppressed for a ref miss on such a screen: it
   is a wrong lead there, not a weak one. Both ports, plus a documented statement in
   the skill that refs are single-snapshot handles.
+- **A native field's prompt is projected, and a full field says why nothing landed.**
+  The DOM side published `placeholder:"…"` while the native side published nothing,
+  so an `EditText` reading `text="880 977 267"` was ambiguous — a prefilled value, or
+  a hint showing through an empty field? Measured on a real form, a screenshot was
+  the only way to tell, and a `type` into that same field (already at its
+  `maxLength`) reported a bare `textLanded=none`, which reads as "the tool failed"
+  rather than "the field is full" — two opposite next actions. Now an Android
+  `EditText.hint` and a `UITextField.placeholder` project through the SAME
+  `placeholder:` marker as a DOM `placeholder` (one `Node.placeholder()` accessor,
+  since the caller's question is the same), which also makes them `--label` handles —
+  for an empty field, often the only handle there is. Android additionally captures
+  the field's `maxLength` from its own `LengthFilter`, and a loss explained by it is
+  reported as `textLandedReason=at-maxLength(11)` instead of being retried over the
+  clipboard, because re-sending cannot change a full field. iOS has no readable
+  `maxLength` (limits live in a delegate), and that absence is stated rather than
+  guessed at.
 
 - **A tap says when something else gets the touch.** `act tap` resolved a selector,
   confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and

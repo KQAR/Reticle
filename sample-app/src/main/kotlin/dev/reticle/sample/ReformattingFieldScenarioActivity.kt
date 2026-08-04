@@ -3,6 +3,7 @@ package dev.reticle.sample
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.Editable
+import android.text.InputFilter
 import android.text.TextWatcher
 import android.view.Gravity
 import android.widget.EditText
@@ -68,6 +69,15 @@ class ReformattingFieldScenarioActivity : AppCompatActivity() {
         val lossy = field(tag = "reformat.lossy", hint = "Amount (bursty)")
         lossy.addTextChangedListener(BurstDroppingWatcher(lossy) { renderSummary(it) })
 
+        // The third reading, and the one a screenshot used to be the only way to
+        // get: a field PREFILLED to its own `maxLength`. Its text looks exactly
+        // like a hint showing through an empty field, and a `type` into it lands
+        // nothing — which used to be reported as a bare `textLanded=none`, i.e.
+        // indistinguishable from a tool failure.
+        val full = field(tag = "reformat.capped", hint = "Phone")
+        full.filters = arrayOf(InputFilter.LengthFilter(FULL_FIELD_LIMIT))
+        full.setText("880 977 267")
+
         setContentView(
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -79,6 +89,8 @@ class ReformattingFieldScenarioActivity : AppCompatActivity() {
                 addView(amount)
                 addView(rowLabel("Loses part of a burst"))
                 addView(lossy)
+                addView(rowLabel("Already at its maxLength"))
+                addView(full)
             }
         )
     }
@@ -178,5 +190,8 @@ class ReformattingFieldScenarioActivity : AppCompatActivity() {
 
         /** Enough bound rows that each keystroke costs a real layout pass. */
         const val SUMMARY_ROWS = 12
+
+        /** The capped row's limit, and the length of the value it starts full with. */
+        const val FULL_FIELD_LIMIT = 11
     }
 }

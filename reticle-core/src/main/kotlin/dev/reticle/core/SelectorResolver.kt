@@ -127,7 +127,7 @@ class SelectorResolver(
         // form built from framework components an empty field has no id, no value
         // and no accessible name — the grey prompt inside it is the whole handle.
         fun namesOf(node: Node) =
-            listOfNotNull(node.text, node.contentDescription, node.domPlaceholder())
+            listOfNotNull(node.text, node.contentDescription, node.placeholder())
         fun matchesIn(candidates: List<Node>): List<Node> {
             val exact = candidates.filter { node -> namesOf(node).any { it.trim() == label } }
             return exact.ifEmpty {
