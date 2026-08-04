@@ -24,6 +24,7 @@ object SampleWebFixtures {
     private const val SCENARIO_FORM = "form"
     private const val SCENARIO_SCALED = "scaled"
     private const val SCENARIO_CLIPPED = "clipped"
+    private const val SCENARIO_SCROLLED = "scrolled"
 
     data class Fixture(
         val heightPx: Int,
@@ -52,6 +53,7 @@ object SampleWebFixtures {
             SCENARIO_FORM -> formFixture(heightPx = 900)
             SCENARIO_SCALED -> scaledFixture(heightPx = 900)
             SCENARIO_CLIPPED -> clippedFixture(heightPx = 900)
+            SCENARIO_SCROLLED -> scrolledFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -151,6 +153,28 @@ object SampleWebFixtures {
             baseUrl = "https://reticle.dev/sample/scaled",
             html = scaledHtml,
             initialScalePercent = 130,
+        )
+
+    /**
+     * A page that SCROLLS, with a target below the fold and a horizontally
+     * scrollable strip beside it.
+     *
+     * Every other web fixture fits its viewport, so the page scroll was always 0 and
+     * a fold that mishandled it could not fail here. The traversal used to emit PAGE
+     * coordinates (`rect + window.scrollX/Y`, read per element during the walk) and
+     * the host subtracted the page scroll (read once, after the walk) — a round trip
+     * whose halves came from different moments, so a page that moved mid-walk folded
+     * to offset rects. Measured on a real page at roughly 130px, silent: the tap
+     * dispatched at the reported centre and reported `settled=1`.
+     *
+     * The `onclick` is what makes the test unfakeable: only a touch on the real
+     * pixels fires it, so a rect that disagrees with the render cannot pass.
+     */
+    fun scrolledFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/scrolled",
+            html = scrolledHtml,
         )
 
     /** The host page of [NestedWebViewScenarioActivity], underneath the overlay. */
@@ -565,6 +589,43 @@ object SampleWebFixtures {
     """.trimIndent()
 
 
+
+    private val scrolledHtml: String = """
+        <!doctype html>
+        <html>
+          <head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;font-family:sans-serif">
+            <!--
+              Pinned, so the verdict is readable at any scroll offset: an assertion
+              that has to scroll back up to read the status is one that can fail for
+              the wrong reason. `position: fixed` is also laid out against the
+              viewport, which the traversal's clip rule already knows about.
+            -->
+            <p id="scrolled-status" data-testid="scrolled.status"
+              style="position:fixed;top:0;left:0;right:0;margin:0;background:#fff">Not hit</p>
+            <!-- Tall enough that the document genuinely scrolls on any phone. -->
+            <div style="height:2400px;background:linear-gradient(#fff,#dde)"></div>
+            <!--
+              A horizontally scrollable strip, the second half of the shape measured
+              on the real page (its container reported `scroll:down,right`): an
+              in-page scroll port whose own offset is not the page's.
+            -->
+            <div id="scrolled-strip" data-testid="scrolled.strip"
+              style="overflow-x:scroll;white-space:nowrap;padding:8px 0">
+              <span style="display:inline-block;width:200%">wide content</span>
+            </div>
+            <!--
+              Last in the document on purpose: scrolling to the bottom is what brings
+              it into view, so the assertion needs no calibrated swipe count.
+            -->
+            <button id="scrolled-target" data-testid="scrolled.target"
+              style="margin:24px 40px 60px;padding:20px 30px;font-size:20px"
+              onclick="document.getElementById('scrolled-status').innerText='Scrolled target hit'">
+              Below the fold
+            </button>
+          </body>
+        </html>
+    """.trimIndent()
 
     private val nestedBackdropHtml: String = """
         <!doctype html>
