@@ -181,6 +181,20 @@ echo "$IOS_COVERAGE" | grep -qE '^coverage: [0-9]+x[0-9]+, sampled on a [0-9]+x[
 echo "$IOS_COVERAGE" | grep -qE '^addressable: [0-9]+ of [0-9]+ touch-relevant cell\(s\) \([0-9]+%\)$' \
   || { echo "FAIL: coverage must report the addressable share"; exit 1; }
 
+# `--package` alone means the live tree, on this port too — it used to be rejected
+# in favour of `--live --package`, costing one failed command per session.
+"$HOST" --target ios ui coverage --package "$LINKED_ID" | grep -q "^coverage: " \
+  || { echo "FAIL: ui coverage --package alone must read the live tree"; exit 1; }
+"$HOST" --target ios ui compact --package "$LINKED_ID" | grep -q "checkout\." \
+  || { echo "FAIL: ui compact --package alone must read the live tree"; exit 1; }
+IOS_NO_TARGET="$("$HOST" --target ios ui compact 2>&1 || true)"
+echo "$IOS_NO_TARGET" | grep -q -- "--package <pkg> for the live tree" \
+  || { echo "FAIL: with no target, the error must name --package; got: $IOS_NO_TARGET"; exit 1; }
+# And an explicit path still wins over --package.
+"$HOST" --target ios ui compact --package "$LINKED_ID" "$TMP/checkout/snapshot.json" \
+  | grep -q "checkout.payButton" \
+  || { echo "FAIL: an explicit snapshot path must win over --package"; exit 1; }
+
 # A coordinate over a control that HAD a selector: the quiet loss this catches. The
 # point is read off the same capture, so the assertion is about the verdict, not
 # about whether the tap lands (the LINKED section already proved that).

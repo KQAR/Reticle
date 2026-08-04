@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`ui <view> --package <pkg>` means the live tree.** `ui compact` and `ui coverage`
+  (and every other render view) rejected `--package` on its own and demanded
+  `--live --package`, so the first command of a session was reliably a failed one —
+  measured repeatedly while driving a real flow. There was never an ambiguity to
+  resolve: a package name is not a snapshot path, and `ui report`, `act *` and
+  `status` all take `--package` directly. A path, when given, still wins, and
+  `--live` still works for scripts that pass it. With neither, the error now names
+  the form that works instead of the one that used to be mandatory.
+
 - **A tap says when something else gets the touch.** `act tap` resolved a selector,
   confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and
   then the IME or a window above the target took the touch, which is byte-identical

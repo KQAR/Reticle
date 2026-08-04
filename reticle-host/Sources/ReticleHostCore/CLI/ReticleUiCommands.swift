@@ -70,14 +70,18 @@ func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
     var view = view
     var snapshotPath: String
     var package = args.option("package")
-    if args.option("live") != nil {
+    // `--package <pkg>` with no path means the live tree. There is nothing else it
+    // could mean — a package name is not a snapshot path — and every other command
+    // (`ui report`, `act *`, `status`) already takes `--package` on its own, so
+    // demanding `--live` here bought nothing but a failed first command per session.
+    // An explicit path still wins over `--package`, which stays required for live.
+    if let positional = args.positional(2) {
+        snapshotPath = positional
+    } else if args.option("live") != nil || package != nil {
         snapshotPath = RenderRequest.liveSnapshotPath
         package = try args.require("package")
     } else {
-        guard let positional = args.positional(2) else {
-            throw HelperError("ui \(view) needs a snapshot.json path (or --live --package <pkg>)")
-        }
-        snapshotPath = positional
+        throw HelperError("ui \(view) needs a snapshot.json path (or --package <pkg> for the live tree)")
     }
     if view == "tree", args.option("semantics") != nil { view = "semantics" }
     let result = try backend.render(RenderRequest(

@@ -1046,6 +1046,24 @@ if echo "$COVERAGE" | grep -q "^container-only:"; then
     || { echo "FAIL: the footnote must say which buckets are not gaps"; exit 1; }
 fi
 
+# `--package` alone means the live tree. It used to be rejected in favour of
+# `--live --package`, which cost one failed command at the start of every session
+# for no information — a package name cannot be mistaken for a snapshot path, and
+# every other command already takes `--package` on its own.
+R ui coverage --package "$PKG" | grep -q "^coverage: " \
+  || { echo "FAIL: ui coverage --package alone must read the live tree"; exit 1; }
+R ui compact --package "$PKG" | grep -q "complex.iframeButton" \
+  || { echo "FAIL: ui compact --package alone must read the live tree"; exit 1; }
+# With neither a path nor a package there is still nothing to read, and the message
+# now names the form that works.
+NO_TARGET="$(R ui compact 2>&1 || true)"
+echo "$NO_TARGET" | grep -q -- "--package <pkg> for the live tree" \
+  || { echo "FAIL: with no target, the error must name --package; got: $NO_TARGET"; exit 1; }
+# An explicit path still wins over --package, so scripts that pass both keep reading
+# the file they named.
+R ui compact --package "$PKG" "$TMP/webview/snapshot.json" | grep -q "web.payButton" \
+  || { echo "FAIL: an explicit snapshot path must win over --package"; exit 1; }
+
 # A coordinate INSIDE the cross-origin frame: the fallback is justified, and the
 # warning names the boundary rather than leaving the coordinate unexplained.
 FRAME_POINT="$(R ui compact --live --package "$PKG" | /usr/bin/python3 -c '
