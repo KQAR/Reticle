@@ -34,7 +34,14 @@ internal object SelectorDiagnostics {
             selector.resourceId != null -> candidateList("resourceId", snapshot.nodes.values.mapNotNull { it.resourceId })
             selector.cssSelector != null -> cssCandidateList(snapshot, selector.cssSelector!!)
             selector.ref != null -> candidateList("ref", snapshot.nodes.keys)
-            else -> "Use one of: --test-id, --resource-id, --css, --ref, or --point x,y."
+            // `--label` was missing from this list and that is how it stayed unused
+            // while a real flow was driven by coordinates: on screens whose only
+            // stable handle is the visible string (dialog buttons with generic ids —
+            // `tvCancel` holding "Yes"), the one flag that would have worked was the
+            // one the miss message did not mention. Named FIRST for that reason.
+            else -> "No selector was given. Use --label \"<visible text>\" when the " +
+                "on-screen string is the only stable handle, or one of: --test-id, " +
+                "--resource-id, --css, --ref, --alias @N, or --point x,y."
         }
         val regionHint = selector.region?.let { regionHint(snapshot, selector, it) }
         return listOfNotNull(candidates, regionHint, scrollHint(snapshot), kernelHint(snapshot, selector))
