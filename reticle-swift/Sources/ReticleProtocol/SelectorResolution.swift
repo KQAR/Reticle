@@ -22,14 +22,19 @@ public enum SelectorResolution {
     /// belongs to. `source` is evidence — it travels into the action trace, so an
     /// agent can tell a semantic hit from a char-grid approximation.
     public struct Resolved: Sendable, Equatable {
-        public let point: Point
+        public var point: Point
         public let source: String
         public let ref: String?
+        /// Set when `point` is NOT the frame's centre because only part of the
+        /// frame is reachable — see `TapReach`. Carried so a caller can reconcile
+        /// the dispatched coordinate with the rect the tree reports.
+        public var reachNote: String?
 
-        public init(point: Point, source: String, ref: String?) {
+        public init(point: Point, source: String, ref: String?, reachNote: String? = nil) {
             self.point = point
             self.source = source
             self.ref = ref
+            self.reachNote = reachNote
         }
     }
 

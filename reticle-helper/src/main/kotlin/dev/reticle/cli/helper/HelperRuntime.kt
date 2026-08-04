@@ -7,6 +7,8 @@ import dev.reticle.core.PortMap
 import dev.reticle.core.RuntimeInfo
 import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
+import dev.reticle.core.Snapshot
+import dev.reticle.core.TapReach
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -134,6 +136,13 @@ internal data class ResolvedInputTarget(
     val point: Point,
     val source: String,
     val ref: String?,
+    /**
+     * Set when the point is NOT the frame's own centre because the frame is
+     * partly off screen or partly clipped away — see [TapReach]. Reported so the
+     * caller learns the target was only half there rather than silently getting a
+     * different coordinate than the tree implies.
+     */
+    val reachNote: String? = null,
 )
 
 internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
@@ -159,7 +168,29 @@ internal fun resolveInputTarget(device: DeviceController, pkg: String, params: J
     val resolved = SelectorResolver(snapshot, semantic).resolve(selector)
         ?: throw CliError(SelectorDiagnostics.pointMiss(snapshot, selector))
     System.err.println("reticle-helper: resolved via ${resolved.source} -> ref=${resolved.ref}")
-    return ResolvedInputTarget(resolved.point, resolved.source, resolved.ref)
+    return withReach(snapshot, ResolvedInputTarget(resolved.point, resolved.source, resolved.ref))
+}
+
+/**
+ * Aim at the part of the target a touch can actually reach, or refuse.
+ *
+ * A frame is a LAYOUT box: half of it can be below the display or scrolled under
+ * a sticky header while the tree still reports the whole rect, and a tap at its
+ * centre then goes nowhere or to whatever is behind the container. Both were
+ * measured on a device and both reported `settled=1` — see [TapReach].
+ *
+ * Refusing is right here, unlike the occlusion warning: a point outside the
+ * display or outside every clip cannot be the caller's intent, the tool computed
+ * it (the caller named a selector), and the fix — `act scroll-to` — is one
+ * command. A coordinate the caller typed themselves is left alone: that is their
+ * measurement, and `--point` already carries its own coverage verdict.
+ */
+private fun withReach(snapshot: Snapshot, target: ResolvedInputTarget): ResolvedInputTarget {
+    val ref = target.ref ?: return target
+    val reach = TapReach.of(snapshot, ref) ?: return target
+    val point = reach.point ?: throw CliError(reach.explain(ref))
+    if (!reach.adjusted) return target
+    return target.copy(point = point, reachNote = reach.explain(ref))
 }
 
 /** A target plus whether its position was confirmed to have stopped moving. */

@@ -212,6 +212,10 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // not have landed, because the IME or a window above the target covers that
     // point. `settled=1` on its own reads as "the app got it".
     if let warning = outcome.obstruction?["warning"] as? String { print("warning: \(warning)") }
+    // The tap aimed somewhere other than the frame's centre because only part of
+    // the frame was reachable. Printed so the coordinate above can be reconciled
+    // with the rect the caller reads in the tree.
+    if let reach = outcome.reach { print("note: \(reach)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)
