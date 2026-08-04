@@ -48,6 +48,21 @@ class SelectorDiagnosticsTest {
         assertContains(related, "'#web-pay'")
     }
 
+    @Test
+    fun anEmptySelectorNamesTheVisibleTextFlagFirst() {
+        // The measured loss: a whole flow was driven by coordinates on screens whose
+        // only stable handle was the on-screen string, because `--label` existed and
+        // this message never mentioned it.
+        val message = SelectorDiagnostics.pointMiss(sampleSnapshot(), Selector())
+
+        assertContains(message, "--label")
+        assertTrue(
+            message.indexOf("--label") < message.indexOf("--test-id"),
+            "the flag that resolves a visible string should be named first: $message",
+        )
+        assertContains(message, "--point x,y")
+    }
+
     private fun sampleSnapshot(): Snapshot = Snapshot(
         capturedAtMillis = 0L,
         screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
