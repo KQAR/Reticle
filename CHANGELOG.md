@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **A dismissed keyboard's host window is no longer read as cover.** iOS keeps
+  `UITextEffectsWindow` and its input view in the hierarchy after the keyboard goes
+  away, still geometrically over whatever the keys covered — so the node-level
+  occlusion rule marked the login screen's submit button `occluded-by:<that window>`
+  on a capture whose first line said `keyboard: hidden`. A contradiction the caller
+  cannot act on, and it hid the marker's real cases. Keyboard coverage has its own
+  channel (`occluded-by:keyboard`, from the reported keyboard frame) which clears on
+  dismissal, so that subtree is now excluded from cover on both ports; the iOS
+  capture names it (`keyboardHost`) rather than leaving the projection to guess.
+- **`act type --clear` on iOS re-finds the field instead of trusting a ref.** After
+  deleting, the read-back looked the field up by REF in a fresh capture — and a ref is
+  a traversal index. Emptying the field brings the keyboard's accessory views into the
+  hierarchy (measured: 71 nodes → 100), so `r14` stopped being the text field and the
+  check compared the field's old value against a status LABEL, concluded the field
+  still held 14 characters, and refused a clear that had worked. It now re-finds by
+  identity (accessibility id, then the focused text field, then the frame's origin),
+  which is what the Android helper has always done (`TypeReadback.refind`). The
+  refusal also quotes what it read (`was "0123456": "Enter the code"`) instead of only
+  counting characters — a count alone is what made this take three runs to see.
+- **The iOS e2e suite is repeatable.** It erases the target simulator up front
+  (opt out with `RETICLE_E2E_NO_ERASE=1`). Measured across seven consecutive runs: the
+  first HID keyboard event of a device's life makes iOS treat a hardware keyboard as
+  attached permanently — persisted in the device's own preferences — and this suite
+  types, so every run poisoned the next one and the keyboard-trap section failed ~700
+  lines in. Nothing host-side clears it; `simctl erase` does. Two assertions were also
+  fixed rather than left encoding a broken device: a `--label` tap now hands the
+  screen back (it raises the keyboard, which moved the layout under a later section's
+  stale tap point), and the `--clear` count is READ from the field instead of
+  hard-coded at 6, which only held while the keys were suppressed.
+
 - **iOS `ui node --css` refuses unsupported syntax instead of reporting a miss.** The
   matcher throws for constructs it does not implement, because "not understood" and
   "no such element" lead to opposite next actions — but the iOS node lookup wrapped

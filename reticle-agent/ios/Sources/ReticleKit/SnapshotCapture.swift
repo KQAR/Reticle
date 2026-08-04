@@ -198,6 +198,14 @@ struct SnapshotCapture {
         // absence so nobody reads that blank strip as "no keyboard".
         if SnapshotCapture.isKeyboardHostWindow(view) {
             custom["pixelStatus"] = .text("unavailable")
+            // Named, so the projection can tell this subtree apart from ordinary
+            // cover. iOS keeps the keyboard's host window and its input view in the
+            // hierarchy AFTER the keyboard is dismissed, still geometrically over
+            // whatever the keys were covering — measured on the login screen: the
+            // submit button read `occluded-by:<that window>` with the keyboard gone.
+            // Keyboard coverage has its own channel (`occluded-by:keyboard`, from
+            // `screen.keyboard`), which clears the moment it is dismissed.
+            custom["keyboardHost"] = .bool(true)
         }
         // A field's prompt, the native twin of `domPlaceholder` — same
         // `placeholder:` marker in the projection. Without it a field reading
