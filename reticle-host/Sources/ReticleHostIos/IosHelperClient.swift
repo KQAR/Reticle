@@ -374,6 +374,10 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // boundary make pixels the only path? The Android helper's twin — see
             // `HelperPointCoverage.kt` for why a silent `--point` is the defect.
             let coverage = rawPoint ? ScreenCoverage.at(snapshot, x: point.x, y: point.y) : nil
+            // And who would receive the touch instead of the target, which a
+            // SELECTOR tap needs too: it resolves correctly, confirms the rect, and
+            // is then eaten by the IME or by a window above the one it aimed at.
+            let obstruction = ScreenCoverage.obstruction(snapshot, x: point.x, y: point.y, targetRef: target.ref)
             let before = tracer?.capture()
             try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
             var result: [String: Any] = [
@@ -386,6 +390,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             ]
             if let ref = target.ref { result["ref"] = ref }
             if let coverage { result["coverage"] = coverage.jsonObject }
+            if let obstruction { result["obstruction"] = obstruction.jsonObject(x: point.x, y: point.y) }
             // Honest flag, as in scroll-to: false means the target was still moving
             // when the budget lapsed, so this tap may have been aimed at a point that
             // had already changed.

@@ -1,5 +1,5 @@
 {
- "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by BOTH the Kotlin (reticle-core ScreenCoverageContractTest) and Swift (ReticleProtocol ScreenCoverageContractTests) suites, so the Android helper and the iOS host cannot answer 'how much of this screen is unreachable?' two ways. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover.",
+ "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by BOTH the Kotlin (reticle-core ScreenCoverageContractTest) and Swift (ReticleProtocol ScreenCoverageContractTests) suites, so the Android helper and the iOS host cannot answer 'how much of this screen is unreachable?' two ways. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover. Case five pins the other half of a tap's honesty: WHO receives the touch. A point can be perfectly addressable and still unreachable - the IME, a window above the target, or a node drawn over it takes the touch while the tap reports settled=1 - so every tap now carries an obstruction verdict, and the quiet cases (nothing in the way, and a screen-sized overlay container, which is scenery rather than an obstruction) are pinned too, because a warning that fires on an ordinary tap is one nobody reads.",
  "cases": [
   {
    "name": "a coordinate over an addressable node is an unnecessary fallback, and the hint names the most stable handle each node has",
@@ -470,6 +470,218 @@
       },
       "isInteractive": true,
       "parentRef": "wv"
+     }
+    }
+   }
+  },
+  {
+   "name": "a tap is warned when something else receives the touch: the IME, a window above the target, or a node drawn over it — and a screen-sized overlay container is scenery, not an obstruction",
+   "report": [
+    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+    "addressable: 4 of 12 touch-relevant cell(s) (33%)",
+    "unreachable: 8 cell(s)",
+    "  container-only scenery [0,0 128x128] 8 cell(s)",
+    "inert: 0 cell(s) — a node is captured there, none of it interactive",
+    "empty: 0 cell(s) — no captured node contains the point",
+    "keyboard: 4 cell(s) covered by the IME (another process's window)",
+    "(inert and empty cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+   ],
+   "points": [],
+   "obstructions": [
+    {
+     "x": 16,
+     "y": 16,
+     "targetRef": "pay",
+     "reason": "occluded:node",
+     "ref": "icon",
+     "warning": "the touch at (16,16) may not reach the target — occluded:node: icon (image) is drawn over pay at this point and is itself interactive, so it consumes the touch"
+    },
+    {
+     "x": 48,
+     "y": 16,
+     "targetRef": "pay"
+    },
+    {
+     "x": 64,
+     "y": 48,
+     "targetRef": "beneath",
+     "reason": "occluded:window",
+     "ref": "w2",
+     "warning": "the touch at (64,48) may not reach the target — occluded:window: a window above beneath covers this point (w2) — the touch lands in that window, not on the target"
+    },
+    {
+     "x": 32,
+     "y": 112,
+     "targetRef": "submit",
+     "reason": "occluded:keyboard",
+     "warning": "the touch at (32,112) may not reach the target — occluded:keyboard: the IME covers this point, so the touch goes to the keyboard and not to the app — dismiss it with `act hide-keyboard` first"
+    },
+    {
+     "x": 64,
+     "y": 48,
+     "targetRef": "ok"
+    }
+   ],
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0,
+     "keyboard": {
+      "visible": true,
+      "frame": {
+       "x": 0,
+       "y": 96,
+       "width": 128,
+       "height": 32
+      }
+     }
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1",
+       "w2"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "com.android.internal.policy.DecorView",
+      "role": "window",
+      "resourceId": "content",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "pay",
+       "beneath",
+       "submit",
+       "scenery",
+       "icon"
+      ],
+      "parentRef": "r0"
+     },
+     "pay": {
+      "ref": "pay",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "pay",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 64,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "beneath": {
+      "ref": "beneath",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "beneath",
+      "frame": {
+       "x": 32,
+       "y": 32,
+       "width": 64,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "submit": {
+      "ref": "submit",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "submit",
+      "frame": {
+       "x": 0,
+       "y": 96,
+       "width": 64,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "scenery": {
+      "ref": "scenery",
+      "kind": "view",
+      "typeName": "android.widget.FrameLayout",
+      "role": "container",
+      "resourceId": "debug_overlay_root",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "icon": {
+      "ref": "icon",
+      "kind": "view",
+      "typeName": "android.widget.ImageView",
+      "role": "image",
+      "resourceId": "debug_overlay_icon",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "w2": {
+      "ref": "w2",
+      "kind": "window",
+      "typeName": "com.android.internal.policy.DecorView",
+      "role": "window",
+      "resourceId": "dialog",
+      "frame": {
+       "x": 32,
+       "y": 32,
+       "width": 64,
+       "height": 32
+      },
+      "children": [
+       "ok"
+      ],
+      "parentRef": "r0"
+     },
+     "ok": {
+      "ref": "ok",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "dialog.ok",
+      "frame": {
+       "x": 32,
+       "y": 32,
+       "width": 64,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w2"
      }
     }
    }

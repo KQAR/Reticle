@@ -443,10 +443,14 @@ public struct ActOutcome: @unchecked Sendable {
     /// A coordinate tap's coverage verdict: whether a selector was available at
     /// that point, and which named boundary made pixels the only path if not.
     public var coverage: [String: Any]? { raw["coverage"] as? [String: Any] }
+    /// What receives the touch instead of the target, when something does: the
+    /// IME, a window above the target's, or a node drawn over it. Present on any
+    /// tap — a selector tap is the case this was silent for.
+    public var obstruction: [String: Any]? { raw["obstruction"] as? [String: Any] }
 
     /// The result minus the sub-objects that have their own printers.
     public var displayFields: [String: Any] {
-        raw.filter { $0.key != "verify" && $0.key != "trace" && $0.key != "coverage" }
+        raw.filter { $0.key != "verify" && $0.key != "trace" && $0.key != "coverage" && $0.key != "obstruction" }
     }
 }
 

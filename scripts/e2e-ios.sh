@@ -723,6 +723,16 @@ echo "$WAIT_OCCLUDED" | grep -q "caveats: occluded-by:keyboard" \
   || { echo "FAIL: the resolved wait must carry the occlusion as a caveat"; exit 1; }
 echo "$WAIT_OCCLUDED" | grep -q "next: act hide-keyboard" \
   || { echo "FAIL: the occlusion caveat must suggest hide-keyboard"; exit 1; }
+# The tap that used to be silent: aim at the covered button WITH the keyboard up.
+# It resolves, dispatches and reports settled — and the IME window takes the touch.
+# Android's twin assertion lives in the same section of e2e-android.sh.
+OCCLUDED_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id login.submitButton)"
+echo "$OCCLUDED_TAP"
+echo "$OCCLUDED_TAP" | grep -q "occluded:keyboard" \
+  || { echo "FAIL: a tap under the keyboard must warn that the IME receives the touch"; exit 1; }
+echo "$OCCLUDED_TAP" | grep -q "act hide-keyboard" \
+  || { echo "FAIL: the obstruction warning must name the command that clears it"; exit 1; }
+
 # Dismiss in-process and confirm the settled state round-trips.
 HIDE_OUT="$("$HOST" --target ios act hide-keyboard --package "$LINKED_ID")"
 echo "$HIDE_OUT"
@@ -780,6 +790,12 @@ echo "$OVERLAY" | grep "overlay.covered" | grep -q "occluded-by" \
   || { echo "FAIL: a control under an overlay UIWindow must be reported occluded-by"; exit 1; }
 echo "$OVERLAY" | grep -q "overlay.label" \
   || { echo "FAIL: the overlay window's own content must be captured"; exit 1; }
+# And the act path must say the same thing the read path does: a tap aimed at the
+# covered control resolves fine and is taken by the overlay window above it.
+COVERED_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id overlay.covered)"
+echo "$COVERED_TAP"
+echo "$COVERED_TAP" | grep -q "occluded:window" \
+  || { echo "FAIL: a tap under an overlay UIWindow must warn that the window takes the touch"; exit 1; }
 # The overlay's own button is reachable by label even though window scoping now
 # applies — and dismissing it must clear the occlusion.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Dismiss overlay"
