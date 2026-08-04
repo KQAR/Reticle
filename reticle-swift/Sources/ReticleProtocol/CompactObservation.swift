@@ -160,6 +160,20 @@ public struct CompactObservation: Codable, Sendable {
         /// driven with `swipe`. Kept identical to the Kotlin twin.
         func wheelMarker(_ node: Node) -> String? {
             guard node.suspectedWheel else { return nil }
+            // A wheel that publishes its own state — see the Kotlin twin. The pitch is
+            // the number a caller used to measure off a screenshot before calibrating
+            // a swipe by trial.
+            if let value = node.wheelValue(), let index = node.wheelIndex(),
+               let min = node.wheelMin(), let max = node.wheelMax() {
+                var out = "value=\"\(value)\" \(index - min + 1)/\(max - min + 1)"
+                if let pitch = node.wheelRowHeightPx() {
+                    out += " pitch=\(pitch)px"
+                    // `height / 3` is the platform default, not a reading.
+                    if node.wheelRowHeightEstimated() { out += "~" }
+                }
+                if !node.wheelItems().isEmpty { out += " items" }
+                return out
+            }
             var seen = Set<String>()
             func hasTextInside(_ ref: String) -> Bool {
                 guard let child = snapshot.nodes[ref], seen.insert(ref).inserted else { return false }

@@ -437,15 +437,31 @@ nothing is interactive are reported as `inert` rather than as gaps, because with
 pixels a paragraph of text and a control the projection failed to mark are the same
 observation.
 
-**Wheel columns (`wheel:opaque` / `wheel:selection-only`).** A wheel paints its
-candidate values onto its own canvas, so "1995" exists as pixels and nowhere else:
-there is no node to tap, no `scroll:` travel, and `scroll-to` can never converge
-because no selector for an unselected value will ever resolve. The marker on the
-compact line is the cue to switch tactics — without it three rectangles read as
-decorative empty views. `selection-only` (an Android `NumberPicker`) means the
-CURRENT value is readable as a node and its neighbours are not; `opaque` (a
-self-drawn/third-party wheel) means nothing inside it is readable at all. Either
-way the recipe is the same:
+**Wheel columns.** A wheel paints its candidate values onto its own canvas, so
+"1995" exists as pixels and nowhere else: there is no node to tap, and `scroll-to`
+can never converge because no selector for an unselected value will ever resolve.
+The marker on the compact line is the cue to switch tactics — without it three
+rectangles read as decorative empty views. Three shapes, in order of how much the
+widget tells you:
+
+```
+wheel:value="09" 10/24 pitch=157px~ items   # an android.widget.NumberPicker
+wheel:selection-only                        # a wheel whose current value is a node, and nothing else
+wheel:opaque                                # a self-drawn wheel: nothing inside it is readable
+```
+
+The first form is the widget's own public state: the current **value** (its label,
+not its index), its position in the range, and `pitch` — the pixel distance one
+value travels, which is what a swipe has to be a multiple of. A trailing `~` means
+the pitch is `height / 3` (the platform default) rather than a reading, so a swipe
+built on it can be off by a row. `items` means the full label set is on the node:
+read it with `ui node --test-id <wheel>` (`wheelItems`, plus `wheelItemsTruncated`
+when the list is longer than the capture's cap) — it is not on the compact line
+because a year wheel has 120 of them. None of these appear for a self-drawn wheel;
+absent is absent, never estimated.
+
+Either way the recipe for MOVING a wheel is the same (the read side does not make
+an unselected value tappable):
 
 1. `swipe` along the column's centre, endpoints derived from its frame — not a
    hardcoded distance, which is device- and widget-specific;
