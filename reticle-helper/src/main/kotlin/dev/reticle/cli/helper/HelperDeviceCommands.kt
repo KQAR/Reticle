@@ -432,7 +432,29 @@ internal object HelperDeviceCommands {
         } else {
             before = liveSnapshot(device, pkg, params)
         }
-        val field = before?.let { TypeReadback.field(it, focus?.ref) }
+        var field = before?.let { TypeReadback.field(it, focus?.ref) }
+        // `--clear`: empty the field BEFORE typing, and prove it is empty.
+        //
+        // This flag used to be accepted and do nothing at all, which is the worst
+        // possible shape for it: measured on a device, `type --clear` into a field
+        // that already held "test1" left "test1test1", and into a field already at
+        // its `maxLength` it reported `textLanded=none` with no mention that the
+        // clear had not happened. The caller believes the field holds exactly what
+        // it typed, and it does not.
+        var clearOutcome: ClearOutcome? = null
+        if (params.bool("clear")) {
+            val outcome = clearField(input, device, pkg, params, field)
+            clearOutcome = outcome
+            field = outcome.field ?: field
+            if (!outcome.empty) {
+                throw CliError(
+                    "--clear did not empty the field (${outcome.describe()}), so typing now would " +
+                        "APPEND to what is still there and report success — refusing. Clear it by " +
+                        "hand (`act tap` the field, then the keyboard's own clear) or drop --clear " +
+                        "if appending is what you meant"
+                )
+            }
+        }
         // `--type-delay`: pace the burst for a field that cannot keep up with it.
         val typeDelayMs = params.intOrNull("typeDelayMs")?.coerceIn(0, 2000) ?: 0
         val via: String
@@ -457,6 +479,10 @@ internal object HelperDeviceCommands {
             put("gesture", "type"); put("chars", text.length)
             put("via", readback.via ?: via)
             readback.writeInto(this)
+            clearOutcome?.let {
+                put("cleared", it.summary)
+                put("clearDetail", it.wire)
+            }
             focus?.let {
                 put("focusedVia", it.source)
                 it.ref?.let { r -> put("ref", r) }
@@ -633,6 +659,99 @@ internal object HelperDeviceCommands {
             return Readback(verdict.landed, verdict.landedChars, landedText)
         }
         return recoverLostText(input, device, pkg, params, after, had, typed, typeDelayMs, verdict)
+    }
+
+    /** What `--clear` did, and whether the field is provably empty afterwards. */
+    private class ClearOutcome(
+        val empty: Boolean,
+        val before: String?,
+        val after: String?,
+        val deletes: Int,
+        val unavailable: String?,
+        val field: Node?,
+    ) {
+        fun describe(): String = when {
+            unavailable != null -> "the field could not be read back: $unavailable"
+            after == null -> "the field could not be read back"
+            else -> "it still holds ${after.length} char(s)"
+        }
+
+        /**
+         * One field, one token: the display line is `k=v` pairs, and a nested
+         * object there renders as four lines of pretty-printed dictionary in the
+         * middle of a result. The structured form lives in `clearDetail`.
+         */
+        val summary: String = when {
+            empty && deletes == 0 -> "already-empty"
+            empty -> "emptied(${deletes}ch)"
+            unavailable != null -> "failed:$unavailable"
+            else -> "failed:${after?.length ?: "?"}ch-left"
+        }
+
+        val wire: JsonObject = buildJsonObject {
+            put("emptied", empty)
+            put("deletes", deletes)
+            before?.let { put("before", it) }
+            after?.let { put("after", it) }
+            unavailable?.let { put("unavailable", it) }
+        }
+    }
+
+    /**
+     * Empty the focused field, then read it back and say what happened.
+     *
+     * One DEL per character the field ACTUALLY holds, after moving the caret to the
+     * end — deleting what is there rather than a fixed number is the difference
+     * between clearing the field and eating the line above it (the same rule the
+     * clipboard recovery path uses). A field longer than [MAX_RECOVERY_DELETES] is
+     * not hammered with hundreds of key events: it is reported as not cleared, and
+     * the caller decides.
+     *
+     * The read-back is the point. Without it this is another flag that claims work
+     * it did not do; with it, the one thing `--clear` can never do again is leave
+     * old content in place while the result reads like a clean write.
+     */
+    private fun clearField(
+        input: InputDispatcher,
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        field: Node?,
+    ): ClearOutcome {
+        if (field == null) {
+            return ClearOutcome(
+                empty = false, before = null, after = null, deletes = 0,
+                unavailable = TypeReadback.Unavailable.NO_FIELD, field = null,
+            )
+        }
+        val before = TypeReadback.valueOf(field)
+            ?: return ClearOutcome(
+                empty = false, before = null, after = null, deletes = 0,
+                unavailable = TypeReadback.Unavailable.NO_TEXT_CHANNEL, field = field,
+            )
+        if (before.isEmpty()) {
+            return ClearOutcome(true, before, before, 0, null, field)
+        }
+        if (before.length > MAX_RECOVERY_DELETES) {
+            return ClearOutcome(
+                empty = false, before = before, after = before, deletes = 0,
+                unavailable = "field-too-long (${before.length} chars, limit $MAX_RECOVERY_DELETES)",
+                field = field,
+            )
+        }
+        input.keyevent("KEYCODE_MOVE_END")
+        input.keyevent(*Array(before.length) { "KEYCODE_DEL" })
+        Thread.sleep(READBACK_SETTLE_MS)
+        val reread = readFieldText(device, pkg, params, field)
+        val after = reread?.let { TypeReadback.valueOf(it) }
+        return ClearOutcome(
+            empty = after != null && after.isEmpty(),
+            before = before,
+            after = after,
+            deletes = before.length,
+            unavailable = if (reread == null) TypeReadback.Unavailable.GONE else null,
+            field = reread ?: field,
+        )
     }
 
     /**

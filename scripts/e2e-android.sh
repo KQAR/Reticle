@@ -1405,6 +1405,29 @@ R ui report --package "$PKG" --output "$TMP/login-done"
 R ui compact "$TMP/login-done/snapshot.json" | grep -q "Logged in: 123456" \
   || { echo "FAIL: submit after hide-keyboard did not log in"; exit 1; }
 
+# `--clear` empties the field first, and PROVES it did. The flag used to be
+# accepted and ignored: typing "2222" over a field holding "111111" left
+# "1111112222" while the result read like a clean write, and a field already at
+# its maxLength reported `textLanded=none` with no mention that the clear had not
+# happened.
+open_scenario scenario.login login.codeField
+R act tap --package "$PKG" --test-id login.codeField >/dev/null
+sleep 1
+# An empty field says so instead of claiming deletes it did not make.
+FIRST_CLEAR="$(R act type --package "$PKG" --test-id login.codeField --text "111111" --clear)"
+echo "$FIRST_CLEAR"
+echo "$FIRST_CLEAR" | grep -q "cleared=already-empty" \
+  || { echo "FAIL: --clear on an empty field must report already-empty"; exit 1; }
+CLEAR_OUT="$(R act type --package "$PKG" --test-id login.codeField --text "2222" --clear)"
+echo "$CLEAR_OUT"
+echo "$CLEAR_OUT" | grep -q "cleared=emptied(6ch)" \
+  || { echo "FAIL: --clear must report emptying the six characters that were there"; exit 1; }
+echo "$CLEAR_OUT" | grep -q "text=2222" \
+  || { echo "FAIL: the field must hold exactly what was typed after --clear, not the old value plus it"; exit 1; }
+echo "$CLEAR_OUT" | grep -q "textLanded=exact" \
+  || { echo "FAIL: the read-back after --clear must be exact"; exit 1; }
+R act hide-keyboard --package "$PKG" >/dev/null
+
 echo "== LOGIN: type --submit editor action =="
 # Re-open and drive the OTP one-shot: type + Done fires the field's editor
 # action (onEditorAction -> submitCode), no separate submit tap.

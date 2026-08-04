@@ -453,6 +453,25 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 Thread.sleep(forTimeInterval: 0.2)
                 focusedVia = params["point"] != nil ? "point" : "selector"
             }
+            // `--clear`: empty the field BEFORE typing, and prove it is empty.
+            // Android's twin (`clearField` in HelperDeviceCommands.kt) and the same
+            // measured defect: the flag was accepted and did nothing, so a field
+            // that already held "test1" ended up holding "test1test1" while the
+            // result read like a clean write.
+            var cleared: [String: Any]? = nil
+            var clearedSummary: String? = nil
+            if isTruthy(params["clear"]) {
+                let outcome = try clearFocusedField(pkg, udid: udid, params: params)
+                cleared = outcome.wire
+                clearedSummary = outcome.summary
+                if !outcome.emptied {
+                    throw HelperError(
+                        "--clear did not empty the field (\(outcome.describe())), so typing now would "
+                        + "APPEND to what is still there and report success — refusing. Clear it by hand "
+                        + "or drop --clear if appending is what you meant"
+                    )
+                }
+            }
             let via: String
             if IosText.isHidTypeable(text) {
                 try IosInputBackend(udid: udid).type(text)
@@ -475,6 +494,8 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 via = "clipboard paste"
             }
             var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            if let clearedSummary { result["cleared"] = clearedSummary }
+            if let cleared { result["clearDetail"] = cleared }
             if let focusedVia { result["focusedVia"] = focusedVia }
             // `type --submit`: press Return after the text lands. The HID
             // bridge maps '\n' to the Return usage, which triggers the focused
@@ -556,6 +577,92 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         if let tn = r.typeName { out["typeName"] = tn }
         return out
     }
+
+    /// What `--clear` did on the iOS side, and whether the field is provably empty.
+    struct ClearOutcome {
+        var emptied: Bool
+        var before: String?
+        var after: String?
+        var deletes: Int
+        var unavailable: String?
+
+        func describe() -> String {
+            if let unavailable { return "the field could not be read back: \(unavailable)" }
+            guard let after else { return "the field could not be read back" }
+            return "it still holds \(after.count) char(s)"
+        }
+
+        /// One field, one token — see the Kotlin twin.
+        var summary: String {
+            if emptied && deletes == 0 { return "already-empty" }
+            if emptied { return "emptied(\(deletes)ch)" }
+            if let unavailable { return "failed:\(unavailable)" }
+            return "failed:\(after?.count ?? 0)ch-left"
+        }
+
+        var wire: [String: Any] {
+            var out: [String: Any] = ["emptied": emptied, "deletes": deletes]
+            if let before { out["before"] = before }
+            if let after { out["after"] = after }
+            if let unavailable { out["unavailable"] = unavailable }
+            return out
+        }
+    }
+
+    /// The focused text field's current value, from the tree.
+    private static func editableText(_ node: Node) -> String? {
+        if case .text(let value)? = node.custom["editableText"] { return value }
+        return node.text
+    }
+
+    /// The field the caller is typing into: the focused one, or the resolved target.
+    private func focusedField(_ snapshot: Snapshot, params: [String: Any]) -> Node? {
+        if let focused = snapshot.nodes.values.first(where: { $0.isFocused == true && $0.role == "textField" }) {
+            return focused
+        }
+        guard let resolved = try? resolveTarget(params, snapshot: snapshot), let ref = resolved.ref else {
+            return nil
+        }
+        return snapshot.nodes[ref]
+    }
+
+    /// Empty the focused field with one Delete per character it actually holds,
+    /// then read it back. Deleting what is there rather than a fixed count is the
+    /// difference between clearing the field and eating the line above it; the
+    /// read-back is what stops `--clear` claiming work it did not do.
+    func clearFocusedField(_ pkg: String, udid: String, params: [String: Any]) throws -> ClearOutcome {
+        let snapshot = try fetchSnapshot(pkg)
+        guard let field = focusedField(snapshot, params: params) else {
+            return ClearOutcome(emptied: false, before: nil, after: nil, deletes: 0,
+                                unavailable: "no-text-field-node")
+        }
+        guard let before = Self.editableText(field) else {
+            return ClearOutcome(emptied: false, before: nil, after: nil, deletes: 0,
+                                unavailable: "field-exposes-no-text")
+        }
+        if before.isEmpty {
+            return ClearOutcome(emptied: true, before: before, after: before, deletes: 0, unavailable: nil)
+        }
+        if before.count > Self.maxClearDeletes {
+            return ClearOutcome(
+                emptied: false, before: before, after: before, deletes: 0,
+                unavailable: "field-too-long (\(before.count) chars, limit \(Self.maxClearDeletes))"
+            )
+        }
+        try IosInputBackend(udid: udid).delete(times: before.count)
+        Thread.sleep(forTimeInterval: 0.25)
+        let after = (try? fetchSnapshot(pkg))
+            .flatMap { $0.nodes[field.ref] }
+            .flatMap { Self.editableText($0) }
+        return ClearOutcome(
+            emptied: after?.isEmpty == true, before: before, after: after,
+            deletes: before.count, unavailable: after == nil ? "node-gone" : nil
+        )
+    }
+
+    /// A field longer than this is not hammered with hundreds of key events — it is
+    /// reported as not cleared and the caller decides. Matches the Android limit.
+    static let maxClearDeletes = 64
 
     func fetchSnapshot(_ pkg: String) throws -> Snapshot {
         let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
