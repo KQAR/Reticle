@@ -191,6 +191,10 @@ public struct ActRequest: @unchecked Sendable {
     public var direction: String?
     public var maxSwipes: String?
     public var submit: Bool = false
+    /// `type --clear`: empty the field before typing, and prove it is empty.
+    /// Used to be accepted and ignored, which left the caller believing a field
+    /// held exactly what it typed while it actually held the old value plus it.
+    public var clear: Bool = false
     /// Opt OUT of the Toast Queue watch an action does by default (Android). The
     /// watch rides along with work the action was already doing and costs ~25ms
     /// of `adb shell` per sample; this is for a caller who has measured that and
@@ -246,6 +250,7 @@ public struct ActRequest: @unchecked Sendable {
         if let direction { out["direction"] = direction }
         if let maxSwipes { out["maxSwipes"] = maxSwipes }
         if submit { out["submit"] = true }
+        if clear { out["clear"] = true }
         if noToastProbe { out["noToastProbe"] = true }
         if let typeDelayMs { out["typeDelayMs"] = typeDelayMs }
         if settle { out["settle"] = true }
@@ -455,7 +460,7 @@ public struct ActOutcome: @unchecked Sendable {
     public var displayFields: [String: Any] {
         raw.filter {
             $0.key != "verify" && $0.key != "trace" && $0.key != "coverage"
-                && $0.key != "obstruction" && $0.key != "reach"
+                && $0.key != "obstruction" && $0.key != "reach" && $0.key != "clearDetail"
         }
     }
 }
@@ -524,6 +529,7 @@ public extension ActRequest {
         request.direction = string("direction")
         request.maxSwipes = string("maxSwipes")
         request.submit = flag("submit")
+        request.clear = flag("clear")
         request.noToastProbe = flag("noToastProbe")
         request.typeDelayMs = int("typeDelayMs")
         request.settle = flag("settle")
