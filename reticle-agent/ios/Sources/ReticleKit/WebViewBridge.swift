@@ -179,6 +179,11 @@ enum WebViewBridge {
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.
         if bool(element["pointerOrigin"]) { map["domCursor"] = .text("pointer") }
+        // Page-truth sibling positions — see the Kotlin twin: counting the captured
+        // parent's children would answer a `:nth-of-type(n)` query with the n-th
+        // VISIBLE sibling, which is a silently-wrong tap.
+        putInteger("domNthOfType", "nthOfType")
+        putInteger("domNthChild", "nthChild")
         putText("domPlaceholder", "placeholder")
         putText("domName", "formName")
         putText("domDescribedBy", "describedBy")

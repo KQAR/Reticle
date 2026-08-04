@@ -35,6 +35,23 @@ public enum WebViewDomScript {
         if (window.CSS && CSS.escape) return CSS.escape(value);
         return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
       }
+      // The element's 1-based position among its siblings, counting either every
+      // element child (`nth-child`) or only those with its own tag (`nth-of-type`).
+      //
+      // Read HERE, in the page, and carried per node, because the captured tree is not
+      // a faithful sibling list: the walk drops `display:none` / `visibility:hidden`
+      // elements, so counting children of the captured parent would answer a
+      // `:nth-of-type(3)` query with the third VISIBLE sibling. That is the shape of a
+      // silently-wrong tap — the number would look plausible and point at the wrong
+      // control — so the matcher uses these instead of counting.
+      function siblingIndex(el, sameTagOnly) {
+        var index = 1;
+        var sibling = el;
+        while ((sibling = sibling.previousElementSibling) != null) {
+          if (!sameTagOnly || sibling.tagName === el.tagName) index++;
+        }
+        return index;
+      }
       function selectorFor(el) {
         if (el.id) return "#" + cssEscape(el.id);
         var parts = [];
@@ -46,12 +63,7 @@ public enum WebViewDomScript {
           if (current.classList && current.classList.length) {
             part += "." + Array.prototype.slice.call(current.classList, 0, 2).map(cssEscape).join(".");
           }
-          var sibling = current;
-          var index = 1;
-          while ((sibling = sibling.previousElementSibling) != null) {
-            if (sibling.tagName === current.tagName) index++;
-          }
-          part += ":nth-of-type(" + index + ")";
+          part += ":nth-of-type(" + siblingIndex(current, true) + ")";
           parts.unshift(part);
           current = current.parentElement;
         }
@@ -308,6 +320,12 @@ public enum WebViewDomScript {
           // Recorded only where it STARTS, and only as the weak signal it is: the page
           // said pointer, nothing declared a role.
           pointerOrigin: !!pointerOrigin,
+          // Page-truth sibling positions, so `:nth-of-type(n)` / `:nth-child(n)` can be
+          // matched instead of refused. The captured path already carries the first one
+          // per segment; these carry both as numbers for the element itself, which is
+          // what a matcher needs when the caller edits or shortens that path.
+          nthOfType: siblingIndex(el, true),
+          nthChild: siblingIndex(el, false),
           // Laid out entirely outside a clipping ancestor's box: on screen in the
           // document's coordinates, and unseeable. `getComputedStyle` reports such an
           // element as perfectly ordinary — display and visibility are untouched — so

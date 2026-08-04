@@ -19,11 +19,15 @@ import Foundation
 /// Supported: type, `#id`, `.class` and their compounds; descendant and child
 /// (`>`) combinators; the ` >>> ` piercing chain, which in this tree is an
 /// ordinary descendant relationship (an open shadow root's children and a
-/// same-origin iframe's body are captured as children of the host node).
+/// same-origin iframe's body are captured as children of the host node); and
+/// `:nth-of-type(n)` / `:nth-child(n)`, the one pseudo-class family the captured
+/// paths are themselves built out of. The index is compared against the position
+/// the PAGE reported (`domNthOfType` / `domNthChild`), never against a count of
+/// captured siblings — the walk drops hidden elements, so counting here would
+/// answer `:nth-of-type(3)` with the third VISIBLE sibling.
 ///
-/// Refused by name: attribute selectors, pseudo-classes/elements (including the
-/// `:nth-of-type` that appears in captured paths), the universal selector, sibling
-/// combinators, selector lists.
+/// Refused by name: attribute selectors, every other pseudo-class and every
+/// pseudo-element, the universal selector, sibling combinators, selector lists.
 public enum CssSelectorMatch {
 
     /// A compound selector: at most one tag and id, any number of classes.
@@ -31,6 +35,8 @@ public enum CssSelectorMatch {
         var tag: String?
         var id: String?
         var classes: [String] = []
+        var nthOfType: Int?
+        var nthChild: Int?
 
         func matches(_ node: Node) -> Bool {
             if let tag, node.domTag()?.lowercased() != tag.lowercased() { return false }
@@ -39,8 +45,15 @@ public enum CssSelectorMatch {
                 let own = Set(node.domClasses())
                 if !classes.allSatisfy({ own.contains($0) }) { return false }
             }
+            // A node with no captured position cannot satisfy a positional query;
+            // a capture with NO positions at all is reported as a refusal instead
+            // (see `assertPositionsAreCaptured`).
+            if let nthOfType, node.domNthOfType() != nthOfType { return false }
+            if let nthChild, node.domNthChild() != nthChild { return false }
             return true
         }
+
+        var isPositional: Bool { nthOfType != nil || nthChild != nil }
     }
 
     private enum Combinator { case descendant, child }
@@ -60,7 +73,8 @@ public enum CssSelectorMatch {
         if let exact = snapshot.first(where: { $0.domCssSelector() == selector }) { return exact }
         // Parse up front so an unsupported construct surfaces as a refusal rather
         // than as an empty result, whatever the caller does with the return value.
-        _ = try parse(selector)
+        let steps = try parse(selector)
+        try assertPositionsAreCaptured(snapshot, selector, steps)
         return snapshot.first { node in
             node.kind == .domNode && ((try? matches(snapshot, node, selector)) ?? false)
         }
@@ -94,8 +108,15 @@ public enum CssSelectorMatch {
         let trimmed = selector.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { throw UnsupportedCssSelector(selector: selector, construct: "an empty selector") }
         let normalized = trimmed.replacingOccurrences(of: " >>> ", with: " ")
-        try rejectUnsupported(selector, normalized)
-        let steps = tokenize(normalized)
+        // Pseudo-classes first, and by name: `:nth-of-type(2)` is supported while
+        // `:hover` is not, so a blanket "contains a colon" refusal cannot tell them
+        // apart. The char-level checks then run with the pseudo parts removed, so
+        // their parens and digits trip nothing.
+        try validatePseudos(selector, normalized)
+        try rejectUnsupported(selector, pseudo.stringByReplacingMatches(
+            in: normalized, range: NSRange(normalized.startIndex..., in: normalized), withTemplate: ""
+        ))
+        let steps = try tokenize(normalized, selector)
         if steps.isEmpty { throw UnsupportedCssSelector(selector: selector, construct: "no compound selectors") }
         return steps
     }
@@ -103,7 +124,6 @@ public enum CssSelectorMatch {
     private static func rejectUnsupported(_ original: String, _ normalized: String) throws {
         let constructs: [(Character, String)] = [
             ("[", "attribute selectors"),
-            (":", "pseudo-classes and pseudo-elements"),
             ("*", "the universal selector"),
             ("+", "the adjacent-sibling combinator"),
             ("~", "the general-sibling combinator"),
@@ -114,7 +134,66 @@ public enum CssSelectorMatch {
         }
     }
 
-    private static func tokenize(_ normalized: String) -> [Step] {
+    /// Every `:pseudo` / `:pseudo(arg)` in a selector.
+    private static let pseudo = try! NSRegularExpression(
+        pattern: ":([A-Za-z-]+)(?:\\(([^)]*)\\))?"
+    )
+
+    /// The pieces of one pseudo match: its name and its argument.
+    private static func pseudoParts(_ selector: String) -> [(name: String, argument: String)] {
+        let range = NSRange(selector.startIndex..., in: selector)
+        return pseudo.matches(in: selector, range: range).map { match in
+            func group(_ index: Int) -> String {
+                guard let r = Range(match.range(at: index), in: selector) else { return "" }
+                return String(selector[r])
+            }
+            return (group(1), group(2))
+        }
+    }
+
+    /// Accept the two positional pseudo-classes the captured paths are built out of
+    /// and refuse every other one BY NAME. `:nth-of-type(2n+1)` is refused as its own
+    /// thing rather than as "a sibling combinator", which is what a character scan
+    /// would have called the `+`.
+    private static func validatePseudos(_ original: String, _ normalized: String) throws {
+        for part in pseudoParts(normalized) {
+            let name = part.name.lowercased()
+            if name != "nth-of-type" && name != "nth-child" {
+                throw UnsupportedCssSelector(
+                    selector: original, construct: "the pseudo-class or pseudo-element ':\(part.name)'"
+                )
+            }
+            guard let index = Int(part.argument.trimmingCharacters(in: .whitespaces)), index >= 1 else {
+                throw UnsupportedCssSelector(
+                    selector: original,
+                    construct: "':\(name)(\(part.argument))' rather than a plain 1-based index — "
+                        + "an an+b expression or a keyword argument is not implemented, only "
+                        + "`:\(name)(2)`"
+                )
+            }
+        }
+    }
+
+    /// A positional query against a capture with no positions in it is an
+    /// agent/host version skew, not "no such element" — say so instead of missing.
+    /// Only fires when NOTHING on the screen carries a position.
+    private static func assertPositionsAreCaptured(
+        _ snapshot: Snapshot, _ selector: String, _ steps: [Step]
+    ) throws {
+        guard steps.contains(where: { $0.compound.isPositional }) else { return }
+        let domNodes = snapshot.nodes.values.filter { $0.kind == .domNode }
+        if domNodes.isEmpty { return }
+        if domNodes.contains(where: { $0.domNthOfType() != nil || $0.domNthChild() != nil }) { return }
+        throw UnsupportedCssSelector(
+            selector: selector,
+            construct: "a positional pseudo-class this capture cannot answer: none of its "
+                + "\(domNodes.count) DOM node(s) carry a sibling position, which means the app's "
+                + "Reticle agent predates it — re-capture with a matching agent, or drop the "
+                + "`:nth-…()` part"
+        )
+    }
+
+    private static func tokenize(_ normalized: String, _ original: String) throws -> [Step] {
         var steps: [Step] = []
         var combinator = Combinator.descendant
         let padded = normalized.replacingOccurrences(of: ">", with: " > ")
@@ -123,14 +202,30 @@ public enum CssSelectorMatch {
                 combinator = .child
                 continue
             }
-            steps.append(Step(combinator: combinator, compound: compound(String(token))))
+            steps.append(Step(combinator: combinator, compound: try compound(String(token), original)))
             combinator = .descendant
         }
         return steps
     }
 
-    private static func compound(_ token: String) -> Compound {
+    private static func compound(_ token: String, _ original: String) throws -> Compound {
         var out = Compound(tag: nil, id: nil)
+        // The pseudo parts were validated already; pull their indices out and parse
+        // what is left as the plain tag/id/class compound it now is.
+        for part in pseudoParts(token) {
+            let index = Int(part.argument.trimmingCharacters(in: .whitespaces))
+            switch part.name.lowercased() {
+            case "nth-of-type": out.nthOfType = index
+            case "nth-child": out.nthChild = index
+            default:
+                throw UnsupportedCssSelector(
+                    selector: original, construct: "the pseudo-class ':\(part.name)'"
+                )
+            }
+        }
+        let bare = pseudo.stringByReplacingMatches(
+            in: token, range: NSRange(token.startIndex..., in: token), withTemplate: ""
+        )
         var name = ""
         var kind: Character = " "
         func flush() {
@@ -142,7 +237,7 @@ public enum CssSelectorMatch {
             }
             name = ""
         }
-        for character in token {
+        for character in bare {
             if character == "#" || character == "." {
                 flush()
                 kind = character
@@ -167,7 +262,7 @@ public struct UnsupportedCssSelector: Error, CustomStringConvertible {
     public var description: String {
         "css selector '\(selector)' uses \(construct), which Reticle's matcher does not implement. "
             + "Supported: type, #id, .class and their compounds, with descendant / child (>) / "
-            + "pierce (>>>) combinators. A full path copied verbatim out of a snapshot also still "
-            + "matches exactly."
+            + "pierce (>>>) combinators, plus :nth-of-type(n) / :nth-child(n). A full path copied "
+            + "verbatim out of a snapshot also still matches exactly."
     }
 }
