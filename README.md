@@ -251,6 +251,13 @@ $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 # A selector miss reports same-kind candidates from the current snapshot, so you
 # can re-target with a stable handle instead of falling back to coordinates.
 
+# And when a coordinate IS used, it says why it had to be: every `--point` tap
+# carries a verdict — either `no semantic selector covers (x,y) — <reason>` naming
+# the boundary in the way, or `--point was not needed …` naming the flag that would
+# have worked. `ui coverage` asks the same question about the whole screen.
+$CLI act tap --package dev.reticle.sample --point 540,1600   # prints a coverage warning
+$CLI ui coverage --live --package dev.reticle.sample
+
 # Embedded WebView DOM: inspect by CSS selector, tap, verify, and keep a trace
 $CLI act tap --package dev.reticle.sample --test-id scenario.webview
 $CLI ui report --package dev.reticle.sample --output reticle-webview

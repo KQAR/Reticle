@@ -21,8 +21,10 @@ public enum ReticleCLI {
       status                  runtime health + identity for one package
       app launch|inject       start a linked app, or load the runtime into a
                               running debuggable one over JDWP
-      ui report|compact|tree|outline|node|style|regions|screenshot
-                              capture and project the running UI
+      ui report|compact|tree|outline|node|style|regions|coverage|screenshot
+                              capture and project the running UI (`coverage`
+                              reports how much of the screen has no selector
+                              over it, and why)
       act tap|swipe|drag|type|scroll-to|wait|batch|activate|hide-keyboard
                               drive real input
       mutate                  live-patch an allowlisted view property
@@ -212,6 +214,7 @@ public enum ReticleCLI {
             case "node": try cmdUiRender(backend, args, view: "node")
             case "regions": try cmdUiRender(backend, args, view: "regions")
             case "style": try cmdUiRender(backend, args, view: "style")
+            case "coverage": try cmdUiRender(backend, args, view: "coverage")
             default: throw HelperError("unknown ui subcommand: \(args.positional(1) ?? "<none>")")
             }
         default:

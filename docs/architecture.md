@@ -426,6 +426,8 @@ can describe different frames:
    WebView DOM ─────────┤     ONE ref space     │
    (injected JS)        │                       ├─ StyleObservation ···· ui style
                         │                       │
+                        │                       ├─ ScreenCoverage ······ ui coverage · and the
+                        │                       │                       verdict every --point carries
    app-authored probes ─┘                       └─ the raw nodes ······· ui tree · ui node ·
                                                                          mutate · act (fallback)
 ```
@@ -841,6 +843,42 @@ on an agreement row, is the checkbox rather than the link.
   draws itself and hit-tests privately, no static tree can recover the boundary.
   Its row in [boundaries.md](boundaries.md) is **Pure-Canvas controls with no
   accessibility surface**, which is the same mechanism at its extreme.
+
+## Coverage: the tool keeps its own score
+
+`ScreenCoverage` (Kotlin in `reticle-core`, Swift in `ReticleProtocol`, pinned by
+`reticle-protocol/fixtures/screen-coverage.cases.json`) answers one question in two
+sizes: for a single point, is there an addressable node over it and if not what is
+in the way; for the whole screen, what share of the touch-relevant area has one.
+
+It exists because `act tap --point` was the one degraded path that reported
+nothing. A coordinate tap now carries a verdict — `no semantic selector covers
+(x,y) — <reason>` or `--point was not needed at (x,y): <flag> resolves to rN` — and
+`ui coverage` samples the screen on a stated grid and lists each unreachable region
+by reason, host ref and rect. See [blind-agent-gaps.md](blind-agent-gaps.md) for the
+measured run that made this a defect rather than a nicety.
+
+Four rules decide a point, in this order, and each one was earned:
+
+1. **The top window layer at that point answers for it.** A stacked screen keeps the
+   window behind it alive and fully laid out, and its nodes are usually *smaller*
+   than the front screen's containers — so a smallest-node rule reaches through the
+   front screen. Measured on the sample app: a coordinate inside a cross-origin frame
+   was answered with a home-screen list from the window underneath.
+2. **The smallest addressable node wins, and a screen-sized one is not addressable.**
+   Nesting means several nodes contain a point and the innermost is the control. But
+   an Android `WebView` is itself clickable and carries a resource id, so counting it
+   as cover reported a real hybrid screen as 100% addressable — a selector tap on it
+   lands on ITS centre, not where the agent aimed. Its interior is reported as
+   `container-only` instead.
+3. **A boundary host is never cover for the points inside it.** The cross-origin
+   frame this feature came from was itself `tappable` with a test id, so every point
+   in the third-party widget read "a selector covers this" while the steps the agent
+   needed were inside a document nothing can read.
+4. **Captured-but-inert area is not a gap.** Without pixels, a paragraph of text and
+   a control the projection failed to mark are the same observation, so those cells
+   are counted and named (`inert`) rather than guessed at. The refusal is printed in
+   the report, not left implicit.
 
 ## Selector resolution order
 

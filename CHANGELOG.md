@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **A coordinate tap now says why it had to be one, and the screen can be asked how
+  much of it is unreachable.** `act tap --point` was the one degraded path that
+  reported nothing: measured over a hybrid onboarding flow, 23 of ~50 taps were
+  coordinates and no result said so, which is why the gaps that forced them could
+  only be found by driving the flow by hand and counting. Every coordinate tap now
+  carries a verdict, printed as a warning either way — `no semantic selector covers
+  (x,y) — iframe:cross-origin: …` when the fallback was justified (with the boundary
+  named), or `--point was not needed at (x,y): --test-id … resolves to rN` when it
+  was not, which is the quieter loss: a coordinate throws away the re-resolution,
+  the settle confirm and the stale-rect evidence a selector tap performs. A selector
+  tap prints nothing, so the warning always means a coordinate was used. `ui
+  coverage` is the whole-screen form: it samples on a stated grid and reports the
+  addressable share plus every unreachable region by reason, host ref and rect.
+
+  Three rules were corrected by a device rather than by reasoning. A **screen-sized
+  tappable container** is not cover for the points inside it — an Android `WebView`
+  is clickable and carries a resource id, so counting it reported a real hybrid
+  screen as 100% addressable; its interior is `container-only` now. Only the **top
+  window layer** at a point may answer for it — the home list behind a scenario
+  screen has smaller nodes, so a smallest-node rule reached through the front screen
+  and named `--test-id scenario.list` for a coordinate inside a cross-origin frame.
+  And a **boundary host** is never cover: the cross-origin frame this came from was
+  itself `tappable` with a test id, so every point in the third-party widget read
+  "a selector covers this" while nothing inside it was readable. Captured-but-inert
+  area is deliberately NOT counted as a gap, and the report says so: without pixels,
+  a paragraph of text and a control the projection failed to mark are the same
+  observation. Pinned by `reticle-protocol/fixtures/screen-coverage.cases.json`
+  across both ports, and by a **COVERAGE** section in each e2e suite.
+
 - **A cross-origin frame says why it is empty, and it is finally exercised.** The
   absence was already a documented boundary — `contentDocument` throws by browser
   policy and nothing in an app can override it — but it was a *silent* one, and an
