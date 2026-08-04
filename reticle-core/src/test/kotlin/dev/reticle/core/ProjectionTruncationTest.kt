@@ -44,6 +44,47 @@ class ProjectionTruncationTest {
     }
 
     @Test
+    fun theCapSpendsItsBudgetOnControlsRatherThanOnWhateverIsFirst() {
+        // Measured on a hybrid form: the page led with a decorative digit-roller —
+        // a list of hidden items each rendering as "9 8 7 6 5 4 3 2 1 0 …" — and
+        // taking the first N in document order spent the entire budget on it. The
+        // projection showed a screen of odometer digits and NOT ONE of the form's
+        // inputs or its submit button, all present in the snapshot. "There are no
+        // controls here" is the worst thing a read command can say wrongly.
+        val decorative = (1..6).map {
+            Node(
+                ref = "d$it", parentRef = "root", kind = NodeKind.view, typeName = "TextView",
+                role = "text", text = "9 8 7 6 5 4 3 2 1 0",
+                frame = Rect(0.0, it * 10.0, 40.0, 10.0),
+            )
+        }
+        val control = Node(
+            ref = "submit", parentRef = "root", kind = NodeKind.view, typeName = "Button",
+            role = "button", testId = "submit", text = "Confirm",
+            frame = Rect(0.0, 200.0, 400.0, 90.0), isInteractive = true,
+        )
+        val root = Node(
+            ref = "root", kind = NodeKind.application, typeName = "Application",
+            children = decorative.map { it.ref } + control.ref,
+        )
+        val snapshot = Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(400.0, 900.0), density = 3.0),
+            rootRef = "root",
+            nodes = (listOf(root) + decorative + control).associateBy { it.ref },
+        )
+        val observation = CompactObservation.from(snapshot, maxItems = 3)
+        assertEquals(3, observation.items.size)
+        assertTrue(
+            observation.items.any { it.ref == "submit" },
+            "the cap dropped the only control on the screen: ${observation.items.map { it.ref }}"
+        )
+        // The survivors still read top-to-bottom: selection changes, order does not.
+        val tops = observation.items.mapNotNull { it.frame?.y }
+        assertEquals(tops.sorted(), tops, "the kept items must stay in document order")
+    }
+
+    @Test
     fun compactWithinTheCapReportsNothingTruncated() {
         val observation = CompactObservation.from(snapshot(buttons = 3), maxItems = 200)
         assertEquals(0, observation.truncatedItems)

@@ -174,7 +174,7 @@ data class CompactObservation(
             }
             visit(snapshot.rootRef, null)
             val folded = collapseWrappers(snapshot, items)
-            val kept = folded.items.take(maxItems)
+            val kept = keepMostActionable(folded.items, maxItems)
             return CompactObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
                 screen = snapshot.screen,
@@ -185,6 +185,54 @@ data class CompactObservation(
         }
     }
 }
+
+/**
+ * Which items survive the cap when the screen has more than fits.
+ *
+ * Taking the first N in document order is the obvious rule and it fails badly on
+ * exactly the screens the cap exists for. Measured on a hybrid form: the page led
+ * with a decorative digit-roller — a `<ul>` of 27 hidden `<li>` elements, each
+ * rendering as "9 8 7 6 5 4 3 2 1 0 …", plus its wrapper divs — and those ate the
+ * whole budget. The projection showed a screen full of odometer digits and NOT ONE
+ * of the form's inputs, its labels or its submit button, all of which were present
+ * in the snapshot. The caller reads "there are no controls here".
+ *
+ * So the budget is spent by usefulness, not by position:
+ *
+ *  - **2** — a control: interactive, or a role that only a control has. This is
+ *    what the caller can act on, and dropping it is what turned a form into
+ *    nothing.
+ *  - **1** — nameable content: an id, a label, or visible text of its own.
+ *  - **0** — everything else: containers and anonymous rectangles.
+ *
+ * Ranks are then filled in order, and each rank keeps DOCUMENT order inside
+ * itself, so the surviving items still read top-to-bottom as they appear on
+ * screen. Nothing is reordered in the output — the selection changes, not the
+ * layout.
+ */
+private fun keepMostActionable(items: List<CompactItem>, maxItems: Int): List<CompactItem> {
+    if (items.size <= maxItems) return items
+    val byRank = items.withIndex().sortedWith(
+        compareByDescending<IndexedValue<CompactItem>> { rankOf(it.value) }.thenBy { it.index }
+    )
+    return byRank.take(maxItems).sortedBy { it.index }.map { it.value }
+}
+
+/** How much of the cap this item deserves — see [keepMostActionable]. */
+private fun rankOf(item: CompactItem): Int {
+    if (item.isInteractive || item.role in CONTROL_ROLES) return 2
+    if (item.testId != null || item.resourceId != null || !item.label.isNullOrBlank()) return 1
+    return 0
+}
+
+/**
+ * Roles that are a control even when the platform did not mark them interactive —
+ * a disabled input is still the thing the caller is looking for, and a DOM
+ * `checkbox` whose click handler lives in JS is not flagged tappable at all.
+ */
+private val CONTROL_ROLES = setOf(
+    "button", "textField", "checkbox", "radio", "switch", "slider", "link", "menuItem", "tab",
+)
 
 /** The item list after folding, and how many anonymous layers went into it. */
 private data class Folded(val items: List<CompactItem>, val collapsed: Int)

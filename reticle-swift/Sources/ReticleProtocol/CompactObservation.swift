@@ -179,7 +179,7 @@ public struct CompactObservation: Codable, Sendable {
         }
         visit(snapshot.rootRef, nil)
         let folded = collapseWrappers(snapshot, items)
-        let kept = Array(folded.items.prefix(maxItems))
+        let kept = keepMostActionable(folded.items, maxItems: maxItems)
         return CompactObservation(
             capturedAtMillis: snapshot.capturedAtMillis,
             screen: snapshot.screen,
@@ -519,3 +519,38 @@ public struct CompactItem: Codable, Sendable {
         screencapBlank = try c.decodeIfPresent(Bool.self, forKey: .screencapBlank) ?? false
     }
 }
+
+/// Which items survive the cap when the screen has more than fits.
+///
+/// Twin of the Kotlin `keepMostActionable`, where the measurement is written down:
+/// a hybrid form led with a decorative digit-roller whose 27 hidden list items ate
+/// the whole budget, so the projection showed a screen of odometer digits and not
+/// one of the form's inputs, labels or its submit button.
+///
+/// Rank 2 is a control, rank 1 is nameable content, rank 0 is scenery. Ranks fill
+/// in order and each keeps DOCUMENT order inside itself, so what survives still
+/// reads top-to-bottom as it appears on screen.
+private func keepMostActionable(_ items: [CompactItem], maxItems: Int) -> [CompactItem] {
+    if items.count <= maxItems { return items }
+    let ranked = items.enumerated().sorted { a, b in
+        let ra = rank(of: a.element), rb = rank(of: b.element)
+        if ra != rb { return ra > rb }
+        return a.offset < b.offset
+    }
+    return ranked.prefix(maxItems).sorted { $0.offset < $1.offset }.map(\.element)
+}
+
+/// How much of the cap this item deserves — see `keepMostActionable`.
+private func rank(of item: CompactItem) -> Int {
+    if item.isInteractive || controlRoles.contains(item.role) { return 2 }
+    if item.testId != nil || item.resourceId != nil { return 1 }
+    let label = item.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return label.isEmpty ? 0 : 1
+}
+
+/// Roles that are a control even when the platform did not mark them interactive —
+/// a disabled input is still what the caller is looking for, and a DOM checkbox
+/// whose handler lives in JS is not flagged tappable at all.
+private let controlRoles: Set<String> = [
+    "button", "textField", "checkbox", "radio", "switch", "slider", "link", "menuItem", "tab",
+]
