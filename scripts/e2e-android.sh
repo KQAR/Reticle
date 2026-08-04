@@ -1181,6 +1181,13 @@ echo "$BUTTON_TAP" | grep -q "warning: --point was not needed" \
 echo "$BUTTON_TAP" | grep -q "complex.iframeButton" \
   || { echo "FAIL: the warning must name the flag that would have worked"; exit 1; }
 
+# A healthy page carries no rect complaint. The positive case — a DOM rect folded
+# to a point OUTSIDE the web view that draws it — cannot be staged in a fixture (it
+# takes a wrong fold, not a wrong page), so it is pinned by unit tests on both ports;
+# what a device run adds is the guard that the check stays quiet when the fold is
+# right. A warning that fires on ordinary screens is one nobody reads.
+R act tap --package "$PKG" --test-id complex.iframeButton --no-toast-probe 2>&1   | grep -q "folded to a point OUTSIDE"   && { echo "FAIL: a correctly folded DOM rect must not be reported as suspect"; exit 1; }
+
 # And a selector tap carries no verdict at all: it resolved through the tree, so a
 # warning on every action would be noise an agent learns to ignore.
 R act tap --package "$PKG" --test-id complex.iframeButton --no-toast-probe 2>&1 \
