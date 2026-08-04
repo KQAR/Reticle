@@ -8,6 +8,7 @@ import dev.reticle.core.ScreenInfo
 import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -221,6 +222,85 @@ class TypeReadbackTest {
             TypeReadback.Landed.EXACT,
             TypeReadback.classify(before = "", after = "00-001", typed = "00-001").landed,
         )
+    }
+
+    /** A wrapper div with `count` inputs under it, one optionally focused. */
+    private fun wrapperTree(count: Int, focusedIndex: Int? = null, value: String? = null): Snapshot {
+        val nodes = LinkedHashMap<String, Node>()
+        nodes["app"] = Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("web"))
+        nodes["web"] = Node(
+            ref = "web", parentRef = "app", kind = NodeKind.view,
+            typeName = "android.webkit.WebView", role = "container",
+            frame = Rect(0.0, 200.0, 1080.0, 2000.0), isInteractive = true,
+            isFocusable = true, isFocused = true, children = listOf("wrap"),
+        )
+        val inputs = (0 until count).map { "in$it" }
+        nodes["wrap"] = Node(
+            ref = "wrap", parentRef = "web", kind = NodeKind.domNode,
+            typeName = "DOMElement", role = "div",
+            frame = Rect(40.0, 380.0, 900.0, 200.0), children = inputs,
+        )
+        inputs.forEachIndexed { index, ref ->
+            nodes[ref] = Node(
+                ref = ref, parentRef = "wrap", kind = NodeKind.domNode,
+                typeName = "DOMElement", role = "textField",
+                text = if (index == focusedIndex) value else null,
+                frame = Rect(40.0, 400.0 + index * 100.0, 900.0, 90.0),
+                isInteractive = true, isFocused = index == focusedIndex,
+            )
+        }
+        return Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+            rootRef = "app",
+            nodes = nodes,
+        )
+    }
+
+    @Test
+    fun aResolvedWrapperReadsBackTheInputInsideIt() {
+        // Measured on a real form: a selector resolved the wrapper `<div>`, not the
+        // `<input>`, and the read-back answered `unavailable:dom-node-is-not-a-text-
+        // input` for text that plainly landed — `ui compact` showed the value in the
+        // field at that same moment.
+        val field = TypeReadback.field(wrapperTree(count = 1), targetRef = "wrap")
+        assertEquals("in0", field?.ref)
+    }
+
+    @Test
+    fun withSeveralInputsTheFocusedOneSettlesIt() {
+        // Two inputs would be a guess — except that the caret is not a guess.
+        val focused = TypeReadback.field(
+            wrapperTree(count = 3, focusedIndex = 1, value = "abc"), targetRef = "wrap",
+        )
+        assertEquals("in1", focused?.ref)
+        assertEquals("abc", TypeReadback.valueOf(focused!!))
+
+        // With none focused, it stays a guess and is refused — but the message names
+        // the wrapper AND the count, instead of claiming the node is not an input.
+        val ambiguous = wrapperTree(count = 3)
+        assertNull(TypeReadback.field(ambiguous, targetRef = "wrap"))
+        val why = TypeReadback.whyUnreadable(ambiguous, targetRef = "wrap")
+        assertContains(why, "wrap is a wrapper around 3 text inputs")
+    }
+
+    @Test
+    fun anUnreadableResolvedNodeNamesWhereTheCaretIs() {
+        // The other half of the confusion: the read looked at one node while the
+        // caret was in another, and said neither.
+        val snapshot = domTree(role = "button").let { tree ->
+            val nodes = LinkedHashMap(tree.nodes)
+            nodes["other"] = Node(
+                ref = "other", parentRef = "web", kind = NodeKind.domNode,
+                typeName = "DOMElement", role = "textField", text = "landed",
+                frame = Rect(40.0, 600.0, 900.0, 90.0), isInteractive = true, isFocused = true,
+            )
+            nodes["web"] = nodes["web"]!!.copy(children = listOf("dom", "other"))
+            tree.copy(nodes = nodes)
+        }
+        val why = TypeReadback.whyUnreadable(snapshot, targetRef = "dom")
+        assertContains(why, "(dom)")
+        assertContains(why, "the caret is in other")
     }
 
     @Test
