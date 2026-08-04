@@ -993,6 +993,24 @@ echo "$HOVER" | grep -q "':hover'" \
 ANB="$(R ui node --live --package "$PKG" --css 'input:nth-of-type(2n+1)' 2>&1 || true)"
 echo "$ANB" | grep -q "plain 1-based index" \
   || { echo "FAIL: an an+b nth expression must be refused as itself; got: $ANB"; exit 1; }
+# A dead REF on this screen: refs are traversal indices, and a DOM re-render
+# renumbers the tree, so one read out of an earlier report is frequently gone ~1s
+# later. Measured on a hybrid screen, the answer was twelve NATIVE refs — none of
+# which can stand in for a DOM node — plus a recycling-list note while nothing had
+# scrolled. Now it says what a ref is and offers handles that survive a re-render.
+REF_MISS="$(R act tap --package "$PKG" --ref r9999 2>&1 || true)"
+echo "$REF_MISS" | grep -q "traversal INDEX" \
+  || { echo "FAIL: a ref miss must say a ref is snapshot-scoped; got: $REF_MISS"; exit 1; }
+echo "$REF_MISS" | grep -q -- "--css" \
+  || { echo "FAIL: a ref miss on a DOM screen must name the handle that survives"; exit 1; }
+echo "$REF_MISS" | grep -q "recycling list" \
+  && { echo "FAIL: a ref miss on a DOM screen must not blame scrolling"; exit 1; }
+# And the offered handle is one that actually resolves — a bare 'input' would match
+# the first of forty, trading one wrong node for another.
+REF_HANDLE="$(echo "$REF_MISS" | sed -n "s/.*by hand): '\([^']*\)'.*/\1/p")"
+[ -n "$REF_HANDLE" ] || { echo "FAIL: no css handle was offered; got: $REF_MISS"; exit 1; }
+R ui node --live --package "$PKG" --css "$REF_HANDLE" >/dev/null \
+  || { echo "FAIL: the offered handle '$REF_HANDLE' does not resolve"; exit 1; }
 
 # A construct the matcher does not implement is REFUSED by name, never answered as
 # a miss: "not understood" and "no such element" lead to opposite next actions.
