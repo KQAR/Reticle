@@ -187,6 +187,7 @@ reticle ui node     reticle-report/snapshot.json --test-id <id>   # full node
 reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM node
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
 reticle ui style    reticle-report/snapshot.json # geometry + style per node, in px/dp/sp, with provenance
+reticle ui coverage --live --package <pkg>       # what share of this screen has no selector over it, and why
 ```
 
 Use `--json` when another tool or script will parse the result. Helper-backed
@@ -365,6 +366,33 @@ to re-resolve; `--point --settle` is refused). Know the limit: it watches the re
 transform/alpha — an iOS `UIAlertController`, whose accessibility frame is final
 immediately — reports `settled` at once while still not being hit-testable. There,
 wait (or `--verify` and retry); no position signal can tell you.
+
+**A coordinate tap says why it had to be one.** Every `--point` tap carries a
+coverage verdict, printed as a `warning:` line, and both answers are actionable:
+
+- `warning: no semantic selector covers (x,y) — <reason>: …` — the fallback was
+  justified, and the reason names what is in the way (`iframe:cross-origin`,
+  `dom:capped(N)`, `dom:unavailable`, `dom:unsupported-kernel`, `wheel`,
+  `container-only`, `no-interactive-node`, `nothing-captured`). Treat it as the
+  filed gap it is: coordinates are the remaining path *for that region only*.
+- `warning: --point was not needed at (x,y): --test-id … resolves to rN …` — the
+  quieter loss. Something at that point had a handle, so the coordinate threw away
+  the re-resolution, the settle confirm and the stale-rect evidence a selector tap
+  performs. Re-issue it with the named flag.
+
+A selector tap prints no such line, so the warning always means "a coordinate was
+used here".
+
+`ui coverage` asks the same question about the whole screen: it samples on a stated
+grid and reports the share of touch-relevant cells with an addressable node over
+them, then lists each unreachable region by reason, host ref and rect. Two honest
+limits are in the output rather than behind it. A **screen-sized tappable
+container** (a `WebView`, a scroll host) is not counted as cover for the points
+inside it — a selector tap on it lands on its own centre, not where you aimed — so
+its interior appears as `container-only`; and cells where a node is captured but
+nothing is interactive are reported as `inert` rather than as gaps, because without
+pixels a paragraph of text and a control the projection failed to mark are the same
+observation.
 
 **Wheel columns (`wheel:opaque` / `wheel:selection-only`).** A wheel paints its
 candidate values onto its own canvas, so "1995" exists as pixels and nowhere else:

@@ -369,6 +369,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 point = settled.point
                 stable = settled.stable
             }
+            // Judged BEFORE the touch, off the snapshot this tap already resolved
+            // against: was a selector available at this coordinate, or did a named
+            // boundary make pixels the only path? The Android helper's twin — see
+            // `HelperPointCoverage.kt` for why a silent `--point` is the defect.
+            let coverage = rawPoint ? ScreenCoverage.at(snapshot, x: point.x, y: point.y) : nil
             let before = tracer?.capture()
             try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
             var result: [String: Any] = [
@@ -380,6 +385,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 "source": target.source,
             ]
             if let ref = target.ref { result["ref"] = ref }
+            if let coverage { result["coverage"] = coverage.jsonObject }
             // Honest flag, as in scroll-to: false means the target was still moving
             // when the budget lapsed, so this tap may have been aimed at a point that
             // had already changed.

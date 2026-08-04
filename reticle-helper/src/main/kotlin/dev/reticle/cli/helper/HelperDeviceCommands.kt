@@ -187,11 +187,19 @@ internal object HelperDeviceCommands {
                 }
                 val x = target!!.point.x.toInt()
                 val y = target!!.point.y.toInt()
+                // Judged BEFORE the touch: after it the screen this coordinate was
+                // aimed at may not exist any more.
+                val coverage = if (rawPoint) {
+                    pointCoverage(device, pkg, params, traceBefore?.snapshot, target!!.point.x, target!!.point.y)
+                } else {
+                    null
+                }
                 input.tap(x, y)
                 buildJsonObject {
                     put("gesture", "tap")
                     put("x", x)
                     put("y", y)
+                    coverage?.let { put("coverage", it) }
                     put("source", target!!.source)
                     target!!.ref?.let { put("ref", it) }
                     // Honest flag, as in scroll-to: false means the target was still

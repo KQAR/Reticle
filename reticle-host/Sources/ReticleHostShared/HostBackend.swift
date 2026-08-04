@@ -440,10 +440,13 @@ public struct ActOutcome: @unchecked Sendable {
     public var reasons: [String] { (raw["reasons"] as? [Any])?.map { "\($0)" } ?? [] }
     public var verify: [String: Any]? { raw["verify"] as? [String: Any] }
     public var trace: [String: Any]? { raw["trace"] as? [String: Any] }
+    /// A coordinate tap's coverage verdict: whether a selector was available at
+    /// that point, and which named boundary made pixels the only path if not.
+    public var coverage: [String: Any]? { raw["coverage"] as? [String: Any] }
 
-    /// The result minus the two sub-objects that have their own printers.
+    /// The result minus the sub-objects that have their own printers.
     public var displayFields: [String: Any] {
-        raw.filter { $0.key != "verify" && $0.key != "trace" }
+        raw.filter { $0.key != "verify" && $0.key != "trace" && $0.key != "coverage" }
     }
 }
 

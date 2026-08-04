@@ -222,6 +222,13 @@ $CLI act tap --package dev.reticle.sample --test-id checkout.payButton
 # 选择器没命中时,会从当前快照里列出同类候选,于是你可以换一个稳定 handle 重新
 # 定位,而不是退回去写死坐标。
 
+# 真的用了坐标时,它会说清为什么必须用:每个 `--point` 点击都带一条判定 ——
+# 要么 `no semantic selector covers (x,y) — <reason>` 指名挡路的边界,要么
+# `--point was not needed …` 指出本该用的那个 flag。`ui coverage` 把同一个问题
+# 问向整屏。
+$CLI act tap --package dev.reticle.sample --point 540,1600   # 会打印 coverage 警告
+$CLI ui coverage --live --package dev.reticle.sample
+
 # 内嵌 WebView DOM:按 CSS selector 检查、点击、验证,并保留 trace 证据包
 $CLI act tap --package dev.reticle.sample --test-id scenario.webview
 $CLI ui report --package dev.reticle.sample --output reticle-webview
