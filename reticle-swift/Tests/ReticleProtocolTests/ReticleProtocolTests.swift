@@ -112,6 +112,30 @@ final class JSONShapeTests: XCTestCase {
         XCTAssertEqual(decoded.screen.keyboard?.frame?.y, 700)
     }
 
+    /// The Swift half of reticle-core's
+    /// `compact_doesNotTreatALingeringKeyboardHostAsCover`. Measured on the iOS login
+    /// screen: after `act hide-keyboard` reported `keyboardVisible=0`, the submit
+    /// button still read `occluded-by:<the keyboard's host window>` — iOS keeps that
+    /// window and its input view in the hierarchy, still over what the keys covered.
+    func testALingeringKeyboardHostIsNotCover() throws {
+        var snap = sampleSnapshot()
+        snap.screen.keyboard = KeyboardInfo(visible: false, frame: nil)
+        snap.nodes["kbHost"] = Node(
+            ref: "kbHost", parentRef: snap.rootRef, kind: .view, typeName: "UITextEffectsWindow",
+            role: "window", frame: Rect(x: 0, y: 0, width: 393, height: 852),
+            isInteractive: true, custom: ["keyboardHost": .bool(true)], children: ["kbInput"]
+        )
+        snap.nodes["kbInput"] = Node(
+            ref: "kbInput", parentRef: "kbHost", kind: .view, typeName: "UIInputSetHostView",
+            role: "view", frame: Rect(x: 0, y: 700, width: 393, height: 152), isInteractive: true
+        )
+        snap.nodes[snap.rootRef]?.children.append("kbHost")
+
+        let compact = CompactObservation.from(snap)
+        let pay = compact.items.first { $0.ref == "r2" }!  // y-center 745, under the lingering input view
+        XCTAssertNil(pay.occludedBy, "a dismissed keyboard's host must not read as cover: \(pay.line())")
+    }
+
     /// The Swift half of reticle-core's `CompactCollapseTest`. The two folds must
     /// agree node for node, or the same picker reads differently on each platform.
     func testFoldsAnonymousLayersLikeKotlin() throws {

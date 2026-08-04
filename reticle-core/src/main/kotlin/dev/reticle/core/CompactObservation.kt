@@ -107,6 +107,24 @@ data class CompactObservation(
                 return node.children.any(::descendantAt)
             }
 
+            // The keyboard's own host window and input view stay in the hierarchy
+            // AFTER the keyboard is dismissed, still geometrically over whatever the
+            // keys covered — measured on the iOS login screen: the submit button read
+            // `occluded-by:<that window>` with `keyboard: hidden` on the line above,
+            // which is a contradiction the caller cannot act on. Keyboard coverage has
+            // its own channel (`occluded-by:keyboard`), computed from the keyboard's
+            // reported frame, and that one clears on dismissal. So this subtree is
+            // never node-level cover.
+            fun insideKeyboardHost(ref: String): Boolean {
+                var current: Node? = snapshot.nodes[ref]
+                val walked = HashSet<String>()
+                while (current != null && walked.add(current.ref)) {
+                    if ((current.custom["keyboardHost"] as? MetadataValue.Bool)?.value == true) return true
+                    current = current.parentRef?.let { snapshot.nodes[it] }
+                }
+                return false
+            }
+
             fun laterSiblingCovering(node: Node, cx: Double, cy: Double): String? {
                 var current = node
                 var parent = current.parentRef?.let { snapshot.nodes[it] }
@@ -118,6 +136,7 @@ data class CompactObservation(
                         for (i in siblings.size - 1 downTo position + 1) {
                             val above = snapshot.nodes[siblings[i]] ?: continue
                             if (!above.isVisible || !above.isInteractive) continue
+                            if (insideKeyboardHost(above.ref)) continue
                             if (!drawsAt(above, cx, cy)) continue
                             if (above.frame?.contains(cx, cy) == true) return above.ref
                         }
@@ -139,6 +158,7 @@ data class CompactObservation(
                 for (i in (index + 1) until windowRefs.size) {
                     val above = snapshot.nodes[windowRefs[i]] ?: continue
                     if (!above.isVisible) continue
+                    if (insideKeyboardHost(above.ref)) continue
                     if (above.frame?.contains(cx, cy) == true) return above.ref
                 }
                 return laterSiblingCovering(node, cx, cy)

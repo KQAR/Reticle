@@ -596,7 +596,13 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         func describe() -> String {
             if let unavailable { return "the field could not be read back: \(unavailable)" }
             guard let after else { return "the field could not be read back" }
-            return "it still holds \(after.count) char(s)"
+            // Quote what was actually read, before and after. A bare count sent the
+            // reader looking for the wrong thing: measured on the login field, "it
+            // still holds 14 char(s)" for a field holding six characters and a
+            // separate eight-character placeholder node — the count alone could not
+            // say which text had been read.
+            let from = before.map { " (was \"\($0)\")" } ?? ""
+            return "it still holds \(after.count) char(s)\(from): \"\(after)\""
         }
 
         /// One field, one token — see the Kotlin twin.
@@ -633,6 +639,39 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         return snapshot.nodes[ref]
     }
 
+    /// Re-find a field in a LATER capture, by identity rather than by ref.
+    ///
+    /// Refs are traversal indices: emptying a field brings the keyboard's undo bar
+    /// and its accessory views into the hierarchy, and the tree renumbers. Measured
+    /// on the login screen — the capture grew from 71 nodes to 100, `r14` stopped
+    /// being the text field, and `--clear` compared the field's old value against a
+    /// STATUS LABEL ("was \"0123456\": \"Enter the code\""), concluded the field
+    /// still held 14 characters and refused a clear that had in fact worked.
+    ///
+    /// The Android helper has always done this (`TypeReadback.refind`) for the same
+    /// reason. Identity first (accessibility id), then a focused text field, then the
+    /// frame's origin — position last, since a relayout moves rects too.
+    static func refind(_ field: Node, in snapshot: Snapshot) -> Node? {
+        if let id = field.testId, !id.isEmpty {
+            let matches = snapshot.nodes.values.filter { $0.testId == id }
+            if matches.count == 1 { return matches[0] }
+        }
+        if let focused = snapshot.nodes.values.first(where: {
+            $0.isFocused == true && $0.role == "textField"
+        }) {
+            return focused
+        }
+        if let frame = field.frame {
+            if let sameSpot = snapshot.nodes.values.first(where: {
+                $0.role == "textField" && $0.frame?.x == frame.x && $0.frame?.y == frame.y
+            }) {
+                return sameSpot
+            }
+        }
+        // Last resort, and only when the ref still names the same kind of thing.
+        return snapshot.nodes[field.ref].flatMap { $0.typeName == field.typeName ? $0 : nil }
+    }
+
     /// Empty the focused field with one Delete per character it actually holds,
     /// then read it back. Deleting what is there rather than a fixed count is the
     /// difference between clearing the field and eating the line above it; the
@@ -659,7 +698,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         try IosInputBackend(udid: udid).delete(times: before.count)
         Thread.sleep(forTimeInterval: 0.25)
         let after = (try? fetchSnapshot(pkg))
-            .flatMap { $0.nodes[field.ref] }
+            .flatMap { Self.refind(field, in: $0) }
             .flatMap { Self.editableText($0) }
         return ClearOutcome(
             emptied: after?.isEmpty == true, before: before, after: after,
