@@ -135,6 +135,39 @@ class SnapshotDerivationsTest {
     }
 
     @Test
+    fun compact_doesNotTreatALingeringKeyboardHostAsCover() {
+        // Measured on the iOS login screen: after `act hide-keyboard` reported
+        // `keyboardVisible=0`, the submit button still read `occluded-by:<the
+        // keyboard's host window>` — iOS keeps that window and its input view in the
+        // hierarchy, still geometrically over what the keys covered. `keyboard:
+        // hidden` on the line above and `occluded-by:` on the item is a contradiction
+        // the caller cannot act on; keyboard coverage has its own channel, and it
+        // clears on dismissal.
+        val base = occlusionSnapshot()
+        val nodes = LinkedHashMap(base.nodes)
+        nodes["kbHost"] = Node(
+            ref = "kbHost", parentRef = "app", kind = NodeKind.view,
+            typeName = "UITextEffectsWindow", role = "window",
+            frame = Rect(0.0, 0.0, 1080.0, 2400.0), isInteractive = true,
+            custom = mapOf("keyboardHost" to MetadataValue.Bool(true)),
+            children = listOf("kbInput"),
+        )
+        nodes["kbInput"] = Node(
+            ref = "kbInput", parentRef = "kbHost", kind = NodeKind.view,
+            typeName = "UIInputSetHostView", role = "view",
+            frame = Rect(0.0, 2000.0, 1080.0, 400.0), isInteractive = true,
+        )
+        nodes["app"] = nodes["app"]!!.copy(children = listOf("baseWindow", "dialogWindow", "kbHost"))
+        val dismissed = base.copy(
+            screen = base.screen.copy(keyboard = KeyboardInfo(visible = false, frame = null)),
+            nodes = nodes,
+        )
+
+        val login = CompactObservation.from(dismissed).items.first { it.ref == "login" }
+        assertEquals(null, login.occludedBy, "a dismissed keyboard's host must not read as cover: ${login.line()}")
+    }
+
+    @Test
     fun compact_marksItemsUnderTheKeyboard() {
         val compact = CompactObservation.from(occlusionSnapshot())
         val login = compact.items.first { it.ref == "login" }

@@ -101,6 +101,22 @@ public struct CompactObservation: Codable, Sendable {
             return node.children.contains(where: descendantAt)
         }
 
+        // The keyboard's own host window and input view stay in the hierarchy AFTER
+        // the keyboard is dismissed, still geometrically over whatever the keys
+        // covered — measured on the login screen: the submit button read
+        // `occluded-by:<that window>` with `keyboard: hidden` on the line above.
+        // Keyboard coverage has its own channel (`occluded-by:keyboard`), computed
+        // from the reported keyboard frame, and that one clears on dismissal.
+        func insideKeyboardHost(_ ref: String) -> Bool {
+            var current = snapshot.nodes[ref]
+            var walked = Set<String>()
+            while let node = current, walked.insert(node.ref).inserted {
+                if case .bool(true)? = node.custom["keyboardHost"] { return true }
+                current = node.parentRef.flatMap { snapshot.nodes[$0] }
+            }
+            return false
+        }
+
         func laterSiblingCovering(_ node: Node, _ cx: Double, _ cy: Double) -> String? {
             var current = node
             var parent = current.parentRef.flatMap { snapshot.nodes[$0] }
@@ -110,6 +126,7 @@ public struct CompactObservation: Codable, Sendable {
                     for i in stride(from: p.children.count - 1, to: position, by: -1) {
                         guard let above = snapshot.nodes[p.children[i]],
                               above.isVisible, above.isInteractive else { continue }
+                        guard !insideKeyboardHost(above.ref) else { continue }
                         guard drawsAt(above, cx, cy) else { continue }
                         if above.frame?.contains(cx, cy) == true { return above.ref }
                     }
@@ -130,6 +147,7 @@ public struct CompactObservation: Codable, Sendable {
             guard let windowRef, let index = windowOrder[windowRef] else { return nil }
             for i in (index + 1)..<windowRefs.count {
                 guard let above = snapshot.nodes[windowRefs[i]], above.isVisible else { continue }
+                if insideKeyboardHost(above.ref) { continue }
                 if above.frame?.contains(cx, cy) == true { return above.ref }
             }
             return laterSiblingCovering(node, cx, cy)
