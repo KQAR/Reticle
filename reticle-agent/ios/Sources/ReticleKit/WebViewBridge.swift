@@ -261,8 +261,6 @@ enum WebViewBridge {
         let webViewFrame: Rect
         let scaleX: Double
         let scaleY: Double
-        let scrollX: Double
-        let scrollY: Double
 
         init(json: [String: Any], webViewFrame: Rect) {
             self.webViewFrame = webViewFrame
@@ -270,13 +268,15 @@ enum WebViewBridge {
             let viewportHeight = WebViewBridge.double(json["viewportHeight"])
             scaleX = viewportWidth > 0 ? webViewFrame.width / viewportWidth : 1.0
             scaleY = viewportHeight > 0 ? webViewFrame.height / viewportHeight : 1.0
-            scrollX = WebViewBridge.double(json["scrollX"])
-            scrollY = WebViewBridge.double(json["scrollY"])
         }
 
+        /// The script reports VIEWPORT coordinates, so no scroll enters here — see
+        /// the note on `left`/`top` in dom-traversal.js. It used to add the page
+        /// scroll per element and subtract it once, from a read taken after the walk;
+        /// a page that moved mid-walk folded to rects offset by the delta.
         func rect(for element: [String: Any]) -> Rect {
-            let left = WebViewBridge.double(element["left"]) - scrollX
-            let top = WebViewBridge.double(element["top"]) - scrollY
+            let left = WebViewBridge.double(element["left"])
+            let top = WebViewBridge.double(element["top"])
             return Rect(
                 x: webViewFrame.x + left * scaleX,
                 y: webViewFrame.y + top * scaleY,

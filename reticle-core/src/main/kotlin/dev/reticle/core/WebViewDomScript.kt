@@ -357,8 +357,16 @@ object WebViewDomScript {
               // A frame whose document this page may not read. Structural — no wait or
               // retry clears it — so it is stated rather than left as an empty subtree.
               crossOriginFrame: !!crossOrigin,
-              left: left + window.scrollX,
-              top: top + window.scrollY,
+              // VIEWPORT coordinates, not page coordinates. These used to carry
+              // `+ window.scrollX/Y` and the host folds subtracted the scroll again — a
+              // round trip whose two halves were read at DIFFERENT times: every element's
+              // rect during the walk, the scroll once after it. A page that scrolls or
+              // reflows mid-walk therefore folded to rects offset by the delta, which is
+              // silent (the tap dispatches at the reported centre and reports settled=1) and
+              // was measured on a real page as roughly 130px. Viewport space needs no scroll
+              // at all, so the two reads cannot disagree.
+              left: left,
+              top: top,
               width: rect.width,
               height: rect.height,
               marginTop: styleValue(style, "marginTop"),
@@ -400,6 +408,8 @@ object WebViewDomScript {
           return JSON.stringify({
             viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
             viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,
+            // The page's scroll offset, reported as page STATE. It is deliberately NOT part
+            // of the coordinate fold any more — see the `left`/`top` note above.
             scrollX: window.scrollX || window.pageXOffset || 0,
             scrollY: window.scrollY || window.pageYOffset || 0,
             capped: capped,
