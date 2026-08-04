@@ -1458,6 +1458,27 @@ echo "$PARTIAL" | grep -q "landedChars=" \
   || { echo "FAIL: a partial landing must say how much landed, got: $PARTIAL"; exit 1; }
 echo "$PARTIAL" | grep -q "recovery=" \
   && { echo "FAIL: a non-empty field must not be cleared to retry, got: $PARTIAL"; exit 1; }
+# 4. A native field's HINT is projected, and a field already at its maxLength says
+# why nothing landed. Both were measured on a real form as screenshot-only facts:
+# `text="880 977 267"` with no hint channel is ambiguous (prefilled value, or a
+# prompt showing through an empty field?), and a `type` into a full field reported a
+# bare `textLanded=none` — indistinguishable from a tool failure.
+CAPPED_TREE="$(R ui compact --live --package "$PKG")"
+echo "$CAPPED_TREE" | grep -q '#reformat.capped .*"880 977 267" .*placeholder:"Phone"' \
+  || { echo "FAIL: a native hint must project as placeholder, beside the value"; echo "$CAPPED_TREE"; exit 1; }
+echo "$CAPPED_TREE" | grep -q '#reformat.amount .*placeholder:"Amount"' \
+  || { echo "FAIL: an EMPTY native field's hint must project too"; exit 1; }
+FULL="$(R act type --package "$PKG" --test-id reformat.capped --text "123")"
+echo "$FULL"
+echo "$FULL" | grep -q "textLanded=none" \
+  || { echo "FAIL: nothing can land in a field at its maxLength, got: $FULL"; exit 1; }
+echo "$FULL" | grep -q "textLandedReason=at-maxLength(11)" \
+  || { echo "FAIL: a full field must say WHY nothing landed, got: $FULL"; exit 1; }
+echo "$FULL" | grep -q "recovery=" \
+  && { echo "FAIL: a full field cannot be recovered by re-sending, got: $FULL"; exit 1; }
+# And the hint is a --label handle now, like a DOM placeholder already was.
+R act tap --package "$PKG" --label "Phone" >/dev/null \
+  || { echo "FAIL: a native hint must be resolvable by --label"; exit 1; }
 
 echo "== LOGIN keyboard trap =="
 open_scenario scenario.login login.codeField

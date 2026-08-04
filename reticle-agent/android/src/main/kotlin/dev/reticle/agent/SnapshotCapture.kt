@@ -226,6 +226,7 @@ class SnapshotCapture(
             checked = checkedStateOf(view),
             custom = style.values +
                 screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
+                inputConstraints(view) +
                 foreignWebKernel(view),
             styleChannels = style.channels,
             styleGaps = style.gaps,
@@ -250,6 +251,34 @@ class SnapshotCapture(
      * - `FLAG_SECURE` is the mirror image — the in-process capture is unaffected
      *   while the device-level capture comes back fully blanked (rgba 0,0,0,255).
      */
+    /**
+     * What a text field will and will not accept: its `hint` and its `maxLength`.
+     *
+     * Both were missing while the DOM side published `placeholder` — so a native
+     * field reading `text="880 977 267"` was ambiguous (prefilled value, or a hint
+     * showing through an empty field?), and a `type` into one already at its limit
+     * reported `textLanded=none` with no reason. Measured on a real form: the only
+     * way to tell the two apart was a screenshot.
+     *
+     * `nativeHint` is the native twin of `domPlaceholder` and renders through the
+     * same `placeholder:` marker. `maxLength` comes from the view's own
+     * `LengthFilter`, which is the constraint that silently truncates.
+     */
+    private fun inputConstraints(view: View): Map<String, MetadataValue> {
+        val text = view as? TextView ?: return emptyMap()
+        val out = LinkedHashMap<String, MetadataValue>()
+        text.hint?.toString()?.takeIf { it.isNotBlank() }?.let {
+            out["nativeHint"] = MetadataValue.Text(it)
+        }
+        // `filters` is the only readable statement of the limit — `android:maxLength`
+        // is applied by installing one of these and is not otherwise queryable.
+        text.filters
+            ?.filterIsInstance<android.text.InputFilter.LengthFilter>()
+            ?.minOfOrNull { it.max }
+            ?.let { out["maxLength"] = MetadataValue.Integer(it.toLong()) }
+        return out
+    }
+
     private fun screenshotStatus(view: View, isWindow: Boolean): Map<String, MetadataValue> {
         val out = LinkedHashMap<String, MetadataValue>()
         if (view is SurfaceView) {
