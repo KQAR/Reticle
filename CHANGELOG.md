@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **`--css` implements `:nth-of-type(n)` / `:nth-child(n)`, the pseudo-class family
+  its own captured paths are built out of.** The snapshot records
+  `domCssSelector` as a full path of `:nth-of-type()` segments, and the matcher
+  refused pseudo-classes — so the only selector the tool EMITS was one it accepted
+  solely as a verbatim whole-string special case. Any edit (trimming the path,
+  aiming at the 2nd sibling instead of the 1st) was rejected, which made driving a
+  real form a `ui report` → read JSON → paste a ~400-char path → act loop for every
+  interaction, and a pasted path silently pointed at a different node once the page
+  re-rendered. Now `div.row:nth-of-type(2) input` resolves and drives input on both
+  ports. The index is compared against the position the **page** reported — the DOM
+  walk now carries `domNthOfType` / `domNthChild` per element — and never against a
+  count of captured siblings: the walk drops `display:none` elements, so counting
+  would answer `:nth-of-type(3)` with the third *visible* sibling, which is a
+  silently-wrong tap rather than an approximation. Only a plain 1-based index is
+  implemented; `:nth-of-type(2n+1)`, keyword arguments and every other pseudo-class
+  are still refused by name (`':hover'`), and a positional query against a capture
+  whose agent predates the new fields is refused as the version skew it is rather
+  than answered as a miss. Pinned for both ports by seven new cases in
+  `reticle-protocol/fixtures/selector-resolution.cases.json` (including a row whose
+  page position is 3 while its captured position would be 2) and exercised on device
+  in both e2e suites.
 - **A flag a command does not read is reported, not dropped; and a selector miss
   names `--label`.** Two halves of the same measured loss. `act tap --package <pkg>
   --text "Tak"` answered `could not resolve selector '<empty>' to a point`, which
