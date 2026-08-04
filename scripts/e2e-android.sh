@@ -1041,6 +1041,34 @@ R act tap --package "$PKG" --test-id scaled.target >/dev/null
 wait_compact "$PKG" "Scaled target hit" \
   || { echo "FAIL: a coordinate tap under zoom did not land on the element"; exit 1; }
 
+# 1b. A page that has been SCROLLED. Every other web fixture fits its viewport, so
+# the page scroll was always 0 and a fold that mishandled it could not fail here —
+# which is how a scroll-coupled fold error survived: the traversal emitted PAGE
+# coordinates (rect + window.scrollY, read per element DURING the walk) and the host
+# subtracted the scroll (read once, AFTER it), two reads from different moments.
+# Measured on a real page as roughly 130px of offset, silent (`settled=1`, nothing
+# happened). Rects are viewport-space now, so no scroll enters the fold at all.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity"   --es reticle.webScenario scrolled >/dev/null 2>&1
+wait_compact "$PKG" "scrolled.status"
+# Below the fold to begin with: the target is genuinely not on screen, and the
+# projection says so by leaving it out rather than reporting an off-screen rect.
+R ui compact --live --package "$PKG" | grep -q "scrolled.target"   && { echo "FAIL: a target below the fold must not be projected as if on screen"; exit 1; }
+# Scroll to the bottom of the document (the target is the last element, so this needs
+# no calibrated swipe count — the page simply stops).
+for _ in 1 2 3 4 5 6; do
+  R act swipe --package "$PKG" --from 540,2000 --to 540,400 --duration 250 >/dev/null
+done
+wait_compact "$PKG" "scrolled.target"   || { echo "FAIL: the target never came into view after scrolling to the bottom"; exit 1; }
+# The verdict: a COORDINATE tap at the projected rect, which only fires the page's
+# own onclick if that rect agrees with what is rendered. The status is `position:
+# fixed`, so it is readable at any scroll offset.
+R act tap --package "$PKG" --test-id scrolled.target >/dev/null
+wait_compact "$PKG" "Scrolled target hit"   || { echo "FAIL: a coordinate tap on a scrolled page did not land on the element"; exit 1; }
+# And the in-page scroll port beside it is reported as one — the second half of the
+# shape measured on the real page (its container read `scroll:down,right`).
+R ui compact --live --package "$PKG" | grep -q "scrolled.strip"   || { echo "FAIL: the in-page scroll strip must still be captured"; exit 1; }
+
 # 2. Two live WebViews in one window, the second inset on BOTH axes and its target
 # deep into its own page — so the rect is only right if the overlay's own container
 # offset and the page offset are both accumulated. A rect computed against the

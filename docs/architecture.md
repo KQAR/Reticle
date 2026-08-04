@@ -375,6 +375,15 @@ its visible DOM through a default-on, read-only bridge when JavaScript is enable
 rectangles into screen coordinates, and appends each element as a `NodeKind.domNode`
 child under the WebView. The script does not mutate page state.
 
+The fold takes **viewport** coordinates and adds only the host view's origin and the
+viewport scale. It deliberately does not read the page scroll: rects used to be
+emitted in page space (`+ window.scrollX/Y`, added per element during the walk) with
+the scroll subtracted once afterwards, so the two halves of that round trip came from
+different moments and a page that moved mid-walk folded to offset rects — silent,
+since a tap then dispatches at the reported centre and reports `settled=1`. The
+page's scroll offset is still reported, as page state rather than as an input to the
+geometry.
+
 **The script itself is one file, embedded twice.** Both bridges — Android's and the
 WKWebView twin — run the same JavaScript, and it used to be hand-copied between the
 two agents under a `KEEP IN SYNC` comment: with Kotlin raw strings escaping one way

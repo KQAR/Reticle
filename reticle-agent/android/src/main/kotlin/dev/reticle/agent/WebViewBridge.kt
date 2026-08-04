@@ -319,12 +319,17 @@ object WebViewBridge {
         val webViewFrame: Rect,
         val scaleX: Double,
         val scaleY: Double,
-        val scrollX: Double,
-        val scrollY: Double,
     ) {
+        /**
+         * The script reports VIEWPORT coordinates, so no scroll enters here — see the
+         * note on `left`/`top` in dom-traversal.js. This used to add the page scroll
+         * per element (during the walk) and subtract it once (read after the walk), so
+         * a page that scrolled or reflowed mid-walk folded to rects offset by the
+         * delta — silent, and measured on a real page at roughly 130px.
+         */
         fun rectFor(element: JSONObject): Rect {
-            val left = element.optDouble("left") - scrollX
-            val top = element.optDouble("top") - scrollY
+            val left = element.optDouble("left")
+            val top = element.optDouble("top")
             return Rect(
                 x = webViewFrame.x + left * scaleX,
                 y = webViewFrame.y + top * scaleY,
@@ -341,8 +346,6 @@ object WebViewBridge {
                     webViewFrame = webViewFrame,
                     scaleX = if (viewportWidth > 0.0) webViewFrame.width / viewportWidth else density,
                     scaleY = if (viewportHeight > 0.0) webViewFrame.height / viewportHeight else density,
-                    scrollX = json.optDouble("scrollX", 0.0),
-                    scrollY = json.optDouble("scrollY", 0.0),
                 )
             }
         }
