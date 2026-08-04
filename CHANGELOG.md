@@ -11,6 +11,22 @@
   document order in one place. A genuine miss is still a miss. Found by the iOS e2e
   suite the first time it ran the pseudo-class assertion added with the
   `:nth-of-type(n)` work.
+- **The DOM coordinate fold no longer reads the page scroll — and a scrolled page is
+  now exercised.** The traversal emitted PAGE coordinates (each element's viewport
+  rect plus `window.scrollX/Y`, added during the walk) and both hosts subtracted the
+  page scroll again (read once, after the walk). A round trip whose two halves came
+  from different moments: a page that scrolls or reflows mid-walk folded to rects
+  offset by the delta, which is silent in the worst way — `act tap` dispatches at the
+  reported centre and reports `settled=1`. That is the shape measured on a real page
+  whose rects were off by roughly 130px (#234). Rects are viewport-space now, so no
+  scroll enters the fold at all; the page's scroll offset is still reported as page
+  state. Every existing web fixture fits its viewport, so the scroll was always 0 and
+  no test could have caught this: a `scrolled` fixture joins them — a document taller
+  than the screen, a `position: fixed` status line so the verdict is readable at any
+  offset, and an in-page horizontal scroll port beside the target (the second half of
+  the real page's shape, whose container read `scroll:down,right`). The Android suite
+  scrolls to the bottom and lands a COORDINATE tap on the target, which only fires
+  the page's own `onclick` if the projected rect agrees with what is rendered.
 
 - **`--css` implements `:nth-of-type(n)` / `:nth-child(n)`, the pseudo-class family
   its own captured paths are built out of.** The snapshot records
