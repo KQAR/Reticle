@@ -597,9 +597,17 @@ internal object HelperDeviceCommands {
         val recovery: String? = null,
         /** Overrides the dispatch `via=` when a recovery re-sent the text. */
         val via: String? = null,
+        /**
+         * Why nothing landed, when the field itself says why. Measured on a real
+         * form: a field already at its `maxLength` reported `textLanded=none` and
+         * nothing else, which reads as "the tool failed" rather than "the field is
+         * full" — two opposite next actions (retry vs clear it first).
+         */
+        val landedReason: String? = null,
     ) {
         fun writeInto(builder: JsonObjectBuilder) {
             builder.put("textLanded", TypeReadback.label(landed))
+            landedReason?.let { builder.put("textLandedReason", it) }
             text?.let { builder.put("text", it) }
             if (landed == TypeReadback.Landed.PARTIAL) builder.put("landedChars", landedChars)
             unavailable?.let { builder.put("textReadback", "unavailable:$it") }
@@ -657,6 +665,12 @@ internal object HelperDeviceCommands {
         val verdict = TypeReadback.classify(had, landedText, typed)
         if (!TypeReadback.isLoss(verdict.landed)) {
             return Readback(verdict.landed, verdict.landedChars, landedText)
+        }
+        // The field's own constraint, when it explains the loss: a field already at
+        // its `maxLength` accepts nothing, and re-sending over the clipboard cannot
+        // change that. Reported instead of retried.
+        atMaxLength(after, landedText)?.let { reason ->
+            return Readback(verdict.landed, verdict.landedChars, landedText, landedReason = reason)
         }
         return recoverLostText(input, device, pkg, params, after, had, typed, typeDelayMs, verdict)
     }
@@ -768,6 +782,18 @@ internal object HelperDeviceCommands {
      * did, and if the second attempt lands no better the honest classification of
      * that attempt is what gets reported.
      */
+    /**
+     * `at-maxLength(N)` when the field is full, else null.
+     *
+     * The check is `>=`, not `==`: a field whose limit was lowered after it was
+     * prefilled holds more than it now accepts, and that is still the same answer.
+     */
+    private fun atMaxLength(field: Node, text: String): String? {
+        val limit = field.maxLength() ?: return null
+        if (limit <= 0 || text.length < limit) return null
+        return "at-maxLength($limit)"
+    }
+
     private fun recoverLostText(
         input: InputDispatcher,
         device: DeviceController,

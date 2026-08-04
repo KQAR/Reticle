@@ -383,6 +383,23 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// The prompt a field shows while it is empty, whichever platform it came from:
+    /// a DOM `placeholder`, or a native `hint` / `UITextField.placeholder`. One
+    /// accessor because the caller's question is the same either way — see the
+    /// Kotlin twin for the measurement that made the native half necessary.
+    public func placeholder() -> String? {
+        if let dom = domPlaceholder() { return dom }
+        if case .text(let v)? = custom["nativeHint"] { return v }
+        return nil
+    }
+
+    /// The most characters this field will accept, when it says so (Android's
+    /// `LengthFilter`). UIKit has no readable equivalent.
+    public func maxLength() -> Int? {
+        if case .integer(let n)? = custom["maxLength"] { return Int(n) }
+        return nil
+    }
+
     /// The message this field declares itself invalid with: `""` when it sets
     /// `aria-invalid` and names nothing, the `aria-describedby` text when it does,
     /// nil when the field does not declare itself invalid. Three states, because
@@ -448,7 +465,7 @@ public struct Node: Codable, Sendable {
             // projection entirely. Measured: address fields disabled until a
             // postcode unlocked them were absent from the compact view, which
             // reads as "the app has no such field" rather than "not ready yet".
-            || domPlaceholder() != nil
+            || placeholder() != nil
     }
 
     private enum CodingKeys: String, CodingKey {

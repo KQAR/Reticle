@@ -198,7 +198,7 @@ data class CompactObservation(
                             checked = node.checked,
                             expanded = node.expanded,
                             hasPopup = node.domHasPopup(),
-                            placeholder = node.domPlaceholder(),
+                            placeholder = node.placeholder(),
                             invalid = node.domInvalidMessage(),
                             occludedBy = occluderOf(node, currentWindow),
                             scroll = node.scroll,

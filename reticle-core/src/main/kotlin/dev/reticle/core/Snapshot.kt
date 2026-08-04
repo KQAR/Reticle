@@ -434,6 +434,26 @@ data class Node(
     fun domNthChild(): Int? = (custom["domNthChild"] as? MetadataValue.Integer)?.value?.toInt()
 
     /**
+     * The prompt a field shows while it is empty, whichever platform it came from:
+     * a DOM `placeholder`, or a native `hint` / `UITextField.placeholder`.
+     *
+     * One accessor because a caller's question is the same either way. The native
+     * half was missing while the DOM half was published, which made a native field
+     * reading `text="880 977 267"` ambiguous — prefilled value, or hint showing
+     * through an empty field? — and measured on a real form the only way to tell was
+     * a screenshot.
+     */
+    fun placeholder(): String? = domPlaceholder()
+        ?: (custom["nativeHint"] as? MetadataValue.Text)?.value
+
+    /**
+     * The most characters this field will accept, when it says so (Android's
+     * `LengthFilter`). The constraint that silently truncates, and the reason a
+     * `type` into a full field lands nothing.
+     */
+    fun maxLength(): Int? = (custom["maxLength"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /**
      * The message this field declares itself invalid with: `""` when it sets
      * `aria-invalid` and points at nothing, the `aria-describedby` text when it
      * does, and null when the field does not declare itself invalid at all.
@@ -554,7 +574,7 @@ data class Node(
             // app does not have those fields" rather than "they are not ready yet".
             // The placeholder is both the signal that it IS a field and the only
             // thing that says which one.
-            domPlaceholder() != null
+            placeholder() != null
 }
 
 /**

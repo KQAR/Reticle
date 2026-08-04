@@ -185,7 +185,7 @@ public struct CompactObservation: Codable, Sendable {
                         checked: node.checked,
                         expanded: node.expanded,
                         hasPopup: node.domHasPopup(),
-                        placeholder: node.domPlaceholder(),
+                        placeholder: node.placeholder(),
                         invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
