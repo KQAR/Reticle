@@ -227,6 +227,7 @@ class SnapshotCapture(
             custom = style.values +
                 screenshotStatus(view, isWindow = kindOverride == NodeKind.window) +
                 inputConstraints(view) +
+                wheelFacts(view) +
                 foreignWebKernel(view),
             styleChannels = style.channels,
             styleGaps = style.gaps,
@@ -415,6 +416,78 @@ class SnapshotCapture(
     private fun checkedStateOf(view: View): CheckedState? {
         val checkable = view as? android.widget.Checkable ?: return null
         return if (checkable.isChecked) CheckedState.on else CheckedState.off
+    }
+
+    /**
+     * What a `NumberPicker` knows about itself: its current value, its range, its
+     * item labels, and the pixel pitch of one row.
+     *
+     * A wheel in spinner mode paints its unselected values onto its own canvas, so
+     * the tree has one node — the selection — and no node for the value you want.
+     * Measured on a real date picker: reaching a value meant reading the numbers off
+     * a screenshot, measuring the row pitch in pixels from that same image, and
+     * calibrating a swipe distance by trial (four screenshot round-trips for what is
+     * semantically "select 1995").
+     *
+     * Every one of those facts is public API on the widget — `getValue`,
+     * `getMinValue`/`getMaxValue`, `getDisplayedValues` — so the caller was
+     * reverse-engineering from pixels what the control publishes. The row pitch is
+     * the one exception: `mSelectorElementHeight` is private, so it is read
+     * reflectively and falls back to `height / 3` (a spinner shows three rows), and
+     * the fallback is labelled rather than passed off as a reading.
+     *
+     * Only a genuine `android.widget.NumberPicker`. A self-drawn wheel publishes
+     * none of this and keeps saying `wheel:opaque` — see [suspectedWheel].
+     */
+    private fun wheelFacts(view: View): Map<String, MetadataValue> {
+        val picker = view as? android.widget.NumberPicker ?: return emptyMap()
+        val out = LinkedHashMap<String, MetadataValue>()
+        val index = picker.value
+        val min = picker.minValue
+        val max = picker.maxValue
+        val labels = runCatching { picker.displayedValues }.getOrNull()
+        out["wheelIndex"] = MetadataValue.Integer(index.toLong())
+        out["wheelMin"] = MetadataValue.Integer(min.toLong())
+        out["wheelMax"] = MetadataValue.Integer(max.toLong())
+        // The VALUE as a human reads it: `displayedValues` maps the index onto the
+        // label, and a wheel that sets it (a month name, a zero-padded hour) is the
+        // case where the index alone tells the caller nothing.
+        val label = labels?.getOrNull(index - min) ?: index.toString()
+        out["wheelValue"] = MetadataValue.Text(label)
+        if (labels != null) {
+            // Capped: a year wheel has 120 of these and the whole list on one node
+            // would swamp every projection that prints custom metadata. The count is
+            // always exact, so a truncated list still says how much it is missing.
+            val shown = labels.filterNotNull().take(WHEEL_ITEMS_CAP)
+            out["wheelItems"] = MetadataValue.Text(shown.joinToString(","))
+            if (labels.size > shown.size) {
+                out["wheelItemsTruncated"] = MetadataValue.Integer((labels.size - shown.size).toLong())
+            }
+        }
+        wheelRowHeightPx(picker)?.let { (pitch, measured) ->
+            out["wheelRowHeightPx"] = MetadataValue.Integer(pitch.toLong())
+            if (!measured) out["wheelRowHeightEstimated"] = MetadataValue.Bool(true)
+        }
+        return out
+    }
+
+    /**
+     * The pitch of one wheel row in pixels, and whether it was READ or estimated.
+     *
+     * `mSelectorElementHeight` is the widget's own scroll quantum — the distance one
+     * value travels — which is what a swipe has to be a multiple of. When reflection
+     * cannot reach it, three visible rows is the platform default, so `height / 3` is
+     * a reasonable estimate; it is returned flagged, never as a measurement.
+     */
+    private fun wheelRowHeightPx(picker: View): Pair<Int, Boolean>? {
+        val reflected = runCatching {
+            val field = android.widget.NumberPicker::class.java.getDeclaredField("mSelectorElementHeight")
+            field.isAccessible = true
+            (field.get(picker) as? Int)?.takeIf { it > 0 }
+        }.getOrNull()
+        if (reflected != null) return reflected to true
+        val height = picker.height
+        return if (height >= 3) (height / 3) to false else null
     }
 
     private fun suspectedWheel(view: View): Boolean {
@@ -606,6 +679,9 @@ class SnapshotCapture(
     }
 
     private companion object {
+        /** Item labels carried on one wheel node before the list is truncated. */
+        const val WHEEL_ITEMS_CAP = 40
+
         /** Third-party wheel families, which share no supertype with each other. */
         val WHEEL_CLASS_NAME = Regex("(?i)(wheelview|wheelpicker|loopview|pickerview|numberpicker)")
     }

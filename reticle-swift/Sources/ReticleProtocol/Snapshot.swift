@@ -400,6 +400,56 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// What a wheel column publishes about itself — see the Kotlin twin for the
+    /// measurement. Nil for a self-drawn wheel, which publishes none of it.
+    public func wheelValue() -> String? {
+        if case .text(let v)? = custom["wheelValue"] { return v }
+        return nil
+    }
+
+    /// The selection's 0-based index within `wheelMin()...wheelMax()`.
+    public func wheelIndex() -> Int? {
+        if case .integer(let n)? = custom["wheelIndex"] { return Int(n) }
+        return nil
+    }
+
+    /// See `wheelValue()`.
+    public func wheelMin() -> Int? {
+        if case .integer(let n)? = custom["wheelMin"] { return Int(n) }
+        return nil
+    }
+
+    /// See `wheelValue()`.
+    public func wheelMax() -> Int? {
+        if case .integer(let n)? = custom["wheelMax"] { return Int(n) }
+        return nil
+    }
+
+    /// The item labels this wheel offers, truncated at the capture's own cap.
+    public func wheelItems() -> [String] {
+        guard case .text(let v)? = custom["wheelItems"] else { return [] }
+        return v.split(separator: ",").map(String.init)
+    }
+
+    /// How many labels `wheelItems()` left out, when it left any out.
+    public func wheelItemsTruncated() -> Int? {
+        if case .integer(let n)? = custom["wheelItemsTruncated"] { return Int(n) }
+        return nil
+    }
+
+    /// The pixel distance one value travels — the quantum a swipe must be a multiple
+    /// of, which the caller used to measure off a screenshot.
+    public func wheelRowHeightPx() -> Int? {
+        if case .integer(let n)? = custom["wheelRowHeightPx"] { return Int(n) }
+        return nil
+    }
+
+    /// True when `wheelRowHeightPx()` is `height / 3`, not a reading.
+    public func wheelRowHeightEstimated() -> Bool {
+        if case .bool(true)? = custom["wheelRowHeightEstimated"] { return true }
+        return false
+    }
+
     /// The message this field declares itself invalid with: `""` when it sets
     /// `aria-invalid` and names nothing, the `aria-describedby` text when it does,
     /// nil when the field does not declare itself invalid. Three states, because

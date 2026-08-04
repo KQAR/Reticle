@@ -1,893 +1,987 @@
 {
- "$comment": "Authoritative cases for the text projections an agent reads - `ui compact`, `ui tree`, `ui tree --semantics`, `ui regions` - read by BOTH the Kotlin (reticle-core RenderContractTest) and Swift (ReticleProtocol RenderContractTests) suites, so the Android helper and the iOS host cannot format one snapshot two ways. Each case is a snapshot plus, per view, the exact lines `Render` must produce. The renderers used to live in the Kotlin helper and in ReticleProtocol independently, pinned only by hand-mirrored unit tests - which is how `compact` drifted before; the derivations were shared while the formatting was not. What the cases pin beyond the line format: lost window focus outranks the keyboard line (nothing is tappable, however tappable it looks); the keyboard header counts what it covers; window grouping is topmost-first with the item lines left byte-for-byte unindented; nodes outside any window are announced rather than dropped; the fold footer states what a token-cheap view left out; every boundary marker renders rather than going silent; and both projections list nodes in document order, not in map order, so several roots print the same on either platform.",
- "cases": [
-  {
-   "name": "two stacked windows: items are grouped topmost-first, the header says which is on top, and a covered tap point names its occluder",
-   "expect": {
-    "compact": [
-     "window w2 confirm.dialog [60,900 960x400] [top]",
-     "#confirm.dialog window [60,900 960x400]",
-     "#confirm.ok button \"Confirm\" [700,1200 240x96] tappable",
-     "window w1 content [0,0 1080x2400] [behind the top window]",
-     "@content window [0,0 1080x2400] occluded-by:w2",
-     "#checkout.payButton button \"Pay now\" [24,1000 1032x120] tappable occluded-by:w2"
-    ],
-    "tree": [
-     "r0 application",
-     "  @content window",
-     "    #checkout.payButton button \"Pay now\"",
-     "  #confirm.dialog window",
-     "    #confirm.ok button \"Confirm\""
-    ],
-    "semantics": [
-     "r0 application",
-     "  @content window",
-     "    #checkout.payButton button \"Pay now\"",
-     "  #confirm.dialog window",
-     "    #confirm.ok button \"Confirm\""
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1",
-       "w2"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
-      },
-      "children": [
-       "r1"
-      ],
-      "parentRef": "r0"
-     },
-     "r1": {
-      "ref": "r1",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "Pay now",
-      "testId": "checkout.payButton",
-      "frame": {
-       "x": 24,
-       "y": 1000,
-       "width": 1032,
-       "height": 120
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "w2": {
-      "ref": "w2",
-      "kind": "window",
-      "typeName": "android.widget.PopupWindow",
-      "role": "window",
-      "testId": "confirm.dialog",
-      "frame": {
-       "x": 60,
-       "y": 900,
-       "width": 960,
-       "height": 400
-      },
-      "children": [
-       "r2"
-      ],
-      "parentRef": "r0"
-     },
-     "r2": {
-      "ref": "r2",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "Confirm",
-      "testId": "confirm.ok",
-      "frame": {
-       "x": 700,
-       "y": 1200,
-       "width": 240,
-       "height": 96
-      },
-      "isInteractive": true,
-      "parentRef": "w2"
-     }
-    }
-   }
-  },
-  {
-   "name": "keyboard up: the header counts the items it covers, the covered item names the keyboard as its occluder, and travel left is reported per container",
-   "expect": {
-    "compact": [
-     "keyboard: visible [0,1400 1080x1000] — 1 item(s) occluded (dismiss with `act hide-keyboard`)",
-     "@content window [0,0 1080x2400]",
-     "#login.user textField \"ruijin\" [48,600 984x140] tappable focused",
-     "#login.submit button \"Sign in\" [48,1800 984x140] tappable occluded-by:keyboard",
-     "#login.recent list \"Recent logins\" [0,800 1080x400] scroll:down"
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0,
-     "keyboard": {
-      "visible": true,
-      "frame": {
-       "x": 0,
-       "y": 1400,
-       "width": 1080,
-       "height": 1000
-      }
-     }
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
-      },
-      "children": [
-       "r1",
-       "r2",
-       "r3"
-      ],
-      "parentRef": "r0"
-     },
-     "r1": {
-      "ref": "r1",
-      "kind": "view",
-      "typeName": "android.widget.EditText",
-      "role": "textField",
-      "text": "ruijin",
-      "testId": "login.user",
-      "frame": {
-       "x": 48,
-       "y": 600,
-       "width": 984,
-       "height": 140
-      },
-      "isInteractive": true,
-      "isFocused": true,
-      "parentRef": "w1"
-     },
-     "r2": {
-      "ref": "r2",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "Sign in",
-      "testId": "login.submit",
-      "frame": {
-       "x": 48,
-       "y": 1800,
-       "width": 984,
-       "height": 140
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "r3": {
-      "ref": "r3",
-      "kind": "view",
-      "typeName": "androidx.recyclerview.widget.RecyclerView",
-      "role": "list",
-      "contentDescription": "Recent logins",
-      "testId": "login.recent",
-      "frame": {
-       "x": 0,
-       "y": 800,
-       "width": 1080,
-       "height": 400
-      },
-      "scroll": {
-       "canScrollDown": true
-      },
-      "parentRef": "w1"
-     }
-    }
-   }
-  },
-  {
-   "name": "lost window focus outranks the keyboard line: another process holds input focus, so nothing here is tappable however tappable it looks",
-   "expect": {
-    "compact": [
-     "window: UNFOCUSED — another window has input focus (a system prompt is not part of this app's tree); taps will not reach these items",
-     "keyboard: hidden",
-     "@content window [0,0 1080x2400]",
-     "#perm.allow button \"Allow\" [48,1200 984x140] tappable"
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0,
-     "windowFocused": false,
-     "keyboard": {
-      "visible": false
-     }
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
-      },
-      "children": [
-       "r1"
-      ],
-      "parentRef": "r0"
-     },
-     "r1": {
-      "ref": "r1",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "Allow",
-      "testId": "perm.allow",
-      "frame": {
-       "x": 48,
-       "y": 1200,
-       "width": 984,
-       "height": 140
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     }
-    }
-   }
-  },
-  {
-   "name": "folded anonymous layers are announced once at the end, so a token-cheap view never reads as the whole tree",
-   "expect": {
-    "compact": [
-     "@content window [0,0 1080x2400]",
-     "#agreement.row text \"Terms and Privacy\" [0,400 1080x200] tappable",
-     "(2 anonymous layer(s) folded into the node they wrap — all still in the snapshot, reachable with `ui node --ref`)"
-    ],
-    "tree": [
-     "r0 application",
-     "  @content window",
-     "    box1 container",
-     "      box2 container",
-     "        #agreement.row text \"Terms and Privacy\""
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
-      },
-      "children": [
-       "box1"
-      ],
-      "parentRef": "r0"
-     },
-     "box1": {
-      "ref": "box1",
-      "kind": "view",
-      "typeName": "android.widget.FrameLayout",
-      "role": "container",
-      "frame": {
-       "x": 0,
-       "y": 400,
-       "width": 1080,
-       "height": 200
-      },
-      "isInteractive": true,
-      "children": [
-       "box2"
-      ],
-      "parentRef": "w1"
-     },
-     "box2": {
-      "ref": "box2",
-      "kind": "view",
-      "typeName": "android.widget.LinearLayout",
-      "role": "container",
-      "frame": {
-       "x": 0,
-       "y": 400,
-       "width": 1080,
-       "height": 200
-      },
-      "isInteractive": true,
-      "children": [
-       "label"
-      ],
-      "parentRef": "box1"
-     },
-     "label": {
-      "ref": "label",
-      "kind": "view",
-      "typeName": "android.widget.TextView",
-      "role": "text",
-      "text": "Terms and Privacy",
-      "testId": "agreement.row",
-      "frame": {
-       "x": 0,
-       "y": 400,
-       "width": 1080,
-       "height": 200
-      },
-      "isInteractive": true,
-      "parentRef": "box2"
-     }
-    }
-   }
-  },
-  {
-   "name": "boundary markers render rather than going silent: dom:unavailable, dom:unsupported-kernel, pixels:unavailable, screencap:blank, and both wheel shapes",
-   "expect": {
-    "compact": [
-     "@content window [0,0 1080x2400] screencap:blank",
-     "#pay.web webView [0,200 1080x600] tappable dom:unavailable",
-     "#pay.x5 webView [0,800 1080x400] tappable dom:unsupported-kernel",
-     "#player.surface view [0,1200 1080x400] tappable pixels:unavailable",
-     "#wheel.hour picker [0,1700 360x300] tappable wheel:selection-only",
-     "@numberpicker_input textField \"11\" [60,1800 240x100]",
-     "#wheel.year view [400,1700 360x300] tappable wheel:opaque",
-     "#wheel.minute picker [760,1700 320x300] tappable wheel:opaque"
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
-      },
-      "custom": {
-       "screencapStatus": {
-        "_type": "text",
-        "value": "blank"
-       }
-      },
-      "children": [
-       "web",
-       "kernel",
-       "video",
-       "wheelA",
-       "wheelB",
-       "wheelC"
-      ],
-      "parentRef": "r0"
-     },
-     "web": {
-      "ref": "web",
-      "kind": "view",
-      "typeName": "android.webkit.WebView",
-      "role": "webView",
-      "testId": "pay.web",
-      "frame": {
-       "x": 0,
-       "y": 200,
-       "width": 1080,
-       "height": 600
-      },
-      "isInteractive": true,
-      "custom": {
-       "domStatus": {
-        "_type": "text",
-        "value": "unavailable"
-       }
-      },
-      "parentRef": "w1"
-     },
-     "kernel": {
-      "ref": "kernel",
-      "kind": "view",
-      "typeName": "com.tencent.smtt.sdk.WebView",
-      "role": "webView",
-      "testId": "pay.x5",
-      "frame": {
-       "x": 0,
-       "y": 800,
-       "width": 1080,
-       "height": 400
-      },
-      "isInteractive": true,
-      "custom": {
-       "domStatus": {
-        "_type": "text",
-        "value": "unsupportedKernel"
-       },
-       "domKernel": {
-        "_type": "text",
-        "value": "com.tencent.smtt.sdk.WebView"
-       }
-      },
-      "parentRef": "w1"
-     },
-     "video": {
-      "ref": "video",
-      "kind": "view",
-      "typeName": "android.view.SurfaceView",
-      "role": "view",
-      "testId": "player.surface",
-      "frame": {
-       "x": 0,
-       "y": 1200,
-       "width": 1080,
-       "height": 400
-      },
-      "isInteractive": true,
-      "custom": {
-       "pixelStatus": {
-        "_type": "text",
-        "value": "unavailable"
-       }
-      },
-      "parentRef": "w1"
-     },
-     "wheelA": {
-      "ref": "wheelA",
-      "kind": "view",
-      "typeName": "android.widget.NumberPicker",
-      "role": "picker",
-      "testId": "wheel.hour",
-      "frame": {
-       "x": 0,
-       "y": 1700,
-       "width": 360,
-       "height": 300
-      },
-      "isInteractive": true,
-      "suspectedWheel": true,
-      "children": [
-       "wheelAInput"
-      ],
-      "parentRef": "w1"
-     },
-     "wheelAInput": {
-      "ref": "wheelAInput",
-      "kind": "view",
-      "typeName": "android.widget.EditText",
-      "role": "textField",
-      "text": "11",
-      "resourceId": "numberpicker_input",
-      "frame": {
-       "x": 60,
-       "y": 1800,
-       "width": 240,
-       "height": 100
-      },
-      "parentRef": "wheelA"
-     },
-     "wheelB": {
-      "ref": "wheelB",
-      "kind": "view",
-      "typeName": "com.contrarywind.view.WheelView",
-      "role": "view",
-      "testId": "wheel.year",
-      "frame": {
-       "x": 400,
-       "y": 1700,
-       "width": 360,
-       "height": 300
-      },
-      "isInteractive": true,
-      "suspectedWheel": true,
-      "parentRef": "w1"
-     },
-     "wheelC": {
-      "$comment": "A NumberPicker whose selection child was cleared to whitespace: blank is NO text, so this must read opaque, not selection-only.",
-      "ref": "wheelC",
-      "kind": "view",
-      "typeName": "android.widget.NumberPicker",
-      "role": "picker",
-      "testId": "wheel.minute",
-      "frame": {
-       "x": 760,
-       "y": 1700,
-       "width": 320,
-       "height": 300
-      },
-      "isInteractive": true,
-      "suspectedWheel": true,
-      "children": [
-       "wheelCInput"
-      ],
-      "parentRef": "w1"
-     },
-     "wheelCInput": {
-      "ref": "wheelCInput",
-      "kind": "view",
-      "typeName": "android.widget.EditText",
-      "role": "textField",
-      "text": " ",
-      "frame": {
-       "x": 800,
-       "y": 1800,
-       "width": 240,
-       "height": 100
-      },
-      "parentRef": "wheelC"
-     }
-    }
-   }
-  },
-  {
-   "name": "ios: accessibility-derived elements, a multi-region text with its char grid, and a node captured outside any window",
-   "expect": {
-    "compact": [
-     "#login.submit button \"Sign in\" [24,700 345x50] tappable",
-     "#agreement.text text \"I have read and agree to the Terms and t\" [24,620 345x40] tappable",
-     "#debug.overlay view \"Debug overlay\" [0,0 393x40] tappable"
-    ],
-    "tree": [
-     "r0 application",
-     "  w1 window",
-     "    #login.submit button \"Sign in\"",
-     "    #agreement.text text \"I have read and agree to the T\"",
-     "  #debug.overlay view \"Debug overlay\""
-    ],
-    "semantics": [
-     "r0 application",
-     "  #login.submit button \"Sign in\"",
-     "  #agreement.text text \"I have read and agree to the T\"",
-     "  #debug.overlay view \"Debug overlay\""
-    ],
-    "regions": [
-     "#agreement.text text \"I have read and agree to the Terms and t\"",
-     "    ! suspectedMultiRegion: self-drawn control",
-     "    charGrid: 2 line(s)",
-     "    - span \"Terms\" -> https://example.com/terms color=#FF1A73E8 [180,620 60x20]",
-     "    - span \"Privacy Policy\" -> https://example.com/privacy [250,640 110x20]"
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "ios",
-    "screen": {
-     "size": {
-      "width": 393,
-      "height": 852
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "UIApplication",
-      "role": "application",
-      "children": [
-       "w1",
-       "loose"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "UIWindow",
-      "role": "window",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 393,
-       "height": 852
-      },
-      "children": [
-       "a1",
-       "a2"
-      ],
-      "parentRef": "r0"
-     },
-     "a1": {
-      "ref": "a1",
-      "kind": "axElement",
-      "typeName": "SwiftUI.AccessibilityNode",
-      "role": "button",
-      "contentDescription": "Sign in",
-      "testId": "login.submit",
-      "frame": {
-       "x": 24,
-       "y": 700,
-       "width": 345,
-       "height": 50
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "a2": {
-      "ref": "a2",
-      "kind": "axElement",
-      "typeName": "SwiftUI.AccessibilityNode",
-      "role": "text",
-      "text": "I have read and agree to the Terms and the Privacy Policy",
-      "testId": "agreement.text",
-      "frame": {
-       "x": 24,
-       "y": 620,
-       "width": 345,
-       "height": 40
-      },
-      "isInteractive": true,
-      "suspectedMultiRegion": true,
-      "regions": [
-       {
-        "source": "span",
-        "label": "Terms",
-        "target": "https://example.com/terms",
-        "rects": [
-         {
-          "x": 180,
-          "y": 620,
-          "width": 60,
-          "height": 20
-         }
+  "$comment": "Authoritative cases for the text projections an agent reads - `ui compact`, `ui tree`, `ui tree --semantics`, `ui regions` - read by BOTH the Kotlin (reticle-core RenderContractTest) and Swift (ReticleProtocol RenderContractTests) suites, so the Android helper and the iOS host cannot format one snapshot two ways. Each case is a snapshot plus, per view, the exact lines `Render` must produce. The renderers used to live in the Kotlin helper and in ReticleProtocol independently, pinned only by hand-mirrored unit tests - which is how `compact` drifted before; the derivations were shared while the formatting was not. What the cases pin beyond the line format: lost window focus outranks the keyboard line (nothing is tappable, however tappable it looks); the keyboard header counts what it covers; window grouping is topmost-first with the item lines left byte-for-byte unindented; nodes outside any window are announced rather than dropped; the fold footer states what a token-cheap view left out; every boundary marker renders rather than going silent; and both projections list nodes in document order, not in map order, so several roots print the same on either platform.",
+  "cases": [
+    {
+      "name": "two stacked windows: items are grouped topmost-first, the header says which is on top, and a covered tap point names its occluder",
+      "expect": {
+        "compact": [
+          "window w2 confirm.dialog [60,900 960x400] [top]",
+          "#confirm.dialog window [60,900 960x400]",
+          "#confirm.ok button \"Confirm\" [700,1200 240x96] tappable",
+          "window w1 content [0,0 1080x2400] [behind the top window]",
+          "@content window [0,0 1080x2400] occluded-by:w2",
+          "#checkout.payButton button \"Pay now\" [24,1000 1032x120] tappable occluded-by:w2"
         ],
-        "color": "#FF1A73E8"
-       },
-       {
-        "source": "span",
-        "label": "Privacy Policy",
-        "target": "https://example.com/privacy",
-        "rects": [
-         {
-          "x": 250,
-          "y": 640,
-          "width": 110,
-          "height": 20
-         }
+        "tree": [
+          "r0 application",
+          "  @content window",
+          "    #checkout.payButton button \"Pay now\"",
+          "  #confirm.dialog window",
+          "    #confirm.ok button \"Confirm\""
+        ],
+        "semantics": [
+          "r0 application",
+          "  @content window",
+          "    #checkout.payButton button \"Pay now\"",
+          "  #confirm.dialog window",
+          "    #confirm.ok button \"Confirm\""
         ]
-       }
-      ],
-      "charGrid": {
-       "text": "I have read and agree to the Terms and the Privacy Policy",
-       "approximate": false,
-       "lines": [
-        {
-         "line": 0,
-         "start": 0,
-         "end": 30,
-         "top": 620,
-         "bottom": 640,
-         "xOffsets": [
-          24,
-          335
-         ]
+      },
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0
         },
-        {
-         "line": 1,
-         "start": 30,
-         "end": 57,
-         "top": 640,
-         "bottom": 660,
-         "xOffsets": [
-          24,
-          360
-         ]
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1",
+              "w2"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "children": [
+              "r1"
+            ],
+            "parentRef": "r0"
+          },
+          "r1": {
+            "ref": "r1",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Pay now",
+            "testId": "checkout.payButton",
+            "frame": {
+              "x": 24,
+              "y": 1000,
+              "width": 1032,
+              "height": 120
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "w2": {
+            "ref": "w2",
+            "kind": "window",
+            "typeName": "android.widget.PopupWindow",
+            "role": "window",
+            "testId": "confirm.dialog",
+            "frame": {
+              "x": 60,
+              "y": 900,
+              "width": 960,
+              "height": 400
+            },
+            "children": [
+              "r2"
+            ],
+            "parentRef": "r0"
+          },
+          "r2": {
+            "ref": "r2",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Confirm",
+            "testId": "confirm.ok",
+            "frame": {
+              "x": 700,
+              "y": 1200,
+              "width": 240,
+              "height": 96
+            },
+            "isInteractive": true,
+            "parentRef": "w2"
+          }
         }
-       ]
-      },
-      "parentRef": "w1"
-     },
-     "loose": {
-      "ref": "loose",
-      "kind": "view",
-      "typeName": "UIView",
-      "role": "view",
-      "contentDescription": "Debug overlay",
-      "testId": "debug.overlay",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 393,
-       "height": 40
-      },
-      "isInteractive": true,
-      "parentRef": "r0"
-     }
-    }
-   }
-  },
-  {
-   "name": "clipping counts code points, so emoji labels clip identically on both platforms",
-   "$comment": "45 emoji: compact clips at 40, tree at 30. UTF-16 take(40) would keep only 20 emoji on the Kotlin side while Swift's grapheme prefix kept 40 — and a UTF-16 clip can split a surrogate pair. Both sides clip by code point.",
-   "expect": {
-    "compact": [
-     "@content window [0,0 1080x2400]",
-     "#emoji.button button \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\" [0,100 400x90] tappable"
-    ],
-    "tree": [
-     "r0 application",
-     "  @content window",
-     "    #emoji.button button \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
-    ]
-   },
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 1080,
-      "height": 2400
-     },
-     "density": 3.0,
-     "fontScale": 1.0
+      }
     },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 1080,
-       "height": 2400
+    {
+      "name": "keyboard up: the header counts the items it covers, the covered item names the keyboard as its occluder, and travel left is reported per container",
+      "expect": {
+        "compact": [
+          "keyboard: visible [0,1400 1080x1000] \u2014 1 item(s) occluded (dismiss with `act hide-keyboard`)",
+          "@content window [0,0 1080x2400]",
+          "#login.user textField \"ruijin\" [48,600 984x140] tappable focused",
+          "#login.submit button \"Sign in\" [48,1800 984x140] tappable occluded-by:keyboard",
+          "#login.recent list \"Recent logins\" [0,800 1080x400] scroll:down"
+        ]
       },
-      "children": [
-       "b1"
-      ],
-      "parentRef": "r0"
-     },
-     "b1": {
-      "ref": "b1",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
-      "testId": "emoji.button",
-      "frame": {
-       "x": 0,
-       "y": 100,
-       "width": 400,
-       "height": 90
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0,
+          "keyboard": {
+            "visible": true,
+            "frame": {
+              "x": 0,
+              "y": 1400,
+              "width": 1080,
+              "height": 1000
+            }
+          }
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "children": [
+              "r1",
+              "r2",
+              "r3"
+            ],
+            "parentRef": "r0"
+          },
+          "r1": {
+            "ref": "r1",
+            "kind": "view",
+            "typeName": "android.widget.EditText",
+            "role": "textField",
+            "text": "ruijin",
+            "testId": "login.user",
+            "frame": {
+              "x": 48,
+              "y": 600,
+              "width": 984,
+              "height": 140
+            },
+            "isInteractive": true,
+            "isFocused": true,
+            "parentRef": "w1"
+          },
+          "r2": {
+            "ref": "r2",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Sign in",
+            "testId": "login.submit",
+            "frame": {
+              "x": 48,
+              "y": 1800,
+              "width": 984,
+              "height": 140
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "r3": {
+            "ref": "r3",
+            "kind": "view",
+            "typeName": "androidx.recyclerview.widget.RecyclerView",
+            "role": "list",
+            "contentDescription": "Recent logins",
+            "testId": "login.recent",
+            "frame": {
+              "x": 0,
+              "y": 800,
+              "width": 1080,
+              "height": 400
+            },
+            "scroll": {
+              "canScrollDown": true
+            },
+            "parentRef": "w1"
+          }
+        }
+      }
+    },
+    {
+      "name": "lost window focus outranks the keyboard line: another process holds input focus, so nothing here is tappable however tappable it looks",
+      "expect": {
+        "compact": [
+          "window: UNFOCUSED \u2014 another window has input focus (a system prompt is not part of this app's tree); taps will not reach these items",
+          "keyboard: hidden",
+          "@content window [0,0 1080x2400]",
+          "#perm.allow button \"Allow\" [48,1200 984x140] tappable"
+        ]
       },
-      "isInteractive": true,
-      "parentRef": "w1"
-     }
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0,
+          "windowFocused": false,
+          "keyboard": {
+            "visible": false
+          }
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "children": [
+              "r1"
+            ],
+            "parentRef": "r0"
+          },
+          "r1": {
+            "ref": "r1",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Allow",
+            "testId": "perm.allow",
+            "frame": {
+              "x": 48,
+              "y": 1200,
+              "width": 984,
+              "height": 140
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          }
+        }
+      }
+    },
+    {
+      "name": "folded anonymous layers are announced once at the end, so a token-cheap view never reads as the whole tree",
+      "expect": {
+        "compact": [
+          "@content window [0,0 1080x2400]",
+          "#agreement.row text \"Terms and Privacy\" [0,400 1080x200] tappable",
+          "(2 anonymous layer(s) folded into the node they wrap \u2014 all still in the snapshot, reachable with `ui node --ref`)"
+        ],
+        "tree": [
+          "r0 application",
+          "  @content window",
+          "    box1 container",
+          "      box2 container",
+          "        #agreement.row text \"Terms and Privacy\""
+        ]
+      },
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "children": [
+              "box1"
+            ],
+            "parentRef": "r0"
+          },
+          "box1": {
+            "ref": "box1",
+            "kind": "view",
+            "typeName": "android.widget.FrameLayout",
+            "role": "container",
+            "frame": {
+              "x": 0,
+              "y": 400,
+              "width": 1080,
+              "height": 200
+            },
+            "isInteractive": true,
+            "children": [
+              "box2"
+            ],
+            "parentRef": "w1"
+          },
+          "box2": {
+            "ref": "box2",
+            "kind": "view",
+            "typeName": "android.widget.LinearLayout",
+            "role": "container",
+            "frame": {
+              "x": 0,
+              "y": 400,
+              "width": 1080,
+              "height": 200
+            },
+            "isInteractive": true,
+            "children": [
+              "label"
+            ],
+            "parentRef": "box1"
+          },
+          "label": {
+            "ref": "label",
+            "kind": "view",
+            "typeName": "android.widget.TextView",
+            "role": "text",
+            "text": "Terms and Privacy",
+            "testId": "agreement.row",
+            "frame": {
+              "x": 0,
+              "y": 400,
+              "width": 1080,
+              "height": 200
+            },
+            "isInteractive": true,
+            "parentRef": "box2"
+          }
+        }
+      }
+    },
+    {
+      "name": "boundary markers render rather than going silent: dom:unavailable, dom:unsupported-kernel, pixels:unavailable, screencap:blank, and both wheel shapes, plus a wheel that publishes its own value/range/pitch",
+      "expect": {
+        "compact": [
+          "@content window [0,0 1080x2400] screencap:blank",
+          "#pay.web webView [0,200 1080x600] tappable dom:unavailable",
+          "#pay.x5 webView [0,800 1080x400] tappable dom:unsupported-kernel",
+          "#player.surface view [0,1200 1080x400] tappable pixels:unavailable",
+          "#wheel.hour picker [0,1700 360x300] tappable wheel:selection-only",
+          "@numberpicker_input textField \"11\" [60,1800 240x100]",
+          "#wheel.year view [400,1700 360x300] tappable wheel:opaque",
+          "#wheel.minute picker [760,1700 320x300] tappable wheel:opaque",
+          "#wheel.day picker [0,2050 360x300] tappable wheel:value=\"09\" 10/24 pitch=100px items",
+          "#wheel.month picker [400,2050 360x300] tappable wheel:value=\"Mar\" 3/12 pitch=100px~"
+        ]
+      },
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "custom": {
+              "screencapStatus": {
+                "_type": "text",
+                "value": "blank"
+              }
+            },
+            "children": [
+              "web",
+              "kernel",
+              "video",
+              "wheelA",
+              "wheelB",
+              "wheelC",
+              "wheelD",
+              "wheelE"
+            ],
+            "parentRef": "r0"
+          },
+          "web": {
+            "ref": "web",
+            "kind": "view",
+            "typeName": "android.webkit.WebView",
+            "role": "webView",
+            "testId": "pay.web",
+            "frame": {
+              "x": 0,
+              "y": 200,
+              "width": 1080,
+              "height": 600
+            },
+            "isInteractive": true,
+            "custom": {
+              "domStatus": {
+                "_type": "text",
+                "value": "unavailable"
+              }
+            },
+            "parentRef": "w1"
+          },
+          "kernel": {
+            "ref": "kernel",
+            "kind": "view",
+            "typeName": "com.tencent.smtt.sdk.WebView",
+            "role": "webView",
+            "testId": "pay.x5",
+            "frame": {
+              "x": 0,
+              "y": 800,
+              "width": 1080,
+              "height": 400
+            },
+            "isInteractive": true,
+            "custom": {
+              "domStatus": {
+                "_type": "text",
+                "value": "unsupportedKernel"
+              },
+              "domKernel": {
+                "_type": "text",
+                "value": "com.tencent.smtt.sdk.WebView"
+              }
+            },
+            "parentRef": "w1"
+          },
+          "video": {
+            "ref": "video",
+            "kind": "view",
+            "typeName": "android.view.SurfaceView",
+            "role": "view",
+            "testId": "player.surface",
+            "frame": {
+              "x": 0,
+              "y": 1200,
+              "width": 1080,
+              "height": 400
+            },
+            "isInteractive": true,
+            "custom": {
+              "pixelStatus": {
+                "_type": "text",
+                "value": "unavailable"
+              }
+            },
+            "parentRef": "w1"
+          },
+          "wheelA": {
+            "ref": "wheelA",
+            "kind": "view",
+            "typeName": "android.widget.NumberPicker",
+            "role": "picker",
+            "testId": "wheel.hour",
+            "frame": {
+              "x": 0,
+              "y": 1700,
+              "width": 360,
+              "height": 300
+            },
+            "isInteractive": true,
+            "suspectedWheel": true,
+            "children": [
+              "wheelAInput"
+            ],
+            "parentRef": "w1"
+          },
+          "wheelAInput": {
+            "ref": "wheelAInput",
+            "kind": "view",
+            "typeName": "android.widget.EditText",
+            "role": "textField",
+            "text": "11",
+            "resourceId": "numberpicker_input",
+            "frame": {
+              "x": 60,
+              "y": 1800,
+              "width": 240,
+              "height": 100
+            },
+            "parentRef": "wheelA"
+          },
+          "wheelB": {
+            "ref": "wheelB",
+            "kind": "view",
+            "typeName": "com.contrarywind.view.WheelView",
+            "role": "view",
+            "testId": "wheel.year",
+            "frame": {
+              "x": 400,
+              "y": 1700,
+              "width": 360,
+              "height": 300
+            },
+            "isInteractive": true,
+            "suspectedWheel": true,
+            "parentRef": "w1"
+          },
+          "wheelC": {
+            "$comment": "A NumberPicker whose selection child was cleared to whitespace: blank is NO text, so this must read opaque, not selection-only.",
+            "ref": "wheelC",
+            "kind": "view",
+            "typeName": "android.widget.NumberPicker",
+            "role": "picker",
+            "testId": "wheel.minute",
+            "frame": {
+              "x": 760,
+              "y": 1700,
+              "width": 320,
+              "height": 300
+            },
+            "isInteractive": true,
+            "suspectedWheel": true,
+            "children": [
+              "wheelCInput"
+            ],
+            "parentRef": "w1"
+          },
+          "wheelCInput": {
+            "ref": "wheelCInput",
+            "kind": "view",
+            "typeName": "android.widget.EditText",
+            "role": "textField",
+            "text": " ",
+            "frame": {
+              "x": 800,
+              "y": 1800,
+              "width": 240,
+              "height": 100
+            },
+            "parentRef": "wheelC"
+          },
+          "wheelD": {
+            "$comment": "A wheel that publishes what it knows \u2014 `getValue`/`getMinValue`/`getMaxValue`/`getDisplayedValues` are public API on android.widget.NumberPicker, and the row pitch is its own scroll quantum. Before this the caller read the value off a screenshot and measured the pitch in that image to calibrate a swipe.",
+            "ref": "wheelD",
+            "parentRef": "w1",
+            "kind": "view",
+            "typeName": "android.widget.NumberPicker",
+            "role": "picker",
+            "testId": "wheel.day",
+            "frame": {
+              "x": 0,
+              "y": 2050,
+              "width": 360,
+              "height": 300
+            },
+            "isInteractive": true,
+            "suspectedWheel": true,
+            "custom": {
+              "wheelValue": {
+                "_type": "text",
+                "value": "09"
+              },
+              "wheelIndex": {
+                "_type": "int",
+                "value": 9
+              },
+              "wheelMin": {
+                "_type": "int",
+                "value": 0
+              },
+              "wheelMax": {
+                "_type": "int",
+                "value": 23
+              },
+              "wheelItems": {
+                "_type": "text",
+                "value": "00,01,02,03,04,05,06,07,08,09"
+              },
+              "wheelItemsTruncated": {
+                "_type": "int",
+                "value": 14
+              },
+              "wheelRowHeightPx": {
+                "_type": "int",
+                "value": 100
+              }
+            }
+          },
+          "wheelE": {
+            "$comment": "Same shape, but the pitch could not be read (reflection blocked) so it is `height / 3` \u2014 marked with a trailing ~ rather than passed off as a measurement.",
+            "ref": "wheelE",
+            "parentRef": "w1",
+            "kind": "view",
+            "typeName": "android.widget.NumberPicker",
+            "role": "picker",
+            "testId": "wheel.month",
+            "frame": {
+              "x": 400,
+              "y": 2050,
+              "width": 360,
+              "height": 300
+            },
+            "isInteractive": true,
+            "suspectedWheel": true,
+            "custom": {
+              "wheelValue": {
+                "_type": "text",
+                "value": "Mar"
+              },
+              "wheelIndex": {
+                "_type": "int",
+                "value": 2
+              },
+              "wheelMin": {
+                "_type": "int",
+                "value": 0
+              },
+              "wheelMax": {
+                "_type": "int",
+                "value": 11
+              },
+              "wheelRowHeightPx": {
+                "_type": "int",
+                "value": 100
+              },
+              "wheelRowHeightEstimated": {
+                "_type": "bool",
+                "value": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ios: accessibility-derived elements, a multi-region text with its char grid, and a node captured outside any window",
+      "expect": {
+        "compact": [
+          "#login.submit button \"Sign in\" [24,700 345x50] tappable",
+          "#agreement.text text \"I have read and agree to the Terms and t\" [24,620 345x40] tappable",
+          "#debug.overlay view \"Debug overlay\" [0,0 393x40] tappable"
+        ],
+        "tree": [
+          "r0 application",
+          "  w1 window",
+          "    #login.submit button \"Sign in\"",
+          "    #agreement.text text \"I have read and agree to the T\"",
+          "  #debug.overlay view \"Debug overlay\""
+        ],
+        "semantics": [
+          "r0 application",
+          "  #login.submit button \"Sign in\"",
+          "  #agreement.text text \"I have read and agree to the T\"",
+          "  #debug.overlay view \"Debug overlay\""
+        ],
+        "regions": [
+          "#agreement.text text \"I have read and agree to the Terms and t\"",
+          "    ! suspectedMultiRegion: self-drawn control",
+          "    charGrid: 2 line(s)",
+          "    - span \"Terms\" -> https://example.com/terms color=#FF1A73E8 [180,620 60x20]",
+          "    - span \"Privacy Policy\" -> https://example.com/privacy [250,640 110x20]"
+        ]
+      },
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "ios",
+        "screen": {
+          "size": {
+            "width": 393,
+            "height": 852
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "UIApplication",
+            "role": "application",
+            "children": [
+              "w1",
+              "loose"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "UIWindow",
+            "role": "window",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 393,
+              "height": 852
+            },
+            "children": [
+              "a1",
+              "a2"
+            ],
+            "parentRef": "r0"
+          },
+          "a1": {
+            "ref": "a1",
+            "kind": "axElement",
+            "typeName": "SwiftUI.AccessibilityNode",
+            "role": "button",
+            "contentDescription": "Sign in",
+            "testId": "login.submit",
+            "frame": {
+              "x": 24,
+              "y": 700,
+              "width": 345,
+              "height": 50
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "a2": {
+            "ref": "a2",
+            "kind": "axElement",
+            "typeName": "SwiftUI.AccessibilityNode",
+            "role": "text",
+            "text": "I have read and agree to the Terms and the Privacy Policy",
+            "testId": "agreement.text",
+            "frame": {
+              "x": 24,
+              "y": 620,
+              "width": 345,
+              "height": 40
+            },
+            "isInteractive": true,
+            "suspectedMultiRegion": true,
+            "regions": [
+              {
+                "source": "span",
+                "label": "Terms",
+                "target": "https://example.com/terms",
+                "rects": [
+                  {
+                    "x": 180,
+                    "y": 620,
+                    "width": 60,
+                    "height": 20
+                  }
+                ],
+                "color": "#FF1A73E8"
+              },
+              {
+                "source": "span",
+                "label": "Privacy Policy",
+                "target": "https://example.com/privacy",
+                "rects": [
+                  {
+                    "x": 250,
+                    "y": 640,
+                    "width": 110,
+                    "height": 20
+                  }
+                ]
+              }
+            ],
+            "charGrid": {
+              "text": "I have read and agree to the Terms and the Privacy Policy",
+              "approximate": false,
+              "lines": [
+                {
+                  "line": 0,
+                  "start": 0,
+                  "end": 30,
+                  "top": 620,
+                  "bottom": 640,
+                  "xOffsets": [
+                    24,
+                    335
+                  ]
+                },
+                {
+                  "line": 1,
+                  "start": 30,
+                  "end": 57,
+                  "top": 640,
+                  "bottom": 660,
+                  "xOffsets": [
+                    24,
+                    360
+                  ]
+                }
+              ]
+            },
+            "parentRef": "w1"
+          },
+          "loose": {
+            "ref": "loose",
+            "kind": "view",
+            "typeName": "UIView",
+            "role": "view",
+            "contentDescription": "Debug overlay",
+            "testId": "debug.overlay",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 393,
+              "height": 40
+            },
+            "isInteractive": true,
+            "parentRef": "r0"
+          }
+        }
+      }
+    },
+    {
+      "name": "clipping counts code points, so emoji labels clip identically on both platforms",
+      "$comment": "45 emoji: compact clips at 40, tree at 30. UTF-16 take(40) would keep only 20 emoji on the Kotlin side while Swift's grapheme prefix kept 40 \u2014 and a UTF-16 clip can split a surrogate pair. Both sides clip by code point.",
+      "expect": {
+        "compact": [
+          "@content window [0,0 1080x2400]",
+          "#emoji.button button \"\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\" [0,100 400x90] tappable"
+        ],
+        "tree": [
+          "r0 application",
+          "  @content window",
+          "    #emoji.button button \"\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\""
+        ]
+      },
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 1080,
+            "height": 2400
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2400
+            },
+            "children": [
+              "b1"
+            ],
+            "parentRef": "r0"
+          },
+          "b1": {
+            "ref": "b1",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+            "testId": "emoji.button",
+            "frame": {
+              "x": 0,
+              "y": 100,
+              "width": 400,
+              "height": 90
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }
