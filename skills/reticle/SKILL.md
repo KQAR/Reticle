@@ -284,7 +284,11 @@ now?" check — no 300-node report to grep:
 reticle ui node    --live --package <pkg> --resource-id rata   # one node, live
 reticle ui compact --live --package <pkg>                      # whole screen, live
 reticle ui compact --live --package <pkg> --window top          # only the top window
+reticle ui compact --package <pkg>                             # same thing: no path means live
 ```
+
+`--package <pkg>` with no snapshot path already implies `--live`, so the flag is
+optional; it is kept for scripts that pass it. A path, when given, always wins.
 
 A WebView target, or a question about computed style / box geometry rather than
 which node to tap: `references/webview-dom-and-style.md` (`ui style`, `ui node
