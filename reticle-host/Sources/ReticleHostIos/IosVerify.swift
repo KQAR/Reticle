@@ -64,7 +64,7 @@ extension IosHelperClient {
     /// selector resolves nothing. A snapshot fetch failure reads as not-found —
     /// verify never fails the action it wraps.
     func captureVerifyState(_ pkg: String, _ selector: TargetSelector) -> VerifyState {
-        guard let snapshot = try? fetchSnapshot(pkg), let node = Render.findNode(snapshot, selector) else {
+        guard let snapshot = try? fetchSnapshot(pkg), let node = try? Render.findNode(snapshot, selector) else {
             return VerifyState(found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil, custom: [:])
         }
         let frame = node.frame.map(\.intDescription)

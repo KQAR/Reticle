@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **iOS `ui node --css` refuses unsupported syntax instead of reporting a miss.** The
+  matcher throws for constructs it does not implement, because "not understood" and
+  "no such element" lead to opposite next actions — but the iOS node lookup wrapped
+  each per-node match in `try?`, so the refusal was swallowed and `--css 'div:hover'`
+  answered `no node matched selector css=div:hover` while the Android helper named the
+  pseudo-class. The lookup now goes through `CssSelectorMatch.find`, which also puts
+  document order in one place. A genuine miss is still a miss. Found by the iOS e2e
+  suite the first time it ran the pseudo-class assertion added with the
+  `:nth-of-type(n)` work.
+
 - **`--css` implements `:nth-of-type(n)` / `:nth-child(n)`, the pseudo-class family
   its own captured paths are built out of.** The snapshot records
   `domCssSelector` as a full path of `:nth-of-type()` segments, and the matcher
