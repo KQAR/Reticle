@@ -299,7 +299,7 @@ public enum Render {
         // ...and the placeholder, which for an empty input is the ONLY text on
         // screen. See the Kotlin twin.
         func namesOf(_ node: Node) -> [String] {
-            [node.text, node.contentDescription, node.domPlaceholder()].compactMap { $0 }
+            [node.text, node.contentDescription, node.placeholder()].compactMap { $0 }
         }
         func matchesIn(_ candidates: [Node]) -> [Node] {
             let exact = candidates.filter { node in

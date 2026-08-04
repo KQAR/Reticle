@@ -199,6 +199,17 @@ struct SnapshotCapture {
         if SnapshotCapture.isKeyboardHostWindow(view) {
             custom["pixelStatus"] = .text("unavailable")
         }
+        // A field's prompt, the native twin of `domPlaceholder` — same
+        // `placeholder:` marker in the projection. Without it a field reading
+        // `text="880 977 267"` is ambiguous: a prefilled value, or a prompt showing
+        // through an empty field? Measured on a real form, only a screenshot could
+        // tell the two apart. (UIKit has no `maxLength` to read — the Android twin
+        // reads a `LengthFilter`, and iOS enforces limits in a delegate instead.)
+        if let field = view as? UITextField,
+           let prompt = field.placeholder ?? field.attributedPlaceholder?.string,
+           !prompt.isEmpty {
+            custom["nativeHint"] = .text(prompt)
+        }
 
         // Sub-node interaction evidence (link runs, virtual a11y elements,
         // re-colored runs, text markers, char grid).

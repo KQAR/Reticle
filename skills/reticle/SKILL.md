@@ -500,7 +500,10 @@ four things a form screen otherwise made you look at pixels for:
   framework built out of divs;
 - ` placeholder:"…"` — what an input is *asking* for, kept apart from the quoted
   label, which is what it *holds*. The two used to be folded together, so an empty
-  field and a filled one printed identically;
+  field and a filled one printed identically. Read from a DOM `placeholder`, an
+  Android `EditText.hint`, or a `UITextField.placeholder` — the same marker for all
+  three, since the question ("value, or prompt?") is the same. It is also a
+  `--label` handle, which for an empty field is often the only one;
 - ` invalid` / ` invalid:"…"` — the field declares itself invalid
   (`aria-invalid`), with the message its `aria-describedby` names. Without it a
   validation error is a sibling node belonging to nothing;
@@ -547,7 +550,10 @@ and the field's actual `text=`:
 - `reformatted` — everything you sent is there plus the app's own formatting
   (`10000` → `10,000`). Not a loss;
 - `partial` — a proper prefix landed; `landedChars=N` says how much;
-- `none` — the field did not change at all;
+- `none` — the field did not change at all. When the field itself explains that,
+  the reason comes with it: `textLandedReason=at-maxLength(11)` means the field was
+  already full, so nothing could land and a retry cannot change it (clear it first,
+  or `type --clear`);
 - `changed` — the text changed into something not derivable from what was sent
   (uppercasing, masking, a `maxLength` rewrite). The app transforming its own
   input is not a defect and Reticle does not call it one — read `text=` and judge;
