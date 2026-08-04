@@ -333,6 +333,26 @@ static int ascii_to_keycode(char c, int *shift) {
     }
 }
 
+// Press Delete (backspace) `count` times. Keyboard usage 0x2A on the keyboard
+// page; the ASCII table `type` uses has no entry for it, which is why emptying a
+// field needed its own entry point.
+int reticle_sim_hid_delete(const char *udid, int count, char *err, size_t errlen) {
+    @autoreleasepool {
+        NSString *reason = nil;
+        id client = hid_client(@(udid), &reason);
+        if (!client) { set_err(err, errlen, reason ?: @"HID client unavailable"); return 2; }
+        if (!gHidArbitrary) { set_err(err, errlen, @"IndigoHIDMessageForHIDArbitrary not found"); return 10; }
+        const uint32_t kbPage = 0x07;    // Keyboard/Keypad usage page.
+        const uint32_t deleteKey = 0x2A; // Keyboard DELETE (Backspace).
+        for (int i = 0; i < count; i++) {
+            void *d = gHidArbitrary(kTouchTarget, kbPage, deleteKey, 1); if (d) hid_send(client, d);
+            void *u = gHidArbitrary(kTouchTarget, kbPage, deleteKey, 2); if (u) hid_send(client, u);
+            usleep(15 * 1000);
+        }
+        return 0;
+    }
+}
+
 // Press Cmd+V to paste the (agent-staged) clipboard into the focused field —
 // the iOS analogue of Android's KEYCODE_PASTE, used for text the HID keyboard
 // can't emit (non-ASCII). Left GUI (Command) is usage 0xE3, 'v' is keycode 25.

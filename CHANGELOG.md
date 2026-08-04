@@ -57,6 +57,19 @@
   still read top to bottom; the selection changed, not the layout. On the real
   capture that prompted this, a 40-item cap keeps 36 interactive items where the
   old rule kept 8.
+- **`type --clear` empties the field, or refuses to type.** The flag was accepted
+  and did nothing at all — the worst shape a flag can have. Measured on a device:
+  `type --clear --text "test1"` into a field already holding `test1` left
+  `test1test1`, and into a field already at its `maxLength` it reported
+  `textLanded=none` with no hint that the clear was the part that failed. Both read
+  as a clean write to the caller. `--clear` now sends one Delete per character the
+  field ACTUALLY holds (deleting what is there, not a fixed count, is the
+  difference between clearing the field and eating the line above it), reads the
+  field back, and reports `cleared=already-empty` / `cleared=emptied(6ch)` — or
+  **refuses to type** when the field is still not empty, because appending under a
+  result that looks like a replacement is the defect. Both ports: the iOS HID
+  keyboard had no Delete in its ASCII table, so it gained one. Asserted end to end
+  in the login section of both e2e suites.
 
 - **A coordinate tap now says why it had to be one, and the screen can be asked how
   much of it is unreachable.** `act tap --point` was the one degraded path that

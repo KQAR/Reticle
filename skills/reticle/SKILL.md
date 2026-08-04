@@ -542,6 +542,15 @@ it never retries silently, and it never retries a `changed` (that would be
 fighting the app). `--type-delay <ms>` sends one character at a time with that
 gap if you would rather avoid the burst than recover from it.
 
+`type --clear` empties the field first — one Delete per character it actually
+holds — and reports what that did: `cleared=already-empty`, `cleared=emptied(6ch)`,
+or a refusal. It **refuses to type** when the clear did not take (a field longer
+than 64 characters, an unreadable field, one whose content survives the deletes),
+because typing then appends to what is still there while the result reads like a
+clean write. Without `--clear`, `type` inserts at the caret: on a field that
+already holds a value that is an append, and on one already at its `maxLength` it
+is a no-op the read-back reports as `textLanded=none`.
+
 **Every `act` reports a toast the action raised (Android).** An app rejecting a
 submit usually says so with `Toast.makeText`, and on Android 11+ that toast is
 drawn by the SYSTEM in a window of its own — it is in no tree, in no in-process

@@ -775,6 +775,20 @@ TYPE_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID
 echo "$TYPE_OUT"
 echo "$TYPE_OUT" | grep -q "text=123456" \
   || { echo "FAIL: act type did not land the code in the field, got: $TYPE_OUT"; exit 1; }
+# `--clear` empties the field first and proves it did — the Android suite's twin,
+# for the same measured defect (the flag was accepted and ignored, so a second
+# type appended to the first while the result read like a clean write). The HID
+# path has no Delete in its ASCII table, which is why this needed its own key.
+CLEAR_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --test-id login.codeField --text "9999" --clear)"
+echo "$CLEAR_OUT"
+echo "$CLEAR_OUT" | grep -q "cleared=emptied(6ch)" \
+  || { echo "FAIL: --clear must report emptying the six characters that were there"; exit 1; }
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-cleared"
+"$HOST" --target ios ui compact "$TMP/login-cleared/snapshot.json" | grep "login.codeField" | grep -q "9999" \
+  || { echo "FAIL: the field must hold exactly what was typed after --clear"; exit 1; }
+# Put the code back for the submit assertions below.
+"$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --test-id login.codeField --text "123456" --clear >/dev/null
+
 # The freed button must now actually work: activate it with --verify watching the
 # status node, and confirm iOS reports the login-status text flip as a diff (the
 # iOS analogue of the Android helper's --verify; iOS previously dropped it).

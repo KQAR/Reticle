@@ -33,6 +33,11 @@ int reticle_sim_hid_swipe(const char *udid, double x1, double y1, double x2, dou
 // emoji, accented Latin) goes through the agent clipboard + paste path.
 int reticle_sim_hid_type(const char *udid, const char *asciiText, char *err, size_t errlen);
 
+/// Press Delete (backspace) `count` times. `type` cannot express it: the HID
+/// keyboard path only maps printable ASCII, so a caller that needs to empty a
+/// field had no way to say so.
+int reticle_sim_hid_delete(const char *udid, int count, char *err, size_t errlen);
+
 // Press Cmd+V to paste the focused field's contents from the clipboard (which
 // the in-process agent staged via POST /clipboard). The iOS analogue of
 // Android's KEYCODE_PASTE, for text the HID keyboard can't emit.
