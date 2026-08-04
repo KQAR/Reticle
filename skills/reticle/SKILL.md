@@ -337,12 +337,25 @@ design). Deal with the prompt first; don't retry taps.
 against each node's captured `domCssSelector` — the whole ancestor path — so only a
 verbatim copy of that path resolved and every short form here missed on a real
 page. Supported now: type, `#id`, `.class` and their compounds, with descendant,
-child (`>`) and pierce (`>>>`) combinators; a full captured path still matches
-verbatim too. Anything else — attribute selectors, pseudo-classes (including the
-`:nth-of-type` inside captured paths), `*`, sibling combinators, selector lists —
-is **refused by name** rather than answered as a miss, because "not understood" and
-"no such element" lead to opposite next actions. A miss lists only candidates that
-share part of the query, by their shortest handle.
+child (`>`) and pierce (`>>>`) combinators, plus `:nth-of-type(n)` /
+`:nth-child(n)`; a full captured path still matches verbatim too. Anything else —
+attribute selectors, every other pseudo-class, `*`, sibling combinators, selector
+lists — is **refused by name** rather than answered as a miss, because "not
+understood" and "no such element" lead to opposite next actions. A miss lists only
+candidates that share part of the query, by their shortest handle.
+
+`:nth-of-type(n)` is the family the captured paths are built out of, so a path can
+be **shortened or re-aimed by hand** instead of pasted whole:
+
+```bash
+reticle ui node --live --package <pkg> --css 'div.row:nth-of-type(2) input'   # the 2nd row's input
+reticle act type --package <pkg> --css 'div.row:nth-of-type(3) input' --text "…"
+```
+
+The index is the position the **page** reported, not a count of captured siblings:
+the DOM walk drops `display:none` elements, so counting would answer
+`:nth-of-type(3)` with the third *visible* sibling. Only a plain 1-based index is
+implemented — `:nth-of-type(2n+1)` and keyword arguments are refused by name.
 
 `--label` is for controls the framework builds without ids: `Spinner` dropdown rows
 and `PopupMenu` items share one resource id, and a `UIAlertAction` can't take one at

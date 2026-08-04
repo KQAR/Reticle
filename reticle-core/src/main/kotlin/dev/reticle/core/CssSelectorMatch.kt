@@ -26,10 +26,18 @@ package dev.reticle.core
  * - the ` >>> ` piercing chain, which is a descendant relationship in this tree:
  *   an open shadow root's children and a same-origin iframe's body are captured
  *   as children of the host node.
+ * - `:nth-of-type(n)` and `:nth-child(n)`, the one pseudo-class family the
+ *   captured paths themselves are built out of. Refusing it meant the only
+ *   selector the tool EMITS was one the matcher accepted solely as a verbatim
+ *   whole-string special case: trimming the path or aiming at the 2nd sibling
+ *   instead of the 1st was rejected, so driving a form meant pasting a ~400-char
+ *   path per interaction. The index is compared against the position the PAGE
+ *   reported (`domNthOfType` / `domNthChild`), never against a count of captured
+ *   siblings — the walk drops hidden elements, so counting here would answer
+ *   `:nth-of-type(3)` with the third VISIBLE sibling and tap the wrong control.
  *
- * Refused, by name: attribute selectors, pseudo-classes and pseudo-elements
- * (including the `:nth-of-type` that appears in captured paths), the universal
- * selector, sibling combinators, and selector lists.
+ * Refused, by name: attribute selectors, every other pseudo-class and every
+ * pseudo-element, the universal selector, sibling combinators, and selector lists.
  *
  * The captured-path equality remains as a first attempt, so a path copied
  * verbatim out of a snapshot — colons and all — keeps working.
@@ -59,7 +67,8 @@ object CssSelectorMatch {
         // Parse once, up front: an unsupported construct must surface as a refusal
         // rather than as an empty result, and doing it here means every call site
         // gets that behaviour without having to remember to ask for it.
-        parse(selector)
+        val steps = parse(selector)
+        assertPositionsAreCaptured(snapshot, selector, steps)
         return snapshot.firstNode {
             it.kind == NodeKind.domNode && matches(snapshot, it, selector)
         }
@@ -70,6 +79,8 @@ object CssSelectorMatch {
         val tag: String? = null,
         val id: String? = null,
         val classes: List<String> = emptyList(),
+        val nthOfType: Int? = null,
+        val nthChild: Int? = null,
     ) {
         fun matches(node: Node): Boolean {
             tag?.let { if (!node.domTag().equals(it, ignoreCase = true)) return false }
@@ -78,8 +89,15 @@ object CssSelectorMatch {
                 val own = node.domClasses()
                 if (!own.containsAll(classes)) return false
             }
+            // A node with no captured position cannot satisfy a positional query.
+            // Reported as a refusal rather than a miss when NOTHING on the screen
+            // carries one — see [assertPositionsAreCaptured].
+            nthOfType?.let { if (node.domNthOfType() != it) return false }
+            nthChild?.let { if (node.domNthChild() != it) return false }
             return true
         }
+
+        val isPositional: Boolean get() = nthOfType != null || nthChild != null
     }
 
     /** How a compound relates to the one before it. */
@@ -138,16 +156,40 @@ object CssSelectorMatch {
         // is an ordinary ancestor relationship — pierced content is captured as
         // children of the host — so it reduces to a descendant combinator.
         val normalized = trimmed.replace(" >>> ", " ")
-        rejectUnsupported(selector, normalized)
-        val tokens = tokenize(normalized)
+        // Pseudo-classes first, and by name: `:nth-of-type(2)` is supported while
+        // `:hover` is not, so a blanket "contains a colon" refusal cannot tell them
+        // apart. The char-level checks below then run on the selector with the
+        // pseudo parts removed, so their parens and digits trip nothing.
+        validatePseudos(selector, normalized)
+        rejectUnsupported(selector, normalized.replace(PSEUDO, ""))
+        val tokens = tokenize(normalized, selector)
         if (tokens.isEmpty()) throw UnsupportedCssSelector(selector, "no compound selectors")
         return tokens
+    }
+
+    /**
+     * A positional query against a capture that has no positions in it is an
+     * agent/host version skew, not "no such element" — say so instead of missing.
+     * Only fires when NOTHING on the screen carries a position: one node without
+     * one, on a screen where others have them, genuinely is not at that index.
+     */
+    private fun assertPositionsAreCaptured(snapshot: Snapshot, selector: String, steps: List<Step>) {
+        if (steps.none { it.compound.isPositional }) return
+        val domNodes = snapshot.nodes.values.filter { it.kind == NodeKind.domNode }
+        if (domNodes.isEmpty()) return
+        if (domNodes.any { it.domNthOfType() != null || it.domNthChild() != null }) return
+        throw UnsupportedCssSelector(
+            selector,
+            "a positional pseudo-class this capture cannot answer: none of its " +
+                "${domNodes.size} DOM node(s) carry a sibling position, which means the app's " +
+                "Reticle agent predates it — re-capture with a matching agent, or drop the " +
+                "`:nth-…()` part",
+        )
     }
 
     private fun rejectUnsupported(original: String, normalized: String) {
         val constructs = listOf(
             '[' to "attribute selectors",
-            ':' to "pseudo-classes and pseudo-elements",
             '*' to "the universal selector",
             '+' to "the adjacent-sibling combinator",
             '~' to "the general-sibling combinator",
@@ -158,7 +200,34 @@ object CssSelectorMatch {
         }
     }
 
-    private fun tokenize(normalized: String): List<Step> {
+    /** Every `:pseudo` / `:pseudo(arg)` in a selector. */
+    private val PSEUDO = Regex(":([A-Za-z-]+)(?:\\(([^)]*)\\))?")
+
+    /**
+     * Accept the two positional pseudo-classes the captured paths are built out of,
+     * and refuse every other one BY NAME. `:nth-of-type(2n+1)` is refused as its own
+     * thing rather than as "a sibling combinator", which is what the old character
+     * scan would have called the `+`.
+     */
+    private fun validatePseudos(original: String, normalized: String) {
+        for (match in PSEUDO.findAll(normalized)) {
+            val name = match.groupValues[1].lowercase()
+            val arg = match.groupValues[2]
+            if (name != "nth-of-type" && name != "nth-child") {
+                throw UnsupportedCssSelector(original, "the pseudo-class or pseudo-element ':$name'")
+            }
+            val index = arg.trim().toIntOrNull()
+            if (index == null || index < 1) {
+                throw UnsupportedCssSelector(
+                    original,
+                    "':$name($arg)' rather than a plain 1-based index — an an+b expression or a " +
+                        "keyword argument is not implemented, only `:$name(2)`",
+                )
+            }
+        }
+    }
+
+    private fun tokenize(normalized: String, original: String): List<Step> {
         val steps = ArrayList<Step>()
         var combinator = Combinator.DESCENDANT
         // Split on whitespace, treating a bare `>` as the combinator for the next
@@ -169,13 +238,26 @@ object CssSelectorMatch {
                 combinator = Combinator.CHILD
                 continue
             }
-            steps.add(Step(combinator, compound(token)))
+            steps.add(Step(combinator, compound(token, original)))
             combinator = Combinator.DESCENDANT
         }
         return steps
     }
 
-    private fun compound(token: String): Compound {
+    private fun compound(token: String, original: String): Compound {
+        var nthOfType: Int? = null
+        var nthChild: Int? = null
+        // The pseudo parts were validated in `validatePseudos`; pull their indices out
+        // and parse what is left as the plain tag/id/class compound it now is.
+        val bare = PSEUDO.replace(token) { match ->
+            val index = match.groupValues[2].trim().toIntOrNull()
+            when (match.groupValues[1].lowercase()) {
+                "nth-of-type" -> nthOfType = index
+                "nth-child" -> nthChild = index
+                else -> throw UnsupportedCssSelector(original, "the pseudo-class ':${match.groupValues[1]}'")
+            }
+            ""
+        }
         var tag: String? = null
         var id: String? = null
         val classes = ArrayList<String>()
@@ -191,8 +273,8 @@ object CssSelectorMatch {
             }
             name.clear()
         }
-        while (index < token.length) {
-            val ch = token[index]
+        while (index < bare.length) {
+            val ch = bare[index]
             if (ch == '#' || ch == '.') {
                 flush()
                 kind = ch
@@ -202,7 +284,7 @@ object CssSelectorMatch {
             index++
         }
         flush()
-        return Compound(tag, id, classes)
+        return Compound(tag, id, classes, nthOfType, nthChild)
     }
 }
 
@@ -216,5 +298,6 @@ object CssSelectorMatch {
 class UnsupportedCssSelector(val selector: String, val construct: String) : IllegalArgumentException(
     "css selector '$selector' uses $construct, which Reticle's matcher does not implement. " +
         "Supported: type, #id, .class and their compounds, with descendant / child (>) / pierce (>>>) " +
-        "combinators. A full path copied verbatim out of a snapshot also still matches exactly.",
+        "combinators, plus :nth-of-type(n) / :nth-child(n). A full path copied verbatim out of a " +
+        "snapshot also still matches exactly.",
 )

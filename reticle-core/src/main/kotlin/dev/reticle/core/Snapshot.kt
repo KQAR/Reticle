@@ -419,6 +419,21 @@ data class Node(
     fun domPlaceholder(): String? = (custom["domPlaceholder"] as? MetadataValue.Text)?.value
 
     /**
+     * This element's 1-based position among its siblings, as the PAGE counted it:
+     * [domNthOfType] among siblings with the same tag, [domNthChild] among all
+     * element children.
+     *
+     * Read in the page rather than derived from the captured tree, because the walk
+     * drops `display:none` / `visibility:hidden` elements — counting captured
+     * children would answer `:nth-of-type(3)` with the third VISIBLE sibling, which
+     * looks plausible and taps the wrong control.
+     */
+    fun domNthOfType(): Int? = (custom["domNthOfType"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /** See [domNthOfType]. */
+    fun domNthChild(): Int? = (custom["domNthChild"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /**
      * The message this field declares itself invalid with: `""` when it sets
      * `aria-invalid` and points at nothing, the `aria-describedby` text when it
      * does, and null when the field does not declare itself invalid at all.

@@ -964,6 +964,36 @@ sleep 1
 R ui compact --live --package "$PKG" --window top | grep -q 'combobox .*expanded' \
   || { echo "FAIL: the css-resolved tap did not land on the trigger"; exit 1; }
 
+# `:nth-of-type(n)` — the one pseudo-class family the captured paths are BUILT out
+# of, and until now the matcher refused it. That made the only selector the tool
+# emits one it accepted solely as a verbatim whole string: trimming the path or
+# aiming at the next sibling was rejected, so driving this form by CSS meant pasting
+# a ~400-char path per interaction. The index is the position the PAGE reported, not
+# a count of captured siblings — the walk drops hidden elements, so counting would
+# answer `(2)` with the second VISIBLE sibling and tap the wrong control.
+NTH_FIRST="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(1) input' 2>&1)"
+echo "$NTH_FIRST" | grep -A2 '"domPlaceholder"' | grep -q "First name" \
+  || { echo "FAIL: :nth-of-type(1) must resolve the first row's input; got: $NTH_FIRST"; exit 1; }
+NTH_SECOND="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(2) input' 2>&1)"
+echo "$NTH_SECOND" | grep -A2 '"domPlaceholder"' | grep -q "Last name" \
+  || { echo "FAIL: the index must actually select — (2) is the second row; got: $NTH_SECOND"; exit 1; }
+# The position is the PAGE's, carried per node, not a count of captured siblings.
+echo "$NTH_SECOND" | grep -q '"domNthOfType"' \
+  || { echo "FAIL: a captured DOM node must carry its page sibling position"; exit 1; }
+# And it drives input, not just lookup: this is the loop the flow needed.
+R act type --package "$PKG" --css 'div:nth-of-type(2) input' --text "Nth" >/dev/null
+R ui compact --live --package "$PKG" | grep -q '"Nth" .*placeholder:"Last name"' \
+  || { echo "FAIL: an nth-of-type selector must drive `act`, not only `ui node`"; exit 1; }
+# A pseudo-class that is NOT positional is still refused, by its own name.
+HOVER="$(R ui node --live --package "$PKG" --css 'input:hover' 2>&1 || true)"
+echo "$HOVER" | grep -q "':hover'" \
+  || { echo "FAIL: an unsupported pseudo-class must be refused by name; got: $HOVER"; exit 1; }
+# So is an an+b expression — refused as itself rather than as "a sibling combinator",
+# which is what a bare character scan would have called the `+`.
+ANB="$(R ui node --live --package "$PKG" --css 'input:nth-of-type(2n+1)' 2>&1 || true)"
+echo "$ANB" | grep -q "plain 1-based index" \
+  || { echo "FAIL: an an+b nth expression must be refused as itself; got: $ANB"; exit 1; }
+
 # A construct the matcher does not implement is REFUSED by name, never answered as
 # a miss: "not understood" and "no such element" lead to opposite next actions.
 UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>&1 || true)"
