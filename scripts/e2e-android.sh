@@ -849,6 +849,15 @@ echo "$COVERED" | grep -q 'nested.backdropButton .*occluded-by:' \
 echo "$COVERED" | grep -q 'nested.overlayButton .*occluded-by:' \
   && { echo "FAIL: the covering page's own control must NOT read as occluded"; exit 1; }
 
+# The false-positive guard for the same marker, one layer up: a full-screen
+# container that draws NOTHING at a point does not occlude it. An in-app debug
+# overlay is exactly that shape, and treating it as a cover marked every item on
+# the screen occluded while every one of them was tappable. A web view is exempt —
+# the native view eats the touch wherever it lies — which is why the covered page
+# above still reports occlusion at every point.
+echo "$COVERED" | grep -q 'nested.overlayWebView .*occluded-by:' \
+  && { echo "FAIL: the top-most cover must not report itself occluded"; exit 1; }
+
 # And the inset variant is the false-positive guard: there the backdrop's top
 # controls are genuinely visible and must carry no marker, while the full-bleed
 # container whose own tap point IS under the cover still does.
@@ -1023,6 +1032,19 @@ echo "$COVERAGE" | grep -qE '^  iframe:cross-origin r[0-9]+ \[[0-9]+,[0-9]+ [0-9
 COVERAGE_PCT="$(echo "$COVERAGE" | sed -n 's/^addressable:.*(\([0-9]*\)%)$/\1/p')"
 [ -n "$COVERAGE_PCT" ] && [ "$COVERAGE_PCT" -lt 100 ] \
   || { echo "FAIL: a screen with an unreadable frame on it cannot be 100% addressable (got ${COVERAGE_PCT:-none}%)"; exit 1; }
+
+# A screen-sized container over the point is not cover — and not a gap either. It
+# gets its own line and stays OUT of the addressable ratio: measured on a screen
+# carrying a full-screen debug overlay, folding those cells into the gap total read
+# as 31% addressable while every control on the screen resolved and every tap
+# landed. A boundary the container declares (the cross-origin frame above) is still
+# a gap, which is what keeps the number meaningful.
+if echo "$COVERAGE" | grep -q "^container-only:"; then
+  echo "$COVERAGE" | grep -qE "^  container-only .* cell\(s\)$" \
+    && { echo "FAIL: container-only cells must not also be listed as an unreachable gap"; exit 1; }
+  echo "$COVERAGE" | grep -q "NOT counted as gaps" \
+    || { echo "FAIL: the footnote must say which buckets are not gaps"; exit 1; }
+fi
 
 # A coordinate INSIDE the cross-origin frame: the fallback is justified, and the
 # warning names the boundary rather than leaving the coordinate unexplained.
