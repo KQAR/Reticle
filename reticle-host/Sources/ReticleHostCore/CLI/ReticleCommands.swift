@@ -172,6 +172,8 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
+    // `type --clear`: empty the field first, with a read-back that proves it.
+    request.clear = args.flag("clear")
     // Every act watches the system Toast Queue: a text toast is in no window of
     // the app, so an action answered by one is otherwise indistinguishable from
     // one that hit nothing. `--no-toast-probe` opts out.

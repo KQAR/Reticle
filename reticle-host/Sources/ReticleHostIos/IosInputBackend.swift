@@ -50,6 +50,14 @@ struct IosInputBackend {
         if rc != 0 { throw InputError.hid(message(buf)) }
     }
 
+    /// Press Delete (backspace) `count` times — what `--clear` empties a field with.
+    func delete(times count: Int) throws {
+        guard count > 0 else { return }
+        var buf = errorBuffer()
+        let rc = reticle_sim_hid_delete(udid, Int32(count), &buf, buf.count)
+        if rc != 0 { throw InputError.hid(message(buf)) }
+    }
+
     /// Cmd+V — paste the clipboard (staged by the agent) into the focused field.
     func paste() throws {
         var buf = errorBuffer()
