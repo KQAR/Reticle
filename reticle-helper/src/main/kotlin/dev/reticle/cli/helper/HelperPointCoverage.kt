@@ -42,3 +42,30 @@ internal fun pointCoverage(
     }
     return ScreenCoverage.at(snapshot, x, y).wire()
 }
+
+/**
+ * Who receives the touch instead of the target, when something does.
+ *
+ * Runs for every tap, not only a coordinate one — the silent case measured on a
+ * device was a SELECTOR tap that resolved correctly and was then eaten by an
+ * overlay window. Reuses the trace's pre-action snapshot exactly like
+ * [pointCoverage], and stays quiet when the tree cannot be read: an obstruction
+ * check that could not run is not evidence of an obstruction, and the caller
+ * already gets `coverage:unavailable` from the coverage path when that matters.
+ */
+internal fun tapObstruction(
+    device: DeviceController,
+    pkg: String,
+    params: JsonObject,
+    before: Snapshot?,
+    x: Double,
+    y: Double,
+    targetRef: String?,
+): JsonObject? {
+    val snapshot = before ?: runCatching {
+        val client = runtimeClientFor(device, pkg, params)
+        assertHealthy(client, pkg)
+        client.snapshot()
+    }.getOrNull() ?: return null
+    return ScreenCoverage.obstruction(snapshot, x, y, targetRef)?.wire(x, y)
+}

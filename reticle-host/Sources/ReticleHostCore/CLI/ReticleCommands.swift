@@ -208,6 +208,10 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // agent measured pixels for something it could have named — losing the
     // re-resolution, settle confirm and stale-rect evidence a selector tap carries.
     if let warning = outcome.coverage?["warning"] as? String { print("warning: \(warning)") }
+    // Printed for a selector tap too: the touch was aimed correctly and still may
+    // not have landed, because the IME or a window above the target covers that
+    // point. `settled=1` on its own reads as "the app got it".
+    if let warning = outcome.obstruction?["warning"] as? String { print("warning: \(warning)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)

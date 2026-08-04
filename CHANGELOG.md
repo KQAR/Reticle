@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **A tap says when something else gets the touch.** `act tap` resolved a selector,
+  confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and
+  then the IME or a window above the target took the touch, which is byte-identical
+  in the result to a tap that worked. Measured while driving a hybrid flow on a
+  physical device: a button under the keyboard reported a clean tap and never
+  submitted, and a small floating window belonging to an in-app debug overlay
+  swallowed a form tap and opened its own screen. The fact was already computed on
+  the READ side — `ui compact` prints `occluded-by:keyboard` on that same button and
+  even names `act hide-keyboard` — so only the act path was silent. Every tap now
+  carries an obstruction verdict, printed as a warning: `occluded:keyboard` (the IME
+  covers this point — dismiss it first), `occluded:window` (a window above the
+  target's takes it, naming the window), or `occluded:node` (an interactive node
+  drawn over the target consumes it). A warning rather than a refusal, because a tap
+  through a scrim is sometimes exactly what the caller means. A screen-sized
+  interactive container is NOT an obstruction — an app that wraps its content in one
+  full-screen clickable frame would otherwise warn on every tap, and a warning that
+  always fires is one nobody reads; a real modal scrim is caught as a window
+  instead. Pinned for both ports by a fifth case in
+  `reticle-protocol/fixtures/screen-coverage.cases.json` (including the two quiet
+  cases) and exercised end to end by the keyboard-trap and dialog/overlay sections
+  of both e2e suites.
+
 - **A coordinate tap now says why it had to be one, and the screen can be asked how
   much of it is unreachable.** `act tap --point` was the one degraded path that
   reported nothing: measured over a hybrid onboarding flow, 23 of ~50 taps were

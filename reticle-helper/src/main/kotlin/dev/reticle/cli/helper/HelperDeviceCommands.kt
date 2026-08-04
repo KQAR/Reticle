@@ -194,12 +194,22 @@ internal object HelperDeviceCommands {
                 } else {
                     null
                 }
+                // Judged BEFORE the touch as well, and for EVERY tap rather than
+                // only a coordinate one: a selector tap is the case that was silent
+                // here. It resolves, confirms the rect has stopped moving, reports
+                // `settled=1` — and then hands the touch to whatever is drawn over
+                // that point. See [ScreenCoverage.obstruction].
+                val obstruction = tapObstruction(
+                    device, pkg, params, traceBefore?.snapshot,
+                    target!!.point.x, target!!.point.y, target!!.ref,
+                )
                 input.tap(x, y)
                 buildJsonObject {
                     put("gesture", "tap")
                     put("x", x)
                     put("y", y)
                     coverage?.let { put("coverage", it) }
+                    obstruction?.let { put("obstruction", it) }
                     put("source", target!!.source)
                     target!!.ref?.let { put("ref", it) }
                     // Honest flag, as in scroll-to: false means the target was still

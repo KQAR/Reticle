@@ -20,10 +20,23 @@ final class ScreenCoverageContractTests: XCTestCase {
         var warning: String
     }
 
+    /// One tap, and who the fixture says receives it. An entry with no `reason` is
+    /// the case worth pinning hardest: nothing is in the way, so the tap must stay
+    /// quiet.
+    private struct ExpectedObstruction: Decodable {
+        var x: Double
+        var y: Double
+        var targetRef: String?
+        var reason: String?
+        var ref: String?
+        var warning: String?
+    }
+
     private struct Case: Decodable {
         var name: String
         var report: [String]
         var points: [ExpectedPoint]
+        var obstructions: [ExpectedObstruction]?
         var snapshot: Snapshot
     }
 
@@ -73,11 +86,41 @@ final class ScreenCoverageContractTests: XCTestCase {
                     """)
                 }
             }
+            for expected in c.obstructions ?? [] {
+                let actual = ScreenCoverage.obstruction(
+                    c.snapshot, x: expected.x, y: expected.y, targetRef: expected.targetRef
+                )
+                let got = [
+                    actual?.reason ?? "-", actual?.ref ?? "-",
+                    actual?.warning(x: expected.x, y: expected.y) ?? "-",
+                ]
+                let want = [expected.reason ?? "-", expected.ref ?? "-", expected.warning ?? "-"]
+                if got != want {
+                    failures.append("""
+                      - \(c.name) [obstruction \(Rect.whole(expected.x)),\(Rect.whole(expected.y)) \
+                    target=\(expected.targetRef ?? "-")]
+                          expected: \(want)
+                          actual:   \(got)
+                    """)
+                }
+            }
         }
         XCTAssertTrue(
             failures.isEmpty,
             "coverage diverged from the fixture:\n" + failures.joined(separator: "\n")
         )
+    }
+
+    func testTheFixturePinsEveryWayATouchCanBeTakenFromItsTarget() throws {
+        let reasons = try loadCases().flatMap { ($0.obstructions ?? []).map(\.reason) }
+        for reason in [
+            ScreenCoverage.obstructedByKeyboard,
+            ScreenCoverage.obstructedByWindow,
+            ScreenCoverage.obstructedByNode,
+        ] {
+            XCTAssertTrue(reasons.contains(reason), "no case pins '\(reason)'")
+        }
+        XCTAssertTrue(reasons.contains(nil), "no case pins a tap with nothing in the way")
     }
 
     func testACheckThatCouldNotRunSaysSoInsteadOfGoingMissing() {
