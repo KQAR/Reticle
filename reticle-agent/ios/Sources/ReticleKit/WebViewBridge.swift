@@ -125,6 +125,8 @@ enum WebViewBridge {
             isVisible: frame.width > 0 && frame.height > 0 && !clipped,
             isEnabled: !disabled,
             isInteractive: !disabled && bool(element["interactive"]),
+            // `document.activeElement`, as the page reported it — see the Kotlin twin.
+            isFocused: bool(element["focused"]),
             checked: checkedState(str(element["checked"])),
             expanded: expandedState(str(element["expanded"])),
             custom: domMetadata,
