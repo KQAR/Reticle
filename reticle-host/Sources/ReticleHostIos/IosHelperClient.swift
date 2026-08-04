@@ -403,6 +403,13 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // and the caller never learns the screen moved under it.
             let dx = Int(point.x - firstPoint.x), dy = Int(point.y - firstPoint.y)
             if dx != 0 || dy != 0 { result["rectMoved"] = "\(dx),\(dy)" }
+            // A DOM rect folded to a point outside the web view that draws it:
+            // impossible for a correct fold, and silent until now — the tap
+            // dispatches at the reported centre and reports settled=1.
+            if let ref = target.ref, let snapshot = before?.snapshot,
+               let complaint = DomRectCheck.outsideHost(snapshot, ref: ref) {
+                result["rectSuspect"] = complaint
+            }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)

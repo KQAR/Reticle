@@ -263,6 +263,16 @@ nodes by `--test-id` / `--resource-id` / `--label`, and DOM nodes by `--css`
 (which survives a re-render, and takes `:nth-of-type(n)` so a captured path can be
 shortened by hand). A `--ref` miss says this and offers such handles.
 
+**A DOM rect that cannot be right says so.** A DOM rect is folded from page
+coordinates into device coordinates through the host view's frame and the page's
+scroll offsets. When that fold is wrong, a css tap misses while reporting
+`settled=1`. Reticle states the one case it can prove — a rect whose centre lands
+outside the web view that draws it — as `warning: … folded to a point OUTSIDE the
+web view that draws it`. Re-capture, and if it persists use `act activate --css`,
+which needs no coordinates. A smaller disagreement has no second source to be judged
+against and is NOT guessed at, so a css tap that misses on a page with no warning is
+still worth checking against a screenshot.
+
 **Stacked screens: `--window top`.** A capture holds EVERY live window of the
 process, and on Android a screen pushed over a still-alive one is the common case.
 Flattened by geometry the two interleave: framework ids like `#content` and

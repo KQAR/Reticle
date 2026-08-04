@@ -6,6 +6,7 @@ import dev.reticle.cli.platform.android.Adb
 import dev.reticle.cli.platform.android.Injector
 import dev.reticle.cli.platform.android.InputBackend
 import dev.reticle.core.CompactObservation
+import dev.reticle.core.DomRectCheck
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.Node
 import dev.reticle.core.ReticleJson
@@ -226,6 +227,12 @@ internal object HelperDeviceCommands {
                     // silently fix the tap and the caller would never learn that the
                     // screen it reasoned about had moved under it.
                     TapSettlePolicy.movedBy(first.point, target!!.point)?.let { put("rectMoved", it) }
+                    // A DOM rect folded to a point outside the web view that draws
+                    // it: impossible for a correct fold, and silent until now — the
+                    // tap dispatches at the reported centre and reports settled=1.
+                    domRectComplaint(traceBefore?.snapshot, target!!.ref)?.let {
+                        put("rectSuspect", it)
+                    }
                 }
             }
             "swipe", "drag" -> {
@@ -495,6 +502,17 @@ internal object HelperDeviceCommands {
             submit?.let { put("submit", it) }
             keyboardVisibleAfterType(device, pkg, params)?.let { put("keyboardVisible", it) }
         }
+    }
+
+    /**
+     * The rect-fold complaint for a DOM target, when the pre-action snapshot is at
+     * hand. Silent otherwise: a check that could not run is not evidence, and the
+     * trace's own capture is the one already paid for.
+     */
+    private fun domRectComplaint(before: Snapshot?, ref: String?): String? {
+        val snapshot = before ?: return null
+        val target = ref ?: return null
+        return DomRectCheck.outsideHost(snapshot, target)
     }
 
     /**
