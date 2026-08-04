@@ -455,12 +455,16 @@ public struct ActOutcome: @unchecked Sendable {
     /// Set when the tap could not aim at the target's centre because the frame is
     /// partly off screen or partly clipped, and aimed at the visible part instead.
     public var reach: String? { raw["reach"] as? String }
+    /// Set when a DOM node's rect was folded to a point outside the web view that
+    /// draws it — impossible for a correct fold, so the coordinate cannot be right.
+    public var rectSuspect: String? { raw["rectSuspect"] as? String }
 
     /// The result minus the sub-objects and sentences that have their own printers.
     public var displayFields: [String: Any] {
         raw.filter {
             $0.key != "verify" && $0.key != "trace" && $0.key != "coverage"
                 && $0.key != "obstruction" && $0.key != "reach" && $0.key != "clearDetail"
+                && $0.key != "rectSuspect"
         }
     }
 }

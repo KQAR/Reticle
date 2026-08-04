@@ -218,6 +218,11 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // the frame was reachable. Printed so the coordinate above can be reconciled
     // with the rect the caller reads in the tree.
     if let reach = outcome.reach { print("note: \(reach)") }
+    // The strong, statable case of a wrong page-to-device fold: a DOM rect whose
+    // centre is outside the web view that draws it. Measured on a real page whose
+    // rects were ~130px off, where the tap reported `settled=1` and nothing happened
+    // — only a screenshot showed the mismatch.
+    if let suspect = outcome.rectSuspect { print("warning: \(suspect)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)
