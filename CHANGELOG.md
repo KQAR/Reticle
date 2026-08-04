@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **An Android wheel publishes what it knows: value, range, item labels, row pitch.**
+  A `NumberPicker` in spinner mode paints its unselected values onto its own canvas,
+  so the tree held one node — the selection — and the caller recovered everything else
+  from pixels: reading the numbers off a screenshot, measuring the row pitch in that
+  same image, and calibrating a swipe by trial. Four screenshot round-trips for what
+  is semantically "select 1995" (#143). Every one of those facts is public API on the
+  widget (`getValue`, `getMinValue`/`getMaxValue`, `getDisplayedValues`), so the
+  capture now carries them and the compact line reads
+  `wheel:value="09" 10/24 pitch=157px~ items` instead of `wheel:selection-only`. The
+  pitch is the widget's own scroll quantum — the distance one value travels — read
+  reflectively from `mSelectorElementHeight` and falling back to `height / 3`, which is
+  marked with a trailing `~` rather than passed off as a measurement. The item labels
+  stay on the node (`ui node --test-id <wheel>` → `wheelItems`, with
+  `wheelItemsTruncated` when the list outruns the cap) because a year wheel has 120 of
+  them and the compact line has to stay one line. A self-drawn wheel publishes none of
+  it and still reads `wheel:opaque` — absent is absent, never estimated. This is the
+  READ side only: an unselected value still has no node, so moving a wheel is still a
+  swipe plus the app's own committed state. Pinned for both ports by two new nodes in
+  `reticle-protocol/fixtures/snapshot-render.cases.json` (one read pitch, one
+  estimated) and asserted on device in the Android suite.
+
 - **A dismissed keyboard's host window is no longer read as cover.** iOS keeps
   `UITextEffectsWindow` and its input view in the hierarchy after the keyboard goes
   away, still geometrically over whatever the keys covered — so the node-level

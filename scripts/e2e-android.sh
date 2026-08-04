@@ -381,6 +381,32 @@ echo "$WHEEL" | grep -q "#wheel.hour container .* scroll:up,down" \
   || { echo "FAIL: the wheel must report its scroll travel, got: $WHEEL"; exit 1; }
 [ "$(echo "$WHEEL" | grep -c '#numberpicker_input')" = "2" ] \
   || { echo "FAIL: expected exactly one value node per wheel"; exit 1; }
+# What the wheel PUBLISHES about itself. Measured on a real date picker, all of this
+# used to be recovered from pixels: the values read off a screenshot, the row pitch
+# measured in that same image, and a swipe distance calibrated by trial — four
+# screenshot round-trips for "select 1995". Every one of these is public API on
+# `android.widget.NumberPicker`.
+echo "$WHEEL" | grep -qE '#wheel.hour container .* wheel:value="[0-9]+" [0-9]+/24 pitch=[0-9]+px~? items' \
+  || { echo "FAIL: a NumberPicker must publish value, position and pitch, got: $WHEEL"; exit 1; }
+# The labels themselves live on the node rather than on the compact line (a year
+# wheel has 120 of them), and the whole set is there — not just the selection.
+HOUR_FACTS="$(R ui node --live --package "$PKG" --test-id wheel.hour)"
+echo "$HOUR_FACTS" | grep -A2 '"wheelItems"' | grep -q "00,01,02" \
+  || { echo "FAIL: the wheel's item labels must be readable; got: $HOUR_FACTS"; exit 1; }
+echo "$HOUR_FACTS" | grep -A2 '"wheelValue"' | grep -q '"09"' \
+  || { echo "FAIL: the wheel must name its current value"; exit 1; }
+# A pitch that was ESTIMATED (height/3, when the widget's own quantum is not
+# reflectable) is marked as such — a swipe built on it can be off by a row, and
+# passing an estimate off as a measurement is the failure this whole file guards.
+echo "$HOUR_FACTS" | grep -q '"wheelRowHeightPx"' \
+  || { echo "FAIL: the wheel must report a row pitch"; exit 1; }
+# And the self-drawn column publishes NONE of it, which is the honest boundary: it
+# stays `wheel:opaque` rather than being given invented numbers.
+echo "$WHEEL" | grep -q '#wheel.year .* wheel:opaque' \
+  || { echo "FAIL: a self-drawn wheel must still read opaque, got: $WHEEL"; exit 1; }
+R ui node --live --package "$PKG" --test-id wheel.year | grep -q "wheelValue" \
+  && { echo "FAIL: a self-drawn wheel must not carry invented wheel facts"; exit 1; }
+
 # The boundary, asserted as an absence: a value the wheel is not on has no node.
 echo "$WHEEL" | grep -qE '#numberpicker_input textField "(20|21)"' \
   && { echo "FAIL: an unselected wheel value must not appear as a node"; exit 1; }
@@ -471,13 +497,16 @@ PY
 WHEEL_MARKED="$(R ui compact --live --package "$PKG")"
 echo "$WHEEL_MARKED" | grep '#wheel.year' | grep -q "wheel:opaque" \
   || { echo "FAIL: a self-drawn wheel must be marked wheel:opaque, got: $(echo "$WHEEL_MARKED" | grep '#wheel.year')"; exit 1; }
-echo "$WHEEL_MARKED" | grep '#wheel.hour' | grep -q "wheel:selection-only" \
-  || { echo "FAIL: a NumberPicker must be marked wheel:selection-only, got: $(echo "$WHEEL_MARKED" | grep '#wheel.hour')"; exit 1; }
+# A NumberPicker publishes its own state, so it carries the richer form rather than
+# the bare `selection-only` fallback (which is what a wheel whose facts cannot be read
+# still gets). The value here is whatever the drag above left it on, so the assertion
+# is on the SHAPE, not on a number.
+echo "$WHEEL_MARKED" | grep '#wheel.hour' | grep -qE 'wheel:value="[0-9]+" [0-9]+/24' \
+  || { echo "FAIL: a NumberPicker must publish its value and range, got: $(echo "$WHEEL_MARKED" | grep '#wheel.hour')"; exit 1; }
 # The NumberPicker's own value field must NOT be marked: it is the selection, not
 # a column, and it is the one node here whose value IS readable. (Measured: a
 # class-name match alone caught `NumberPicker$CustomEditText` and marked it
-# `wheel:opaque` — the opposite of the truth, right under its parent's
-# `wheel:selection-only`.)
+# `wheel:opaque` — the opposite of the truth, right under its parent's own marker.)
 echo "$WHEEL_MARKED" | grep '#numberpicker_input' | grep -q "wheel:" \
   && { echo "FAIL: a wheel's value node must not be marked as a wheel column"; exit 1; }
 # ...and an ordinary control on the same screen must NOT be marked: a false
