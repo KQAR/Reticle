@@ -1346,6 +1346,21 @@ echo "$WAIT_OCCLUDED" | grep -q "caveats: occluded-by:keyboard" \
   || { echo "FAIL: the resolved wait must carry the occlusion as a caveat"; exit 1; }
 echo "$WAIT_OCCLUDED" | grep -q "next: act hide-keyboard" \
   || { echo "FAIL: the occlusion caveat must suggest hide-keyboard"; exit 1; }
+# The tap that used to be silent: aim at the covered button WITH the keyboard up.
+# It resolves, it dispatches, it reports settled — and the IME takes the touch. The
+# warning is the whole point; without it this is indistinguishable from a tap that
+# worked, which is how a flow ends up "clicking" a button nobody ever pressed.
+OCCLUDED_TAP="$(R act tap --package "$PKG" --test-id login.submitButton)"
+echo "$OCCLUDED_TAP"
+echo "$OCCLUDED_TAP" | grep -q "occluded:keyboard" \
+  || { echo "FAIL: a tap under the IME must warn that the keyboard receives the touch"; exit 1; }
+echo "$OCCLUDED_TAP" | grep -q "act hide-keyboard" \
+  || { echo "FAIL: the obstruction warning must name the command that clears it"; exit 1; }
+sleep 1
+R ui report --package "$PKG" --output "$TMP/login-occluded"
+R ui compact "$TMP/login-occluded/snapshot.json" | grep -q "Logged in: 123456" \
+  && { echo "FAIL: the keyboard-covered tap logged in — the premise of the warning is wrong"; exit 1; }
+
 # Dismiss in-process and confirm the settled state round-trips.
 HIDE_OUT="$(R act hide-keyboard --package "$PKG")"
 echo "$HIDE_OUT"
@@ -1401,6 +1416,15 @@ echo "$DIALOG_COMPACT" | grep -q 'button "Cancel"' \
 # it must be reported occluded-by the dialog root (a tap there would be swallowed).
 echo "$DIALOG_COMPACT" | grep "dialog.trigger" | grep -q "occluded-by" \
   || { echo "FAIL: background dialog.trigger must be marked occluded-by the dialog window"; exit 1; }
+# Same silence, one layer up: a tap on the trigger BEHIND the dialog resolves by
+# test id and is swallowed by the dialog window. `ui compact` already marks the
+# node occluded-by; the act path must say it too, naming the window rather than the
+# node so the caller knows what to dismiss.
+BEHIND_TAP="$(R act tap --package "$PKG" --test-id dialog.trigger)"
+echo "$BEHIND_TAP"
+echo "$BEHIND_TAP" | grep -q "occluded:window" \
+  || { echo "FAIL: a tap on a node behind a dialog window must warn that the window takes the touch"; exit 1; }
+
 # Confirm the dialog button lands: tapping Delete flips dialog.status -> "Deleted"
 # and dismisses the dialog. --verify watches the background status node across the
 # dialog dismissal; --trace-output writes the evidence package.
