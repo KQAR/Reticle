@@ -157,6 +157,22 @@
     if (pointerOrigin) return true;
     return el.getAttribute("contenteditable") === "true";
   }
+  // Is the caret in THIS element? `document.activeElement` (or the shadow root's,
+  // for a pierced tree) is the page's own answer, and without it the DOM half of
+  // the tree carried no focus at all: the platform focus sits on the host WebView
+  // while the caret is in an input, so `act type` could only ever report
+  // `focusLanded=ancestor` and its read-back had nothing to follow. Measured on a
+  // real form, that is how text that plainly landed was reported unreadable.
+  function focusedFor(el) {
+    try {
+      var root = el.getRootNode ? el.getRootNode() : (el.ownerDocument || document);
+      if (root && root.activeElement === el) return true;
+      var doc = el.ownerDocument || document;
+      return doc.activeElement === el;
+    } catch (e) {
+      return false;
+    }
+  }
   function styleValue(style, key, max) {
     return clean(style ? style[key] : "", max || 40);
   }
@@ -304,6 +320,8 @@
       // what a matcher needs when the caller edits or shortens that path.
       nthOfType: siblingIndex(el, true),
       nthChild: siblingIndex(el, false),
+      // The caret's element, as the page reports it. See `focusedFor`.
+      focused: focusedFor(el),
       // Laid out entirely outside a clipping ancestor's box: on screen in the
       // document's coordinates, and unseeable. `getComputedStyle` reports such an
       // element as perfectly ordinary — display and visibility are untouched — so

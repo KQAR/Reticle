@@ -77,6 +77,22 @@
   clipboard, because re-sending cannot change a full field. iOS has no readable
   `maxLength` (limits live in a delegate), and that absence is stated rather than
   guessed at.
+- **The DOM half of the tree has a focus channel, and a wrapper no longer reads as
+  unreadable.** The platform focus sits on the host WebView while the caret is in a
+  DOM input, so a web form's `type` could only ever report `focusLanded=ancestor`,
+  and its read-back had nothing to follow. Measured on a real form: a selector that
+  resolved a wrapper `<div>` instead of the `<input>` reported `textLanded=unreadable
+  textReadback=unavailable:dom-node-is-not-a-text-input` while `ui compact` for the
+  same region showed the value sitting in the field — a false negative that a
+  screenshot was the only way to resolve, and one indistinguishable from a real
+  failure. The DOM walk now reads `document.activeElement` (shadow-root aware), so
+  the focused element is marked `focused` in the tree and a DOM field reports
+  `self`/`descendant` like any other. The read-back follows it: a resolved wrapper
+  reads back the input under it — the FOCUSED one when there are several, since the
+  caret is not a guess — and when it still cannot read, the message names the node it
+  inspected AND where the caret is (`dom-node-is-not-a-text-input (r407); the caret is
+  in r408, which was not the node this read looked at`), instead of describing one
+  node as though it were the other.
 
 - **A tap says when something else gets the touch.** `act tap` resolved a selector,
   confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and

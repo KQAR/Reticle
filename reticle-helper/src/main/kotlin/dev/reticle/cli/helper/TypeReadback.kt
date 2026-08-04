@@ -144,6 +144,34 @@ internal object TypeReadback {
         val target = targetRef?.let { snapshot.nodes[it] } ?: return null
         if (isTextField(target)) return target
         return TypeFocus.soleFocusableInput(snapshot, target.ref)
+            // A DOM wrapper the caller resolved instead of the input inside it: a
+            // `<div>` that carries the class, with the `<input>` one level down. The
+            // native path above cannot see it — its `isTextInput` is typed on view
+            // nodes — so the read-back reported `dom-node-is-not-a-text-input` for
+            // text that plainly landed. Measured on a real form, with `ui compact`
+            // showing the value in the field at the same moment.
+            ?: soleDomInput(snapshot, target.ref)
+    }
+
+    /**
+     * The one DOM text input under [targetRef], preferring the focused one.
+     *
+     * Exactly one, for the same reason [TypeFocus.soleFocusableInput] insists on it:
+     * with two, picking either is a guess. A focused descendant settles it though —
+     * that is where the caret is, so it is not a guess at all.
+     */
+    private fun soleDomInput(snapshot: Snapshot, targetRef: String): Node? {
+        val found = ArrayList<Node>(2)
+        fun visit(ref: String) {
+            val node = snapshot.nodes[ref] ?: return
+            if (ref != targetRef && node.kind == NodeKind.domNode && isTextField(node)) {
+                found.add(node)
+                return
+            }
+            node.children.forEach(::visit)
+        }
+        visit(targetRef)
+        return found.firstOrNull { it.isFocused } ?: found.singleOrNull()
     }
 
     /**
@@ -197,6 +225,16 @@ internal object TypeReadback {
 
     private const val EDITABLE_TEXT = "editableText"
 
+    private fun isDescendantOf(snapshot: Snapshot, node: Node, ancestorRef: String): Boolean {
+        var current = node.parentRef?.let { snapshot.nodes[it] }
+        val seen = HashSet<String>()
+        while (current != null && seen.add(current.ref)) {
+            if (current.ref == ancestorRef) return true
+            current = current.parentRef?.let { snapshot.nodes[it] }
+        }
+        return false
+    }
+
     /**
      * Why a read-back could not be made, in the caller's terms. An absent check is
      * reported as absent — the one thing this must never do is look like a pass.
@@ -235,6 +273,24 @@ internal object TypeReadback {
     fun whyUnreadable(snapshot: Snapshot?, targetRef: String?): String {
         if (snapshot == null) return Unavailable.NO_RUNTIME
         val target = targetRef?.let { snapshot.nodes[it] } ?: return Unavailable.NO_FIELD
+        // Two different nodes are involved when the caller resolved a wrapper, and
+        // the old message named neither: it said "dom-node-is-not-a-text-input"
+        // about the RESOLVED node while `ui compact` for the same region plainly
+        // showed a `textField`. Say which node was inspected, and where the caret is.
+        if (target.kind == NodeKind.domNode) {
+            val focused = snapshot.nodes.values.firstOrNull { it.isFocused && isTextField(it) }
+            if (focused != null) {
+                return "${Unavailable.DOM_NOT_INPUT} (${target.ref}); the caret is in ${focused.ref}, " +
+                    "which was not the node this read looked at"
+            }
+            val inputs = snapshot.nodes.values.count {
+                it.kind == NodeKind.domNode && isTextField(it) && isDescendantOf(snapshot, it, target.ref)
+            }
+            if (inputs > 1) {
+                return "${Unavailable.DOM_NOT_INPUT} (${target.ref} is a wrapper around $inputs text " +
+                    "inputs, and none of them holds the caret — aim at one of them)"
+            }
+        }
         return when (target.kind) {
             // A Compose node with no `EditableText`: either not a field at all, or a
             // Compose version too old for the property the bridge reads.

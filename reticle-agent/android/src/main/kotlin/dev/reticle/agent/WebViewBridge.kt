@@ -182,6 +182,12 @@ object WebViewBridge {
             isVisible = frame.width > 0.0 && frame.height > 0.0 && !clipped,
             isEnabled = !disabled,
             isInteractive = !disabled && element.optBoolean("interactive", false),
+            // `document.activeElement`, as the page reported it. The platform focus
+            // sits on the host WebView while the caret is in an input, so without
+            // this the DOM half of the tree had no focus channel at all — `type`
+            // could only say `focusLanded=ancestor`, and its read-back had no way to
+            // find the field the text actually went into.
+            isFocused = element.optBoolean("focused", false),
             checked = checkedStateOf(element.optString("checked")),
             expanded = when (element.optString("expanded")) {
                 "true" -> true
