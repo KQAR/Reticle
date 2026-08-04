@@ -305,7 +305,15 @@ with `testID` or `nativeID` props are targetable by `--test-id` without any
 resource ids. When a selector cannot be resolved, Reticle reports candidates
 from the current snapshot (matching selector kind: test ids, resource ids, CSS
 selectors, or refs) so retry with one of the listed stable handles instead of
-guessing coordinates.
+guessing coordinates. With no selector at all the miss names `--label` first — the
+visible string is the only handle a good many framework controls have.
+
+**A flag a command does not read is an error, not a no-op.** `act tap --text "Tak"`
+used to answer `could not resolve selector '<empty>'`, because unparsed flags were
+dropped; it now reports `unknown option --text for \`act tap\`` and names the
+commands that do take it (`act type`, `act wait`). Applies to `status`, `app`, `ui
+*`, `act *`, `mutate` and `debug`; `rule` / `replay` / `trace` / `serve` are not
+flag-validated.
 
 ```bash
 reticle act tap   --package <pkg> --test-id checkout.payButton

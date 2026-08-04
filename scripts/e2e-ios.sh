@@ -167,6 +167,17 @@ grep -q "Paid!" "$TRACE_JSON" \
 # (host-local, no device). It must find the screenshots the trace just wrote.
 "$HOST" replay gif "$TMP/trace"
 [ -s "$TMP/trace/replay.gif" ] || { echo "FAIL: replay gif produced no artifact"; exit 1; }
+echo "== A MISPLACED FLAG IS REPORTED AS ONE, AND A MISS NAMES --label =="
+# Flag validation is host-side, so it is the same code on both ports — what only a
+# run proves is that it fires BEFORE any device work and rejects nothing real. The
+# selector-miss half is per-port: this is the iOS resolver's own message.
+IOS_MISPLACED="$("$HOST" --target ios act tap --package "$LINKED_ID" --text "Tak" 2>&1 || true)"
+echo "$IOS_MISPLACED" | grep -q "unknown option --text for \`act tap\`" \
+  || { echo "FAIL: a flag this gesture does not read must be reported by name; got: $IOS_MISPLACED"; exit 1; }
+IOS_NO_SELECTOR="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" 2>&1 || true)"
+echo "$IOS_NO_SELECTOR" | grep -q -- '--label "<visible text>"' \
+  || { echo "FAIL: a selector miss must name --label; got: $IOS_NO_SELECTOR"; exit 1; }
+
 echo "== COVERAGE: THE SCREEN REPORTS WHAT AN AGENT CANNOT ADDRESS =="
 # The iOS half of the blind-agent self-report. The derivation is shared and pinned
 # for both platforms by reticle-protocol/fixtures/screen-coverage.cases.json; what

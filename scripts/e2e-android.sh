@@ -1005,6 +1005,34 @@ wait_compact "$PKG" "Overlay hit" \
 R ui compact --live --package "$PKG" | grep -q "Backdrop hit" \
   && { echo "FAIL: the tap fell through to the backdrop WebView"; exit 1; }
 
+echo "== A MISPLACED FLAG IS REPORTED AS ONE, AND A MISS NAMES --label =="
+# Measured while driving a real flow: `act tap --text "Tak"` answered "could not
+# resolve selector '<empty>'", which reads as an empty selector rather than a flag
+# `act tap` does not take — and `--text` IS valid on `act type` / `act wait`, so
+# "unknown" was never obvious. Both halves of the answer are asserted.
+MISPLACED="$(R act tap --package "$PKG" --text "Tak" 2>&1 || true)"
+echo "$MISPLACED" | grep -q "unknown option --text for \`act tap\`" \
+  || { echo "FAIL: a flag this gesture does not read must be reported by name; got: $MISPLACED"; exit 1; }
+echo "$MISPLACED" | grep -q "accepted by: act type, act wait" \
+  || { echo "FAIL: the message must name where the flag DOES belong; got: $MISPLACED"; exit 1; }
+# A plain typo has no home to point at, and the accepted list carries the fix.
+TYPO="$(R ui compact --live --package "$PKG" --windwo top 2>&1 || true)"
+echo "$TYPO" | grep -q -- "unknown option --windwo" \
+  || { echo "FAIL: a typo'd flag must be reported; got: $TYPO"; exit 1; }
+echo "$TYPO" | grep -q -- "--window" \
+  || { echo "FAIL: the accepted list must contain the flag that was meant"; exit 1; }
+# The guard against the fix being worse than the gap: everything a gesture really
+# reads is still accepted (these fail on the SELECTOR, not on a flag).
+R act type --package "$PKG" --test-id no.such.field --text abc --clear --submit \
+  --type-delay 40 2>&1 | grep -q "unknown option" \
+  && { echo "FAIL: a flag act type really reads was rejected"; exit 1; }
+# And a selector-less act names the flag that resolves a visible string. That
+# omission is how the same flow got driven by coordinates on screens whose only
+# stable handle was the on-screen text.
+NO_SELECTOR="$(R act tap --package "$PKG" 2>&1 || true)"
+echo "$NO_SELECTOR" | grep -q -- '--label "<visible text>"' \
+  || { echo "FAIL: a selector miss must name --label; got: $NO_SELECTOR"; exit 1; }
+
 echo "== COVERAGE: THE SCREEN REPORTS WHAT AN AGENT CANNOT ADDRESS =="
 # `--point` was the silent fallback. Measured over one hybrid-app onboarding flow:
 # 23 of ~50 taps were coordinates, 13 screenshots had to be read with human eyes to

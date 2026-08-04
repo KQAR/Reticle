@@ -118,6 +118,11 @@ public enum ReticleCLI {
     private static func runHelperBacked(command: String, args: Args) -> Int32 {
         let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
         do {
+            // A flag this command does not read used to be dropped, so the command
+            // ran as if it had never been passed — `act tap --text "Tak"` reported an
+            // empty selector rather than a misplaced flag. Checked before the backend
+            // is built, so nothing has touched the device when the answer comes back.
+            try CliFlags.validate(args, command: command, subcommand: args.positional(1))
             let backend = try makeBackend(args: args, serial: serialArg)
             defer { backend.close() }
             return try dispatch(command: command, args: args, backend: backend)
