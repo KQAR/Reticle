@@ -30,11 +30,27 @@ class ScreenCoverageContractTest {
         val warning: String,
     )
 
+    /**
+     * One tap, and who the fixture says receives it. An entry with no [reason] is
+     * the case worth pinning hardest: nothing is in the way, so the tap must stay
+     * quiet — a warning that fires on an ordinary tap is one nobody reads.
+     */
+    @Serializable
+    private data class ExpectedObstruction(
+        val x: Double,
+        val y: Double,
+        val targetRef: String? = null,
+        val reason: String? = null,
+        val ref: String? = null,
+        val warning: String? = null,
+    )
+
     @Serializable
     private data class Case(
         val name: String,
         val report: List<String>,
         val points: List<ExpectedPoint>,
+        val obstructions: List<ExpectedObstruction> = emptyList(),
         val snapshot: Snapshot,
     )
 
@@ -78,10 +94,43 @@ class ScreenCoverageContractTest {
                     )
                 }
             }
+            for (expected in case.obstructions) {
+                val actualObstruction =
+                    ScreenCoverage.obstruction(case.snapshot, expected.x, expected.y, expected.targetRef)
+                val got = listOf(
+                    actualObstruction?.reason ?: "-",
+                    actualObstruction?.ref ?: "-",
+                    actualObstruction?.warning(expected.x, expected.y) ?: "-",
+                )
+                val want = listOf(expected.reason ?: "-", expected.ref ?: "-", expected.warning ?: "-")
+                if (got != want) {
+                    failures.add(
+                        "  - ${case.name} [obstruction ${expected.x.toInt()},${expected.y.toInt()} " +
+                            "target=${expected.targetRef ?: "-"}]\n" +
+                            "      expected: $want\n      actual:   $got"
+                    )
+                }
+            }
         }
         if (failures.isNotEmpty()) {
             fail("coverage diverged from the fixture:\n" + failures.joinToString("\n"))
         }
+    }
+
+    @Test
+    fun theFixturePinsEveryWayATouchCanBeTakenFromItsTarget() {
+        // Three sources, three different fixes for the caller: dismiss the keyboard,
+        // dismiss the window, or aim somewhere the overlay is not. Plus the quiet
+        // case, which is the one that keeps the warning worth reading.
+        val reasons = cases().flatMap { case -> case.obstructions.map { it.reason } }
+        for (reason in listOf(
+            ScreenCoverage.OBSTRUCTED_BY_KEYBOARD,
+            ScreenCoverage.OBSTRUCTED_BY_WINDOW,
+            ScreenCoverage.OBSTRUCTED_BY_NODE,
+        )) {
+            assertTrue(reasons.any { it == reason }, "no case pins '$reason'")
+        }
+        assertTrue(reasons.any { it == null }, "no case pins a tap with nothing in the way")
     }
 
     @Test

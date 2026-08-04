@@ -77,6 +77,13 @@ object ScreenCoverage {
      */
     const val REASON_UNAVAILABLE = "coverage:unavailable"
 
+    // Obstruction tokens: WHO gets the touch instead of the target. Distinct from
+    // the coverage reasons above, which answer "could a selector have named this
+    // point" — a point can be perfectly addressable and still unreachable.
+    const val OBSTRUCTED_BY_KEYBOARD = "occluded:keyboard"
+    const val OBSTRUCTED_BY_WINDOW = "occluded:window"
+    const val OBSTRUCTED_BY_NODE = "occluded:node"
+
     /** A verdict that says the check failed, naming why. */
     fun unavailable(x: Double, y: Double, why: String): PointCoverage = PointCoverage(
         x = x,
@@ -168,6 +175,124 @@ object ScreenCoverage {
      */
     fun at(snapshot: Snapshot, x: Double, y: Double): PointCoverage =
         verdict(snapshot, stack(snapshot), x, y)
+
+    /**
+     * Who receives the touch at (x, y) instead of [targetRef] — or null when the
+     * target itself is on top there.
+     *
+     * A separate question from [at], and the one that was missing: [at] answers
+     * "could a selector have named this point", which a covered point answers YES
+     * to even when the touch cannot reach it. Measured on a physical device, both
+     * halves silent:
+     *
+     *  - a third-party debug overlay's small floating window sat over a form
+     *    control; `act tap --css …` resolved the control, dispatched, reported
+     *    `settled=1`, and the overlay opened its own screen;
+     *  - a button under the IME was tapped with the keyboard up and nothing
+     *    happened, while `ui compact` for the same node already printed
+     *    `occluded-by:keyboard` and even suggested `act hide-keyboard`.
+     *
+     * So the fact was computed and rendered in the READ path while the ACT path
+     * ignored it. This is that fact, addressed at a point, for the act path to
+     * carry.
+     *
+     * Three sources, in the order a touch meets them:
+     *
+     *  1. the IME — another process's window above every app window;
+     *  2. a HIGHER window layer than the target's (dialog, popup, toast);
+     *  3. a later interactive sibling in the same window (draw order).
+     *
+     * A screen-sized interactive container is deliberately NOT an obstruction: it
+     * is the same scenery [CONTAINER_AREA_FRACTION] exists for. An app that wraps
+     * its content in one full-screen clickable frame (debug overlays do exactly
+     * this) would otherwise mark every tap on the screen as obstructed, and a
+     * warning that fires on every tap is one nobody reads. A real modal scrim gets
+     * caught by rule 2 instead, because it lives in its own window.
+     */
+    fun obstruction(
+        snapshot: Snapshot,
+        x: Double,
+        y: Double,
+        targetRef: String? = null,
+    ): TapObstruction? {
+        val keyboard = snapshot.screen.keyboard?.takeIf { it.visible }?.frame
+        if (keyboard?.contains(x, y) == true) {
+            return TapObstruction(
+                reason = OBSTRUCTED_BY_KEYBOARD,
+                detail = "the IME covers this point, so the touch goes to the keyboard and not to " +
+                    "the app — dismiss it with `act hide-keyboard` first",
+                ref = null,
+            )
+        }
+        val target = targetRef?.let { snapshot.nodes[it] } ?: return null
+        val stacked = stack(snapshot)
+        val targetLayer = stacked.layer[target.ref] ?: -1
+        val here = stacked.nodes.filter { it.frame?.contains(x, y) == true }
+        val topLayer = here.maxOfOrNull { stacked.layer[it.ref] ?: -1 } ?: -1
+        if (topLayer > targetLayer) {
+            // Name the WINDOW rather than whichever of its children happens to be
+            // topmost: the window is the thing a caller dismisses.
+            val front = here.lastOrNull { (stacked.layer[it.ref] ?: -1) == topLayer }
+            val window = front?.ref?.let { snapshot.windowRefOf(it) } ?: front?.ref
+            return TapObstruction(
+                reason = OBSTRUCTED_BY_WINDOW,
+                detail = "a window above ${target.ref} covers this point" +
+                    (window?.let { " ($it)" } ?: "") +
+                    " — the touch lands in that window, not on the target",
+                ref = window,
+            )
+        }
+        val screenArea = snapshot.screen.size.width * snapshot.screen.size.height
+        laterSiblingCovering(snapshot, target, x, y, screenArea * CONTAINER_AREA_FRACTION)?.let { above ->
+            return TapObstruction(
+                reason = OBSTRUCTED_BY_NODE,
+                detail = "${above.ref} (${above.role ?: above.typeName}) is drawn over ${target.ref} " +
+                    "at this point and is itself interactive, so it consumes the touch",
+                ref = above.ref,
+            )
+        }
+        return null
+    }
+
+    /**
+     * The nearest interactive node drawn AFTER [node] that contains the point.
+     *
+     * Walks up the ancestors and looks at each level's later siblings, which is
+     * draw order for a view tree. Non-interactive views are skipped: a decorative
+     * transparent frame lets the touch fall through, so reporting one would be a
+     * false alarm. Twin of the rule `CompactObservation` renders as
+     * `occluded-by:` — sharing the conclusion, not the code, because that one asks
+     * about a node's CENTRE while a tap asks about the point it is about to
+     * dispatch.
+     */
+    private fun laterSiblingCovering(
+        snapshot: Snapshot,
+        node: Node,
+        x: Double,
+        y: Double,
+        containerArea: Double,
+    ): Node? {
+        var current = node
+        var parent = current.parentRef?.let { snapshot.nodes[it] }
+        val seen = HashSet<String>()
+        while (parent != null && seen.add(parent.ref)) {
+            val siblings = parent.children
+            val position = siblings.indexOf(current.ref)
+            if (position >= 0) {
+                for (i in siblings.size - 1 downTo position + 1) {
+                    val above = snapshot.nodes[siblings[i]] ?: continue
+                    if (!above.isVisible || !above.isInteractive) continue
+                    val frame = above.frame ?: continue
+                    if (!frame.contains(x, y)) continue
+                    if (frame.width * frame.height > containerArea) continue
+                    return above
+                }
+            }
+            current = parent
+            parent = current.parentRef?.let { snapshot.nodes[it] }
+        }
+        return null
+    }
 
     /**
      * [at] against a pre-built stack.
@@ -410,6 +535,44 @@ data class PointCoverage(
         put("warning", warning())
         ref?.let { put("ref", it) }
         selector?.let { put("selector", it) }
+    }
+}
+
+/**
+ * Who gets the touch instead of the target, as a tap result field.
+ *
+ * Carried by EVERY tap, selector or coordinate — unlike [PointCoverage], which
+ * only a coordinate tap needs. A selector tap is exactly the case that used to be
+ * silent here: it re-resolves, confirms the rect has stopped moving, reports
+ * `settled=1`, and then hands the touch to whatever is drawn on top.
+ */
+@Serializable
+data class TapObstruction(
+    /** `occluded:keyboard`, `occluded:window` or `occluded:node`. */
+    val reason: String,
+    /** The same fact as a sentence, naming what is in the way and what to do. */
+    val detail: String,
+    /** The occluding window or node, when one is nameable (the IME is not a node). */
+    val ref: String? = null,
+) {
+    /**
+     * The line a tap prints when something is in the way.
+     *
+     * A warning rather than a refusal: the touch may still be the right thing to
+     * dispatch (a scrim that closes on outside taps, an overlay the caller means
+     * to hit), and a hard failure on a heuristic would strand a flow. What the
+     * caller must not have is silence — `settled=1` with nothing else reads as
+     * "the app got it".
+     */
+    fun warning(x: Double, y: Double): String =
+        "the touch at (${x.toInt()},${y.toInt()}) may not reach the target — $reason: $detail"
+
+    /** Wire shape, twin of the Swift `TapObstruction.jsonObject`. */
+    fun wire(x: Double, y: Double): JsonObject = buildJsonObject {
+        put("reason", reason)
+        put("detail", detail)
+        put("warning", warning(x, y))
+        ref?.let { put("ref", it) }
     }
 }
 

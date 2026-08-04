@@ -37,6 +37,13 @@ public enum ScreenCoverage {
     /// "the coordinate was fine".
     public static let reasonUnavailable = "coverage:unavailable"
 
+    // Obstruction tokens: WHO gets the touch instead of the target. Distinct from
+    // the coverage reasons above, which answer "could a selector have named this
+    // point" — a point can be perfectly addressable and still unreachable.
+    public static let obstructedByKeyboard = "occluded:keyboard"
+    public static let obstructedByWindow = "occluded:window"
+    public static let obstructedByNode = "occluded:node"
+
     /// A verdict that says the check failed, naming why.
     public static func unavailable(x: Double, y: Double, why: String) -> PointCoverage {
         PointCoverage(x: x, y: y, covered: false, reason: reasonUnavailable, detail: why)
@@ -126,6 +133,75 @@ public enum ScreenCoverage {
     /// What covers one coordinate, and whether a selector could have reached it.
     public static func at(_ snapshot: Snapshot, x: Double, y: Double) -> PointCoverage {
         verdict(snapshot, stack(snapshot), x, y)
+    }
+
+    /// Who receives the touch at (x, y) instead of `targetRef` — or nil when the
+    /// target itself is on top there. Twin of the Kotlin `obstruction`, where the
+    /// measurement and the three rules are written down.
+    public static func obstruction(
+        _ snapshot: Snapshot, x: Double, y: Double, targetRef: String? = nil
+    ) -> TapObstruction? {
+        if let keyboard = snapshot.screen.keyboard, keyboard.visible,
+           keyboard.frame?.contains(x, y) == true {
+            return TapObstruction(
+                reason: obstructedByKeyboard,
+                detail: "the IME covers this point, so the touch goes to the keyboard and not to "
+                    + "the app — dismiss it with `act hide-keyboard` first"
+            )
+        }
+        guard let targetRef, let target = snapshot.nodes[targetRef] else { return nil }
+        let stacked = stack(snapshot)
+        let targetLayer = stacked.layer[target.ref] ?? -1
+        let here = stacked.nodes.filter { $0.frame?.contains(x, y) == true }
+        let topLayer = here.map { stacked.layer[$0.ref] ?? -1 }.max() ?? -1
+        if topLayer > targetLayer {
+            let front = here.last { (stacked.layer[$0.ref] ?? -1) == topLayer }
+            let window = front.flatMap { snapshot.windowRefOf($0.ref) } ?? front?.ref
+            return TapObstruction(
+                reason: obstructedByWindow,
+                detail: "a window above \(target.ref) covers this point"
+                    + (window.map { " (\($0))" } ?? "")
+                    + " — the touch lands in that window, not on the target",
+                ref: window
+            )
+        }
+        let screenArea = snapshot.screen.size.width * snapshot.screen.size.height
+        if let above = laterSiblingCovering(
+            snapshot, node: target, x: x, y: y, containerArea: screenArea * containerAreaFraction
+        ) {
+            return TapObstruction(
+                reason: obstructedByNode,
+                detail: "\(above.ref) (\(above.role ?? above.typeName)) is drawn over \(target.ref) "
+                    + "at this point and is itself interactive, so it consumes the touch",
+                ref: above.ref
+            )
+        }
+        return nil
+    }
+
+    /// The nearest interactive node drawn AFTER `node` that contains the point.
+    /// Screen-sized containers are skipped — see the Kotlin twin.
+    private static func laterSiblingCovering(
+        _ snapshot: Snapshot, node: Node, x: Double, y: Double, containerArea: Double
+    ) -> Node? {
+        var current = node
+        var parent = current.parentRef.flatMap { snapshot.nodes[$0] }
+        var seen = Set<String>()
+        while let p = parent, !seen.contains(p.ref) {
+            seen.insert(p.ref)
+            if let position = p.children.firstIndex(of: current.ref) {
+                for i in stride(from: p.children.count - 1, to: position, by: -1) {
+                    guard let above = snapshot.nodes[p.children[i]] else { continue }
+                    guard above.isVisible, above.isInteractive, let frame = above.frame else { continue }
+                    guard frame.contains(x, y) else { continue }
+                    if frame.width * frame.height > containerArea { continue }
+                    return above
+                }
+            }
+            current = p
+            parent = current.parentRef.flatMap { snapshot.nodes[$0] }
+        }
+        return nil
     }
 
     /// `at` against a pre-built stack — sampling a screen asks this thousands of
@@ -314,6 +390,36 @@ public struct PointCoverage: Codable, Equatable, Sendable {
         ]
         if let ref { out["ref"] = ref }
         if let selector { out["selector"] = selector }
+        return out
+    }
+}
+
+/// Who gets the touch instead of the target, as a tap result field. Carried by
+/// EVERY tap, selector or coordinate — see the Kotlin twin.
+public struct TapObstruction: Codable, Equatable, Sendable {
+    /// `occluded:keyboard`, `occluded:window` or `occluded:node`.
+    public var reason: String
+    /// The same fact as a sentence, naming what is in the way and what to do.
+    public var detail: String
+    /// The occluding window or node, when one is nameable (the IME is not a node).
+    public var ref: String?
+
+    public init(reason: String, detail: String, ref: String? = nil) {
+        self.reason = reason
+        self.detail = detail
+        self.ref = ref
+    }
+
+    /// The line a tap prints when something is in the way — a warning, not a
+    /// refusal. See the Kotlin twin.
+    public func warning(x: Double, y: Double) -> String {
+        "the touch at (\(Rect.whole(x)),\(Rect.whole(y))) may not reach the target — \(reason): \(detail)"
+    }
+
+    /// The wire shape the host prints from.
+    public func jsonObject(x: Double, y: Double) -> [String: Any] {
+        var out: [String: Any] = ["reason": reason, "detail": detail, "warning": warning(x: x, y: y)]
+        if let ref { out["ref"] = ref }
         return out
     }
 }
