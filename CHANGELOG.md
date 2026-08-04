@@ -49,6 +49,18 @@
   `status` all take `--package` directly. A path, when given, still wins, and
   `--live` still works for scripts that pass it. With neither, the error now names
   the form that works instead of the one that used to be mandatory.
+- **A dead `--ref` says what a ref is, and names a handle that survives.** Refs are
+  traversal indices, valid for the snapshot they came from: any relayout — in a
+  WebView, any re-render — renumbers the tree. Measured on a hybrid screen, a ref
+  read out of one `ui report` was frequently gone ~1s later, and the answer was
+  twelve NATIVE refs (`r3`, `r6`, …), none of which can stand in for a DOM node,
+  followed by a note about recycling lists while nothing had scrolled. The miss now
+  states the lifetime, and on a screen carrying a DOM it offers `--css` handles that
+  can actually be re-resolved (id, tag+class, or the tail of the captured path with
+  its `:nth-of-type()` intact — never a bare `'input'` that matches the first of
+  forty). The recycling-list note is suppressed for a ref miss on such a screen: it
+  is a wrong lead there, not a weak one. Both ports, plus a documented statement in
+  the skill that refs are single-snapshot handles.
 
 - **A tap says when something else gets the touch.** `act tap` resolved a selector,
   confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and

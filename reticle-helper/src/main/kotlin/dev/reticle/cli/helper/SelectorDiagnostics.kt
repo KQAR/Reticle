@@ -33,7 +33,7 @@ internal object SelectorDiagnostics {
             selector.testId != null -> candidateList("testId", snapshot.nodes.values.mapNotNull { it.testId })
             selector.resourceId != null -> candidateList("resourceId", snapshot.nodes.values.mapNotNull { it.resourceId })
             selector.cssSelector != null -> cssCandidateList(snapshot, selector.cssSelector!!)
-            selector.ref != null -> candidateList("ref", snapshot.nodes.keys)
+            selector.ref != null -> refMiss(snapshot, selector.ref!!)
             // `--label` was missing from this list and that is how it stayed unused
             // while a real flow was driven by coordinates: on screens whose only
             // stable handle is the visible string (dialog buttons with generic ids —
@@ -44,8 +44,70 @@ internal object SelectorDiagnostics {
                 "--resource-id, --css, --ref, --alias @N, or --point x,y."
         }
         val regionHint = selector.region?.let { regionHint(snapshot, selector, it) }
-        return listOfNotNull(candidates, regionHint, scrollHint(snapshot), kernelHint(snapshot, selector))
+        // The recycling-list note is about a row that was never bound. For a REF miss
+        // on a screen with a DOM on it, the cause is renumbering, not scrolling — and
+        // measured on such a screen the note pointed at a container nothing had
+        // touched, which is a wrong lead rather than a weak one.
+        val scroll = if (selector.ref != null && snapshot.nodes.values.any { it.kind == NodeKind.domNode }) {
+            null
+        } else {
+            scrollHint(snapshot)
+        }
+        return listOfNotNull(candidates, regionHint, scroll, kernelHint(snapshot, selector))
             .joinToString(" ")
+    }
+
+    /**
+     * A `--ref` miss, which is almost never "there is no such element".
+     *
+     * Refs are traversal indices, valid for the snapshot they came from: any DOM
+     * mutation or relayout renumbers them. Measured on a WebView-heavy screen, a ref
+     * read out of one `ui report` was frequently dead ~1s later, and the answer was
+     * a list of twelve NATIVE refs (`r3`, `r6`, …) — none of which can stand in for
+     * a DOM node — followed by a note about recycling lists, when nothing had
+     * scrolled and the document had simply re-rendered.
+     *
+     * So: say what a ref is, and name the handle that survives a re-render. `--css`
+     * does, now that the matcher implements the `:nth-of-type()` the captured paths
+     * are built from, so DOM candidates are offered as css handles rather than as
+     * refs.
+     */
+    private fun refMiss(snapshot: Snapshot, ref: String): String {
+        val domNodes = snapshot.nodes.values.filter { it.kind == NodeKind.domNode }
+        val lifetime = "'$ref' is not in the current tree. A ref is a traversal INDEX, valid only " +
+            "for the snapshot it came from: any relayout — or, in a WebView, any re-render — " +
+            "renumbers the whole tree."
+        if (domNodes.isEmpty()) {
+            return "$lifetime ${candidateList("ref", snapshot.nodes.keys)} " +
+                "Prefer a handle that survives a re-capture: --test-id / --resource-id / --label."
+        }
+        val handles = domNodes
+            .filter { it.isInteractive || it.role == "textField" }
+            .ifEmpty { domNodes }
+            .map { addressableHandle(it) }
+            .distinct()
+            .take(6)
+        return "$lifetime This screen carries ${domNodes.size} DOM node(s), and a DOM node cannot " +
+            "be substituted by any of the native refs in the tree. Address it with --css, which " +
+            "survives a re-render (the matcher implements :nth-of-type(n), so a captured path can " +
+            "be shortened by hand): ${handles.joinToString(", ") { "'$it'" }}. " +
+            "Re-run `ui report` / `ui compact --live` if you need the current refs."
+    }
+
+    /**
+     * A handle that can actually be RE-RESOLVED, unlike [shortCssHandle]'s shortest
+     * form: a bare `'input'` or `'span'` is short and matches the first of forty, so
+     * offering it as a replacement for a dead ref would trade one wrong node for
+     * another. Id first, then tag+classes, then the tail of the captured path —
+     * which is addressable now that the matcher implements `:nth-of-type(n)`.
+     */
+    private fun addressableHandle(node: Node): String {
+        node.domId()?.takeIf { it.isNotBlank() }?.let { return "#$it" }
+        val tag = node.domTag().orEmpty()
+        val classes = node.domClasses().take(2).joinToString("") { ".$it" }
+        if (classes.isNotEmpty()) return tag + classes
+        node.domCssSelector()?.split(" > ")?.takeLast(2)?.joinToString(" > ")?.let { return it }
+        return tag.ifEmpty { node.ref }
     }
 
     /**
