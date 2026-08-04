@@ -253,7 +253,15 @@ the runtime is unreachable, and `source` in the result tells you which path ran
 (`outline:@N->live` vs `outline:@N (cached frame)`). Still re-run outline after
 navigation or modal changes: `@N` numbering describes the outlined screen, not
 the new one. The `item i/n` text is a hint, not a selector. Stable automation
-should still prefer `--test-id`, `--resource-id`, `--css`, or `--ref`.
+should still prefer `--test-id`, `--resource-id`, or `--css`.
+
+**`rN` refs are single-snapshot handles.** A ref is the traversal INDEX of a node
+in the capture it came from — any relayout, and in a WebView any re-render,
+renumbers the whole tree. On a DOM-heavy screen a ref read out of one `ui report`
+can be dead a second later, so do not carry refs between commands: address native
+nodes by `--test-id` / `--resource-id` / `--label`, and DOM nodes by `--css`
+(which survives a re-render, and takes `:nth-of-type(n)` so a captured path can be
+shortened by hand). A `--ref` miss says this and offers such handles.
 
 **Stacked screens: `--window top`.** A capture holds EVERY live window of the
 process, and on Android a screen pushed over a still-alive one is the common case.

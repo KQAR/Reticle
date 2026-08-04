@@ -63,6 +63,23 @@ class SelectorDiagnosticsTest {
         assertContains(message, "--point x,y")
     }
 
+    @Test
+    fun aRefMissSaysWhatARefIsAndOffersDomHandles() {
+        // Measured on a WebView-heavy screen: a ref read out of one `ui report` was
+        // dead ~1s later, and the answer was twelve NATIVE refs — none of which can
+        // stand in for a DOM node — plus a recycling-list note while nothing had
+        // scrolled. The document had simply re-rendered.
+        val message = SelectorDiagnostics.pointMiss(sampleSnapshot(), Selector(ref = "r428"))
+
+        assertContains(message, "traversal INDEX")
+        assertContains(message, "--css")
+        assertContains(message, "'#web-pay'")
+        assertTrue(
+            !message.contains("recycling list"),
+            "a ref miss on a DOM screen must not blame scrolling: $message",
+        )
+    }
+
     private fun sampleSnapshot(): Snapshot = Snapshot(
         capturedAtMillis = 0L,
         screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
