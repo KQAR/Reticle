@@ -23,6 +23,7 @@ public enum Render {
         case "node": return try node(snapshot, selector: selector)
         case "regions": return regions(snapshot)
         case "style": return style(snapshot)
+        case "coverage": return coverage(snapshot)
         default: throw RenderError.unknownView(view)
         }
     }
@@ -174,6 +175,12 @@ public enum Render {
     /// policy. Matches the Kotlin helper's `renderStyle`.
     static func style(_ snapshot: Snapshot) -> String {
         StyleObservation.from(snapshot).render()
+    }
+
+    /// How much of this screen an agent can address, and which regions it cannot.
+    /// Twin of reticle-core's `Render.coverage`.
+    public static func coverage(_ snapshot: Snapshot, cellPx: Double = ScreenCoverage.defaultCellPx) -> String {
+        ScreenCoverage.of(snapshot, cellPx: cellPx).render()
     }
 
     static func regions(_ snapshot: Snapshot) -> String {

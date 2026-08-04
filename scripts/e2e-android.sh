@@ -956,6 +956,81 @@ wait_compact "$PKG" "Overlay hit" \
 R ui compact --live --package "$PKG" | grep -q "Backdrop hit" \
   && { echo "FAIL: the tap fell through to the backdrop WebView"; exit 1; }
 
+echo "== COVERAGE: THE SCREEN REPORTS WHAT AN AGENT CANNOT ADDRESS =="
+# `--point` was the silent fallback. Measured over one hybrid-app onboarding flow:
+# 23 of ~50 taps were coordinates, 13 screenshots had to be read with human eyes to
+# make progress, and NOTHING in any of those results said so — the only way to find
+# the gaps that forced them was to drive the flow by hand and count. Two things
+# close that: every coordinate tap now carries a verdict, and the screen can be
+# asked the question directly.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario complex >/dev/null 2>&1
+wait_compact "$PKG" "complex.iframeButton"
+
+COVERAGE="$(R ui coverage --live --package "$PKG")"
+# The sampling is a STATED fact, not a hidden approximation.
+echo "$COVERAGE" | grep -qE '^coverage: [0-9]+x[0-9]+, sampled on a [0-9]+x[0-9]+ grid of [0-9]+px cells$' \
+  || { echo "FAIL: coverage must state the grid it sampled; got: $(echo "$COVERAGE" | head -1)"; exit 1; }
+echo "$COVERAGE" | grep -qE '^addressable: [0-9]+ of [0-9]+ touch-relevant cell\(s\) \([0-9]+%\)$' \
+  || { echo "FAIL: coverage must report the addressable share"; exit 1; }
+# This screen HAS a named unreachable region — the cross-origin frame — and it is
+# listed with the host ref and rect an agent would act on.
+echo "$COVERAGE" | grep -qE '^  iframe:cross-origin r[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x[0-9]+\] [0-9]+ cell\(s\)$' \
+  || { echo "FAIL: the cross-origin frame must appear as a named coverage gap"; echo "$COVERAGE"; exit 1; }
+# And the number is not the constant it was before a screen-sized tappable WebView
+# stopped counting as cover for everything inside it (that read as 100%).
+COVERAGE_PCT="$(echo "$COVERAGE" | sed -n 's/^addressable:.*(\([0-9]*\)%)$/\1/p')"
+[ -n "$COVERAGE_PCT" ] && [ "$COVERAGE_PCT" -lt 100 ] \
+  || { echo "FAIL: a screen with an unreadable frame on it cannot be 100% addressable (got ${COVERAGE_PCT:-none}%)"; exit 1; }
+
+# A coordinate INSIDE the cross-origin frame: the fallback is justified, and the
+# warning names the boundary rather than leaving the coordinate unexplained.
+FRAME_POINT="$(R ui compact --live --package "$PKG" | /usr/bin/python3 -c '
+import re, sys
+for line in sys.stdin:
+    if "complex.foreignFrame" not in line:
+        continue
+    m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
+    if m:
+        x, y, w, h = (int(g) for g in m.groups())
+        print(f"{x + w // 2},{y + h // 2}")
+        break
+')"
+[ -n "$FRAME_POINT" ] || { echo "FAIL: could not read the cross-origin frame rect"; exit 1; }
+FRAME_TAP="$(R act tap --package "$PKG" --point "$FRAME_POINT" --no-toast-probe 2>&1)"
+echo "$FRAME_TAP" | grep -q "warning: no semantic selector covers" \
+  || { echo "FAIL: a coordinate with no selector over it must say so; got: $FRAME_TAP"; exit 1; }
+echo "$FRAME_TAP" | grep -q "iframe:cross-origin" \
+  || { echo "FAIL: the warning must name the boundary that justified the coordinate"; exit 1; }
+
+# A coordinate over a control that HAD a selector: the opposite report. This is the
+# quieter loss — the agent measured pixels for something it could have named, giving
+# up the re-resolution and the settle confirm a selector tap performs.
+BUTTON_POINT="$(R ui compact --live --package "$PKG" | /usr/bin/python3 -c '
+import re, sys
+for line in sys.stdin:
+    if "complex.iframeButton" not in line:
+        continue
+    m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
+    if m:
+        x, y, w, h = (int(g) for g in m.groups())
+        print(f"{x + w // 2},{y + h // 2}")
+        break
+')"
+[ -n "$BUTTON_POINT" ] || { echo "FAIL: could not read the frame button rect"; exit 1; }
+BUTTON_TAP="$(R act tap --package "$PKG" --point "$BUTTON_POINT" --no-toast-probe 2>&1)"
+echo "$BUTTON_TAP" | grep -q "warning: --point was not needed" \
+  || { echo "FAIL: a coordinate over an addressable node must be reported as unnecessary; got: $BUTTON_TAP"; exit 1; }
+echo "$BUTTON_TAP" | grep -q "complex.iframeButton" \
+  || { echo "FAIL: the warning must name the flag that would have worked"; exit 1; }
+
+# And a selector tap carries no verdict at all: it resolved through the tree, so a
+# warning on every action would be noise an agent learns to ignore.
+R act tap --package "$PKG" --test-id complex.iframeButton --no-toast-probe 2>&1 \
+  | grep -q "^warning:" \
+  && { echo "FAIL: a selector tap must not print a coverage warning"; exit 1; }
+
 echo "== WEB FORM SEMANTICS (role by type, placeholder, checked, invalid) =="
 # The shape the complex fixture is the opposite of: a form built out of framework
 # components, where no input carries an id, a data-testid or a value. What used to

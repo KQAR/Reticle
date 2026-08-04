@@ -198,6 +198,16 @@ object Render {
     /** Geometry + style + provenance for every node that has any. */
     fun style(snapshot: Snapshot): String = StyleObservation.from(snapshot).render()
 
+    /**
+     * How much of this screen an agent can address, and which regions it cannot.
+     *
+     * The self-report behind the blind-agent contract: before this, the only way to
+     * discover that half a screen needed pixel arithmetic was to drive a flow by
+     * hand and count the `--point` taps.
+     */
+    fun coverage(snapshot: Snapshot, cellPx: Double = ScreenCoverage.DEFAULT_CELL_PX): String =
+        ScreenCoverage.of(snapshot, cellPx).render()
+
     private fun selectorOf(node: Node): String = selectorOf(node.testId, node.resourceId, node.ref)
 
     private fun selectorOf(testId: String?, resourceId: String?, ref: String): String =

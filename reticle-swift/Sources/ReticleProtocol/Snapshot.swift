@@ -388,6 +388,13 @@ public struct Node: Codable, Sendable {
         return false
     }
 
+    /// The class name behind `domKernelUnsupported()`, for reporting. Twin of
+    /// reticle-core's `Node.domKernelName()`.
+    public func domKernelName() -> String? {
+        if case .text(let v)? = custom["domKernel"] { return v }
+        return nil
+    }
+
     /// True when this node's pixels are NOT in an in-process screenshot: an iOS
     /// keyboard host window refuses to render into a borrowed context (measured: the
     /// whole keyboard is absent from the agent's picture while a device capture shows

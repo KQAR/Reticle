@@ -80,6 +80,7 @@ internal object HelperRenderCommands {
         "node" -> renderNode(snapshot, params)
         "regions" -> Render.regions(snapshot)
         "style" -> Render.style(snapshot)
+        "coverage" -> Render.coverage(snapshot)
         else -> throw CliError("unknown render view '$view'")
     }
 

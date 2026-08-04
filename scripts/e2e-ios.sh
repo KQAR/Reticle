@@ -167,6 +167,46 @@ grep -q "Paid!" "$TRACE_JSON" \
 # (host-local, no device). It must find the screenshots the trace just wrote.
 "$HOST" replay gif "$TMP/trace"
 [ -s "$TMP/trace/replay.gif" ] || { echo "FAIL: replay gif produced no artifact"; exit 1; }
+echo "== COVERAGE: THE SCREEN REPORTS WHAT AN AGENT CANNOT ADDRESS =="
+# The iOS half of the blind-agent self-report. The derivation is shared and pinned
+# for both platforms by reticle-protocol/fixtures/screen-coverage.cases.json; what
+# only a device can prove is the WIRING — that `ui coverage` is a view here too, and
+# that the HID tap path attaches the verdict a coordinate needs. Before this, a
+# `--point` tap reported success and said nothing about why pixels were the only
+# path, so the gaps that forced them could only be found by hand.
+IOS_COVERAGE="$("$HOST" --target ios ui coverage "$TMP/checkout/snapshot.json")"
+echo "$IOS_COVERAGE"
+echo "$IOS_COVERAGE" | grep -qE '^coverage: [0-9]+x[0-9]+, sampled on a [0-9]+x[0-9]+ grid of [0-9]+px cells$' \
+  || { echo "FAIL: coverage must state the grid it sampled"; exit 1; }
+echo "$IOS_COVERAGE" | grep -qE '^addressable: [0-9]+ of [0-9]+ touch-relevant cell\(s\) \([0-9]+%\)$' \
+  || { echo "FAIL: coverage must report the addressable share"; exit 1; }
+
+# A coordinate over a control that HAD a selector: the quiet loss this catches. The
+# point is read off the same capture, so the assertion is about the verdict, not
+# about whether the tap lands (the LINKED section already proved that).
+PAY_POINT="$("$HOST" --target ios ui compact "$TMP/checkout/snapshot.json" | /usr/bin/python3 -c '
+import re, sys
+for line in sys.stdin:
+    if "checkout.payButton" not in line:
+        continue
+    m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
+    if m:
+        x, y, w, h = (int(g) for g in m.groups())
+        print(f"{x + w // 2},{y + h // 2}")
+        break
+')"
+[ -n "$PAY_POINT" ] || { echo "FAIL: could not read the pay button rect"; exit 1; }
+PAY_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --point "$PAY_POINT" 2>&1)"
+echo "$PAY_TAP" | grep -q "warning: --point was not needed" \
+  || { echo "FAIL: a coordinate over an addressable node must be reported as unnecessary; got: $PAY_TAP"; exit 1; }
+echo "$PAY_TAP" | grep -q "checkout.payButton" \
+  || { echo "FAIL: the warning must name the flag that would have worked"; exit 1; }
+# And a selector tap carries no verdict: it resolved through the tree, so a warning
+# on every action would be noise an agent learns to ignore.
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id checkout.payButton 2>&1 \
+  | grep -q "^warning:" \
+  && { echo "FAIL: a selector tap must not print a coverage warning"; exit 1; }
+
 echo "== WAIT: three-state outcome (resolved / absent) + --strict exit codes =="
 # The iOS half of `act wait`. It dispatches no input, so unlike `tap` it needs no
 # HID surface and works on real devices too. The classification comes from
