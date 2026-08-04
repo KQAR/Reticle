@@ -42,6 +42,28 @@ fi
 # run) still suppresses the keyboard and the login section fails ~700 lines later.
 # So: read the setting first, and if a booted device is carrying the wrong value,
 # reboot it here where the reason is obvious.
+# ...and the setting is not enough on its own. Measured across seven consecutive
+# runs on iOS 26.3: the FIRST HID keyboard event of a device's life makes iOS treat a
+# hardware keyboard as attached FOREVER — persisted in the device's own
+# com.apple.keyboard.preferences (`HardwareKeyboardLastSeen`) — and this suite types.
+# So every run poisons the next one: run N sees the keys, types, and run N+1 finds the
+# software keyboard suppressed and fails the keyboard-trap section ~700 lines in.
+# Nothing host-side clears it (all three `ConnectHardwareKeyboard` writes, quitting
+# Simulator.app, a reboot, editing the plist by hand were each measured as no-ops);
+# `simctl erase` does.
+#
+# So: erase, which makes the suite REPEATABLE rather than green once per manual reset.
+# It wipes this simulator's data — the suite reinstalls both sample apps below, so
+# nothing it needs survives that anyway. Opt out with RETICLE_E2E_NO_ERASE=1 when the
+# device holds state you want to keep (the keyboard section will then fail on a
+# device that has typed before).
+if [ "${RETICLE_E2E_NO_ERASE:-0}" = "1" ]; then
+  echo "== skipping erase (RETICLE_E2E_NO_ERASE=1); the keyboard section needs a device that has never typed =="
+else
+  echo "== erasing $UDID (clears the sticky hardware-keyboard flag; wipes this simulator's data) =="
+  xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+  xcrun simctl erase "$UDID"
+fi
 defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 defaults write com.apple.iphonesimulator DevicePreferences -dict-add "$UDID" '{ConnectHardwareKeyboard = 0;}' 2>/dev/null || true
 # A device already up read those prefs at ITS boot, and a live Simulator.app can
@@ -134,6 +156,13 @@ sleep 1
 # while activation matches inside the agent.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --label "Name on card" >/dev/null \
   || { echo "FAIL: a native placeholder must be resolvable by --label"; exit 1; }
+# ...and hand the screen back the way it was found. That tap focuses the field, so
+# the software keyboard comes up and the layout below it moves — which broke the
+# COVERAGE section further down, whose point is read from the capture ABOVE and then
+# tapped: a stale point plus a shifted layout reported `container-only` for the pay
+# button. Leaving state behind is the bug, not the coverage verdict.
+"$HOST" --target ios --serial "$UDID" act hide-keyboard --package "$LINKED_ID" >/dev/null 2>&1 || true
+sleep 1
 "$HOST" --target ios ui screenshot --package "$LINKED_ID" --output "$TMP/shot.png"
 # Style evidence. Two things are asserted because both were silent when wrong:
 # UIKit lengths are POINTS, already density-independent, so the projection must
@@ -837,10 +866,22 @@ echo "$TYPE_OUT" | grep -q "text=123456" \
 # for the same measured defect (the flag was accepted and ignored, so a second
 # type appended to the first while the result read like a clean write). The HID
 # path has no Delete in its ASCII table, which is why this needed its own key.
+#
+# The count is READ, not hard-coded: the section above deliberately taps a button the
+# keyboard covers, and with a working software keyboard that touch lands on a KEY —
+# so the field legitimately holds one more character than the code that was typed
+# into it. Hard-coding 6 asserted the simulator's keyboard was broken (measured: it
+# passed only while the keys were suppressed, and read 7 the moment they came back).
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-before-clear"
+BEFORE_CLEAR="$("$HOST" --target ios ui node "$TMP/login-before-clear/snapshot.json" --test-id login.codeField \
+  | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("text") or "")')"
+BEFORE_LEN="${#BEFORE_CLEAR}"
+[ "$BEFORE_LEN" -gt 0 ] \
+  || { echo "FAIL: the field should hold the typed code before --clear"; exit 1; }
 CLEAR_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --test-id login.codeField --text "9999" --clear)"
 echo "$CLEAR_OUT"
-echo "$CLEAR_OUT" | grep -q "cleared=emptied(6ch)" \
-  || { echo "FAIL: --clear must report emptying the six characters that were there"; exit 1; }
+echo "$CLEAR_OUT" | grep -q "cleared=emptied(${BEFORE_LEN}ch)" \
+  || { echo "FAIL: --clear must report emptying the ${BEFORE_LEN} characters that were there; got: $CLEAR_OUT"; exit 1; }
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-cleared"
 "$HOST" --target ios ui compact "$TMP/login-cleared/snapshot.json" | grep "login.codeField" | grep -q "9999" \
   || { echo "FAIL: the field must hold exactly what was typed after --clear"; exit 1; }
