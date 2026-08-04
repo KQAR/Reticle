@@ -480,6 +480,17 @@ object SampleWebFixtures {
             </div>
 
             <!--
+              A wrapper whose only child is the input: the shape a component
+              framework emits, and the one a css selector resolves instead of the
+              input itself. Typing at the wrapper used to report
+              `unavailable:dom-node-is-not-a-text-input` for text that plainly
+              landed, so this row exists to be typed into BY ITS WRAPPER.
+            -->
+            <div class="row wrapped">
+              <input name="wrapped" placeholder="Wrapped field">
+            </div>
+
+            <!--
               A tri-state "select all", the case a plain boolean cannot carry.
             -->
             <div class="row">

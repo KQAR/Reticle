@@ -1320,6 +1320,23 @@ echo "$FILLED" | grep -q '"Ada" .*placeholder:"First name"' \
   || { echo "FAIL: the value and the placeholder must both be readable, side by side"; exit 1; }
 echo "$FILLED" | grep -q '"ada@example.com"' \
   || { echo "FAIL: the email did not land in the email field"; exit 1; }
+# The page's own focus is captured now (`document.activeElement`), so the DOM half
+# of the tree has a focus channel at all: before this, the platform focus sat on the
+# host WebView and `type` could only ever report `focusLanded=ancestor`.
+echo "$FILLED" | grep -qE 'textField .*focused' \
+  || { echo "FAIL: the focused DOM input must be marked focused"; echo "$FILLED"; exit 1; }
+# And a selector that resolves the WRAPPER rather than the input reads back the
+# input inside it. Measured on a real form, that case answered
+# `textLanded=unreadable textReadback=unavailable:dom-node-is-not-a-text-input`
+# while a screenshot showed the value sitting in the field.
+WRAPPED="$(R act type --package "$PKG" --css 'div.row.wrapped' --text "Wrap")"
+echo "$WRAPPED"
+echo "$WRAPPED" | grep -q "textLanded=exact" \
+  || { echo "FAIL: typing at a DOM wrapper must read back the input inside it; got: $WRAPPED"; exit 1; }
+echo "$WRAPPED" | grep -qE "text=.*Wrap" \
+  || { echo "FAIL: the read-back must report the input's own text; got: $WRAPPED"; exit 1; }
+echo "$WRAPPED" | grep -q "dom-node-is-not-a-text-input" \
+  && { echo "FAIL: the wrapper case must no longer read as unreadable; got: $WRAPPED"; exit 1; }
 
 # 8. The disabled field flips once the app unlocks it — the other half of 6, now
 # that a DOM field can actually be typed into.

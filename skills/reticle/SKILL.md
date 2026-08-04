@@ -471,9 +471,11 @@ in-process agent and pasted, so it **requires a reachable runtime**.
 field it reads the tree back and reports `focusLanded=`:
 
 - `self` / `descendant` — the field, or an input inside it, took focus. Normal;
-- `ancestor` — the platform focus is on a host view (a WebView with the caret in a
-  DOM input, an `AndroidComposeView` with a Compose `TextField` focused). As precise
-  as those platforms allow, and treated as landed;
+- `ancestor` — the platform focus is on a host view (an `AndroidComposeView` with a
+  Compose `TextField` focused). As precise as that platform allows, and treated as
+  landed. A WebView no longer lands here: the DOM walk reads
+  `document.activeElement`, so the focused input is marked `focused` in the tree and
+  a DOM field reports `self`/`descendant` like any other;
 - `unknown` — no focus reading was available (runtime unreachable, older agent).
   Reported, never enforced;
 - `none` / `elsewhere` — **the command fails instead of typing.** The text would go
@@ -570,7 +572,11 @@ input's value and its placeholder are separate fields. Two consequences worth
 knowing: an empty input reads as **empty**, not as unreadable (the agents omit a
 blank value, so there is no `text` at all), and a DOM node that is not an input
 says `unavailable:dom-node-is-not-a-text-input` rather than the generic
-"no text field". The read-back also re-reads a DOM field up to three times: the
+"no text field" — and when a selector resolves a WRAPPER rather than the input
+inside it, the read-back follows the input (the focused one when several are
+under there) instead of reporting the wrapper unreadable. If it still cannot
+read, the message names the node it looked at AND where the caret is, because
+those are two different nodes. The read-back also re-reads a DOM field up to three times: the
 characters go in through the IME and the page's own handlers run afterwards, so
 the first read can legitimately still show the old value.
 
