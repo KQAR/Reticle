@@ -704,9 +704,43 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                         + "string is the only stable handle, or one of: --test-id, --resource-id, "
                         + "--css, --ref, --alias @N, or --point x,y"
                     : "")
-                + Self.scrollHint(snapshot))
+                + Self.refLifetimeNote(snapshot, selector)
+                // The recycling/lazy-list note is about a row that was never realized.
+                // For a REF miss on a screen with a DOM on it, the cause is
+                // renumbering, so that note is a wrong lead rather than a weak one.
+                + (selector.ref != nil && snapshot.nodes.values.contains { $0.kind == .domNode }
+                    ? "" : Self.scrollHint(snapshot)))
         }
         return try Self.withReach(snapshot, resolved)
+    }
+
+    /// What a `--ref` miss actually means — the twin of `SelectorDiagnostics.refMiss`
+    /// in the Android helper.
+    ///
+    /// A ref is a traversal INDEX, valid for the snapshot it came from: any relayout,
+    /// or in a WebView any re-render, renumbers the tree. Measured on a WebView-heavy
+    /// screen, a ref read out of one report was dead ~1s later and the answer offered
+    /// native refs that cannot stand in for a DOM node. `--css` survives a re-render,
+    /// so that is what gets named.
+    static func refLifetimeNote(_ snapshot: Snapshot, _ selector: ReticleProtocol.Selector) -> String {
+        guard let ref = selector.ref else { return "" }
+        var note = ". '\(ref)' is not in the current tree: a ref is a traversal INDEX, valid only "
+            + "for the snapshot it came from, and any relayout or re-render renumbers the whole tree"
+        let domNodes = snapshot.nodes.values.filter { $0.kind == .domNode }
+        if domNodes.isEmpty {
+            return note + ". Prefer a handle that survives a re-capture: --test-id / --label"
+        }
+        let candidates = domNodes.filter { $0.isInteractive || $0.role == "textField" }
+        let handles = (candidates.isEmpty ? domNodes : candidates)
+            .compactMap { $0.domId().map { id in "#\(id)" } ?? $0.domCssSelector() }
+            .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+            .prefix(4)
+        note += ". This screen carries \(domNodes.count) DOM node(s), which no native ref can "
+            + "substitute for — address one with --css, which survives a re-render"
+        if !handles.isEmpty {
+            note += ": " + handles.map { "'\($0)'" }.joined(separator: ", ")
+        }
+        return note
     }
 
     /// Aim at the part of the target a touch can actually reach, or refuse.

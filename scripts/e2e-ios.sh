@@ -639,6 +639,16 @@ echo "$IOS_NTH" | grep -q "domNthOfType" \
 IOS_HOVER="$("$HOST" --target ios ui node "$TMP/webview/snapshot.json" --css 'div:hover' 2>&1 || true)"
 echo "$IOS_HOVER" | grep -q "':hover'" \
   || { echo "FAIL: a non-positional pseudo-class must be refused by name; got: $IOS_HOVER"; exit 1; }
+# A dead ref on a DOM screen: refs are traversal indices, so a re-render renumbers
+# them. The answer must say that and name the handle that survives, rather than offer
+# native refs no DOM node can be addressed by.
+IOS_REF_MISS="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --ref r9999 2>&1 || true)"
+echo "$IOS_REF_MISS" | grep -q "traversal INDEX" \
+  || { echo "FAIL: a ref miss must say a ref is snapshot-scoped; got: $IOS_REF_MISS"; exit 1; }
+echo "$IOS_REF_MISS" | grep -q -- "--css" \
+  || { echo "FAIL: a ref miss on a DOM screen must name the handle that survives"; exit 1; }
+echo "$IOS_REF_MISS" | grep -q "lazy list" \
+  && { echo "FAIL: a ref miss on a DOM screen must not blame scrolling"; exit 1; }
 # HID tap onto a folded DOM frame; the observable click below goes through DOM
 # activation, which is HID-independent.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
