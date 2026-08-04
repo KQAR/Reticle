@@ -23,6 +23,25 @@
   `reticle-protocol/fixtures/screen-coverage.cases.json` (including the two quiet
   cases) and exercised end to end by the keyboard-trap and dialog/overlay sections
   of both e2e suites.
+- **A tap aims at the part of the target it can reach, or refuses.** A node's frame
+  is its LAYOUT box, and a tap at the centre of that box is only correct while the
+  whole box is reachable. Two ways it stops being, both measured on a device and
+  both reported `settled=1`: a sheet row with frame `y=2403 h=128` on a 2412px
+  screen was dispatched at **y=2468, below the bottom of the display**, and a row
+  scrolled UNDER a sheet's sticky header kept its full unclipped rect, so the touch
+  went to the dimmed page behind the sheet. `act tap` now intersects the frame with
+  every clipping ancestor — a native scroll container, a DOM element whose
+  `overflow` is not `visible`, a dialog window — and with the screen. Nothing left:
+  the tap is **refused**, naming the ancestor and `act scroll-to`, rather than
+  dispatched at a coordinate no display has (refusing is right here because the
+  tool computed the point, unlike a coordinate the caller typed, which is left
+  alone). Something left: the tap aims at the visible part and prints a `note:`
+  saying so, since the coordinate no longer matches the rect the tree reports. An
+  ordinary layout parent is deliberately NOT treated as clipping — Android views
+  draw outside their parents all the time, and a false clip would move taps that
+  were landing correctly. Pinned for both ports by
+  `reticle-protocol/fixtures/tap-reach.cases.json` and exercised by the LONG LIST
+  section of both e2e suites.
 
 - **A coordinate tap now says why it had to be one, and the screen can be asked how
   much of it is unreachable.** `act tap --point` was the one degraded path that

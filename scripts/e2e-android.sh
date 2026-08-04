@@ -551,6 +551,32 @@ WAIT_RC_UNKNOWABLE=$?
 set -e
 [ "$WAIT_RC_UNKNOWABLE" -eq 4 ] \
   || { echo "FAIL: --strict on an unknowable wait exited $WAIT_RC_UNKNOWABLE, expected 4 (not 3)"; exit 1; }
+# A row that IS in the tree but laid out past the bottom of the display is the
+# other half of the same problem, and the one that used to be silent: the home
+# scroller keeps its far-down rows bound, so the selector resolves, the tap
+# dispatches at a y no display has, and the result reads `settled=1`. A tap that
+# cannot land must say so, and name the command that fixes it.
+OFF_ROW="$(/usr/bin/python3 - "$TMP/list/snapshot.json" <<'PY2'
+import json, sys
+snap = json.load(open(sys.argv[1]))
+height = snap["screen"]["size"]["height"]
+for node in snap["nodes"].values():
+    frame, test = node.get("frame"), node.get("testId")
+    if frame and test and frame["y"] >= height:
+        print(test); break
+PY2
+)"
+if [ -n "$OFF_ROW" ]; then
+  OFF_TAP="$(R act tap --package "$PKG" --test-id "$OFF_ROW" 2>&1 || true)"
+  echo "$OFF_TAP"
+  echo "$OFF_TAP" | grep -q "laid out off screen" \
+    || { echo "FAIL: a tap on a node laid out past the display must be refused: $OFF_TAP"; exit 1; }
+  echo "$OFF_TAP" | grep -q "act scroll-to" \
+    || { echo "FAIL: the off-screen refusal must name the command that fixes it"; exit 1; }
+else
+  echo "note: no node was laid out past the display on this device; off-screen refusal not exercised here"
+fi
+
 # `act scroll-to` closes the gap: swipe the container until the selector resolves
 # INSIDE it, then confirm the position stopped moving before reporting it. That
 # settle step is the whole contract — a flinging list made the first

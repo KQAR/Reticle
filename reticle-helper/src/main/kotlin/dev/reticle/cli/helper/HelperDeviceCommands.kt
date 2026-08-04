@@ -212,6 +212,11 @@ internal object HelperDeviceCommands {
                     obstruction?.let { put("obstruction", it) }
                     put("source", target!!.source)
                     target!!.ref?.let { put("ref", it) }
+                    // The frame was only partly reachable and the tap was aimed at
+                    // the visible part instead of at its centre. Said out loud: the
+                    // coordinate no longer matches the rect the caller can read in
+                    // the tree, and the difference is the evidence.
+                    target!!.reachNote?.let { put("reach", it) }
                     // Honest flag, as in scroll-to: false means the target was still
                     // moving when the budget lapsed, so this tap may have been aimed
                     // at a point that had already changed.
