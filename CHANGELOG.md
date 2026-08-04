@@ -93,6 +93,20 @@
   inspected AND where the caret is (`dom-node-is-not-a-text-input (r407); the caret is
   in r408, which was not the node this read looked at`), instead of describing one
   node as though it were the other.
+- **A DOM rect folded outside its own web view is reported.** A DOM rect is computed
+  in page coordinates and folded into device coordinates through the host view's
+  frame, the page's scroll offsets and any iframe offset; when that fold is wrong the
+  failure is silent in the worst way — `act tap` aims at the reported rect, reports
+  `settled=1`, and the touch lands elsewhere. Measured on one page of a real hybrid
+  flow: rects offset by roughly 130px, a css tap missing twice, and only a screenshot
+  showing it. Reticle now states the one case it can prove: a rect whose CENTRE falls
+  outside the view that draws it is impossible for a correct fold, so a tap on such a
+  node carries `warning: … folded to a point OUTSIDE the web view that draws it`,
+  naming the host and a coordinate-free next step (`act activate --css`). Only the
+  strong case fires — a partially-visible element legitimately hangs over its host's
+  edge, and a smaller offset has no second source to be judged against, so guessing
+  there would fire on ordinary screens. Both ports, with mirrored unit tests, plus an
+  e2e guard that a correct fold stays quiet.
 
 - **A tap says when something else gets the touch.** `act tap` resolved a selector,
   confirmed the rect had stopped moving, dispatched, and reported `settled=1` — and
