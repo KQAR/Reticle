@@ -454,6 +454,49 @@ data class Node(
     fun maxLength(): Int? = (custom["maxLength"] as? MetadataValue.Integer)?.value?.toInt()
 
     /**
+     * What a wheel column publishes about itself, when it publishes anything.
+     *
+     * A wheel paints its unselected values onto its own canvas, so the tree holds one
+     * node (the selection) and none for the value the caller wants. Measured on a real
+     * date picker: reaching a value took reading the numbers off a screenshot,
+     * measuring the row pitch in that image, and calibrating a swipe by trial. All of
+     * it is public API on `android.widget.NumberPicker`, so these carry it instead.
+     *
+     * Null everywhere for a self-drawn wheel, which publishes none of it — that stays
+     * `wheel:opaque` rather than being guessed at.
+     */
+    fun wheelValue(): String? = (custom["wheelValue"] as? MetadataValue.Text)?.value
+
+    /** The selection's 0-based index within [wheelMin]..[wheelMax]. */
+    fun wheelIndex(): Int? = (custom["wheelIndex"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /** See [wheelValue]. */
+    fun wheelMin(): Int? = (custom["wheelMin"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /** See [wheelValue]. */
+    fun wheelMax(): Int? = (custom["wheelMax"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /** The item labels this wheel offers, truncated at the capture's own cap. */
+    fun wheelItems(): List<String> =
+        (custom["wheelItems"] as? MetadataValue.Text)?.value
+            ?.split(',')?.filter { it.isNotEmpty() } ?: emptyList()
+
+    /** How many labels [wheelItems] left out, when it left any out. */
+    fun wheelItemsTruncated(): Int? =
+        (custom["wheelItemsTruncated"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /**
+     * The pixel distance one value travels — the quantum a swipe has to be a multiple
+     * of, which is what the caller used to measure off a screenshot.
+     */
+    fun wheelRowHeightPx(): Int? =
+        (custom["wheelRowHeightPx"] as? MetadataValue.Integer)?.value?.toInt()
+
+    /** True when [wheelRowHeightPx] is `height / 3`, not a reading. */
+    fun wheelRowHeightEstimated(): Boolean =
+        (custom["wheelRowHeightEstimated"] as? MetadataValue.Bool)?.value == true
+
+    /**
      * The message this field declares itself invalid with: `""` when it sets
      * `aria-invalid` and points at nothing, the `aria-describedby` text when it
      * does, and null when the field does not declare itself invalid at all.

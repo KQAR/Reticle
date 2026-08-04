@@ -178,6 +178,28 @@ data class CompactObservation(
              */
             fun wheelMarkerFor(snapshot: Snapshot, node: Node): String? {
                 if (!node.suspectedWheel) return null
+                // A wheel that publishes its own state: value, position in the range,
+                // and the pixel pitch of one row. That last one is the number a caller
+                // used to measure off a screenshot before calibrating a swipe by trial.
+                val value = node.wheelValue()
+                val index = node.wheelIndex()
+                val min = node.wheelMin()
+                val max = node.wheelMax()
+                if (value != null && index != null && min != null && max != null) {
+                    val out = StringBuilder("value=\"").append(value).append("\" ")
+                        .append(index - min + 1).append("/").append(max - min + 1)
+                    node.wheelRowHeightPx()?.let { pitch ->
+                        out.append(" pitch=").append(pitch).append("px")
+                        // Labelled, because `height / 3` is the platform default rather
+                        // than a reading, and a swipe built on it can be off by a row.
+                        if (node.wheelRowHeightEstimated()) out.append("~")
+                    }
+                    // The labels live on the node (`ui node`), not here: a year wheel has
+                    // 120 of them and this line has to stay one line.
+                    val items = node.wheelItems()
+                    if (items.isNotEmpty()) out.append(" items")
+                    return out.toString()
+                }
                 val seen = HashSet<String>()
                 fun hasTextInside(ref: String): Boolean {
                     val child = snapshot.nodes[ref] ?: return false
