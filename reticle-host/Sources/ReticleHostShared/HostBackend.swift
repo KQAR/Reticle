@@ -447,10 +447,16 @@ public struct ActOutcome: @unchecked Sendable {
     /// IME, a window above the target's, or a node drawn over it. Present on any
     /// tap — a selector tap is the case this was silent for.
     public var obstruction: [String: Any]? { raw["obstruction"] as? [String: Any] }
+    /// Set when the tap could not aim at the target's centre because the frame is
+    /// partly off screen or partly clipped, and aimed at the visible part instead.
+    public var reach: String? { raw["reach"] as? String }
 
-    /// The result minus the sub-objects that have their own printers.
+    /// The result minus the sub-objects and sentences that have their own printers.
     public var displayFields: [String: Any] {
-        raw.filter { $0.key != "verify" && $0.key != "trace" && $0.key != "coverage" && $0.key != "obstruction" }
+        raw.filter {
+            $0.key != "verify" && $0.key != "trace" && $0.key != "coverage"
+                && $0.key != "obstruction" && $0.key != "reach"
+        }
     }
 }
 

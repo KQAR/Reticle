@@ -389,6 +389,9 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 "source": target.source,
             ]
             if let ref = target.ref { result["ref"] = ref }
+            // Only part of the frame was reachable, so the tap aimed at the visible
+            // part rather than at a centre that is no longer inside it.
+            if let reachNote = target.reachNote { result["reach"] = reachNote }
             if let coverage { result["coverage"] = coverage.jsonObject }
             if let obstruction { result["obstruction"] = obstruction.jsonObject(x: point.x, y: point.y) }
             // Honest flag, as in scroll-to: false means the target was still moving
@@ -587,7 +590,26 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             throw HelperError("could not resolve a tap point from selector \(selector.describe())"
                 + Self.scrollHint(snapshot))
         }
-        return resolved
+        return try Self.withReach(snapshot, resolved)
+    }
+
+    /// Aim at the part of the target a touch can actually reach, or refuse.
+    ///
+    /// The Android helper's twin (`withReach` in HelperRuntime.kt): a frame is a
+    /// LAYOUT box, and half of it can be below the display or scrolled under a
+    /// sticky header while the tree still reports the whole rect. Refusing is right
+    /// for a resolved SELECTOR — the tool computed the point and `act scroll-to`
+    /// fixes it — while a coordinate the caller typed is left alone.
+    static func withReach(
+        _ snapshot: Snapshot, _ resolved: SelectorResolution.Resolved
+    ) throws -> SelectorResolution.Resolved {
+        guard let ref = resolved.ref, let reach = TapReach.of(snapshot, ref: ref) else { return resolved }
+        guard let point = reach.point else { throw HelperError(reach.explain(ref)) }
+        guard reach.adjusted else { return resolved }
+        var adjusted = resolved
+        adjusted.point = point
+        adjusted.reachNote = reach.explain(ref)
+        return adjusted
     }
 
     func settleRequested(_ params: [String: Any]) -> Bool { isTruthy(params["settle"]) }

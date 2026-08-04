@@ -368,6 +368,27 @@ WAIT_RC_UNKNOWABLE=$?
 set -e
 [ "$WAIT_RC_UNKNOWABLE" -eq 4 ] \
   || { echo "FAIL: --strict on an unknowable wait exited $WAIT_RC_UNKNOWABLE, expected 4 (not 3)"; exit 1; }
+# The Android suite's twin: a node that IS in the tree but laid out past the
+# bottom of the display must be refused rather than tapped at a y no display has.
+OFF_ROW="$(/usr/bin/python3 - "$TMP/list/snapshot.json" <<'PY2'
+import json, sys
+snap = json.load(open(sys.argv[1]))
+height = snap["screen"]["size"]["height"]
+for node in snap["nodes"].values():
+    frame, test = node.get("frame"), node.get("testId")
+    if frame and test and frame["y"] >= height:
+        print(test); break
+PY2
+)"
+if [ -n "$OFF_ROW" ]; then
+  OFF_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id "$OFF_ROW" 2>&1 || true)"
+  echo "$OFF_TAP"
+  echo "$OFF_TAP" | grep -q "laid out off screen" \
+    || { echo "FAIL: a tap on a node laid out past the display must be refused: $OFF_TAP"; exit 1; }
+else
+  echo "note: no node was laid out past the display on this simulator; off-screen refusal not exercised here"
+fi
+
 # `act scroll-to` drags the container until the selector resolves INSIDE it, then
 # polls until the position stops moving before reporting it. The settle step is
 # the contract: a flinging list keeps moving after the gesture returns, and a
