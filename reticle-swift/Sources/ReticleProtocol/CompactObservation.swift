@@ -78,6 +78,29 @@ public struct CompactObservation: Codable, Sendable {
         /// O(depth x siblings). The cover must be **interactive**, which is the honest
         /// limit: a touch falls through a view that does not consume it. See the
         /// Kotlin twin.
+        /// A screen-sized interactive container occludes a point only where it
+        /// actually draws something there — the Kotlin twin carries the measurement
+        /// (a login screen with a full-screen debug overlay marked EVERY item
+        /// occluded while every one of them was tappable). A web view is exempt: the
+        /// native view eats the touch wherever it lies, whatever its document holds.
+        let screenArea = snapshot.screen.size.width * snapshot.screen.size.height
+        func drawsAt(_ node: Node, _ cx: Double, _ cy: Double) -> Bool {
+            guard let frame = node.frame else { return false }
+            if frame.width * frame.height <= screenArea * ScreenCoverage.containerAreaFraction {
+                return true
+            }
+            if node.role == "webView" || node.typeName.contains("WebView") { return true }
+            var seen = Set<String>()
+            func descendantAt(_ ref: String) -> Bool {
+                guard seen.insert(ref).inserted, let child = snapshot.nodes[ref] else { return false }
+                if child.ref != node.ref, child.isVisible, child.frame?.contains(cx, cy) == true {
+                    return true
+                }
+                return child.children.contains(where: descendantAt)
+            }
+            return node.children.contains(where: descendantAt)
+        }
+
         func laterSiblingCovering(_ node: Node, _ cx: Double, _ cy: Double) -> String? {
             var current = node
             var parent = current.parentRef.flatMap { snapshot.nodes[$0] }
@@ -87,6 +110,7 @@ public struct CompactObservation: Codable, Sendable {
                     for i in stride(from: p.children.count - 1, to: position, by: -1) {
                         guard let above = snapshot.nodes[p.children[i]],
                               above.isVisible, above.isInteractive else { continue }
+                        guard drawsAt(above, cx, cy) else { continue }
                         if above.frame?.contains(cx, cy) == true { return above.ref }
                     }
                 }

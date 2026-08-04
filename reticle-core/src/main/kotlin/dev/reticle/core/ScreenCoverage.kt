@@ -431,6 +431,7 @@ object ScreenCoverage {
         val stacked = stack(snapshot)
         val keyboardFrame = snapshot.screen.keyboard?.takeIf { it.visible }?.frame
         var addressableCells = 0
+        var containerOnlyCells = 0
         var inertCells = 0
         var emptyCells = 0
         var keyboardCells = 0
@@ -451,6 +452,20 @@ object ScreenCoverage {
                     verdict.reason == REASON_NOTHING_CAPTURED || verdict.reason == REASON_OFF_SCREEN ->
                         emptyCells++
                     verdict.reason == REASON_NOT_INTERACTIVE -> inertCells++
+                    // A screen-sized interactive container over the point is not
+                    // cover — that rule stands, and the per-point verdict still
+                    // says so — but it is not a GAP either, and counting it as one
+                    // made a whole class of app unreadable. Measured on a login
+                    // screen carrying a full-screen debug overlay (an interactive
+                    // `FrameLayout` the size of the display): 1004 of 1462
+                    // touch-relevant cells came back unreachable and the screen read
+                    // as 31% addressable, while every control on it resolved and
+                    // every tap landed. Reported on its own line instead, so the
+                    // fact survives without poisoning the one number that measures
+                    // the blind-agent contract. A boundary the container declares —
+                    // a capped DOM walk, an unreadable one, a cross-origin frame —
+                    // is answered before this branch and still counts as a gap.
+                    verdict.reason == REASON_CONTAINER_ONLY -> containerOnlyCells++
                     else -> {
                         val ref = verdict.ref ?: "?"
                         val key = "${verdict.reason}|$ref"
@@ -478,6 +493,7 @@ object ScreenCoverage {
             inertCells = inertCells,
             emptyCells = emptyCells,
             keyboardCells = keyboardCells,
+            containerOnlyCells = containerOnlyCells,
             gaps = gaps.values.sortedWith(compareByDescending<CoverageGap> { it.cells }
                 .thenBy { it.reason }
                 .thenBy { it.ref }),
@@ -599,6 +615,16 @@ data class CoverageReport(
     val emptyCells: Int,
     /** Covered by the system keyboard — another process's window, never a node. */
     val keyboardCells: Int,
+    /**
+     * Only a screen-sized interactive container answers here.
+     *
+     * Counted apart from [gaps] for the reason [inertCells] is: the container is not
+     * cover (a selector tap on it lands on its own centre), but a transparent
+     * full-screen frame over ordinary content is not a region the app failed to
+     * expose either. Folding these into the gap total made a screen whose every
+     * control worked read as 31% addressable.
+     */
+    val containerOnlyCells: Int = 0,
     val gaps: List<CoverageGap>,
 ) {
     /** Cells inside a region a named boundary makes unreachable. */
@@ -642,12 +668,17 @@ data class CoverageReport(
             val more = gaps.size - ScreenCoverage.MAX_LISTED_GAPS
             if (more > 0) append("  ($more more gap group(s))\n")
         }
+        if (containerOnlyCells > 0) {
+            append("container-only: $containerOnlyCells cell(s) — only a screen-sized container ")
+                .append("answers here (a selector tap on it lands on its own centre)\n")
+        }
         append("inert: $inertCells cell(s) — a node is captured there, none of it interactive\n")
         append("empty: $emptyCells cell(s) — no captured node contains the point\n")
         if (keyboardCells > 0) {
             append("keyboard: $keyboardCells cell(s) covered by the IME (another process's window)\n")
         }
-        append("(inert and empty cells are NOT counted as gaps: without pixels, plain content and a ")
+        append("(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain ")
+            .append("content and a ")
             .append("control the projection failed to mark are the same observation)")
     }
 }

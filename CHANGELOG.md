@@ -70,6 +70,24 @@
   result that looks like a replacement is the defect. Both ports: the iOS HID
   keyboard had no Delete in its ASCII table, so it gained one. Asserted end to end
   in the login section of both e2e suites.
+- **A pass-through full-screen container stops poisoning coverage and occlusion.**
+  Apps ship in-app debug overlays: an interactive `FrameLayout` the size of the
+  display, drawing nothing but a small floating icon. Reticle treated it as cover.
+  Measured on a login screen carrying one, both read commands went wrong in the
+  same direction: `ui coverage` reported **1004 of 1462 touch-relevant cells
+  unreachable — 31% addressable** while every control on the screen resolved and
+  every tap landed, and `ui compact` stamped `occluded-by:<overlay>` on essentially
+  every item, which makes the marker useless exactly where it matters. Two fixes,
+  each keeping the case the rule was written for. Coverage still refuses to count a
+  screen-sized container as cover, but those cells are no longer a **gap**: they
+  get their own `container-only:` line and stay out of the addressable ratio, next
+  to `inert` and `empty` (a boundary the container declares — a capped or
+  unreadable DOM, a cross-origin frame — is answered earlier and still counts).
+  Occlusion now asks whether the cover DRAWS at the point rather than how big it
+  is: a second page pushed over a live one still occludes everything under it (a
+  web view is opaque to touch wherever it lies, whatever its document holds), while
+  a transparent frame only occludes where it has something of its own. Both e2e
+  suites gained the false-positive assertions.
 
 - **A coordinate tap now says why it had to be one, and the screen can be asked how
   much of it is unreachable.** `act tap --point` was the one degraded path that

@@ -290,6 +290,7 @@ public enum ScreenCoverage {
         let stacked = stack(snapshot)
         let keyboardFrame = snapshot.screen.keyboard.flatMap { $0.visible ? $0.frame : nil }
         var addressableCells = 0
+        var containerOnlyCells = 0
         var inertCells = 0
         var emptyCells = 0
         var keyboardCells = 0
@@ -312,6 +313,11 @@ public enum ScreenCoverage {
                     emptyCells += 1
                 } else if v.reason == reasonNotInteractive {
                     inertCells += 1
+                } else if v.reason == reasonContainerOnly {
+                    // Not cover, but not a gap either — see the Kotlin twin for the
+                    // login screen that read as 31% addressable while every control
+                    // on it worked.
+                    containerOnlyCells += 1
                 } else {
                     let ref = v.ref ?? "?"
                     let key = "\(v.reason)|\(ref)"
@@ -335,7 +341,7 @@ public enum ScreenCoverage {
         return CoverageReport(
             screen: size, cellPx: cell, columns: columns, rows: rows,
             addressableCells: addressableCells, inertCells: inertCells, emptyCells: emptyCells,
-            keyboardCells: keyboardCells, gaps: sorted
+            keyboardCells: keyboardCells, containerOnlyCells: containerOnlyCells, gaps: sorted
         )
     }
 }
@@ -452,11 +458,15 @@ public struct CoverageReport: Codable, Equatable, Sendable {
     public var emptyCells: Int
     /// Covered by the system keyboard — another process's window, never a node.
     public var keyboardCells: Int
+    /// Only a screen-sized interactive container answers here. Counted apart from
+    /// `gaps` — see the Kotlin twin.
+    public var containerOnlyCells: Int
     public var gaps: [CoverageGap]
 
     public init(
         screen: Size, cellPx: Double, columns: Int, rows: Int, addressableCells: Int,
-        inertCells: Int, emptyCells: Int, keyboardCells: Int, gaps: [CoverageGap]
+        inertCells: Int, emptyCells: Int, keyboardCells: Int, containerOnlyCells: Int = 0,
+        gaps: [CoverageGap]
     ) {
         self.screen = screen
         self.cellPx = cellPx
@@ -466,6 +476,7 @@ public struct CoverageReport: Codable, Equatable, Sendable {
         self.inertCells = inertCells
         self.emptyCells = emptyCells
         self.keyboardCells = keyboardCells
+        self.containerOnlyCells = containerOnlyCells
         self.gaps = gaps
     }
 
@@ -502,12 +513,16 @@ public struct CoverageReport: Codable, Equatable, Sendable {
             let more = gaps.count - ScreenCoverage.maxListedGaps
             if more > 0 { out += "  (\(more) more gap group(s))\n" }
         }
+        if containerOnlyCells > 0 {
+            out += "container-only: \(containerOnlyCells) cell(s) — only a screen-sized container "
+                + "answers here (a selector tap on it lands on its own centre)\n"
+        }
         out += "inert: \(inertCells) cell(s) — a node is captured there, none of it interactive\n"
         out += "empty: \(emptyCells) cell(s) — no captured node contains the point\n"
         if keyboardCells > 0 {
             out += "keyboard: \(keyboardCells) cell(s) covered by the IME (another process's window)\n"
         }
-        out += "(inert and empty cells are NOT counted as gaps: without pixels, plain content and a "
+        out += "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a "
             + "control the projection failed to mark are the same observation)"
         return out
     }
