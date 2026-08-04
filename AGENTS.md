@@ -31,8 +31,9 @@ panel's visual language — the token spec (colors, type, surface ladder) the
 
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
   observations, wire protocol, selectors, and the text projections themselves
-  (`Render` — `compact` / `tree` / `semantics` / `regions`, beside
-  `StyleObservation.render`). No Android dependency. Shared by the CLI and the
+  (`Render` — `compact` / `tree` / `semantics` / `regions` / `coverage`, beside
+  `StyleObservation.render` and `ScreenCoverage`, which answers "what on this screen
+  has no selector over it" for one point and for the whole screen). No Android dependency. Shared by the CLI and the
   in-app agent. One implementation of `reticle-protocol`; the Swift
   `ReticleProtocol` is the parallel one. **A projection's formatting belongs here,
   not in the helper**: a derivation shared while its rendering is not has only half
@@ -206,6 +207,16 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
     4 = unknowable, kept distinct on purpose).
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
+- **A coordinate is a reported degradation, never a quiet path.** `act tap --point`
+  attaches a `ScreenCoverage.at` verdict and the host prints it as a warning: either
+  the boundary that justified the coordinate, or the flag that would have worked
+  (which is the worse case — a coordinate skips the re-resolve, the settle confirm
+  and the stale-rect evidence). `ui coverage` is the whole-screen form. Both come
+  from ONE derivation with a Swift twin, pinned by
+  `reticle-protocol/fixtures/screen-coverage.cases.json` — a new reason token goes
+  there or it ships unpinned on one side. Its rules were corrected by devices, not
+  by reasoning: see the `Coverage` section of `docs/architecture.md` before changing
+  what counts as cover.
 - App-authored probes are process-global: publish on screen entry, retract on
   exit (`ReticleProbeRegistry.clear()` / `Reticle.clearProbes()`). A probe nothing
   removes stays addressable on every later screen, which reads as a stale target

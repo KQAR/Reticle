@@ -203,6 +203,11 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
         return 0
     }
     print(outcome.displayFields.map { "\($0)=\($1)" }.sorted().joined(separator: " "))
+    // A coordinate tap says why it had to be one. Printed as a warning either way:
+    // an uncovered point is a coverage gap to file, and a COVERED one means the
+    // agent measured pixels for something it could have named — losing the
+    // re-resolution, settle confirm and stale-rect evidence a selector tap carries.
+    if let warning = outcome.coverage?["warning"] as? String { print("warning: \(warning)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)
