@@ -1,0 +1,845 @@
+{
+ "$comment": "Authoritative cases for where a tap can actually land - read by BOTH the Kotlin (reticle-core TapReachContractTest) and Swift (ReticleProtocol TapReachContractTests) suites, so the Android helper and the iOS host cannot aim two different ways. A node's frame is its LAYOUT box, and a tap at the centre of that box is only correct while the whole box is reachable. What the cases pin: a fully visible node is tapped at its own centre and nothing is said; a node hanging off the bottom of the display is tapped on the part that is still on screen; a node laid out entirely off screen is REFUSED with the command that fixes it rather than dispatched at a coordinate no display has; the same two answers for a node clipped by a scroll container and for one scrolled out of it entirely; and the CSS rule for a DOM scroll port (a non-'visible' overflow clips its children) so a hybrid screen behaves the same as a native one. Measured on a device: a sheet row with frame y=2403 h=128 on a 2412px screen was dispatched at y=2468 and reported settled=1, and a row scrolled under a sticky header kept its full rect and sent the touch to the page behind the sheet.",
+ "cases": [
+  {
+   "name": "a fully visible node is tapped at its own centre",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "plain",
+       "halfOff",
+       "fullyOff",
+       "scroller"
+      ],
+      "parentRef": "r0"
+     },
+     "plain": {
+      "ref": "plain",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "plain",
+      "frame": {
+       "x": 16,
+       "y": 16,
+       "width": 32,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "halfOff": {
+      "ref": "halfOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "half.off",
+      "frame": {
+       "x": 16,
+       "y": 112,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "fullyOff": {
+      "ref": "fullyOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "fully.off",
+      "frame": {
+       "x": 16,
+       "y": 160,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "scroller": {
+      "ref": "scroller",
+      "kind": "view",
+      "typeName": "android.widget.ScrollView",
+      "role": "scrollView",
+      "testId": "scroller",
+      "frame": {
+       "x": 0,
+       "y": 48,
+       "width": 128,
+       "height": 48
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "rowVisible",
+       "rowUnderHeader",
+       "rowScrolledAway"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "rowVisible": {
+      "ref": "rowVisible",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.visible",
+      "frame": {
+       "x": 0,
+       "y": 56,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowUnderHeader": {
+      "ref": "rowUnderHeader",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.half",
+      "frame": {
+       "x": 0,
+       "y": 32,
+       "width": 128,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowScrolledAway": {
+      "ref": "rowScrolledAway",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.gone",
+      "frame": {
+       "x": 0,
+       "y": 8,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "plain",
+     "point": "32,24"
+    },
+    {
+     "ref": "rowVisible",
+     "point": "64,64"
+    }
+   ]
+  },
+  {
+   "name": "a node hanging off the bottom is tapped on the part still on screen",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "plain",
+       "halfOff",
+       "fullyOff",
+       "scroller"
+      ],
+      "parentRef": "r0"
+     },
+     "plain": {
+      "ref": "plain",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "plain",
+      "frame": {
+       "x": 16,
+       "y": 16,
+       "width": 32,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "halfOff": {
+      "ref": "halfOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "half.off",
+      "frame": {
+       "x": 16,
+       "y": 112,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "fullyOff": {
+      "ref": "fullyOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "fully.off",
+      "frame": {
+       "x": 16,
+       "y": 160,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "scroller": {
+      "ref": "scroller",
+      "kind": "view",
+      "typeName": "android.widget.ScrollView",
+      "role": "scrollView",
+      "testId": "scroller",
+      "frame": {
+       "x": 0,
+       "y": 48,
+       "width": 128,
+       "height": 48
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "rowVisible",
+       "rowUnderHeader",
+       "rowScrolledAway"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "rowVisible": {
+      "ref": "rowVisible",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.visible",
+      "frame": {
+       "x": 0,
+       "y": 56,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowUnderHeader": {
+      "ref": "rowUnderHeader",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.half",
+      "frame": {
+       "x": 0,
+       "y": 32,
+       "width": 128,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowScrolledAway": {
+      "ref": "rowScrolledAway",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.gone",
+      "frame": {
+       "x": 0,
+       "y": 8,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "halfOff",
+     "point": "32,120",
+     "adjusted": true,
+     "explain": "halfOff is only partly visible, so the tap aims at the visible part rather than at the frame's centre"
+    }
+   ]
+  },
+  {
+   "name": "a node laid out entirely off screen is refused, not dispatched",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "plain",
+       "halfOff",
+       "fullyOff",
+       "scroller"
+      ],
+      "parentRef": "r0"
+     },
+     "plain": {
+      "ref": "plain",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "plain",
+      "frame": {
+       "x": 16,
+       "y": 16,
+       "width": 32,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "halfOff": {
+      "ref": "halfOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "half.off",
+      "frame": {
+       "x": 16,
+       "y": 112,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "fullyOff": {
+      "ref": "fullyOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "fully.off",
+      "frame": {
+       "x": 16,
+       "y": 160,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "scroller": {
+      "ref": "scroller",
+      "kind": "view",
+      "typeName": "android.widget.ScrollView",
+      "role": "scrollView",
+      "testId": "scroller",
+      "frame": {
+       "x": 0,
+       "y": 48,
+       "width": 128,
+       "height": 48
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "rowVisible",
+       "rowUnderHeader",
+       "rowScrolledAway"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "rowVisible": {
+      "ref": "rowVisible",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.visible",
+      "frame": {
+       "x": 0,
+       "y": 56,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowUnderHeader": {
+      "ref": "rowUnderHeader",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.half",
+      "frame": {
+       "x": 0,
+       "y": 32,
+       "width": 128,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowScrolledAway": {
+      "ref": "rowScrolledAway",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.gone",
+      "frame": {
+       "x": 0,
+       "y": 8,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "fullyOff",
+     "adjusted": true,
+     "reason": "off-screen",
+     "explain": "fullyOff is laid out off screen, so a tap at its centre lands outside the display — bring it into view first with `act scroll-to`"
+    }
+   ]
+  },
+  {
+   "name": "a scroll container clips its rows: partly under it aims at the visible part, fully out is refused",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "plain",
+       "halfOff",
+       "fullyOff",
+       "scroller"
+      ],
+      "parentRef": "r0"
+     },
+     "plain": {
+      "ref": "plain",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "plain",
+      "frame": {
+       "x": 16,
+       "y": 16,
+       "width": 32,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "halfOff": {
+      "ref": "halfOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "half.off",
+      "frame": {
+       "x": 16,
+       "y": 112,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "fullyOff": {
+      "ref": "fullyOff",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "fully.off",
+      "frame": {
+       "x": 16,
+       "y": 160,
+       "width": 32,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "w1"
+     },
+     "scroller": {
+      "ref": "scroller",
+      "kind": "view",
+      "typeName": "android.widget.ScrollView",
+      "role": "scrollView",
+      "testId": "scroller",
+      "frame": {
+       "x": 0,
+       "y": 48,
+       "width": 128,
+       "height": 48
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "rowVisible",
+       "rowUnderHeader",
+       "rowScrolledAway"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "rowVisible": {
+      "ref": "rowVisible",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.visible",
+      "frame": {
+       "x": 0,
+       "y": 56,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowUnderHeader": {
+      "ref": "rowUnderHeader",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.half",
+      "frame": {
+       "x": 0,
+       "y": 32,
+       "width": 128,
+       "height": 32
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     },
+     "rowScrolledAway": {
+      "ref": "rowScrolledAway",
+      "kind": "view",
+      "typeName": "android.widget.TextView",
+      "role": "button",
+      "testId": "row.gone",
+      "frame": {
+       "x": 0,
+       "y": 8,
+       "width": 128,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "scroller"
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "rowUnderHeader",
+     "point": "64,56",
+     "adjusted": true,
+     "by": "scroller",
+     "explain": "rowUnderHeader is only partly visible (clipped by scroller), so the tap aims at the visible part rather than at the frame's centre"
+    },
+    {
+     "ref": "rowScrolledAway",
+     "adjusted": true,
+     "reason": "clipped",
+     "by": "scroller",
+     "explain": "rowScrolledAway is fully clipped by scroller, so no part of it can receive a touch — scroll it into its container's viewport with `act scroll-to`"
+    }
+   ]
+  },
+  {
+   "name": "a DOM scroll port clips by the CSS rule, so a hybrid screen answers like a native one",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 128
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "children": [
+       "web"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "webView",
+      "resourceId": "web",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 128
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "port"
+      ]
+     },
+     "port": {
+      "ref": "port",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "container",
+      "frame": {
+       "x": 0,
+       "y": 64,
+       "width": 128,
+       "height": 32
+      },
+      "parentRef": "web",
+      "children": [
+       "inPort",
+       "pastPort"
+      ],
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domStyleOverflowX": {
+        "_type": "text",
+        "value": "hidden"
+       },
+       "domStyleOverflowY": {
+        "_type": "text",
+        "value": "auto"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#port"
+       }
+      }
+     },
+     "inPort": {
+      "ref": "inPort",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "button",
+      "frame": {
+       "x": 0,
+       "y": 72,
+       "width": 64,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "port",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#in"
+       }
+      }
+     },
+     "pastPort": {
+      "ref": "pastPort",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "button",
+      "frame": {
+       "x": 0,
+       "y": 32,
+       "width": 64,
+       "height": 16
+      },
+      "isInteractive": true,
+      "parentRef": "port",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#past"
+       }
+      }
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "inPort",
+     "point": "32,80"
+    },
+    {
+     "ref": "pastPort",
+     "adjusted": true,
+     "reason": "clipped",
+     "by": "port",
+     "explain": "pastPort is fully clipped by port, so no part of it can receive a touch — scroll it into its container's viewport with `act scroll-to`"
+    }
+   ]
+  }
+ ]
+}
