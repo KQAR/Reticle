@@ -89,4 +89,26 @@ class VerifyTokenTest {
         // "node not present" no matter what the UI does.
         assertFailsWith<CliError> { parseVerifyToken("testid=checkout.status", null, null, null, null) }
     }
+
+    @Test
+    fun bareVerifyAcceptsALabelAsTheActedOnSelector() {
+        // Measured on a framework-built screen where a label was the only handle:
+        // `act tap --label "Potwierdź" --verify` was refused with "pass a node
+        // selector, or act by selector rather than --point" while the caller was
+        // acting by selector all along.
+        val sel = parseVerifyToken("true", null, null, null, null, "Potwierdź")!!
+        assertEquals("Potwierdź", sel.label)
+    }
+
+    @Test
+    fun labelEqualsToken_isLabel() {
+        val sel = parseVerifyToken("label=Potwierdź", null, null, null, null)!!
+        assertEquals("Potwierdź", sel.label)
+        assertNull(sel.ref)
+    }
+
+    @Test
+    fun bareVerifyStillRefusesWhenThereIsNoSelectorAtAll() {
+        assertFailsWith<CliError> { parseVerifyToken("true", null, null, null, null, null) }
+    }
 }
