@@ -15,9 +15,9 @@ internal object HelperVerify {
         val token = params["verify"]?.jsonPrimitive?.content ?: return null
         if (token == "true") {
             val sel = selectorFrom(params)
-            return parseVerifyToken("true", sel.testId, sel.resourceId, sel.cssSelector, sel.ref)
+            return parseVerifyToken("true", sel.testId, sel.resourceId, sel.cssSelector, sel.ref, sel.label)
         }
-        return parseVerifyToken(token, null, null, null, null)
+        return parseVerifyToken(token, null, null, null, null, null)
     }
 
     fun captureState(client: RuntimeClient, sel: Selector): VerifyState {
@@ -52,6 +52,7 @@ internal object HelperVerify {
         val selStr = sel.testId?.let { "#$it" }
             ?: sel.resourceId?.let { "@$it" }
             ?: sel.cssSelector?.let { "css=$it" }
+            ?: sel.label?.let { "label=$it" }
             ?: sel.ref
             ?: "?"
         return buildJsonObject {
@@ -81,6 +82,7 @@ internal object HelperVerify {
         sel.resourceId?.let { put("resourceId", it) }
         sel.cssSelector?.let { put("css", it) }
         sel.ref?.let { put("ref", it) }
+        sel.label?.let { put("label", it) }
     }
 
     private fun diff(before: VerifyState?, after: VerifyState): Map<String, Pair<String?, String?>> {
@@ -111,17 +113,26 @@ internal fun parseVerifyToken(
     actResourceId: String?,
     actCssSelector: String?,
     actRef: String?,
+    // `--label` is a node selector like any other, and bare `--verify` used to
+    // refuse it: `act tap --label "Potwierdź" --verify` answered "pass a node
+    // selector, or act by selector rather than --point" while the caller WAS
+    // acting by selector. On a framework-built screen a label is often the only
+    // handle there is, so the refusal fell exactly where the feature was needed.
+    actLabel: String? = null,
 ): Selector? = when {
     token == "false" -> null
     token == "true" -> {
-        if (actTestId == null && actResourceId == null && actCssSelector == null && actRef == null) {
-            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|ref>, or act by selector rather than --point")
+        if (actTestId == null && actResourceId == null && actCssSelector == null &&
+            actRef == null && actLabel == null
+        ) {
+            throw CliError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|label=<text>|ref>, or act by selector rather than --point")
         }
         Selector(
             testId = actTestId,
             resourceId = actResourceId,
             cssSelector = actCssSelector,
             ref = actRef,
+            label = actLabel,
         )
     }
     token.startsWith("#") -> Selector(testId = token.drop(1))
@@ -134,9 +145,10 @@ internal fun parseVerifyToken(
     token.startsWith("testId=") -> Selector(testId = token.removePrefix("testId="))
     token.startsWith("resourceId=") -> Selector(resourceId = token.removePrefix("resourceId="))
     token.startsWith("ref=") -> Selector(ref = token.removePrefix("ref="))
+    token.startsWith("label=") -> Selector(label = token.removePrefix("label="))
     // An unknown key= would silently become a never-matching ref; fail loudly.
     token.contains('=') -> throw CliError(
-        "unrecognized --verify selector '$token': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, ref=<ref>, or a bare ref"
+        "unrecognized --verify selector '$token': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, label=<text>, ref=<ref>, or a bare ref"
     )
     else -> Selector(ref = token)
 }

@@ -52,4 +52,21 @@ struct IosVerifyTokenTests {
             _ = try IosHelperClient.parseVerifyToken("bogus=x", actSelector: ReticleProtocol.Selector())
         }
     }
+
+    @Test func bareVerifyAcceptsALabelAsTheActedOnSelector() throws {
+        // The Android twin's case: a label is a node selector, and bare `--verify`
+        // used to refuse it while the caller was acting by selector.
+        let sel = try IosHelperClient.parseVerifyToken(
+            "true", actSelector: ReticleProtocol.Selector(label: "Potwierdź")
+        )
+        #expect(sel?.label == "Potwierdź")
+    }
+
+    @Test func labelEqualsTokenIsALabel() throws {
+        let sel = try IosHelperClient.parseVerifyToken(
+            "label=Potwierdź", actSelector: ReticleProtocol.Selector()
+        )
+        #expect(sel?.label == "Potwierdź")
+        #expect(sel?.ref == nil)
+    }
 }
