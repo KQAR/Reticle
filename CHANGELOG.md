@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.0 - 2026-08-05
 
 - **`ui coverage` names a field the page named but exposed no control for.** A
   screen whose five dropdowns are bare `<div>` triggers — no role, no `aria-*`, no
