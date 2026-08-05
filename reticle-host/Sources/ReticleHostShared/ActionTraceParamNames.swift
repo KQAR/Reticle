@@ -28,6 +28,8 @@ public enum ActionTraceParamNames {
         "from", "to", "duration",
         // scroll-to
         "container", "direction", "maxSwipes",
+        // wheel (its `to` is a VALUE, not a point)
+        "toIndex",
         // verify (the weak "did anything change" watch, not an assertion)
         "verify", "verifyTimeoutMs",
         // wait

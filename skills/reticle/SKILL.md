@@ -460,8 +460,28 @@ when the list is longer than the capture's cap) — it is not on the compact lin
 because a year wheel has 120 of them. None of these appear for a self-drawn wheel;
 absent is absent, never estimated.
 
-Either way the recipe for MOVING a wheel is the same (the read side does not make
-an unselected value tappable):
+**Moving a wheel that publishes its state: `act wheel`.** When the marker carries a
+value, the column can be driven by name and the tool converges on the wheel's own
+reading — no pixel calibration, no screenshot round-trip:
+
+```bash
+reticle act wheel --package <pkg> --test-id wheel.hour --to "17"      # by label
+reticle act wheel --package <pkg> --test-id wheel.hour --to-index 17  # by position
+```
+
+It aims each swipe at the rows still between here and the target (that is what
+`pitch` is for), re-reads the value, and repeats; the result says where it landed
+and how many swipes it took (`from=09 value=17 index=17 swipes=2 rowsPerSwipe=7`).
+An estimated pitch (`~`) costs an extra iteration, never a wrong answer, and the
+result flags it. It refuses rather than pretending: a `wheel:opaque` column has no
+reading to converge on, a value the wheel does not offer is named as such, and a
+wheel that stops moving is reported **where it stopped** — "it is at its end" and
+"the tool gave up" are different facts. Android only for now: on iOS a wheel's
+visible rows are real nodes, so `act tap --label "<value>"` selects one directly (the
+command says so if you try it there).
+
+For a wheel that publishes nothing, the recipe is unchanged (the read side does not
+make an unselected value tappable):
 
 1. `swipe` along the column's centre, endpoints derived from its frame — not a
    hardcoded distance, which is device- and widget-specific;

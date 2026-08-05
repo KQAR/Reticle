@@ -88,6 +88,11 @@ enum CliFlags {
             return actCommon.union(selectors).union(["from", "to", "duration"])
         case "scroll-to":
             return actCommon.union(selectors).union(["container", "direction", "max-swipes"])
+        case "wheel":
+            // `--to` is a VALUE here, not a point: a wheel is addressed by what it
+            // should show, and `--to-index` names the position when it publishes no
+            // labels to match against.
+            return actCommon.union(selectors).union(["to", "to-index"])
         case "wait":
             return [
                 "package", "test-id", "resource-id", "css", "ref", "label", "alias", "point",
@@ -155,6 +160,6 @@ enum CliFlags {
         "mutate": [""],
         "debug": [""],
         "ui": ["report", "screenshot", "tree", "compact", "outline", "node", "regions", "style", "coverage"],
-        "act": ["tap", "type", "swipe", "drag", "scroll-to", "wait", "batch", "activate", "hide-keyboard"],
+        "act": ["tap", "type", "swipe", "drag", "scroll-to", "wheel", "wait", "batch", "activate", "hide-keyboard"],
     ]
 }

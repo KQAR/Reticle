@@ -190,6 +190,9 @@ public struct ActRequest: @unchecked Sendable {
     public var container: String?
     public var direction: String?
     public var maxSwipes: String?
+    /// `act wheel --to-index <n>`: the wheel position to converge on, when the caller
+    /// names a position rather than a value (`--to` carries the value).
+    public var toIndex: String?
     public var submit: Bool = false
     /// `type --clear`: empty the field before typing, and prove it is empty.
     /// Used to be accepted and ignored, which left the caller believing a field
@@ -249,6 +252,7 @@ public struct ActRequest: @unchecked Sendable {
         if let container { out["container"] = container }
         if let direction { out["direction"] = direction }
         if let maxSwipes { out["maxSwipes"] = maxSwipes }
+        if let toIndex { out["toIndex"] = toIndex }
         if submit { out["submit"] = true }
         if clear { out["clear"] = true }
         if noToastProbe { out["noToastProbe"] = true }
@@ -532,6 +536,7 @@ public extension ActRequest {
         request.container = string("container")
         request.direction = string("direction")
         request.maxSwipes = string("maxSwipes")
+        request.toIndex = string("toIndex")
         request.submit = flag("submit")
         request.clear = flag("clear")
         request.noToastProbe = flag("noToastProbe")

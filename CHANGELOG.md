@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **`act wheel` moves a picker column by name, converging on the wheel's own
+  reading.** With the column publishing its value and row pitch, the loop that used
+  to need pixels closes without them: aim a swipe at the rows still between here and
+  the target, re-read the value, repeat. `act wheel --test-id wheel.hour --to "17"`
+  answers `from=09 value=17 index=17 swipes=2 rowsPerSwipe=7 pitchPx=157
+  pitchEstimated=1`, and the app's own committed state agrees (`Time: 17:00`). An
+  estimated pitch costs an extra iteration rather than a wrong answer, and the result
+  says it was estimated. One swipe is bounded by the SCREEN, not by the column: the
+  drag starts inside the wheel (that is what makes it the target) and may end outside
+  it, because the view that captured the pointer keeps receiving the moves — measured
+  on a 473px column with a 157px pitch, bounding by the column moved one row a swipe
+  and `09 → 17` took eight, against two now. Every failure is a refusal that names
+  itself: a `wheel:opaque` column has no reading to converge on (and the message
+  names `act swipe` + the app's committed state instead), a value the wheel does not
+  offer is refused with the labels it does offer, a non-wheel target is refused, and a
+  wheel that stops moving reports WHERE it stopped — "it is at its end" and "the tool
+  gave up" are different facts. Android only, stated as such: on iOS a wheel's visible
+  rows are real nodes, so `act tap --label` selects one, and the iOS backend refuses
+  `act wheel` by naming that path.
+- **The Android e2e suite hands the device back to the launcher first.** Measured
+  three runs in a row: a leftover `com.android.settings` task (its App-info page)
+  stayed on top and held INPUT FOCUS, so every `wait_compact` timed out on an app
+  whose nodes were being captured perfectly — the tree is the app's own, whatever sits
+  above it. Reticle said so on each of those captures (`window: UNFOCUSED — another
+  window has input focus`); the suite should not need a human to notice that line.
+
 - **An Android wheel publishes what it knows: value, range, item labels, row pitch.**
   A `NumberPicker` in spinner mode paints its unselected values onto its own canvas,
   so the tree held one node — the selection — and the caller recovered everything else

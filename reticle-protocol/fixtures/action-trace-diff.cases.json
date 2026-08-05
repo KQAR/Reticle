@@ -1,821 +1,822 @@
 {
- "_comment": [
-  "Language-neutral contract for the action-trace snapshot diff.",
-  "",
-  "Kotlin (dev.reticle.core.trace.ActionTraceDiff, used by the Android helper)",
-  "and Swift (ActionTraceDiff in reticle-host/Sources/ReticleHostIos, used by",
-  "the iOS host) are hand-written 1:1 ports. This table is what stops them",
-  "drifting: both suites read it and must produce the listed change list, in",
-  "the listed order, field for field.",
-  "",
-  "The rules being pinned:",
-  "  - ranking: present < text/label/enabled/visible < identity/affordance <",
-  "    the geometry-and-counts tail. The cap spends its budget top-down, so a",
-  "    scrolling list's frame churn can no longer truncate away the one node",
-  "    that appeared.",
-  "  - naming: the first surviving change for a ref carries that node's",
-  "    identity, read from whichever side it exists on. Later changes on the",
-  "    same ref do not repeat it.",
-  "  - anonymity: a node with no testId/resourceId/label is identified by its",
-  "    text, collapsed to one line and clipped at 60 CODE POINTS (not UTF-16",
-  "    units, not grapheme clusters — the two platforms disagree by default).",
-  "  - truncation: the marker states total, kept, and which fields were shed."
- ],
- "_recordedParamsComment": [
-  "The allow-list of request keys an action trace records under `params`, in",
-  "the order a manifest and a digest list them. Pinned here because it exists",
-  "twice by hand — dev.reticle.core.trace.ActionTraceParams.RECORDED and Swift's",
-  "ActionTraceParamNames.recorded — and a key added to one side only would make",
-  "the same gesture record differently on Android and iOS.",
-  "",
-  "`text` is on this list deliberately: a type action's result records only a",
-  "character count, so without it no trace can ever say what was typed. Nothing",
-  "in the capture layer marks a field secure — see docs/boundaries.md."
- ],
- "recordedParams": [
-  "text",
-  "submit",
-  "clear",
-  "typeDelayMs",
-  "settle",
-  "noSettle",
-  "settleTimeoutMs",
-  "from",
-  "to",
-  "duration",
-  "container",
-  "direction",
-  "maxSwipes",
-  "verify",
-  "verifyTimeoutMs",
-  "for",
-  "gone",
-  "idle",
-  "textContains",
-  "timeoutMs",
-  "quietMs"
- ],
- "cases": [
-  {
-   "name": "appearance-is-named-from-the-after-side",
-   "why": "The whole point: `r2.present false -> true` is unreadable without saying what r2 was.",
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "TextView",
-      "text": "Cart: 3 items",
-      "testId": "checkout.status"
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1",
-       "r2"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "TextView",
-      "text": "Paid!",
-      "testId": "checkout.status"
-     },
-     "r2": {
-      "ref": "r2",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "TextView",
-      "role": "alert",
-      "testId": "checkout.receipt",
-      "text": "Receipt sent"
-     }
-    }
-   },
-   "expect": [
+  "_comment": [
+    "Language-neutral contract for the action-trace snapshot diff.",
+    "",
+    "Kotlin (dev.reticle.core.trace.ActionTraceDiff, used by the Android helper)",
+    "and Swift (ActionTraceDiff in reticle-host/Sources/ReticleHostIos, used by",
+    "the iOS host) are hand-written 1:1 ports. This table is what stops them",
+    "drifting: both suites read it and must produce the listed change list, in",
+    "the listed order, field for field.",
+    "",
+    "The rules being pinned:",
+    "  - ranking: present < text/label/enabled/visible < identity/affordance <",
+    "    the geometry-and-counts tail. The cap spends its budget top-down, so a",
+    "    scrolling list's frame churn can no longer truncate away the one node",
+    "    that appeared.",
+    "  - naming: the first surviving change for a ref carries that node's",
+    "    identity, read from whichever side it exists on. Later changes on the",
+    "    same ref do not repeat it.",
+    "  - anonymity: a node with no testId/resourceId/label is identified by its",
+    "    text, collapsed to one line and clipped at 60 CODE POINTS (not UTF-16",
+    "    units, not grapheme clusters \u2014 the two platforms disagree by default).",
+    "  - truncation: the marker states total, kept, and which fields were shed."
+  ],
+  "_recordedParamsComment": [
+    "The allow-list of request keys an action trace records under `params`, in",
+    "the order a manifest and a digest list them. Pinned here because it exists",
+    "twice by hand \u2014 dev.reticle.core.trace.ActionTraceParams.RECORDED and Swift's",
+    "ActionTraceParamNames.recorded \u2014 and a key added to one side only would make",
+    "the same gesture record differently on Android and iOS.",
+    "",
+    "`text` is on this list deliberately: a type action's result records only a",
+    "character count, so without it no trace can ever say what was typed. Nothing",
+    "in the capture layer marks a field secure \u2014 see docs/boundaries.md."
+  ],
+  "recordedParams": [
+    "text",
+    "submit",
+    "clear",
+    "typeDelayMs",
+    "settle",
+    "noSettle",
+    "settleTimeoutMs",
+    "from",
+    "to",
+    "duration",
+    "container",
+    "direction",
+    "maxSwipes",
+    "toIndex",
+    "verify",
+    "verifyTimeoutMs",
+    "for",
+    "gone",
+    "idle",
+    "textContains",
+    "timeoutMs",
+    "quietMs"
+  ],
+  "cases": [
     {
-     "ref": "r2",
-     "field": "present",
-     "before": "false",
-     "after": "true",
-     "node": {
-      "testId": "checkout.receipt",
-      "role": "alert"
-     }
-    },
-    {
-     "ref": "r1",
-     "field": "text",
-     "before": "Cart: 3 items",
-     "after": "Paid!",
-     "node": {
-      "testId": "checkout.status"
-     }
-    },
-    {
-     "field": "nodeCount",
-     "before": "2",
-     "after": "3"
-    },
-    {
-     "ref": "r0",
-     "field": "children",
-     "before": "r1",
-     "after": "r1,r2"
-    }
-   ]
-  },
-  {
-   "name": "disappearance-is-named-from-the-before-side",
-   "why": "A node that vanished exists only in `before`; identity must still be recoverable.",
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Dialog",
-      "resourceId": "error_banner",
-      "contentDescription": "Network error",
-      "role": "alert"
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": []
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "r1",
-     "field": "present",
-     "before": "true",
-     "after": "false",
-     "node": {
-      "resourceId": "error_banner",
-      "label": "Network error",
-      "role": "alert"
-     }
-    },
-    {
-     "field": "nodeCount",
-     "before": "2",
-     "after": "1"
-    },
-    {
-     "ref": "r0",
-     "field": "children",
-     "before": "r1",
-     "after": ""
-    }
-   ]
-  },
-  {
-   "name": "identity-is-not-repeated-per-ref",
-   "why": "Four fields moving on one node should cost one identity, not four.",
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Button",
-      "testId": "login.submit",
-      "text": "Submit",
-      "isEnabled": false,
-      "isVisible": false,
-      "frame": {
-       "x": 0.0,
-       "y": 0.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Button",
-      "testId": "login.submit",
-      "text": "Sending…",
-      "isEnabled": true,
-      "isVisible": true,
-      "frame": {
-       "x": 0.0,
-       "y": 4.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "r1",
-     "field": "text",
-     "before": "Submit",
-     "after": "Sending…",
-     "node": {
-      "testId": "login.submit"
-     }
-    },
-    {
-     "ref": "r1",
-     "field": "visible",
-     "before": "false",
-     "after": "true"
-    },
-    {
-     "ref": "r1",
-     "field": "enabled",
-     "before": "false",
-     "after": "true"
-    },
-    {
-     "ref": "r1",
-     "field": "frame",
-     "before": "0,0 10x10",
-     "after": "0,4 10x10"
-    }
-   ]
-  },
-  {
-   "name": "anonymous-node-is-identified-by-clipped-collapsed-text",
-   "why": "No testId/resourceId/label: text is the only handle. Collapsed to one line, clipped at 60 code points. The CJK body makes UTF-16-vs-code-point clipping observable — a Kotlin `take(60)` would cut at 60 UTF-16 units and disagree with Swift here.",
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "TextView",
-      "isVisible": false,
-      "text": "  🧾 条款与隐私政策的完整说明文本\n一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十尾巴  "
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "TextView",
-      "isVisible": true,
-      "text": "  🧾 条款与隐私政策的完整说明文本\n一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十尾巴  "
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "r1",
-     "field": "visible",
-     "before": "false",
-     "after": "true",
-     "node": {
-      "text": "🧾 条款与隐私政策的完整说明文本 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三…"
-     }
-    }
-   ]
-  },
-  {
-   "name": "ranking-saves-the-appearance-from-frame-churn",
-   "why": "The regression this ordering exists for: alphabetical-by-ref order put r1/r2/r3's frames ahead of r9's appearance, so a small cap dropped the only change that proved the action landed.",
-   "maxChanges": 2,
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1",
-       "r2",
-       "r3"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 10.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     },
-     "r2": {
-      "ref": "r2",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 20.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     },
-     "r3": {
-      "ref": "r3",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 30.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1",
-       "r2",
-       "r3",
-       "r9"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 11.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     },
-     "r2": {
-      "ref": "r2",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 21.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     },
-     "r3": {
-      "ref": "r3",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Row",
-      "frame": {
-       "x": 0.0,
-       "y": 31.0,
-       "width": 10.0,
-       "height": 10.0
-      }
-     },
-     "r9": {
-      "ref": "r9",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Toast",
-      "testId": "toast.saved",
-      "text": "Saved"
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "r9",
-     "field": "present",
-     "before": "false",
-     "after": "true",
-     "node": {
-      "testId": "toast.saved"
-     }
-    },
-    {
-     "field": "nodeCount",
-     "before": "4",
-     "after": "5"
-    },
-    {
-     "field": "truncated",
-     "before": "6",
-     "after": "2",
-     "note": "dropped by field: frame 3, children 1"
-    }
-   ]
-  },
-  {
-   "name": "truncation-names-the-heaviest-fields-first",
-   "why": "`truncated: 100` reads as \"you have the interesting part\". The marker has to say what it shed and in what proportion, so a reader knows whether to open the snapshots.",
-   "maxChanges": 1,
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Card",
-      "testId": "card",
-      "text": "one",
-      "frame": {
-       "x": 0.0,
-       "y": 0.0,
-       "width": 10.0,
-       "height": 10.0
+      "name": "appearance-is-named-from-the-after-side",
+      "why": "The whole point: `r2.present false -> true` is unreadable without saying what r2 was.",
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "TextView",
+            "text": "Cart: 3 items",
+            "testId": "checkout.status"
+          }
+        }
       },
-      "custom": {
-       "alpha": {
-        "_type": "real",
-        "value": 1.0
-       },
-       "elevation": {
-        "_type": "real",
-        "value": 0.0
-       }
-      }
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "r1"
-      ]
-     },
-     "r1": {
-      "ref": "r1",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "Card",
-      "testId": "card",
-      "text": "two",
-      "frame": {
-       "x": 0.0,
-       "y": 5.0,
-       "width": 10.0,
-       "height": 10.0
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1",
+              "r2"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "TextView",
+            "text": "Paid!",
+            "testId": "checkout.status"
+          },
+          "r2": {
+            "ref": "r2",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "TextView",
+            "role": "alert",
+            "testId": "checkout.receipt",
+            "text": "Receipt sent"
+          }
+        }
       },
-      "custom": {
-       "alpha": {
-        "_type": "real",
-        "value": 0.5
-       },
-       "elevation": {
-        "_type": "real",
-        "value": 4.0
-       }
-      }
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "r1",
-     "field": "text",
-     "before": "one",
-     "after": "two",
-     "node": {
-      "testId": "card"
-     }
-    },
-    {
-     "field": "truncated",
-     "before": "4",
-     "after": "1",
-     "note": "dropped by field: custom.alpha 1, custom.elevation 1, frame 1"
-    }
-   ]
-  },
-  {
-   "name": "addressable-nodes-outrank-anonymous-scaffolding",
-   "why": "A screen transition makes hundreds of nodes appear at once, all tying on field rank. Ref order then decides, and on a SwiftUI/Compose screen that surfaces layout containers first — six lines of `+ rNNN [role=container]` describing nothing. Within a rank, a node carrying a testId/resourceId comes first, then one identifiable by label/text, then the anonymous. Note rA/rB sort BEFORE rC/rD by ref, so passing this cannot be an accident of traversal order.",
-   "maxChanges": 2,
-   "before": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": []
-     }
-    }
-   },
-   "after": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 2,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 100.0,
-      "height": 100.0
-     },
-     "density": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "app",
-      "children": [
-       "rA",
-       "rB",
-       "rC",
-       "rD"
+      "expect": [
+        {
+          "ref": "r2",
+          "field": "present",
+          "before": "false",
+          "after": "true",
+          "node": {
+            "testId": "checkout.receipt",
+            "role": "alert"
+          }
+        },
+        {
+          "ref": "r1",
+          "field": "text",
+          "before": "Cart: 3 items",
+          "after": "Paid!",
+          "node": {
+            "testId": "checkout.status"
+          }
+        },
+        {
+          "field": "nodeCount",
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "ref": "r0",
+          "field": "children",
+          "before": "r1",
+          "after": "r1,r2"
+        }
       ]
-     },
-     "rA": {
-      "ref": "rA",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "V",
-      "role": "container"
-     },
-     "rB": {
-      "ref": "rB",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "V",
-      "role": "container"
-     },
-     "rC": {
-      "ref": "rC",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "V",
-      "role": "text",
-      "text": "Payment complete"
-     },
-     "rD": {
-      "ref": "rD",
-      "parentRef": "r0",
-      "kind": "view",
-      "typeName": "V",
-      "role": "header",
-      "testId": "receipt.title"
-     }
-    }
-   },
-   "expect": [
-    {
-     "ref": "rD",
-     "field": "present",
-     "before": "false",
-     "after": "true",
-     "node": {
-      "testId": "receipt.title",
-      "role": "header"
-     }
     },
     {
-     "ref": "rC",
-     "field": "present",
-     "before": "false",
-     "after": "true",
-     "node": {
-      "role": "text",
-      "text": "Payment complete"
-     }
+      "name": "disappearance-is-named-from-the-before-side",
+      "why": "A node that vanished exists only in `before`; identity must still be recoverable.",
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Dialog",
+            "resourceId": "error_banner",
+            "contentDescription": "Network error",
+            "role": "alert"
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": []
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "r1",
+          "field": "present",
+          "before": "true",
+          "after": "false",
+          "node": {
+            "resourceId": "error_banner",
+            "label": "Network error",
+            "role": "alert"
+          }
+        },
+        {
+          "field": "nodeCount",
+          "before": "2",
+          "after": "1"
+        },
+        {
+          "ref": "r0",
+          "field": "children",
+          "before": "r1",
+          "after": ""
+        }
+      ]
     },
     {
-     "field": "truncated",
-     "before": "6",
-     "after": "2",
-     "note": "dropped by field: present 2, children 1, nodeCount 1"
+      "name": "identity-is-not-repeated-per-ref",
+      "why": "Four fields moving on one node should cost one identity, not four.",
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Button",
+            "testId": "login.submit",
+            "text": "Submit",
+            "isEnabled": false,
+            "isVisible": false,
+            "frame": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Button",
+            "testId": "login.submit",
+            "text": "Sending\u2026",
+            "isEnabled": true,
+            "isVisible": true,
+            "frame": {
+              "x": 0.0,
+              "y": 4.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "r1",
+          "field": "text",
+          "before": "Submit",
+          "after": "Sending\u2026",
+          "node": {
+            "testId": "login.submit"
+          }
+        },
+        {
+          "ref": "r1",
+          "field": "visible",
+          "before": "false",
+          "after": "true"
+        },
+        {
+          "ref": "r1",
+          "field": "enabled",
+          "before": "false",
+          "after": "true"
+        },
+        {
+          "ref": "r1",
+          "field": "frame",
+          "before": "0,0 10x10",
+          "after": "0,4 10x10"
+        }
+      ]
+    },
+    {
+      "name": "anonymous-node-is-identified-by-clipped-collapsed-text",
+      "why": "No testId/resourceId/label: text is the only handle. Collapsed to one line, clipped at 60 code points. The CJK body makes UTF-16-vs-code-point clipping observable \u2014 a Kotlin `take(60)` would cut at 60 UTF-16 units and disagree with Swift here.",
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "TextView",
+            "isVisible": false,
+            "text": "  \ud83e\uddfe \u6761\u6b3e\u4e0e\u9690\u79c1\u653f\u7b56\u7684\u5b8c\u6574\u8bf4\u660e\u6587\u672c\n\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u5c3e\u5df4  "
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "TextView",
+            "isVisible": true,
+            "text": "  \ud83e\uddfe \u6761\u6b3e\u4e0e\u9690\u79c1\u653f\u7b56\u7684\u5b8c\u6574\u8bf4\u660e\u6587\u672c\n\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u5c3e\u5df4  "
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "r1",
+          "field": "visible",
+          "before": "false",
+          "after": "true",
+          "node": {
+            "text": "\ud83e\uddfe \u6761\u6b3e\u4e0e\u9690\u79c1\u653f\u7b56\u7684\u5b8c\u6574\u8bf4\u660e\u6587\u672c \u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e00\u4e8c\u4e09\u2026"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ranking-saves-the-appearance-from-frame-churn",
+      "why": "The regression this ordering exists for: alphabetical-by-ref order put r1/r2/r3's frames ahead of r9's appearance, so a small cap dropped the only change that proved the action landed.",
+      "maxChanges": 2,
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1",
+              "r2",
+              "r3"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 10.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          },
+          "r2": {
+            "ref": "r2",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 20.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          },
+          "r3": {
+            "ref": "r3",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 30.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1",
+              "r2",
+              "r3",
+              "r9"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 11.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          },
+          "r2": {
+            "ref": "r2",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 21.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          },
+          "r3": {
+            "ref": "r3",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Row",
+            "frame": {
+              "x": 0.0,
+              "y": 31.0,
+              "width": 10.0,
+              "height": 10.0
+            }
+          },
+          "r9": {
+            "ref": "r9",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Toast",
+            "testId": "toast.saved",
+            "text": "Saved"
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "r9",
+          "field": "present",
+          "before": "false",
+          "after": "true",
+          "node": {
+            "testId": "toast.saved"
+          }
+        },
+        {
+          "field": "nodeCount",
+          "before": "4",
+          "after": "5"
+        },
+        {
+          "field": "truncated",
+          "before": "6",
+          "after": "2",
+          "note": "dropped by field: frame 3, children 1"
+        }
+      ]
+    },
+    {
+      "name": "truncation-names-the-heaviest-fields-first",
+      "why": "`truncated: 100` reads as \"you have the interesting part\". The marker has to say what it shed and in what proportion, so a reader knows whether to open the snapshots.",
+      "maxChanges": 1,
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Card",
+            "testId": "card",
+            "text": "one",
+            "frame": {
+              "x": 0.0,
+              "y": 0.0,
+              "width": 10.0,
+              "height": 10.0
+            },
+            "custom": {
+              "alpha": {
+                "_type": "real",
+                "value": 1.0
+              },
+              "elevation": {
+                "_type": "real",
+                "value": 0.0
+              }
+            }
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "r1"
+            ]
+          },
+          "r1": {
+            "ref": "r1",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "Card",
+            "testId": "card",
+            "text": "two",
+            "frame": {
+              "x": 0.0,
+              "y": 5.0,
+              "width": 10.0,
+              "height": 10.0
+            },
+            "custom": {
+              "alpha": {
+                "_type": "real",
+                "value": 0.5
+              },
+              "elevation": {
+                "_type": "real",
+                "value": 4.0
+              }
+            }
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "r1",
+          "field": "text",
+          "before": "one",
+          "after": "two",
+          "node": {
+            "testId": "card"
+          }
+        },
+        {
+          "field": "truncated",
+          "before": "4",
+          "after": "1",
+          "note": "dropped by field: custom.alpha 1, custom.elevation 1, frame 1"
+        }
+      ]
+    },
+    {
+      "name": "addressable-nodes-outrank-anonymous-scaffolding",
+      "why": "A screen transition makes hundreds of nodes appear at once, all tying on field rank. Ref order then decides, and on a SwiftUI/Compose screen that surfaces layout containers first \u2014 six lines of `+ rNNN [role=container]` describing nothing. Within a rank, a node carrying a testId/resourceId comes first, then one identifiable by label/text, then the anonymous. Note rA/rB sort BEFORE rC/rD by ref, so passing this cannot be an accident of traversal order.",
+      "maxChanges": 2,
+      "before": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": []
+          }
+        }
+      },
+      "after": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 2,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 100.0,
+            "height": 100.0
+          },
+          "density": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "app",
+            "children": [
+              "rA",
+              "rB",
+              "rC",
+              "rD"
+            ]
+          },
+          "rA": {
+            "ref": "rA",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "V",
+            "role": "container"
+          },
+          "rB": {
+            "ref": "rB",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "V",
+            "role": "container"
+          },
+          "rC": {
+            "ref": "rC",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "V",
+            "role": "text",
+            "text": "Payment complete"
+          },
+          "rD": {
+            "ref": "rD",
+            "parentRef": "r0",
+            "kind": "view",
+            "typeName": "V",
+            "role": "header",
+            "testId": "receipt.title"
+          }
+        }
+      },
+      "expect": [
+        {
+          "ref": "rD",
+          "field": "present",
+          "before": "false",
+          "after": "true",
+          "node": {
+            "testId": "receipt.title",
+            "role": "header"
+          }
+        },
+        {
+          "ref": "rC",
+          "field": "present",
+          "before": "false",
+          "after": "true",
+          "node": {
+            "role": "text",
+            "text": "Payment complete"
+          }
+        },
+        {
+          "field": "truncated",
+          "before": "6",
+          "after": "2",
+          "note": "dropped by field: present 2, children 1, nodeCount 1"
+        }
+      ]
     }
-   ]
-  }
- ]
+  ]
 }
