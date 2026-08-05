@@ -282,6 +282,54 @@ public enum ScreenCoverage {
     }
 
     /// The whole screen, sampled on a grid of `cellPx` cells.
+    /// How deep `deepestAt` descends — see the Kotlin twin.
+    private static let maxFieldDepth = 60
+
+    /// The deepest visible node under this point, starting from `ref`. The per-cell
+    /// verdict names the node that ANSWERS for the point (a screen-sized web view,
+    /// usually), which is the wrong starting point for "which field is this".
+    private static func deepestAt(_ snapshot: Snapshot, _ ref: String, _ cx: Double, _ cy: Double) -> Node? {
+        guard let start = snapshot.nodes[ref] else { return nil }
+        var best: Node? = start.frame?.contains(cx, cy) == true ? start : nil
+        var seen = Set<String>()
+        func visit(_ node: Node, _ depth: Int) {
+            if depth > maxFieldDepth || !seen.insert(node.ref).inserted { return }
+            if node.isVisible, node.frame?.contains(cx, cy) == true { best = node }
+            for child in node.children { snapshot.nodes[child].map { visit($0, depth + 1) } }
+        }
+        visit(start, 0)
+        return best
+    }
+
+    /// The name of the field this point belongs to, when the page named it and
+    /// exposed no control for it — see the Kotlin twin, where the five real
+    /// dropdowns this was measured on are written down. Narrow on purpose: the
+    /// enclosing wrapper must hold exactly one label and no interactive node.
+    private static func labelledFieldName(_ snapshot: Snapshot, _ ref: String?) -> (String, String)? {
+        guard let ref, var current = snapshot.nodes[ref] else { return nil }
+        var match: (String, String)?
+        var level = 0
+        while level < 3 {
+            guard let parent = current.parentRef.flatMap({ snapshot.nodes[$0] }) else { return match }
+            var descendants: [Node] = []
+            var seen = Set<String>()
+            func collect(_ node: Node) {
+                if !seen.insert(node.ref).inserted { return }
+                descendants.append(node)
+                for child in node.children { snapshot.nodes[child].map(collect) }
+            }
+            for child in parent.children { snapshot.nodes[child].map(collect) }
+            // An interactive node here ends the walk without undoing a match found
+            // inside it — see the Kotlin twin.
+            if descendants.contains(where: { $0.isInteractive }) { return match }
+            let labels = descendants.filter { $0.role == "label" && !($0.text ?? "").isEmpty }
+            if labels.count == 1, let text = labels[0].text { match = (text, parent.ref) }
+            current = parent
+            level += 1
+        }
+        return match
+    }
+
     public static func of(_ snapshot: Snapshot, cellPx: Double = defaultCellPx) -> CoverageReport {
         let size = snapshot.screen.size
         let cell = cellPx > 0 ? cellPx : defaultCellPx
@@ -298,6 +346,26 @@ public enum ScreenCoverage {
         // LinkedHashMap and this agree before the sort.
         var keys: [String] = []
         var gaps: [String: CoverageGap] = [:]
+        var labelledKeys: [String] = []
+        var labelled: [String: LabelledInertRegion] = [:]
+        // Keyed by name + RECT, not by ref: the same field has several nested
+        // wrappers with the identical rect — see the Kotlin twin.
+        func noteLabelled(_ cx: Double, _ cy: Double, _ ref: String?) {
+            let start = ref ?? snapshot.rootRef
+            guard let deepest = deepestAt(snapshot, start, cx, cy),
+                  let (name, host) = labelledFieldName(snapshot, deepest.ref)
+            else { return }
+            let f = snapshot.nodes[host]?.frame
+            let key = "\(name)|\(Rect.whole(f?.x ?? 0)),\(Rect.whole(f?.y ?? 0)),"
+                + "\(Rect.whole(f?.width ?? 0))x\(Rect.whole(f?.height ?? 0))"
+            if var existing = labelled[key] {
+                existing.cells += 1
+                labelled[key] = existing
+            } else {
+                labelledKeys.append(key)
+                labelled[key] = LabelledInertRegion(name: name, ref: host, frame: f, cells: 1)
+            }
+        }
         for row in 0..<max(0, rows) {
             for column in 0..<max(0, columns) {
                 let cx = Double(column) * cell + cell / 2.0
@@ -313,11 +381,15 @@ public enum ScreenCoverage {
                     emptyCells += 1
                 } else if v.reason == reasonNotInteractive {
                     inertCells += 1
+                    noteLabelled(cx, cy, v.ref)
                 } else if v.reason == reasonContainerOnly {
                     // Not cover, but not a gap either — see the Kotlin twin for the
                     // login screen that read as 31% addressable while every control
                     // on it worked.
                     containerOnlyCells += 1
+                    // A named field inside a screen-sized container is the same
+                    // observation as one in an inert region.
+                    noteLabelled(cx, cy, v.ref)
                 } else {
                     let ref = v.ref ?? "?"
                     let key = "\(v.reason)|\(ref)"
@@ -341,7 +413,12 @@ public enum ScreenCoverage {
         return CoverageReport(
             screen: size, cellPx: cell, columns: columns, rows: rows,
             addressableCells: addressableCells, inertCells: inertCells, emptyCells: emptyCells,
-            keyboardCells: keyboardCells, containerOnlyCells: containerOnlyCells, gaps: sorted
+            keyboardCells: keyboardCells, containerOnlyCells: containerOnlyCells,
+            labelledInert: labelledKeys.compactMap { labelled[$0] }.sorted { a, b in
+                if a.cells != b.cells { return a.cells > b.cells }
+                return a.name < b.name
+            },
+            gaps: sorted
         )
     }
 }
@@ -445,6 +522,23 @@ public struct CoverageGap: Codable, Equatable, Sendable {
     }
 }
 
+/// A field the page NAMED but exposed no control for: its label is captured and
+/// nothing in the field is interactive, so the region reads as ordinary inert
+/// content while only a coordinate reaches it.
+public struct LabelledInertRegion: Codable, Equatable, Sendable {
+    public var name: String
+    public var ref: String
+    public var frame: Rect?
+    public var cells: Int
+
+    public init(name: String, ref: String, frame: Rect? = nil, cells: Int) {
+        self.name = name
+        self.ref = ref
+        self.frame = frame
+        self.cells = cells
+    }
+}
+
 /// The whole-screen answer to "how much of this screen is unreachable?".
 public struct CoverageReport: Codable, Equatable, Sendable {
     public var screen: Size
@@ -461,12 +555,17 @@ public struct CoverageReport: Codable, Equatable, Sendable {
     /// Only a screen-sized interactive container answers here. Counted apart from
     /// `gaps` — see the Kotlin twin.
     public var containerOnlyCells: Int
+    /// Named fields with no addressable control. Listed, not counted as gaps — see
+    /// the Kotlin twin: nothing here proves the region is tappable, and naming them
+    /// is what stops `addressable: 100%` from reading as "every control has a
+    /// selector".
+    public var labelledInert: [LabelledInertRegion]
     public var gaps: [CoverageGap]
 
     public init(
         screen: Size, cellPx: Double, columns: Int, rows: Int, addressableCells: Int,
         inertCells: Int, emptyCells: Int, keyboardCells: Int, containerOnlyCells: Int = 0,
-        gaps: [CoverageGap]
+        labelledInert: [LabelledInertRegion] = [], gaps: [CoverageGap]
     ) {
         self.screen = screen
         self.cellPx = cellPx
@@ -477,6 +576,7 @@ public struct CoverageReport: Codable, Equatable, Sendable {
         self.emptyCells = emptyCells
         self.keyboardCells = keyboardCells
         self.containerOnlyCells = containerOnlyCells
+        self.labelledInert = labelledInert
         self.gaps = gaps
     }
 
@@ -518,6 +618,18 @@ public struct CoverageReport: Codable, Equatable, Sendable {
                 + "answers here (a selector tap on it lands on its own centre)\n"
         }
         out += "inert: \(inertCells) cell(s) — a node is captured there, none of it interactive\n"
+        if !labelledInert.isEmpty {
+            out += "named but inert: \(labelledInert.count) field(s) — the page names these and "
+                + "exposes no control for them, so only a coordinate reaches them\n"
+            for region in labelledInert.prefix(ScreenCoverage.maxListedGaps) {
+                let where_ = region.frame.map {
+                    " [\(Rect.whole($0.x)),\(Rect.whole($0.y)) \(Rect.whole($0.width))x\(Rect.whole($0.height))]"
+                } ?? ""
+                out += "  \"\(region.name)\" \(region.ref)\(where_) \(region.cells) cell(s)\n"
+            }
+            let more = labelledInert.count - ScreenCoverage.maxListedGaps
+            if more > 0 { out += "  (\(more) more named field(s))\n" }
+        }
         out += "empty: \(emptyCells) cell(s) — no captured node contains the point\n"
         if keyboardCells > 0 {
             out += "keyboard: \(keyboardCells) cell(s) covered by the IME (another process's window)\n"

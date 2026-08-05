@@ -685,6 +685,154 @@
      }
     }
    }
+  },
+  {
+   "name": "a field the page named but exposed no control for is listed by name: 100% addressable must not read as 'every control here has a selector'",
+   "$comment": "Measured on a real loan-application form: five dropdowns whose trigger is a bare <div> with no role, no aria-*, no text and nothing declared clickable. Their <label> IS captured, so those cells came back inert/container-only and the screen read as 100% addressable while the five fields could only be driven by coordinates. Listed, never counted as a gap or as cover: nothing proves the region is tappable, and inferring it from a label would be a guess. The rule is narrow - the enclosing wrapper must hold exactly one label and NO interactive node - so the second field here, which has a real button beside its label, is not listed.",
+   "report": [
+    "coverage: 128x256, sampled on a 4x8 grid of 32px cells",
+    "addressable: 4 of 4 touch-relevant cell(s) (100%)",
+    "unreachable: none — every touch-relevant cell has an addressable node over it",
+    "inert: 28 cell(s) — a node is captured there, none of it interactive",
+    "named but inert: 1 field(s) — the page names these and exposes no control for them, so only a coordinate reaches them",
+    "  \"Education\" field1 [0,0 128x64] 6 cell(s)",
+    "empty: 0 cell(s) — no captured node contains the point",
+    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+   ],
+   "points": [],
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 128,
+      "height": 256
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "parentRef": "r0",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 256
+      },
+      "children": [
+       "field1",
+       "field2"
+      ]
+     },
+     "field1": {
+      "ref": "field1",
+      "parentRef": "w1",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "div",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 128,
+       "height": 64
+      },
+      "children": [
+       "label1",
+       "trigger1"
+      ]
+     },
+     "label1": {
+      "ref": "label1",
+      "parentRef": "field1",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "label",
+      "text": "Education",
+      "frame": {
+       "x": 4,
+       "y": 4,
+       "width": 60,
+       "height": 16
+      }
+     },
+     "trigger1": {
+      "ref": "trigger1",
+      "parentRef": "field1",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "div",
+      "frame": {
+       "x": 4,
+       "y": 24,
+       "width": 120,
+       "height": 32
+      }
+     },
+     "field2": {
+      "ref": "field2",
+      "parentRef": "w1",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "div",
+      "frame": {
+       "x": 0,
+       "y": 128,
+       "width": 128,
+       "height": 64
+      },
+      "children": [
+       "label2",
+       "button2"
+      ]
+     },
+     "label2": {
+      "ref": "label2",
+      "parentRef": "field2",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "label",
+      "text": "Job",
+      "frame": {
+       "x": 4,
+       "y": 132,
+       "width": 60,
+       "height": 16
+      }
+     },
+     "button2": {
+      "ref": "button2",
+      "parentRef": "field2",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "button",
+      "text": "Pick",
+      "testId": "job.pick",
+      "frame": {
+       "x": 4,
+       "y": 152,
+       "width": 120,
+       "height": 32
+      },
+      "isInteractive": true
+     }
+    }
+   }
   }
  ]
 }

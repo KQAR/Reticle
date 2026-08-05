@@ -50,6 +50,9 @@ object ScreenCoverage {
     const val REASON_DOM_KERNEL = "dom:unsupported-kernel"
     const val REASON_WHEEL = "wheel"
     const val REASON_CONTAINER_ONLY = "container-only"
+
+    /** How deep [deepestAt] descends. A DOM-heavy screen is deep; the walk is not. */
+    private const val MAX_FIELD_DEPTH = 60
     const val REASON_NOT_INTERACTIVE = "no-interactive-node"
     const val REASON_NOTHING_CAPTURED = "nothing-captured"
     const val REASON_OFF_SCREEN = "off-screen"
@@ -423,6 +426,77 @@ object ScreenCoverage {
      * sampling is then a stated fact in the output rather than a hidden
      * approximation.
      */
+    /**
+     * The name of the field this inert point belongs to, when the page named it and
+     * exposed no control for it.
+     *
+     * The case measured on a real form: five dropdowns whose trigger is a bare
+     * `<div>` with no role, no `aria-*`, no text and nothing the page declares as
+     * clickable. Their `<label>` IS captured, so the screen reads as fully
+     * addressable while those five fields can only be driven by coordinates — the
+     * one number meant to measure the blind-agent contract says 100% exactly where
+     * the contract is broken.
+     *
+     * Narrow, because a wrong name here would be worse than the silence it
+     * replaces: the enclosing field wrapper (at most three levels up) must hold
+     * EXACTLY ONE label-ish node and NO interactive node at all. A named field with
+     * a control beside it is not this case, and a group legend over several
+     * controls is not either.
+     */
+    /**
+     * The deepest visible node under this point, starting from [ref].
+     *
+     * The per-cell verdict names the node that ANSWERS for the point — a
+     * screen-sized web view, usually — and that is the right answer for coverage
+     * but the wrong starting point for "which field is this". Measured: five named
+     * dropdowns all sat in `container-only` cells whose ref was the web view, so
+     * looking at the verdict's own node found nothing about them.
+     */
+    private fun deepestAt(snapshot: Snapshot, ref: String, cx: Double, cy: Double): Node? {
+        val start = snapshot.nodes[ref] ?: return null
+        var best: Node? = start.takeIf { it.frame?.contains(cx, cy) == true }
+        val seen = HashSet<String>()
+        fun visit(node: Node, depth: Int) {
+            if (!seen.add(node.ref) || depth > MAX_FIELD_DEPTH) return
+            if (node.isVisible && node.frame?.contains(cx, cy) == true) best = node
+            node.children.forEach { child -> snapshot.nodes[child]?.let { visit(it, depth + 1) } }
+        }
+        visit(start, 0)
+        return best
+    }
+
+    private fun labelledFieldName(snapshot: Snapshot, ref: String?): Pair<String, String>? {
+        var current = ref?.let { snapshot.nodes[it] } ?: return null
+        var match: Pair<String, String>? = null
+        var level = 0
+        while (level < 3) {
+            val parent = current.parentRef?.let { snapshot.nodes[it] } ?: return null
+            val descendants = ArrayList<Node>()
+            val seen = HashSet<String>()
+            fun collect(node: Node) {
+                if (!seen.add(node.ref)) return
+                descendants.add(node)
+                node.children.forEach { child -> snapshot.nodes[child]?.let(::collect) }
+            }
+            parent.children.forEach { child -> snapshot.nodes[child]?.let(::collect) }
+            // An interactive node at this level ends the walk — but it does not undo a
+            // match found INSIDE it: the field wrapper below may still be a named
+            // field with no control, while a sibling field further out has one.
+            if (descendants.any { it.isInteractive }) return match
+            val labels = descendants.filter {
+                it.role == "label" && !it.text.isNullOrBlank()
+            }
+            if (labels.size == 1) match = labels[0].text!! to parent.ref
+            current = parent
+            level++
+        }
+        // The OUTERMOST wrapper that still satisfies the rule, not the first one
+        // found: walking up from a different starting node stops at a different
+        // level, and reporting each of those separately listed one field up to three
+        // times with three different hosts for the same rect.
+        return match
+    }
+
     fun of(snapshot: Snapshot, cellPx: Double = DEFAULT_CELL_PX): CoverageReport {
         val size = snapshot.screen.size
         val cell = if (cellPx > 0.0) cellPx else DEFAULT_CELL_PX
@@ -438,6 +512,7 @@ object ScreenCoverage {
         // Keyed by reason + host ref so two frames with the same boundary stay two
         // rows: the rect is what an agent acts on.
         val gaps = LinkedHashMap<String, CoverageGap>()
+        val labelled = LinkedHashMap<String, LabelledInertRegion>()
         for (row in 0 until rows) {
             for (column in 0 until columns) {
                 val cx = column * cell + cell / 2.0
@@ -451,7 +526,24 @@ object ScreenCoverage {
                     verdict.covered -> addressableCells++
                     verdict.reason == REASON_NOTHING_CAPTURED || verdict.reason == REASON_OFF_SCREEN ->
                         emptyCells++
-                    verdict.reason == REASON_NOT_INTERACTIVE -> inertCells++
+                    verdict.reason == REASON_NOT_INTERACTIVE -> {
+                        inertCells++
+                        labelledFieldName(snapshot, deepestAt(snapshot, verdict.ref ?: snapshot.rootRef, cx, cy)?.ref)
+                            ?.let { (name, host) ->
+                            // Keyed by name + rect — see the twin above.
+                            val hostFrame = snapshot.nodes[host]?.frame
+                            val key = "$name|${hostFrame?.x?.toInt()},${hostFrame?.y?.toInt()}," +
+                                "${hostFrame?.width?.toInt()}x${hostFrame?.height?.toInt()}"
+                            val existing = labelled[key]
+                            labelled[key] = existing?.copy(cells = existing.cells + 1)
+                                ?: LabelledInertRegion(
+                                    name = name,
+                                    ref = host,
+                                    frame = snapshot.nodes[host]?.frame,
+                                    cells = 1,
+                                )
+                        }
+                    }
                     // A screen-sized interactive container over the point is not
                     // cover — that rule stands, and the per-point verdict still
                     // says so — but it is not a GAP either, and counting it as one
@@ -465,7 +557,30 @@ object ScreenCoverage {
                     // the blind-agent contract. A boundary the container declares —
                     // a capped DOM walk, an unreadable one, a cross-origin frame —
                     // is answered before this branch and still counts as a gap.
-                    verdict.reason == REASON_CONTAINER_ONLY -> containerOnlyCells++
+                    verdict.reason == REASON_CONTAINER_ONLY -> {
+                        containerOnlyCells++
+                        // A named field inside a screen-sized container is the same
+                        // observation as one in an inert region: the page named it and
+                        // exposed no control, so only a coordinate reaches it.
+                        labelledFieldName(snapshot, deepestAt(snapshot, verdict.ref ?: snapshot.rootRef, cx, cy)?.ref)
+                            ?.let { (name, host) ->
+                                // Keyed by name + RECT, not by ref: the same field
+                                // has several nested wrappers with the identical rect,
+                                // and walking up from different cells stops at
+                                // different ones, which listed one field several times.
+                                val hostFrame = snapshot.nodes[host]?.frame
+                                val key = "$name|${hostFrame?.x?.toInt()},${hostFrame?.y?.toInt()}," +
+                                    "${hostFrame?.width?.toInt()}x${hostFrame?.height?.toInt()}"
+                                val existing = labelled[key]
+                                labelled[key] = existing?.copy(cells = existing.cells + 1)
+                                    ?: LabelledInertRegion(
+                                        name = name,
+                                        ref = host,
+                                        frame = snapshot.nodes[host]?.frame,
+                                        cells = 1,
+                                    )
+                            }
+                    }
                     else -> {
                         val ref = verdict.ref ?: "?"
                         val key = "${verdict.reason}|$ref"
@@ -494,6 +609,9 @@ object ScreenCoverage {
             emptyCells = emptyCells,
             keyboardCells = keyboardCells,
             containerOnlyCells = containerOnlyCells,
+            labelledInert = labelled.values.sortedWith(
+                compareByDescending<LabelledInertRegion> { it.cells }.thenBy { it.name }
+            ),
             gaps = gaps.values.sortedWith(compareByDescending<CoverageGap> { it.cells }
                 .thenBy { it.reason }
                 .thenBy { it.ref }),
@@ -601,6 +719,19 @@ data class CoverageGap(
     val cells: Int,
 )
 
+/**
+ * A field the page NAMED but exposed no control for: its `<label>` is captured and
+ * nothing in the field is interactive, so the region reads as ordinary inert
+ * content while it can in fact only be driven by coordinates.
+ */
+@Serializable
+data class LabelledInertRegion(
+    val name: String,
+    val ref: String,
+    val frame: Rect? = null,
+    val cells: Int,
+)
+
 /** The whole-screen answer to "how much of this screen is unreachable?". */
 @Serializable
 data class CoverageReport(
@@ -625,6 +756,14 @@ data class CoverageReport(
      * control worked read as 31% addressable.
      */
     val containerOnlyCells: Int = 0,
+    /**
+     * Named fields with no addressable control — see [LabelledInertRegion]. Listed,
+     * not counted as gaps: nothing here proves the region is tappable, and inferring
+     * that from a label would be the guess this file refuses everywhere else. Naming
+     * them is what stops `addressable: 100%` from reading as "every control on this
+     * screen has a selector".
+     */
+    val labelledInert: List<LabelledInertRegion> = emptyList(),
     val gaps: List<CoverageGap>,
 ) {
     /** Cells inside a region a named boundary makes unreachable. */
@@ -673,6 +812,18 @@ data class CoverageReport(
                 .append("answers here (a selector tap on it lands on its own centre)\n")
         }
         append("inert: $inertCells cell(s) — a node is captured there, none of it interactive\n")
+        if (labelledInert.isNotEmpty()) {
+            append("named but inert: ${labelledInert.size} field(s) — the page names these and exposes ")
+                .append("no control for them, so only a coordinate reaches them\n")
+            for (region in labelledInert.take(ScreenCoverage.MAX_LISTED_GAPS)) {
+                val where = region.frame?.let {
+                    " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]"
+                } ?: ""
+                append("  \"${region.name}\" ${region.ref}$where ${region.cells} cell(s)\n")
+            }
+            val more = labelledInert.size - ScreenCoverage.MAX_LISTED_GAPS
+            if (more > 0) append("  ($more more named field(s))\n")
+        }
         append("empty: $emptyCells cell(s) — no captured node contains the point\n")
         if (keyboardCells > 0) {
             append("keyboard: $keyboardCells cell(s) covered by the IME (another process's window)\n")
