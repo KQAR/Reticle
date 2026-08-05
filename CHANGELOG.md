@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **A form field says what it is FOR, not only what it holds — and never at the
+  expense of what it holds.** The accessible-name walk stopped at `aria-label` /
+  `aria-labelledby` / `title`, so a form built out of framework components — no
+  `id`, no `name`, no `placeholder`, no `aria-*`, the field name in a sibling
+  `<label>` with no `for` inside the field's own wrapper — projected as five
+  identical `textField [x,y w×h]` lines. Measured while driving a real address
+  form: the only way to pick a field was its position in the DOM, and doing that
+  put a city into the street box while `act type` reported `textLanded=exact
+  focusLanded=self`. Both facts were true and the composite was wrong. The walk now
+  continues through `<label for>`, an ancestor `<label>`, and — the shape that page
+  actually uses — the single `<label>` beside the input inside its own field
+  wrapper, deliberately narrow because a wrong name is worse than none: form
+  controls only, at most three wrapper levels, and that level must hold exactly one
+  label and one control (a `fieldset` legend names the group, not a field, and two
+  labels beside two inputs is a guess). `domNameSource` records which rule answered,
+  so an inferred name is never read as a declared one. The value keeps the label
+  slot and the name gets its own — `textField "00-950" … name:"Kod pocztowy"` —
+  because the first cut put the name in the label slot and five filled fields
+  projected as their own names with nothing saying what any of them contained. An
+  EMPTY field has no value to show, so there the name takes the slot rather than
+  leaving the line anonymous. `act type --label "Kod pocztowy"` now drives that form
+  directly; the five-field batch that used to fail mid-way lands every field.
+- **`act type` no longer refuses a field it already focused.** The focus
+  post-condition compared the fresh capture against the ref the selector resolved
+  to in the PREVIOUS one — and a ref is a per-capture traversal index, which any
+  relayout renumbers and a WebView re-render always does, including one the
+  focusing tap itself causes by scrolling the field into view. Measured on that
+  same form: three `type --css` calls in a row were refused with `focus is on an
+  unrelated node` while a `ui compact` a moment later showed the named field
+  holding focus exactly as asked — every refusal false, each costing a retry that
+  then succeeded unchanged. The selector is now re-resolved against the capture the
+  focus is read from. When there is nothing to re-resolve (a bare `--ref`, a
+  `--point`) and the ref is absent, the verdict is the new `TARGET_GONE`, which
+  says the tree was renumbered and names the handles that survive one — rather than
+  `ELSEWHERE`, which asserted the text was about to land in a different field.
+
 - **A container that cuts nothing is no longer named as a clipper.** `TapReach`
   intersected a node's frame with each clipping ancestor and asked whether the
   result differed from the frame — but it rebuilt that result as `x + width - x`,

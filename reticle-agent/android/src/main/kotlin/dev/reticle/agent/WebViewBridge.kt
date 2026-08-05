@@ -273,6 +273,9 @@ object WebViewBridge {
         putInteger("domNthOfType", "nthOfType")
         putInteger("domNthChild", "nthChild")
         putText("domPlaceholder", element.optString("placeholder"))
+        // Which accname rule produced the label, so a name inferred from a `<label>`
+        // sitting beside the input (no `for`) is never read as a declared one.
+        putText("domNameSource", element.optString("nameSource"))
         putText("domName", element.optString("formName"))
         putText("domDescribedBy", element.optString("describedBy"))
         if (element.optBoolean("invalid", false)) map["domInvalid"] = MetadataValue.Bool(true)
