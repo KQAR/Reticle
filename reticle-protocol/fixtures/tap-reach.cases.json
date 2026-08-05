@@ -840,6 +840,152 @@
      "explain": "pastPort is fully clipped by port, so no part of it can receive a touch — scroll it into its container's viewport with `act scroll-to`"
     }
    ]
+  },
+  {
+   "name": "a fractional frame wholly inside a scroll container is not called clipped",
+   "$comment": "Measured on a real hybrid consent screen inside a WebView. The button's rect is fractional device pixels, and rebuilding the intersection as `x + width - x` is not exact in binary floating point: (473.6170277913412 + 361.8677083333333) - 473.6170277913412 != 361.8677083333333. So an intersection that cut NOTHING compared unequal to the frame, the WebView was named as a clipper, and the tap went to the frame's exact centre anyway - a self-contradicting report that read as the reason the flow was stuck. `hair` pins the same answer for a real sub-pixel overhang: half a pixel cannot move a tap. `pastBottom` pins that a cut worth reporting is still reported.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1785932584999,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 1080,
+      "height": 2412
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 1080,
+       "height": 2412
+      },
+      "children": [
+       "web"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "container",
+      "testId": "web",
+      "frame": {
+       "x": 48,
+       "y": 170,
+       "width": 984,
+       "height": 2194
+      },
+      "isInteractive": true,
+      "parentRef": "w1",
+      "children": [
+       "consent",
+       "hair",
+       "pastBottom"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "consent": {
+      "ref": "consent",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "button",
+      "frame": {
+       "x": 473.6170277913412,
+       "y": 1486.0357550482079,
+       "width": 361.8677083333333,
+       "height": 109.29016189290161
+      },
+      "text": "Consent",
+      "isInteractive": true,
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       }
+      }
+     },
+     "hair": {
+      "ref": "hair",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "button",
+      "frame": {
+       "x": 48,
+       "y": 300,
+       "width": 984.25,
+       "height": 100
+      },
+      "isInteractive": true,
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       }
+      }
+     },
+     "pastBottom": {
+      "ref": "pastBottom",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "button",
+      "frame": {
+       "x": 100,
+       "y": 2300,
+       "width": 200,
+       "height": 200
+      },
+      "isInteractive": true,
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       }
+      }
+     }
+    }
+   },
+   "targets": [
+    {
+     "ref": "consent",
+     "point": "654,1540"
+    },
+    {
+     "ref": "hair",
+     "point": "540,350"
+    },
+    {
+     "ref": "pastBottom",
+     "point": "200,2332",
+     "adjusted": true,
+     "by": "web",
+     "explain": "pastBottom is only partly visible (clipped by web), so the tap aims at the visible part rather than at the frame's centre"
+    }
+   ]
   }
  ]
 }
