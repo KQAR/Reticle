@@ -42,10 +42,17 @@ extension IosHelperClient {
             return nil
         case "true":
             let s = actSelector
-            if s.testId == nil && s.resourceId == nil && s.cssSelector == nil && s.ref == nil {
-                throw HelperError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|ref>, or act by selector rather than --point")
+            // `--label` counts: it is a node selector like any other, and bare
+            // `--verify` used to refuse it while the caller WAS acting by selector.
+            if s.testId == nil && s.resourceId == nil && s.cssSelector == nil && s.ref == nil
+                && s.label == nil
+            {
+                throw HelperError("--verify needs a node selector to watch: pass --verify <#testId|testId=<id>|@resourceId|resourceId=<id>|css=<selector>|label=<text>|ref>, or act by selector rather than --point")
             }
-            return ReticleProtocol.Selector(testId: s.testId, resourceId: s.resourceId, cssSelector: s.cssSelector, ref: s.ref)
+            return ReticleProtocol.Selector(
+                testId: s.testId, resourceId: s.resourceId, cssSelector: s.cssSelector,
+                ref: s.ref, label: s.label
+            )
         default:
             if token.hasPrefix("#") { return ReticleProtocol.Selector(testId: String(token.dropFirst())) }
             if token.hasPrefix("@") { return ReticleProtocol.Selector(resourceId: String(token.dropFirst())) }
@@ -53,8 +60,9 @@ extension IosHelperClient {
             if token.hasPrefix("testId=") { return ReticleProtocol.Selector(testId: String(token.dropFirst("testId=".count))) }
             if token.hasPrefix("resourceId=") { return ReticleProtocol.Selector(resourceId: String(token.dropFirst("resourceId=".count))) }
             if token.hasPrefix("ref=") { return ReticleProtocol.Selector(ref: String(token.dropFirst("ref=".count))) }
+            if token.hasPrefix("label=") { return ReticleProtocol.Selector(label: String(token.dropFirst("label=".count))) }
             if token.contains("=") {
-                throw HelperError("unrecognized --verify selector '\(token)': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, ref=<ref>, or a bare ref")
+                throw HelperError("unrecognized --verify selector '\(token)': use #<testId>, testId=<id>, @<resourceId>, resourceId=<id>, css=<selector>, label=<text>, ref=<ref>, or a bare ref")
             }
             return ReticleProtocol.Selector(ref: token)
         }
@@ -97,6 +105,7 @@ extension IosHelperClient {
         if let t = selector.testId { selStr = "#\(t)" }
         else if let r = selector.resourceId { selStr = "@\(r)" }
         else if let c = selector.cssSelector { selStr = "css=\(c)" }
+        else if let l = selector.label { selStr = "label=\(l)" }
         else if let r = selector.ref { selStr = r }
         else { selStr = "?" }
         var out: [String: Any] = ["selector": selStr, "changed": !changes.isEmpty]

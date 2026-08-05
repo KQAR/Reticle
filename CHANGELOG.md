@@ -16,6 +16,17 @@
   rather than assumed: a host that reports a different release than `VERSION`
   **hard-stops** with the rebuild command, because a skew there means the binary is
   not this tree's code and every answer it gives would be credited to code that is.
+- **`--label` counts as a node selector for `--verify`.** `act tap --label
+  "Potwierdź" --verify` was refused with "pass a node selector, or act by selector
+  rather than `--point`" while the caller was acting by selector all along — and on
+  a framework-built screen a label is often the only handle there is, so the
+  refusal landed exactly where the feature was needed. Bare `--verify` now watches
+  a label-selected node like any other, `label=<text>` joins the explicit token
+  grammar on both platforms, the snapshot lookup behind it resolves a label through
+  the SAME shared resolver `act` uses (so visibility and ambiguity mean one thing,
+  not two), the result line names what it watched (`verify label=Potwierdź: …`
+  rather than `verify ?`), and the refusal that remains is the honest one: no
+  selector at all.
 
 - **A form field says what it is FOR, not only what it holds — and never at the
   expense of what it holds.** The accessible-name walk stopped at `aria-label` /
