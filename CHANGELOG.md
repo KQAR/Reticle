@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **`ui coverage` names a field the page named but exposed no control for.** A
+  screen whose five dropdowns are bare `<div>` triggers — no role, no `aria-*`, no
+  text, nothing declared clickable — reported **100% addressable** while those five
+  fields could only be driven by coordinates: their cells fell into `inert` /
+  `container-only`, which are deliberately not gaps, so the one number that measures
+  the blind-agent contract said everything was fine exactly where it was not. Their
+  `<label>` is captured, though, and that is enough to say so out loud: a new
+  `named but inert:` section lists each such field by NAME, ref and rect. Still not
+  a gap and still not cover — a label does not prove a region is tappable, and
+  inferring that would be the guess this file refuses everywhere else — but
+  `addressable: 100%` can no longer read as "every control on this screen has a
+  selector". The rule is narrow enough not to invent fields: the enclosing wrapper
+  must hold exactly one label and NO interactive node, so a named field with a real
+  control beside it is not listed, and a group legend over several controls is not
+  either. Pinned for both ports by a new `screen-coverage.cases.json` case carrying
+  both shapes.
+
 - **`RETICLE_FROM_SOURCE=1` runs what is in the tree, and says so when it cannot.**
   The source path checked only that a binary EXISTED, so one left over from an
   earlier build was exec'd unchanged and an edited tree ran the old code with the
