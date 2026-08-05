@@ -90,8 +90,33 @@ if [[ -n "${RETICLE_HOME:-}" && -x "${RETICLE_HOME}/bin/reticle-host" ]]; then
 fi
 
 # --- 3. explicit source build (opt-in only) ----------------------------------
+
+# Is ${1} missing, or older than any source file under the remaining arguments?
+#
+# The whole point of RETICLE_FROM_SOURCE=1 is "run what is in this tree", and the
+# check used to be `-x` alone: a binary left over from an earlier build was
+# exec'd unchanged, so an edited tree ran the OLD code while the flag said
+# otherwise. Measured: a host built hours earlier answered `reticle version` with
+# `0.16.0` in a tree whose VERSION said 0.17.0, and it drove a device for a while
+# before the mismatch was noticed — every observation from it attributed to code
+# that was never running.
+stale_against() {
+  local target="$1"; shift
+  [[ -x "${target}" ]] || return 0
+  local dir
+  for dir in "$@"; do
+    [[ -e "${dir}" ]] || continue
+    if [[ -n "$(find "${dir}" -type f -newer "${target}" -print -quit 2>/dev/null)" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
-  if [[ ! -x "${SRC_HELPER_BIN}" ]]; then
+  if stale_against "${SRC_HELPER_BIN}" \
+    "${ROOT}/reticle-helper/src" "${ROOT}/reticle-core/src" "${ROOT}/reticle-agent/android/src" \
+    "${ROOT}/reticle-protocol" "${ROOT}/gradle/libs.versions.toml"; then
     if [[ ! -x "${GRADLEW}" ]]; then
       log "RETICLE_FROM_SOURCE=1 but no gradlew at ${GRADLEW} (install from the full repo)."
       exit 1
@@ -99,17 +124,33 @@ if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
     log "building the native helper from source (needs a GraalVM with native-image)…"
     ( cd "${ROOT}" && ./gradlew --quiet :reticle-helper:nativeHelper :reticle-agent:android:dexPayload ) >&2
   fi
-  if [[ ! -x "${SRC_HOST_BIN}" ]]; then
-    if ! command -v swift >/dev/null 2>&1; then
-      log "RETICLE_FROM_SOURCE=1 but \`swift\` is not on PATH (needed to build the host)."
-      exit 1
-    fi
+  # The Swift build is its own incremental check and a no-op costs about a second,
+  # so it always runs rather than being guarded by timestamps.
+  if command -v swift >/dev/null 2>&1; then
     log "building the Swift host from source…"
     ( cd "${ROOT}/reticle-host" && swift build -c release ) >&2
+  elif [[ ! -x "${SRC_HOST_BIN}" ]]; then
+    log "RETICLE_FROM_SOURCE=1 but \`swift\` is not on PATH (needed to build the host)."
+    exit 1
+  else
+    log "\`swift\` is not on PATH — running the host already in the tree, which may be stale."
   fi
   if [[ ! -x "${SRC_HOST_BIN}" ]]; then
     log "source build did not produce ${SRC_HOST_BIN}"
     exit 1
+  fi
+  # A source build must not report a different release than the tree it came from.
+  # Hard-stop rather than warn: a version skew here means the binary is not this
+  # tree's code, and every answer it gives would be attributed to code that is.
+  if [[ -f "${ROOT}/VERSION" ]]; then
+    _tree_version="$(tr -d '[:space:]' < "${ROOT}/VERSION")"
+    _built_version="$("${SRC_HOST_BIN}" version 2>/dev/null | awk '{print $NF}')"
+    if [[ -n "${_tree_version}" && -n "${_built_version}" && "${_tree_version}" != "${_built_version}" ]]; then
+      log "the host built from this tree reports ${_built_version} but VERSION says ${_tree_version}."
+      log "That binary is not this tree's code. Rebuild it:"
+      log "  ( cd ${ROOT}/reticle-host && rm -rf .build && swift build -c release )"
+      exit 1
+    fi
   fi
   exec_host "${SRC_HOST_BIN}" "${SRC_HELPER_BIN}" "$@"
 fi

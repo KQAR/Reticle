@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **`RETICLE_FROM_SOURCE=1` runs what is in the tree, and says so when it cannot.**
+  The source path checked only that a binary EXISTED, so one left over from an
+  earlier build was exec'd unchanged and an edited tree ran the old code with the
+  flag claiming otherwise. Measured: a host built hours earlier answered `reticle
+  version` with `0.16.0` in a tree whose `VERSION` said `0.17.0`, and it drove a
+  real device for a while before the skew was noticed — every observation from it
+  attributed to code that was never running. Now the Swift host is always rebuilt
+  (a no-op build costs about a second) and the native helper is rebuilt when
+  anything under `reticle-helper/`, `reticle-core/`, `reticle-agent/android/` or
+  `reticle-protocol/` is newer than it, which keeps the expensive `native-image`
+  run off the hot path without letting it go stale. And the version is now checked
+  rather than assumed: a host that reports a different release than `VERSION`
+  **hard-stops** with the rebuild command, because a skew there means the binary is
+  not this tree's code and every answer it gives would be credited to code that is.
+
 - **A form field says what it is FOR, not only what it holds — and never at the
   expense of what it holds.** The accessible-name walk stopped at `aria-label` /
   `aria-labelledby` / `title`, so a form built out of framework components — no
