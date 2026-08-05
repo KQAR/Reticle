@@ -243,6 +243,7 @@ internal object HelperDeviceCommands {
                 buildJsonObject { put("gesture", sub); put("from", "$fx,$fy"); put("to", "$tx,$ty"); put("durationMs", dur) }
             }
             "scrollTo", "scroll-to" -> HelperScrollTo.run(input, device, pkg, params)
+            "wheel" -> HelperWheel.run(input, device, pkg, params)
             "type" -> typeText(input, device, pkg, params)
             "hideKeyboard", "hide-keyboard" -> hideKeyboard(input, device, pkg, params)
             // The one gesture that dispatches no input: it only observes. Kept
