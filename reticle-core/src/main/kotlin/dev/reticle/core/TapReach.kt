@@ -102,7 +102,35 @@ object TapReach {
             (overflowY != null && overflowY != "visible")
     }
 
+    /**
+     * How much of a cut is no cut at all, in device pixels.
+     *
+     * Two reasons a containing ancestor used to come back as a clipper. DOM rects
+     * arrive as fractional device pixels, and rebuilding a rect from
+     * `x + width - x` is not exact in binary floating point — so an intersection
+     * that changed nothing compared UNEQUAL to the frame it came from. Measured on
+     * a hybrid consent screen: a button at `x=473.6170277913412
+     * w=361.8677083333333`, wholly inside the WebView that contains it, was
+     * reported `only partly visible (clipped by that WebView)` while the tap went to
+     * its exact centre — a contradiction that read as the reason the flow failed
+     * and sent the caller looking for a clipping container that did not exist.
+     * Sub-pixel layout rounding in a real page does the same thing for real.
+     *
+     * Half a pixel cannot move a tap, so a cut smaller than this is not reported
+     * and does not move the aim.
+     */
+    private const val CLIP_EPSILON = 0.5
+
+    /** Does [outer] contain [inner], up to [CLIP_EPSILON] on each edge? */
+    private fun contains(outer: Rect, inner: Rect): Boolean =
+        outer.x <= inner.x + CLIP_EPSILON &&
+            outer.y <= inner.y + CLIP_EPSILON &&
+            outer.x + outer.width >= inner.x + inner.width - CLIP_EPSILON &&
+            outer.y + outer.height >= inner.y + inner.height - CLIP_EPSILON
+
     private fun intersect(a: Rect, b: Rect): Rect? {
+        // Identity, not arithmetic, when nothing is actually cut — see CLIP_EPSILON.
+        if (contains(b, a)) return a
         val left = maxOf(a.x, b.x)
         val top = maxOf(a.y, b.y)
         val right = minOf(a.x + a.width, b.x + b.width)

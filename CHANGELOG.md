@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **A container that cuts nothing is no longer named as a clipper.** `TapReach`
+  intersected a node's frame with each clipping ancestor and asked whether the
+  result differed from the frame — but it rebuilt that result as `x + width - x`,
+  which in binary floating point is not the width it started from
+  (`(473.6170277913412 + 361.8677083333333) - 473.6170277913412 !=
+  361.8677083333333`). So a node wholly inside its scroll container came back one
+  ulp narrower, the container was reported as clipping it, and the tap went to the
+  frame's exact centre anyway. Measured on a real hybrid consent flow inside a
+  WebView: **22 of
+  the run's taps carried `is only partly visible (clipped by …)`, and 21 of them
+  were false** — including the authorisation button the flow hinged on, where the
+  phantom clip
+  read as the reason the flow was stuck and sent the caller looking for a container
+  that was not there. An intersection that changes nothing now returns the frame
+  itself, and a cut below half a pixel is neither reported nor allowed to move the
+  aim, since sub-pixel layout rounding in a real page produces the same phantom for
+  real. Pinned for both ports by a new `tap-reach.cases.json` case carrying that
+  button's fractional rect, a 0.25px overhang that stays quiet, and a 136px cut that
+  is still reported.
+
 ## 0.17.0 - 2026-08-05
 
 - **`act wheel` moves a picker column by name, converging on the wheel's own
