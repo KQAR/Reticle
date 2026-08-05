@@ -661,7 +661,11 @@ internal object HelperDeviceCommands {
             builder.put("textLanded", TypeReadback.label(landed))
             landedReason?.let { builder.put("textLandedReason", it) }
             text?.let { builder.put("text", it) }
-            if (landed == TypeReadback.Landed.PARTIAL) builder.put("landedChars", landedChars)
+            if (landed == TypeReadback.Landed.PARTIAL ||
+                landed == TypeReadback.Landed.DROPPED
+            ) {
+                builder.put("landedChars", landedChars)
+            }
             unavailable?.let { builder.put("textReadback", "unavailable:$it") }
             recovery?.let { builder.put("recovery", it) }
         }
@@ -807,8 +811,12 @@ internal object HelperDeviceCommands {
         }
         input.keyevent("KEYCODE_MOVE_END")
         input.keyevent(*Array(before.length) { "KEYCODE_DEL" })
-        Thread.sleep(READBACK_SETTLE_MS)
-        val reread = readFieldText(device, pkg, params, field)
+        // Poll, for the reason [settledFieldText] exists: a DOM input's value
+        // arrives through the page's own handlers, so one read after a fixed sleep
+        // catches it mid-flight. Measured on a masked postcode field — `--clear`
+        // refused with "it still holds 6 char(s)" and a `ui compact` a moment later
+        // showed the field EMPTY, so the refusal blocked a clear that had worked.
+        val reread = emptiedFieldText(device, pkg, params, field)
         val after = reread?.let { TypeReadback.valueOf(it) }
         return ClearOutcome(
             empty = after != null && after.isEmpty(),
@@ -930,6 +938,35 @@ internal object HelperDeviceCommands {
      * not change costs the full budget and is then classified as such, which is the
      * honest reading of "nothing arrived".
      */
+    /**
+     * The field's text once the deletes have finished — up to
+     * [CLEAR_READBACK_ATTEMPTS] reads, returning as soon as it is EMPTY.
+     *
+     * Waiting for "empty" rather than for "changed" is the whole point. A masked
+     * DOM input rewrites its value on every delete, so a read that waits for any
+     * change returns on the first INTERMEDIATE value and `--clear` then refuses
+     * with "it still holds N char(s)" for a clear that was working. Measured on
+     * three separate fields of a real form — refusals citing 6, 9 and 18
+     * characters, with a screenshot a moment later showing every one of them
+     * empty. The budget is only spent when the field is not empty yet, so a field
+     * that genuinely refuses to clear is still reported as such.
+     */
+    private fun emptiedFieldText(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        field: Node,
+    ): Node? {
+        var last: Node? = null
+        repeat(CLEAR_READBACK_ATTEMPTS) {
+            Thread.sleep(READBACK_SETTLE_MS)
+            val node = readFieldText(device, pkg, params, field) ?: return last
+            last = node
+            if ((TypeReadback.valueOf(node) ?: "").isEmpty()) return node
+        }
+        return last
+    }
+
     private fun settledFieldText(
         device: DeviceController,
         pkg: String,
@@ -1006,6 +1043,14 @@ internal object HelperDeviceCommands {
      * loss.
      */
     private const val READBACK_ATTEMPTS = 3
+
+    /**
+     * How many times `--clear` re-reads the field before believing it is not empty.
+     * Higher than [READBACK_ATTEMPTS] because the condition is stricter: a masked
+     * input passes through several intermediate values on its way to empty, and
+     * only the last one is the answer.
+     */
+    private const val CLEAR_READBACK_ATTEMPTS = 6
 
     /**
      * A field longer than this is not cleared for a recovery attempt. One DEL per

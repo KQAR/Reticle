@@ -44,6 +44,34 @@
   not two), the result line names what it watched (`verify label=Potwierdź: …`
   rather than `verify ?`), and the refusal that remains is the honest one: no
   selector at all.
+- **A DOM field's read-back finds the field again, and an empty one reads as
+  empty.** Four defects in one path, all of them making `act type`'s own
+  post-conditions lie about a real form:
+  - **A renumbered ref read a stranger's text.** The re-find fell back to
+    `snapshot.nodes[ref]` guarded by a `typeName` check — and every DOM node's
+    typeName is `DOMElement`, so after a re-render the guard proved nothing.
+    Measured: `--clear` refused three times citing 6, 9 and 18 characters while a
+    screenshot showed the named field EMPTY; the lengths belonged to whatever div
+    had inherited those refs. The re-find now goes through the node's captured css
+    path, then its accessible name when that is unique among text fields (the
+    handle that survives exactly the re-render typing provokes), and a DOM field it
+    cannot re-find is reported as gone rather than as someone else's value.
+  - **`--clear` waited for a CHANGE instead of for EMPTY.** A masked input rewrites
+    its value on every delete, so the read returned on the first intermediate value
+    and the clear was refused mid-way through working.
+  - **An empty DOM input read as "no text channel".** `""` and `null` are different
+    claims — "holds nothing" versus "there is nothing to read" — and conflating
+    them made `--clear` on an empty field refuse with `field-exposes-no-text`, a
+    passing check reported as a missing one. (The test guarding this case was
+    already named for the right behaviour and asserted the wrong one.)
+  - **A masked field that lost a character claimed the app had transformed it.**
+    `--text "00-950"` left `00-50`: not a prefix, so it classified as `changed` —
+    "the app dressed its input, not a defect, never retried" — and a dropped digit
+    went out under the same label as an uppercasing. That shape is now `dropped`,
+    counted as loss (so the clipboard re-send applies), and judged only where it
+    can be judged: a field that was empty, with every landed character coming from
+    the typed text in order, compared case-sensitively so an uppercasing app stays
+    `changed`.
 
 - **A form field says what it is FOR, not only what it holds — and never at the
   expense of what it holds.** The accessible-name walk stopped at `aria-label` /
