@@ -231,7 +231,14 @@ data class CompactObservation(
                             role = node.role ?: node.typeName,
                             testId = node.testId,
                             resourceId = node.resourceId,
-                            label = node.contentDescription ?: node.text,
+                            // A text field's VALUE owns the label slot, so a filled
+                            // field never projects as its own name; the name keeps its
+                            // own slot beside it. An EMPTY field has no value to show,
+                            // so the name takes the slot rather than leaving the line
+                            // anonymous.
+                            label = if (node.isTextField()) node.text ?: node.contentDescription
+                            else node.contentDescription ?: node.text,
+                            name = node.contentDescription?.takeIf { node.isTextField() && !node.text.isNullOrEmpty() },
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
@@ -489,6 +496,15 @@ data class CompactItem(
      */
     val placeholder: String? = null,
     /**
+     * A text field's accessible NAME, when it has one. Rendered as ` name:"…"`,
+     * for the same reason [placeholder] is not merged into [label]: a field's name
+     * is what it is FOR and [label] is what it HOLDS, and one slot cannot carry
+     * both. Measured on a real form: with the name in the label slot, five filled
+     * fields projected as their own names and nothing in the projection said what
+     * any of them contained.
+     */
+    val name: String? = null,
+    /**
      * Set when the field declares itself invalid (`aria-invalid`), carrying the
      * message its `aria-describedby` points at (empty string when it declares
      * invalidity with no message). Rendered as ` invalid` / ` invalid:"…"`.
@@ -583,6 +599,7 @@ data class CompactItem(
                 null -> Unit
             }
             hasPopup?.let { append(" popup:").append(it) }
+            name?.let { append(" name:\"${it.clipCodePoints(40)}\"") }
             placeholder?.let { append(" placeholder:\"${it.clipCodePoints(40)}\"") }
             invalid?.let {
                 if (it.isEmpty()) append(" invalid") else append(" invalid:\"${it.clipCodePoints(40)}\"")

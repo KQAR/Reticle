@@ -187,6 +187,8 @@ enum WebViewBridge {
         putInteger("domNthOfType", "nthOfType")
         putInteger("domNthChild", "nthChild")
         putText("domPlaceholder", "placeholder")
+        // Which accname rule produced the label — see the Kotlin twin.
+        putText("domNameSource", "nameSource")
         putText("domName", "formName")
         putText("domDescribedBy", "describedBy")
         if bool(element["invalid"]) { map["domInvalid"] = .bool(true) }

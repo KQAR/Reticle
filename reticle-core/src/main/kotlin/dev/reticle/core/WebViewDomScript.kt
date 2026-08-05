@@ -124,7 +124,66 @@ object WebViewDomScript {
             if (label) return label;
             var referenced = textOfReferenced(el, "aria-labelledby");
             if (referenced) return referenced;
-            return clean(el.getAttribute("title") || el.getAttribute("alt"), 160);
+            var titled = clean(el.getAttribute("title") || el.getAttribute("alt"), 160);
+            if (titled) return titled;
+            return labelledName(el);
+          }
+          // The rest of the accessible-name order for a FORM CONTROL, which the
+          // attributes above miss entirely for a framework-built form: `<label for>`,
+          // an ancestor `<label>`, and — the shape measured on a real one — a `<label>`
+          // that sits beside the input inside the field's own wrapper with no `for` at
+          // all. Without this, five identical `textField` lines carried no name, the
+          // field name was visible ONLY in a screenshot, and picking a field by its
+          // position in the DOM put a city into the street box while `act type`
+          // reported `textLanded=exact focusLanded=self`.
+          //
+          // Deliberately narrow, because a wrong name is worse than none: form
+          // controls only, at most three wrapper levels up, and the level must hold
+          // EXACTLY ONE label-ish element and no second form control — a fieldset
+          // legend over a group of inputs names the group, not any one of them, and
+          // two labels beside two inputs is a guess. `nameSource` says which rule
+          // answered, so a heuristic name is never mistaken for a declared one.
+          function isFormControl(el) {
+            var tag = tagOf(el);
+            return tag === "input" || tag === "textarea" || tag === "select";
+          }
+          function labelledName(el) {
+            if (!isFormControl(el)) return "";
+            var doc = el.ownerDocument || document;
+            var id = clean(el.id, 120);
+            if (id) {
+              var explicit = null;
+              try { explicit = doc.querySelector('label[for="' + id.replace(/"/g, '') + '"]'); }
+              catch (e) { explicit = null; }
+              if (explicit) {
+                var forText = clean(explicit.innerText || explicit.textContent, 160);
+                if (forText) return forText;
+              }
+            }
+            var node = el.parentElement;
+            for (var level = 0; node && level < 3; level++) {
+              if (tagOf(node) === "label") {
+                var ancestorText = clean(node.innerText || node.textContent, 160);
+                if (ancestorText) return ancestorText;
+              }
+              var labels = node.querySelectorAll("label, legend");
+              var controls = node.querySelectorAll("input, textarea, select");
+              if (labels.length === 1 && controls.length === 1) {
+                var nearby = clean(labels[0].innerText || labels[0].textContent, 160);
+                if (nearby) return nearby;
+              }
+              node = node.parentElement;
+            }
+            return "";
+          }
+          // Which rule produced `name`, so the projection can stay honest about a name
+          // that was inferred from layout rather than declared by the page.
+          function nameSourceFor(el) {
+            if (clean(el.getAttribute("aria-label"), 160)) return "aria-label";
+            if (textOfReferenced(el, "aria-labelledby")) return "aria-labelledby";
+            if (clean(el.getAttribute("title") || el.getAttribute("alt"), 160)) return "title";
+            if (labelledName(el)) return "label";
+            return "";
           }
           function textOfReferenced(el, attribute) {
             var ids = clean(el.getAttribute(attribute), 200);
@@ -310,6 +369,7 @@ object WebViewDomScript {
               testId: clean(el.getAttribute("data-testid") || el.getAttribute("data-test-id") || id, 120),
               role: roleFor(el),
               name: nameFor(el),
+              nameSource: nameSourceFor(el),
               text: textFor(el),
               placeholder: clean(el.getAttribute("placeholder"), 160),
               formName: clean(el.getAttribute("name"), 120),
