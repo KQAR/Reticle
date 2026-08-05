@@ -429,6 +429,21 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             return try finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
                                    point: from, source: "point", ref: nil,
                                    result: ["gesture": gesture, "via": "hid", "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"])
+        case "wheel":
+            // Refused BY NAME rather than half-implemented. The Android gesture
+            // converges on the wheel's own published value; on iOS a `UIPickerView`
+            // publishes no equivalent yet (its selection is an a11y region, its row
+            // pitch is not captured) — but it does something Android cannot: it builds
+            // a real subview per visible row, so the value beside the selection IS a
+            // node and a label tap selects it. Naming that is more use than a loop
+            // that cannot check itself.
+            throw HelperError(
+                "act wheel is Android-only for now: it converges on the value a "
+                    + "`NumberPicker` publishes, and a UIPickerView publishes no such reading yet. "
+                    + "On iOS a wheel's VISIBLE rows are real nodes — `act tap --label \"<value>\"` "
+                    + "selects one, and `ui regions` reports each column's current value; for a value "
+                    + "that is off screen, swipe the column and re-read that region."
+            )
         case "scroll-to", "scrollTo":
             guard let udid = simUdid else {
                 throw HelperError("scroll-to needs a booted simulator (real devices have no HID input surface)")

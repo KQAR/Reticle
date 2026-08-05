@@ -149,7 +149,7 @@ func cmdLaunch(_ backend: HostBackend, _ args: Args) throws {
 
 @discardableResult
 func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
-    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/type/hide-keyboard/wait)") }
+    guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/wheel/type/hide-keyboard/wait)") }
     if gesture == "batch" {
         try cmdActBatch(backend, args)
         return 0
@@ -169,6 +169,9 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     request.container = args.option("container")
     request.direction = args.option("direction")
     request.maxSwipes = args.option("max-swipes")
+    // `act wheel`: `--to` carries the VALUE the wheel should show; `--to-index` names
+    // the position instead, for a wheel that publishes no labels.
+    request.toIndex = args.option("to-index")
     // `type --submit`: press the keyboard's action key after typing (agent
     // editor action on Android, HID Return on the iOS simulator).
     request.submit = args.flag("submit")
