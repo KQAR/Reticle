@@ -216,7 +216,12 @@ class TypeReadbackTest {
         // be in into a missing check — and one that looks like a wall, not a zero.
         val field = TypeReadback.field(domTree(value = null), targetRef = "dom")
         assertEquals("dom", field?.ref)
-        assertNull(TypeReadback.valueOf(field!!))
+        // "" and null are different claims — "the field holds nothing" versus "there
+        // is no text channel here" — and this case is the first. It used to come back
+        // null, which is what this test's own name says it must not be: `--clear` on
+        // an empty field then refused with `field-exposes-no-text`, reporting a
+        // missing check where there was a passing one.
+        assertEquals("", TypeReadback.valueOf(field!!))
         // ...and the placeholder is NOT what comes back as the value.
         assertEquals(
             TypeReadback.Landed.EXACT,
@@ -313,5 +318,34 @@ class TypeReadbackTest {
             TypeReadback.Unavailable.DOM_NOT_INPUT,
             TypeReadback.whyUnreadable(snapshot, targetRef = "dom"),
         )
+    }
+
+    @Test
+    fun aMaskedFieldThatLostAMiddleCharacterIsDroppedNotChanged() {
+        // Measured on a real masked postcode field: `--text "00-950"` left `00-50`.
+        // The tail arrived, so it is not a PARTIAL prefix, and it used to classify
+        // as CHANGED — a lost digit reported under the same label as an
+        // uppercasing, and explicitly "never retried".
+        val verdict = TypeReadback.classify(before = "", after = "00-50", typed = "00-950")
+        assertEquals(TypeReadback.Landed.DROPPED, verdict.landed)
+        assertEquals(4, verdict.landedChars)
+        assertTrue(TypeReadback.isLoss(verdict.landed))
+    }
+
+    @Test
+    fun anUppercasingAppIsStillChangedRatherThanDropped() {
+        // The subsequence test is case-sensitive precisely so this stays CHANGED:
+        // an app that rewrites its input has not lost any of it.
+        val verdict = TypeReadback.classify(before = "", after = "ADA", typed = "ada")
+        assertEquals(TypeReadback.Landed.CHANGED, verdict.landed)
+        assertFalse(TypeReadback.isLoss(verdict.landed))
+    }
+
+    @Test
+    fun aTransformedValueInAFIELDThatAlreadyHadTextStaysChanged() {
+        // With pre-existing content the insertion point is unknown, so calling a
+        // shorter value "dropped" would be a guess. CHANGED claims nothing.
+        val verdict = TypeReadback.classify(before = "abc", after = "abX", typed = "de")
+        assertEquals(TypeReadback.Landed.CHANGED, verdict.landed)
     }
 }
