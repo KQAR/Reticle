@@ -53,6 +53,16 @@ export ANDROID_SERIAL="$SERIAL"
 R() { "$HOST" --serial "$SERIAL" "$@"; }
 echo "== device: $SERIAL =="
 
+# Hand the device back to the launcher before anything is asserted. Measured three
+# runs in a row: a leftover `com.android.settings` task (its App-info page, opened by
+# a previous run's permission section or by a stray notification-shade pull) stayed on
+# top and held INPUT FOCUS, so every `wait_compact` timed out on an app whose nodes
+# were being captured perfectly well — the tree is the app's own, whatever is above
+# it. Reticle said so on every one of those captures (`window: UNFOCUSED — another
+# window has input focus`); the suite should not need a human to read that line.
+"$ADB" -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
+"$ADB" -s "$SERIAL" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+
 # Cold-start the app and wait for the in-process runtime to answer, polling
 # `status` rather than blocking a single `app launch` call on its internal
 # await. A cold start on a software-GPU emulator can take 20-40s for the agent
@@ -406,6 +416,47 @@ echo "$WHEEL" | grep -q '#wheel.year .* wheel:opaque' \
   || { echo "FAIL: a self-drawn wheel must still read opaque, got: $WHEEL"; exit 1; }
 R ui node --live --package "$PKG" --test-id wheel.year | grep -q "wheelValue" \
   && { echo "FAIL: a self-drawn wheel must not carry invented wheel facts"; exit 1; }
+
+# `act wheel`: converge on a value using the wheel's OWN reading, instead of
+# calibrating a swipe from pixels. The whole point is that the verdict comes from the
+# widget, so the assertion is the value it reports afterwards.
+WHEEL_MOVE="$(R act wheel --package "$PKG" --test-id wheel.hour --to "17")"
+echo "$WHEEL_MOVE"
+echo "$WHEEL_MOVE" | grep -q "value=17" \
+  || { echo "FAIL: act wheel must land on the value it was given, got: $WHEEL_MOVE"; exit 1; }
+echo "$WHEEL_MOVE" | grep -qE "swipes=[0-9]+" \
+  || { echo "FAIL: act wheel must report how many swipes it took"; exit 1; }
+R ui compact --live --package "$PKG" | grep '#wheel.hour' | grep -q 'wheel:value="17"' \
+  || { echo "FAIL: the tree must agree with what act wheel reported"; exit 1; }
+# ...and it is the app's own committed state that proves the wheel really moved,
+# not just the widget's own label.
+R act tap --package "$PKG" --test-id wheel.confirm >/dev/null
+wait_compact "$PKG" "Time: 17" \
+  || { echo "FAIL: the app did not commit the value act wheel selected"; exit 1; }
+# Backwards, and further, in the same run: a wheel is not a one-way ratchet, and one
+# swipe now travels several rows (bounded by the screen rather than by the column).
+WHEEL_BACK="$(R act wheel --package "$PKG" --test-id wheel.hour --to "03")"
+echo "$WHEEL_BACK" | grep -q "value=03" \
+  || { echo "FAIL: act wheel must be able to move backwards, got: $WHEEL_BACK"; exit 1; }
+# Every refusal names itself. A self-drawn column publishes no reading to converge
+# on, so a loop here could only claim a success it cannot check.
+WHEEL_OPAQUE="$(R act wheel --package "$PKG" --test-id wheel.year --to "1995" 2>&1 || true)"
+echo "$WHEEL_OPAQUE" | grep -q "publishes none" \
+  || { echo "FAIL: an opaque wheel must be refused by name, got: $WHEEL_OPAQUE"; exit 1; }
+echo "$WHEEL_OPAQUE" | grep -q "act swipe" \
+  || { echo "FAIL: the refusal must name the path that does work"; exit 1; }
+# A value the wheel does not offer is a refusal, not a hunt. (Captured first: a
+# refusal exits non-zero, and under `set -o pipefail` piping it straight into grep
+# would fail the assertion it just satisfied.)
+WHEEL_UNKNOWN="$(R act wheel --package "$PKG" --test-id wheel.hour --to "99" 2>&1 || true)"
+echo "$WHEEL_UNKNOWN" | grep -q 'has no value "99"' \
+  || { echo "FAIL: an unknown value must be refused by name, got: $WHEEL_UNKNOWN"; exit 1; }
+echo "$WHEEL_UNKNOWN" | grep -q "It offers:" \
+  || { echo "FAIL: the refusal must name the values the wheel does have"; exit 1; }
+# And a control that is not a wheel at all says so rather than swiping at a button.
+WHEEL_NOT="$(R act wheel --package "$PKG" --test-id wheel.confirm --to "x" 2>&1 || true)"
+echo "$WHEEL_NOT" | grep -q "is not a wheel column" \
+  || { echo "FAIL: a non-wheel target must be refused by name, got: $WHEEL_NOT"; exit 1; }
 
 # The boundary, asserted as an absence: a value the wheel is not on has no node.
 echo "$WHEEL" | grep -qE '#numberpicker_input textField "(20|21)"' \

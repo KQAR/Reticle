@@ -25,8 +25,9 @@ public enum ReticleCLI {
                               capture and project the running UI (`coverage`
                               reports how much of the screen has no selector
                               over it, and why)
-      act tap|swipe|drag|type|scroll-to|wait|batch|activate|hide-keyboard
-                              drive real input
+      act tap|swipe|drag|type|scroll-to|wheel|wait|batch|activate|hide-keyboard
+                              drive real input (`wheel` converges a picker column
+                              on a value using the wheel's own reading)
       mutate                  live-patch an allowlisted view property
       debug logs|logcat       app-authored runtime logs, and the agent's own
       trace log|replay        read back what a recorded run did

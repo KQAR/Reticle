@@ -73,6 +73,8 @@ object ActionTraceParams {
         "from", "to", "duration",
         // scroll-to
         "container", "direction", "maxSwipes",
+        // wheel (its `to` is a VALUE, not a point — see ActionTraceParams' note)
+        "toIndex",
         // verify (the weak "did anything change" watch, not an assertion)
         "verify", "verifyTimeoutMs",
         // wait
