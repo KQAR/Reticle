@@ -163,7 +163,14 @@ The launcher resolves it in this order (first hit wins):
 1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
 2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
 3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host via `swift`,
-   native helper via the bundled Gradle + a GraalVM). For development only.
+   native helper via the bundled Gradle + a GraalVM). For development only. It
+   builds what is in the tree *now*: the Swift build always runs (a no-op costs
+   about a second) and the helper is rebuilt when any source under
+   `reticle-helper/`, `reticle-core/`, `reticle-agent/android/` or
+   `reticle-protocol/` is newer than the binary — a leftover binary used to be
+   exec'd unchanged, so an edited tree ran the old code. If the built host then
+   reports a different release than `VERSION`, the launcher **stops** rather than
+   driving a device with a binary that is not this tree's code.
 4. A **prebuilt release** — cached under `~/.reticle/cli`, or freshly downloaded
    (SHA256-verified) from
    [GitHub Releases](https://github.com/KQAR/Reticle/releases). **This is the
