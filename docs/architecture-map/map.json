@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "Reticle",
-    "version": "0.16.0",
+    "version": "0.17.0",
     "tagline": "Inspects the app that is actually running, resolves precise selectors, and drives real input.",
     "generatedFrom": ["AGENTS.md", "docs/architecture.md", "docs/boundaries.md", "docs/ios.md"],
     "invariants": [
@@ -589,7 +589,7 @@
         },
         {
           "title": "Android: the values are paint, not nodes",
-          "detail": "NumberPicker draws its neighbouring values onto the wheel canvas, so the only child view it owns is the EditText holding the selection. Unlike a Spinner dropdown (real row nodes in a popup) or a recycling list (binds once scrolled), a wheel materialises NOTHING, ever — so scroll-to structurally cannot reach '20'.",
+          "detail": "NumberPicker draws its neighbouring values onto the wheel canvas, so the only child view it owns is the EditText holding the selection. Unlike a Spinner dropdown (real row nodes in a popup) or a recycling list (binds once scrolled), a wheel materialises NOTHING, ever — so scroll-to structurally cannot reach '20'. That absence stands, but it is not the whole boundary any more: the WIDGET publishes its own state (getValue, getMinValue/getMaxValue, getDisplayedValues, and the mSelectorElementHeight quantum), so the capture carries value/range/items/pitch and `act wheel --to \"17\"` converges on that reading instead of on measured pixels. A self-drawn column publishes none of it, still says wheel:opaque, and is where the swipe-and-read-the-app recipe still applies.",
           "nodes": ["agent-android", "app-android"], "edges": ["e-agentA-appA"]
         },
         {

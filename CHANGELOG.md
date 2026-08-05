@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 - 2026-08-05
 
 - **`act wheel` moves a picker column by name, converging on the wheel's own
   reading.** With the column publishing its value and row pitch, the loop that used
