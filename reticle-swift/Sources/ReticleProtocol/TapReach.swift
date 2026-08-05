@@ -70,7 +70,25 @@ public enum TapReach {
         return false
     }
 
+    /// How much of a cut is no cut at all, in device pixels — see the Kotlin twin,
+    /// where the consent button that was called `only partly visible (clipped by
+    /// <its own WebView>)` while its tap went to its exact centre is written down.
+    /// Fractional
+    /// DOM rects plus a rect rebuilt as `x + width - x` are not exact in binary
+    /// floating point, so a containing ancestor came back as a clipper.
+    private static let clipEpsilon = 0.5
+
+    /// Does `outer` contain `inner`, up to `clipEpsilon` on each edge?
+    private static func contains(_ outer: Rect, _ inner: Rect) -> Bool {
+        outer.x <= inner.x + clipEpsilon
+            && outer.y <= inner.y + clipEpsilon
+            && outer.x + outer.width >= inner.x + inner.width - clipEpsilon
+            && outer.y + outer.height >= inner.y + inner.height - clipEpsilon
+    }
+
     private static func intersect(_ a: Rect, _ b: Rect) -> Rect? {
+        // Identity, not arithmetic, when nothing is actually cut — see clipEpsilon.
+        if contains(b, a) { return a }
         let left = max(a.x, b.x)
         let top = max(a.y, b.y)
         let right = min(a.x + a.width, b.x + b.width)
