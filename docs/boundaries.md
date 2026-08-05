@@ -29,6 +29,7 @@ The vocabulary that carries these facts, all rendered by `ui compact`:
 | `occluded-by:<ref>` | An in-app window above this one covers its tap point |
 | `dom:unavailable` | This web view's DOM could not be read *at capture time* (blocked JS thread, JS off, budget) — retry may help |
 | `iframe:cross-origin` | This frame's document is unreadable by browser policy — retry never helps, and coordinates are the only path into it |
+| `named but inert: "<name>" <ref>` (in `ui coverage`) | The page NAMES this field (its `<label>` is captured) and exposes no control for it — nothing in the field is interactive, so only a coordinate reaches it. Listed, never counted as a gap or as cover: a label does not prove the region is tappable. Measured on a real form whose five dropdowns are bare `<div>`s with no role, no `aria-*` and no declared click, where the screen still reported 100% addressable |
 | `dom:capped(N)` | This web view's DOM walk stopped at the traversal's own node cap after N nodes; the rest were never captured, so nothing downstream can reach them |
 | `dom:unsupported-kernel` | A third-party WebView kernel: there is no DOM bridge for it at all — retry never helps |
 | `pixels:unavailable` | This node's pixels are missing from the **in-process** screenshot |
