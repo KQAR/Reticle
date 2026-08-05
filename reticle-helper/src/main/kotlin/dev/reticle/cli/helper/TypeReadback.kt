@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.core.CssSelectorMatch
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
@@ -45,6 +46,20 @@ internal object TypeReadback {
         /** A proper, non-empty PREFIX of the typed text. The burst-loss shape. */
         PARTIAL,
 
+        /**
+         * Every character in the field came from the typed text, in order, but some
+         * are MISSING from the middle or the end — characters were dropped, not
+         * transformed.
+         *
+         * Measured on a masked postcode field: `--text "00-950"` left `00-50`, one
+         * digit short. That is not a prefix (the tail `0` arrived), so it used to
+         * classify as [CHANGED] — "the app transformed its input, not a defect" —
+         * and a lost digit went out under the same label as an uppercasing. The
+         * mask inserts its own separator on each keystroke, and a burst can lose a
+         * character anywhere in it, not only off the end.
+         */
+        DROPPED,
+
         /** The field's text did not change at all. Nothing landed. */
         NONE,
 
@@ -70,7 +85,8 @@ internal object TypeReadback {
      * re-sending through the atomic clipboard path. [Landed.CHANGED] is the app
      * doing its job, and re-typing over it would fight the app.
      */
-    fun isLoss(landed: Landed): Boolean = landed == Landed.PARTIAL || landed == Landed.NONE
+    fun isLoss(landed: Landed): Boolean =
+        landed == Landed.PARTIAL || landed == Landed.NONE || landed == Landed.DROPPED
 
     /**
      * Compare the field's text [before] and [after] typing [typed].
@@ -94,6 +110,8 @@ internal object TypeReadback {
         // tail. A field that rewrote what it was given does not look like this.
         val prefix = longestLandedPrefix(before, after, typed)
         if (prefix in 1 until typed.length) return Verdict(Landed.PARTIAL, prefix)
+        val dropped = droppedChars(before, after, typed)
+        if (dropped > 0) return Verdict(Landed.DROPPED, core(after).length)
         return Verdict(Landed.CHANGED, 0)
     }
 
@@ -109,6 +127,36 @@ internal object TypeReadback {
         val afterCore = core(after)
         return afterCore.length == beforeCore.length + typedCore.length &&
             afterCore.contains(typedCore)
+    }
+
+    /**
+     * How many typed characters are missing when everything in the field DID come
+     * from the typed text, in order — see [Landed.DROPPED]. Zero when that is not
+     * the shape.
+     *
+     * Only judged for a field that was EMPTY before, where all of the value has to
+     * have come from the insertion. With pre-existing content the insertion point
+     * is unknown, and calling a transformed value "dropped" would be a guess — that
+     * case stays [Landed.CHANGED], which claims nothing.
+     *
+     * Case-sensitive on purpose: an app that uppercases what it is given rewrites
+     * its input rather than losing any of it, and must not read as loss.
+     */
+    private fun droppedChars(before: String, after: String, typed: String): Int {
+        if (core(before).isNotEmpty()) return 0
+        val typedCore = core(typed)
+        val afterCore = core(after)
+        if (afterCore.isEmpty() || afterCore.length >= typedCore.length) return 0
+        return if (isSubsequence(afterCore, typedCore)) typedCore.length - afterCore.length else 0
+    }
+
+    /** Is [inner] a subsequence of [outer]? */
+    private fun isSubsequence(inner: String, outer: String): Boolean {
+        var i = 0
+        for (c in outer) {
+            if (i < inner.length && inner[i] == c) i++
+        }
+        return i == inner.length
     }
 
     /** The longest prefix of [typed] that the insertion accounts for. */
@@ -188,6 +236,26 @@ internal object TypeReadback {
         field.resourceId?.let { id ->
             nodes.filter { it.resourceId == id }.singleOrNull()?.let { return it }
         }
+        // A DOM node's handle that survives a re-render. Without this the fallbacks
+        // below decide it, and both are wrong for the DOM: the frame moves when the
+        // page scrolls (which typing itself causes), and EVERY DOM node's typeName is
+        // `DOMElement`, so the ref fallback's typeName check proves nothing and a
+        // renumbered ref reads a STRANGER's text. Measured on a real form: `--clear`
+        // refused three times citing 6, 9 and 18 characters while the field it named
+        // was empty in the same screenshot — the lengths belonged to whatever div had
+        // inherited those refs.
+        field.domCssSelector()?.let { css ->
+            CssSelectorMatch.find(snapshot, css)?.let { return it }
+        }
+        // The field's accessible NAME, when it has one and it is unique among text
+        // fields. A framework form's inputs carry no id and their captured css path
+        // runs through `:nth-of-type(n)` wrappers that a validation row appearing
+        // above the field renumbers — the name is what stays put across exactly the
+        // re-render that typing and clearing provoke.
+        field.contentDescription?.takeIf { it.isNotEmpty() }?.let { name ->
+            nodes.filter { isTextField(it) && it.contentDescription == name }
+                .singleOrNull()?.let { return it }
+        }
         val frame = field.frame
         if (frame != null) {
             nodes.firstOrNull {
@@ -196,6 +264,10 @@ internal object TypeReadback {
                 } == true
             }?.let { return it }
         }
+        // The ref fallback is only evidence when typeName distinguishes something.
+        // It does not in the DOM, so a DOM field that could not be re-found by
+        // selector or rect is reported as GONE rather than as a stranger's value.
+        if (field.kind == NodeKind.domNode) return null
         return snapshot.nodes[field.ref]?.takeIf { it.typeName == field.typeName }
     }
 
@@ -220,8 +292,17 @@ internal object TypeReadback {
      * The text this field holds — its VALUE, which on a Compose node is not the
      * same thing as `Node.text`.
      */
-    fun valueOf(node: Node): String? =
-        (node.custom[EDITABLE_TEXT] as? MetadataValue.Text)?.value ?: node.text
+    fun valueOf(node: Node): String? {
+        (node.custom[EDITABLE_TEXT] as? MetadataValue.Text)?.value?.let { return it }
+        node.text?.let { return it }
+        // An EMPTY DOM input carries no `text` at all, and "" and null are different
+        // claims: one is "the field holds nothing", the other is "there is no text
+        // channel here". Conflating them made `--clear` on an empty field refuse with
+        // `field-exposes-no-text` — a missing check reported as a failed one — and it
+        // is exactly the distinction the DOM input-semantics change was made to keep.
+        if (node.kind == NodeKind.domNode && node.role == "textField") return ""
+        return null
+    }
 
     private const val EDITABLE_TEXT = "editableText"
 
