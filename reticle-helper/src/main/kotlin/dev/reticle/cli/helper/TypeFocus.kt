@@ -44,6 +44,19 @@ internal object TypeFocus {
         /** Some unrelated node holds focus — the text is about to land in it. */
         ELSEWHERE,
 
+        /**
+         * The target's ref is not in the capture the focus was read from, so this
+         * reading cannot say where focus went relative to it.
+         *
+         * A ref is the traversal INDEX of a node in the capture it came from, and a
+         * relayout — in a WebView, any re-render — renumbers the whole tree. The
+         * focusing tap can cause one itself by scrolling the field into view. The
+         * distinction matters because the old answer for this was [ELSEWHERE],
+         * which asserts something false and actionable ("the text is about to land
+         * in a different field") about a capture that simply cannot be compared.
+         */
+        TARGET_GONE,
+
         /** Nothing in the tree holds focus — the text is about to land nowhere. */
         NONE,
 
@@ -72,6 +85,9 @@ internal object TypeFocus {
         val focused = snapshot.nodes.values.filter { it.isFocused }
         if (focused.isEmpty()) return Landing.NONE
         if (targetRef == null) return Landing.UNKNOWN
+        // Not in this capture at all: refs were renumbered under us, so no relation
+        // to the focused node can be computed — see [Landing.TARGET_GONE].
+        if (snapshot.nodes[targetRef] == null) return Landing.TARGET_GONE
         if (focused.any { it.ref == targetRef }) return Landing.SELF
         if (focused.any { isDescendantOf(snapshot, it, targetRef) }) return Landing.DESCENDANT
         val target = snapshot.nodes[targetRef]
@@ -129,12 +145,26 @@ internal object TypeFocus {
         append(
             when (landing) {
                 Landing.NONE -> "(nothing in the app holds input focus)"
+                Landing.TARGET_GONE ->
+                    "(that ref is not in the tree read back after the tap — a relayout, or in a " +
+                        "WebView a re-render, renumbered it, so where focus went cannot be judged " +
+                        "against it)"
                 else -> "(focus is on an unrelated node)"
             }
         )
         append(". Typing now would send the text ")
-        append(if (landing == Landing.NONE) "nowhere" else "into whatever holds focus")
+        append(
+            when (landing) {
+                Landing.NONE -> "nowhere"
+                Landing.TARGET_GONE -> "somewhere this cannot confirm"
+                else -> "into whatever holds focus"
+            }
+        )
         append(" while reporting success, so it is refused.\n")
+        if (landing == Landing.TARGET_GONE) {
+            append("  Address the field by a handle that survives a re-render — `--css` for a DOM ")
+            append("node, `--test-id` / `--resource-id` for a native one — rather than by `--ref`.\n")
+        }
         if (candidate != null) {
             val handle = candidate.testId?.let { "--test-id $it" }
                 ?: candidate.resourceId?.let { "--resource-id $it" }
