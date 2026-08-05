@@ -110,6 +110,29 @@ class TypeFocusTest {
     }
 
     @Test
+    fun aRefThatIsNotInThisCaptureIsNotAClaimAboutAnUnrelatedNode() {
+        // Measured on a real hybrid form: the focusing tap scrolled the field into
+        // view, the WebView re-rendered, and every ref was renumbered — so the ref
+        // the selector had resolved to was absent from the capture the focus was
+        // read from. That used to classify as ELSEWHERE, which asserts the text is
+        // about to land in a DIFFERENT field. It was not: the named field held
+        // focus, and the identical command succeeded on the next attempt.
+        val snapshot = form(focusedRef = "input")
+        val landing = TypeFocus.classify(snapshot, "r9999")
+        assertEquals(TypeFocus.Landing.TARGET_GONE, landing)
+        assertFalse(TypeFocus.isLanded(landing))
+    }
+
+    @Test
+    fun theTargetGoneRefusalSaysWhyAndWhatToUseInstead() {
+        val target = ResolvedInputTarget(dev.reticle.core.Point(500.0, 500.0), "dom:css", "r9999")
+        val message = TypeFocus.refusal(TypeFocus.Landing.TARGET_GONE, target, null)
+        assertTrue(message.contains("renumbered"), message)
+        assertTrue(message.contains("--css"), message)
+        assertFalse(message.contains("focus is on an unrelated node"), message)
+    }
+
+    @Test
     fun aRawPointCanStillTellNobodyHasFocus() {
         // With no target ref there is nothing to be related TO, but "the text will
         // go nowhere" is still knowable — and still worth refusing.

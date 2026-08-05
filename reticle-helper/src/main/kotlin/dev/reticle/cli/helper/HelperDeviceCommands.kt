@@ -10,6 +10,7 @@ import dev.reticle.core.DomRectCheck
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.Node
 import dev.reticle.core.ReticleJson
+import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
 import java.util.Base64
@@ -419,7 +420,7 @@ internal object HelperDeviceCommands {
             // often the only uniquely-addressable handle — leaves the text going
             // to whatever held focus before. See [TypeFocus].
             before = liveSnapshot(device, pkg, params)
-            landing = focusLanding(before, focus.ref)
+            landing = focusLanding(before, targetRefIn(before, params, focus.ref))
             if (!TypeFocus.isLanded(landing)) {
                 // One retarget, and only when it is not a guess: exactly one
                 // focusable text input inside the node the caller named.
@@ -430,7 +431,7 @@ internal object HelperDeviceCommands {
                     input.tap(candidate.frame!!.centerX.toInt(), candidate.frame!!.centerY.toInt())
                     Thread.sleep(FOCUS_SETTLE_MS)
                     before = liveSnapshot(device, pkg, params)
-                    landing = focusLanding(before, focus.ref)
+                    landing = focusLanding(before, targetRefIn(before, params, focus.ref))
                     if (TypeFocus.isLanded(landing)) retargeted = candidate.ref
                 }
                 if (!TypeFocus.isLanded(landing)) {
@@ -606,6 +607,38 @@ internal object HelperDeviceCommands {
      */
     private fun focusLanding(snapshot: Snapshot?, targetRef: String?): TypeFocus.Landing =
         snapshot?.let { TypeFocus.classify(it, targetRef) } ?: TypeFocus.Landing.UNKNOWN
+
+    /**
+     * The caller's field as it is numbered in [snapshot] — the capture the focus
+     * post-condition is read from, which is NOT the one the selector resolved in.
+     *
+     * A ref is the traversal index of a node in its own capture, so any relayout
+     * renumbers it, and in a WebView any re-render does. The focusing tap can cause
+     * one itself: scrolling the field into view, or the page inserting a validation
+     * row above it. Comparing the fresh focus reading against the ref from the
+     * previous capture then asks about whatever now sits at that index.
+     *
+     * Measured while driving a real hybrid form: three `type --css` calls in a row
+     * were refused with `focus is on an unrelated node`, and a `ui compact` a moment
+     * later showed the named field holding focus exactly as asked — every one of
+     * them a false refusal, and each cost a retry that then succeeded unchanged.
+     *
+     * So re-resolve the SELECTOR against the new capture. A bare `--ref` or
+     * `--point` has nothing to re-resolve, and a selector that no longer matches
+     * anything keeps the original ref — for which `TARGET_GONE` is the honest
+     * verdict rather than a claim about an unrelated node.
+     */
+    private fun targetRefIn(snapshot: Snapshot?, params: JsonObject, resolvedRef: String?): String? {
+        if (snapshot == null) return resolvedRef
+        val selector = selectorFrom(params)
+        val reResolvable = selector.testId != null || selector.resourceId != null ||
+            selector.cssSelector != null || selector.label != null || selector.region != null
+        if (!reResolvable) return resolvedRef
+        val again = runCatching {
+            SelectorResolver(snapshot, SemanticTree.build(snapshot)).resolve(selector)
+        }.getOrNull()
+        return again?.ref ?: resolvedRef
+    }
 
     /** The `type` post-condition: what the field holds now, and how it got there. */
     private class Readback(

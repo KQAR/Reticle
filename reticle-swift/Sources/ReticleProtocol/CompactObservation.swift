@@ -208,7 +208,11 @@ public struct CompactObservation: Codable, Sendable {
                         role: node.role ?? node.typeName,
                         testId: node.testId,
                         resourceId: node.resourceId,
-                        label: node.contentDescription ?? node.text,
+                        // A text field's VALUE owns the label slot and its name gets
+                        // its own — see the Kotlin twin. An empty field has no value,
+                        // so the name takes the slot rather than leaving it anonymous.
+                        label: node.isTextField() ? (node.text ?? node.contentDescription)
+                            : (node.contentDescription ?? node.text),
                         frame: node.frame,
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
@@ -218,6 +222,8 @@ public struct CompactObservation: Codable, Sendable {
                         expanded: node.expanded,
                         hasPopup: node.domHasPopup(),
                         placeholder: node.placeholder(),
+                        name: node.isTextField() && !(node.text ?? "").isEmpty
+                            ? node.contentDescription : nil,
                         invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
@@ -379,6 +385,10 @@ public struct CompactItem: Codable, Sendable {
     /// what a field ASKS for, `label` is what it HOLDS, and folding the two made
     /// an empty field and a filled one project identically.
     public var placeholder: String?
+    /// A text field's accessible NAME. Rendered as ` name:"…"` and never merged
+    /// into `label` for the same reason `placeholder` is not: the name is what the
+    /// field is FOR, `label` is what it HOLDS, and one slot cannot carry both.
+    public var name: String?
     /// Set when the field declares itself invalid (`aria-invalid`), carrying its
     /// `aria-describedby` message (empty when it names none). Without it a
     /// validation error is a sibling node belonging to nothing.
@@ -436,6 +446,7 @@ public struct CompactItem: Codable, Sendable {
         expanded: Bool? = nil,
         hasPopup: String? = nil,
         placeholder: String? = nil,
+        name: String? = nil,
         invalid: String? = nil,
         occludedBy: String? = nil,
         scroll: ScrollInfo? = nil,
@@ -461,6 +472,7 @@ public struct CompactItem: Codable, Sendable {
         self.expanded = expanded
         self.hasPopup = hasPopup
         self.placeholder = placeholder
+        self.name = name
         self.invalid = invalid
         self.occludedBy = occludedBy
         self.scroll = scroll
@@ -497,6 +509,7 @@ public struct CompactItem: Codable, Sendable {
         case nil: break
         }
         if let hasPopup { state += " popup:\(hasPopup)" }
+        if let name { state += " name:\"\(name.clipCodePoints(40))\"" }
         if let placeholder { state += " placeholder:\"\(placeholder.clipCodePoints(40))\"" }
         if let invalid {
             state += invalid.isEmpty ? " invalid" : " invalid:\"\(invalid.clipCodePoints(40))\""
@@ -515,7 +528,7 @@ public struct CompactItem: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
-        case isFocused, checked, expanded, hasPopup, placeholder, invalid, windowRef, occludedBy, scroll, wheel
+        case isFocused, checked, expanded, hasPopup, placeholder, name, invalid, windowRef, occludedBy, scroll, wheel
         case domUnavailable, domCappedAt, crossOriginFrame, domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -535,6 +548,7 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(expanded, forKey: .expanded)
         try c.encodeIfPresent(hasPopup, forKey: .hasPopup)
         try c.encodeIfPresent(placeholder, forKey: .placeholder)
+        try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(invalid, forKey: .invalid)
         try c.encodeIfPresent(occludedBy, forKey: .occludedBy)
         try c.encodeIfPresent(scroll, forKey: .scroll)
