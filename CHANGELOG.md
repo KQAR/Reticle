@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **`--verify` compares the two states a tap on a control actually changes.** Its
+  watched fields were presence, text, label, enabled, visible, frame and the custom
+  metadata — not `checked`, and not `expanded`. Measured on a real consent screen:
+  `act tap --label "…" --verify` on an **unchecked** select-all reported exactly one
+  change, the DOM node's css path, because that page happens to add an `active`
+  class. Nothing in the result said the box was now ticked. A native checkbox, or a
+  page that styles its own state without a class change, would have reported "this
+  node's watched fields are unchanged" for the one field that did change — the
+  quietest possible answer for the commonest thing `--verify` is pointed at. Both
+  states are now compared and reported (`checked: off -> on`, `expanded: false ->
+  true`), and a node with no toggle channel still says nothing about one, because
+  absence is the third state.
+
 ## 0.18.0 - 2026-08-05
 
 - **`ui coverage` names a field the page named but exposed no control for.** A

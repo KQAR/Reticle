@@ -17,6 +17,11 @@ extension IosHelperClient {
         let enabled: Bool
         let visible: Bool
         let frame: String?
+        /// Toggle and disclosure state — the two things a tap on a checkbox or a
+        /// dropdown changes and nothing else here records. See the Kotlin twin for
+        /// the consent screen where a ticked box reported only a css-class change.
+        let checked: String?
+        let expanded: String?
         let custom: [String: String]
     }
 
@@ -73,7 +78,10 @@ extension IosHelperClient {
     /// verify never fails the action it wraps.
     func captureVerifyState(_ pkg: String, _ selector: TargetSelector) -> VerifyState {
         guard let snapshot = try? fetchSnapshot(pkg), let node = try? Render.findNode(snapshot, selector) else {
-            return VerifyState(found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil, custom: [:])
+            return VerifyState(
+                found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil,
+                checked: nil, expanded: nil, custom: [:]
+            )
         }
         let frame = node.frame.map(\.intDescription)
         return VerifyState(
@@ -83,6 +91,8 @@ extension IosHelperClient {
             enabled: node.isEnabled,
             visible: node.isVisible,
             frame: frame,
+            checked: node.checked?.rawValue,
+            expanded: node.expanded.map(String.init),
             custom: node.custom.mapValues { $0.displayString() }
         )
     }
@@ -127,6 +137,8 @@ extension IosHelperClient {
         if before.enabled != after.enabled { out.append((field: "enabled", before: String(before.enabled), after: String(after.enabled))) }
         if before.visible != after.visible { out.append((field: "visible", before: String(before.visible), after: String(after.visible))) }
         if before.frame != after.frame { out.append((field: "frame", before: before.frame, after: after.frame)) }
+        if before.checked != after.checked { out.append((field: "checked", before: before.checked, after: after.checked)) }
+        if before.expanded != after.expanded { out.append((field: "expanded", before: before.expanded, after: after.expanded)) }
         for key in Set(before.custom.keys).union(after.custom.keys).sorted() {
             let b = before.custom[key]
             let a = after.custom[key]
