@@ -22,7 +22,7 @@ public enum Render {
         case "compact": return compact(snapshot)
         case "node": return try node(snapshot, selector: selector)
         case "regions": return regions(snapshot)
-        case "style": return style(snapshot)
+        case "style": return try style(snapshot, selector: selector)
         case "coverage": return coverage(snapshot)
         default: throw RenderError.unknownView(view)
         }
@@ -173,8 +173,16 @@ public enum Render {
     /// consumer can compare. Deliberately not a comparison: what the values ought
     /// to be, what tolerance counts, and which regions are exempt are the caller's
     /// policy. Matches the Kotlin helper's `renderStyle`.
-    static func style(_ snapshot: Snapshot) -> String {
-        StyleObservation.from(snapshot).render()
+    /// With a selector, reports THAT node and its subtree; without one, the whole
+    /// screen. The selector used to be dropped here — see `StyleObservation.from`.
+    static func style(_ snapshot: Snapshot, selector: Selector? = nil) throws -> String {
+        guard let selector, selector.testId != nil || selector.resourceId != nil
+            || selector.cssSelector != nil || selector.ref != nil
+        else { return StyleObservation.from(snapshot).render() }
+        guard let node = try findNode(snapshot, selector) else {
+            throw RenderError.nodeNotFound("\(selector)")
+        }
+        return StyleObservation.from(snapshot, startRef: node.ref).render()
     }
 
     /// How much of this screen an agent can address, and which regions it cannot.
