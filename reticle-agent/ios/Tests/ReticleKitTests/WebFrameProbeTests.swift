@@ -38,24 +38,50 @@ final class WebFrameProbeTests: XCTestCase {
         return (window, webView)
     }
 
-    /// Spins the main run loop until the page and its frame have laid out. Polling the
-    /// document beats the navigation delegate here: the frame's own load completes
-    /// after the main document's, and it is the frame we are waiting for.
+    /// Spins the main run loop until the page and its frame have laid out.
+    ///
+    /// Polls with one long deadline rather than a per-hop `wait(for:)`: a COLD WebKit
+    /// process takes seconds to answer its first `evaluateJavaScript`, so a 5s
+    /// per-hop expectation failed the whole suite on a freshly-booted simulator
+    /// (measured on iOS 18.6, and caught in CI) while passing on a warm one. A
+    /// timeout here would be a fixture that is not ready — never the assertion.
     private func waitUntilLoaded(_ webView: WKWebView) {
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline {
-            var ready = false
-            let hop = expectation(description: "readyState")
+        let deadline = Date().addingTimeInterval(60)
+        var ready = false
+        while !ready, Date() < deadline {
+            let answer = Flag()
             webView.evaluateJavaScript("document.readyState === 'complete' && document.querySelectorAll('iframe').length") { value, _ in
-                ready = ((value as? NSNumber)?.intValue ?? 0) > 0
-                hop.fulfill()
+                answer.ready = ((value as? NSNumber)?.intValue ?? 0) > 0
+                answer.answered = true
             }
-            wait(for: [hop], timeout: 5)
-            if ready { break }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            pump(until: { answer.answered }, deadline: deadline)
+            ready = answer.ready
+            if !ready { pump(for: 0.1) }
         }
+        XCTAssertTrue(ready, "the fixture page never finished loading")
         // One more turn for the frame's own document, which loads after its parent's.
-        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        pump(for: 0.5)
+    }
+
+    private final class Flag: @unchecked Sendable {
+        var answered = false
+        var ready = false
+    }
+
+    /// Turns the main run loop until `done` holds — the same shape `wait(for:)` has,
+    /// minus the failure, so a slow WebKit process shows up as a slow test rather than
+    /// a red one.
+    private func pump(until done: () -> Bool, deadline: Date) {
+        while !done(), Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+    }
+
+    private func pump(for seconds: TimeInterval) {
+        let until = Date().addingTimeInterval(seconds)
+        while Date() < until {
+            RunLoop.current.run(mode: .default, before: until)
+        }
     }
 
     /// Runs the DOM capture the way the agent does: off the main thread, while the main
@@ -82,14 +108,15 @@ final class WebFrameProbeTests: XCTestCase {
             frame: Rect(x: 0, y: 0, width: 390, height: 300)
         )]
         let box = SnapshotBox()
-        let done = expectation(description: "dom capture")
         DispatchQueue.global().async {
             var snapshot = base
             WebViewBridge.captureInto(&snapshot, pending: pending, nextRef: 1)
             box.value = snapshot
-            done.fulfill()
         }
-        wait(for: [done], timeout: 20)
+        // The capture runs off-main and hops BACK to main for every DOM read, so the
+        // run loop has to keep turning here or it deadlocks against itself.
+        pump(until: { box.value != nil }, deadline: Date().addingTimeInterval(60))
+        XCTAssertNotNil(box.value, "the DOM capture never returned")
         return box.value ?? base
     }
 
@@ -156,7 +183,6 @@ final class WebFrameProbeTests: XCTestCase {
         _ = capture(webView)
 
         let box = ActivationBox()
-        let done = expectation(description: "activate")
         let pending = [WebViewBridge.Pending(
             webView: webView,
             parentRef: "r0",
@@ -164,9 +190,8 @@ final class WebFrameProbeTests: XCTestCase {
         )]
         DispatchQueue.global().async {
             box.value = WebActivation.activate(selectorChain: "#sealed >>> #inner", pending: pending)
-            done.fulfill()
         }
-        wait(for: [done], timeout: 20)
+        pump(until: { box.value != nil }, deadline: Date().addingTimeInterval(60))
 
         let result = try XCTUnwrap(box.value)
         XCTAssertTrue(result.activated, "activation into a sealed frame failed: \(result.message ?? "-")")
