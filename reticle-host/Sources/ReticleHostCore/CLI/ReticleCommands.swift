@@ -226,6 +226,12 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // rects were ~130px off, where the tap reported `settled=1` and nothing happened
     // — only a screenshot showed the mismatch.
     if let suspect = outcome.rectSuspect { print("warning: \(suspect)") }
+    // The tree did not vouch for what this selector resolved: a caption, a wrapper,
+    // a plain row. A `note:` rather than a `warning:` — a framework-built field
+    // really is driven this way (its handler is bound in JS and it publishes no role,
+    // tabindex or aria), so the tap is legitimate; what the caller must not assume is
+    // that a control was named.
+    if let inert = outcome.targetInert { print("note: \(inert)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)
