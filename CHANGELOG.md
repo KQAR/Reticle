@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **`ui outline` prints a DOM node's shortest handle, not its lineage.** The traversal
+  captures each element's full ancestor path because that form is guaranteed unique;
+  printing it was a different question, and the answer was measured on a hybrid form:
+  every outline line carried ~400 characters of `body:nth-of-type(1) > div:nth-of-type(1)
+  > …`, and one screen cost **17.8 KB against 5.9 KB for the same screen's `ui compact`**
+  — the view documented as the cheap ad-hoc loop was the most expensive one to read, 3x
+  over, exactly where a hybrid app needs it. Same screen now: **7.2 KB**.
+  - `CssHandle` shortens to the point of uniqueness and never past it: a unique `#id`,
+    else the shortest **suffix** of the captured path that matches exactly one captured
+    node, else the full path unchanged. A handle that resolved to a different node than
+    the one it labels would be worse than the 400 characters, so `everyShortenedHandle`
+    re-resolves through the matcher that will be handed it.
+  - A capture from an agent that predates `domNthOfType` keeps its full path: the matcher
+    cannot answer a `:nth-…()` there and refuses it by name, while the verbatim path still
+    matches. Shortening would trade a working handle for a refused one.
+  - The same handle is now used in the coverage hint (`--point was not needed at …:
+    --css '…'`), which had the same 400-character problem in a line whose whole job is to
+    be read.
+
 ## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS
@@ -164,7 +185,7 @@
     gets its own whenever the node carries both — so `button "Contract"` reads
     `button "Contract" … name:"Employment"`.
   - **`ui coverage`'s two halves contradicted each other.** The whole-screen report
-    listed `named but inert: "Rodzaj pracy" r404 [57,786 964x195]` while a tap at a
+    listed `named but inert: "Employment type" r404 [57,786 964x195]` while a tap at a
     point inside that very rect answered `nothing smaller is captured at this
     point`. The per-point warning is where a caller reads it — at the moment it
     dispatches the coordinate — so that is the half that needed it: it now ends with

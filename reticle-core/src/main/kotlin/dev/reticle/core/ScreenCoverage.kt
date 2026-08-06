@@ -112,11 +112,20 @@ object ScreenCoverage {
             .filter { it.isVisible && it.frame != null }
             .onEach { layer[it.ref] = snapshot.windowRefOf(it.ref)?.let { w -> windowOrder[w] } ?: -1 }
             .sortedWith(compareBy({ layer[it.ref] ?: -1 }, { positions[it.ref] ?: 0 }))
-        return Stacked(nodes, layer)
+        return Stacked(nodes, layer, CssHandle.Index(snapshot))
     }
 
     /** Draw-ordered nodes plus which window layer each one is in. */
-    private class Stacked(val nodes: List<Node>, val layer: Map<String, Int>)
+    private class Stacked(
+        val nodes: List<Node>,
+        val layer: Map<String, Int>,
+        /**
+         * Shortest-css-handle index for the same snapshot. Built here for the same
+         * reason the stack is: a whole-screen sample asks thousands of times and the
+         * snapshot does not change between samples.
+         */
+        val cssHandles: CssHandle.Index,
+    )
 
     /** Is this node one an agent can aim a selector at right now? */
     private fun addressable(node: Node): Boolean =
@@ -128,10 +137,13 @@ object ScreenCoverage {
      * `--ref` is last and is still a real answer: a ref is addressable within the
      * capture it came from, which is exactly the scope a tap has.
      */
-    fun selectorFlagFor(node: Node): String {
+    fun selectorFlagFor(node: Node, cssHandle: String? = null): String {
         node.testId?.let { return "--test-id $it" }
         node.resourceId?.let { return "--resource-id $it" }
-        node.domCssSelector()?.let { return "--css '$it'" }
+        // The SHORTEST css that still names this node alone, when a snapshot was
+        // available to decide that against: a full ancestor path is ~400 characters
+        // of lineage in a hint whose whole job is to be read. See `CssHandle`.
+        (cssHandle ?: node.domCssSelector())?.let { return "--css '$it'" }
         val label = node.contentDescription ?: node.text
         if (!label.isNullOrBlank()) return "--label \"${label.clipCodePoints(40)}\""
         return "--ref ${node.ref}"
@@ -350,7 +362,7 @@ object ScreenCoverage {
             .filter { boundaryOf(it) == null }
             .minByOrNull { areaOf(it) }
         if (hit != null) {
-            val flag = selectorFlagFor(hit)
+            val flag = selectorFlagFor(hit, stacked.cssHandles.of(hit))
             val frame = hit.frame
             val taps = frame?.let { " and would tap (${it.centerX.toInt()},${it.centerY.toInt()})" } ?: ""
             return PointCoverage(
@@ -458,7 +470,7 @@ object ScreenCoverage {
      *
      * The whole-screen report already lists these (`named but inert:`), and without
      * this the two halves of the same tool contradicted each other on the same
-     * screen: `ui coverage` named `"Rodzaj pracy" r404 [57,786 964x195]` while a tap
+     * screen: `ui coverage` named `"Employment type" r404 [57,786 964x195]` while a tap
      * at a point inside that rect answered `nothing smaller is captured at this
      * point`. The per-point warning is where a caller reads it — at the moment it
      * dispatches the coordinate — so it is the half that needed it most.

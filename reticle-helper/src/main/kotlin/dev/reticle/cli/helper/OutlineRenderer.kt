@@ -1,5 +1,6 @@
 package dev.reticle.cli
 
+import dev.reticle.core.CssHandle
 import dev.reticle.core.Node
 import dev.reticle.core.Rect
 import dev.reticle.core.Render
@@ -142,6 +143,11 @@ internal object OutlineRenderer {
         // y=10800, while about 15 were actually visible. The rest were not wrong —
         // they were unreachable without a scroll, numbered as though they were not.
         val screen = snapshot.screen.size
+        // One index for the whole outline: a DOM node's handle is the shortest
+        // suffix of its captured path that still names it alone, and deciding that
+        // per node against the whole node set would be quadratic on a page-heavy
+        // screen. See `CssHandle` for why the full path is not what gets printed.
+        val cssIndex = CssHandle.Index(snapshot)
         val nodes = snapshot.nodes.values
             .filter { it.isVisible && it.frame != null && (it.isInteractive || it.hasLabelOrSelector()) }
             .filter { node -> onScreen(node, screen) }
@@ -160,7 +166,7 @@ internal object OutlineRenderer {
                 frame = node.frame!!,
                 testId = node.testId,
                 resourceId = node.resourceId,
-                css = node.domCssSelector(),
+                css = cssIndex.of(node),
                 enabled = node.isEnabled,
                 interactive = node.isInteractive,
                 windowRef = windowOf[node.ref],
