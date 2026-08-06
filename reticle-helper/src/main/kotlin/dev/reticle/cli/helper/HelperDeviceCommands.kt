@@ -251,8 +251,24 @@ internal object HelperDeviceCommands {
             // under `act` because it is part of an action sequence (act, then wait
             // for the consequence) and shares the selector/trace surface.
             "wait" -> HelperWait.run(device, pkg, params)
+            // `activate` is iOS-only and exists BECAUSE iOS lacks what Android has.
+            // It drives a control in-process (`sendActions`, the agent's /activate
+            // endpoint) — the only input path on a real iOS device, and the fallback
+            // when a simulator's private HID surface will not initialize. Android
+            // synthesizes real input through `adb shell input`, so there is nothing
+            // for it to fall back FROM. Saying "unknown gesture" for it sent the
+            // caller looking for a typo, and `docs/boundaries.md` plus a line in the
+            // skill recommend it without naming the platform, so a reader arrives
+            // here honestly.
+            "activate" -> throw CliError(
+                "act activate is iOS-only: it activates a control in-process because a real iOS device " +
+                    "exposes no host-reachable HID surface. Android synthesizes real input instead — use " +
+                    "`act tap` with the same selector (`--css` included), which dispatches an actual touch."
+            )
             else -> throw CliError(
-                "unknown act gesture '$sub' (tap/swipe/drag/scroll-to/type/hide-keyboard/wait)"
+                "unknown act gesture '$sub' " +
+                    "(tap/swipe/drag/scroll-to/wheel/type/hide-keyboard/wait; " +
+                    "activate is iOS-only)"
             )
         }
 
