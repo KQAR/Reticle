@@ -418,9 +418,22 @@ the SAME traversal script, handed its enclosing frame's fold through
 so a control read this way is an ordinary DOM node with a chained selector, and
 `act activate` routes a chain into the frame that owns it. Deliberately *not* a
 second geometry implementation: the fold is passed in, never recomputed in Swift.
-`docs/ios.md` carries the mechanism and its markers; Android's equivalent seam is
-`WebViewCompat.addDocumentStartJavaScript` + `addWebMessageListener` (androidx.webkit),
-which is not wired up yet, so Android still walls at the page.
+`docs/ios.md` carries the mechanism and its markers.
+
+**Android reaches the same place from the other direction.** There is no per-frame
+`evaluateJavascript`, so the read is push-based: `WebFrameBridge` uses
+androidx.webkit's `addDocumentStartJavaScript` (a probe in every frame matching an
+origin rule) plus `addWebMessageListener` (a JS object those frames can answer
+through), then the main frame posts a request to `window.frames[...]` — indexed access
+to a foreign window and `postMessage` to it are both allowed across origins, so a
+nested frame is addressed directly and no forwarding chain or id handshake is needed.
+The probe runs the SAME traversal script with the fold its parent measured and posts
+the JSON back; `WebViewBridge` splices it in one round per depth level. androidx.webkit
+is reached **purely by reflection and is not a dependency at all** — not even
+compileOnly — so the agent links identically into apps that have it and apps that do
+not, and the `app inject` payload dex carries no support library to collide with the
+host's own copy. Where the library or the provider feature is missing, the frame says
+`iframe:probe-unavailable` instead of implying the wall is final.
 
 **The script itself is one file, embedded twice.** Both bridges — Android's and the
 WKWebView twin — run the same JavaScript, and it used to be hand-copied between the
