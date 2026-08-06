@@ -322,11 +322,11 @@ class TypeReadbackTest {
 
     @Test
     fun aMaskedFieldThatLostAMiddleCharacterIsDroppedNotChanged() {
-        // Measured on a real masked postcode field: `--text "00-950"` left `00-50`.
+        // Measured on a real masked postcode field: `--text "12-345"` left `12-45`.
         // The tail arrived, so it is not a PARTIAL prefix, and it used to classify
         // as CHANGED — a lost digit reported under the same label as an
         // uppercasing, and explicitly "never retried".
-        val verdict = TypeReadback.classify(before = "", after = "00-50", typed = "00-950")
+        val verdict = TypeReadback.classify(before = "", after = "12-45", typed = "12-345")
         assertEquals(TypeReadback.Landed.DROPPED, verdict.landed)
         assertEquals(4, verdict.landedChars)
         assertTrue(TypeReadback.isLoss(verdict.landed))

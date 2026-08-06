@@ -11,7 +11,7 @@ class PortMapTest {
     fun derivedPortIsInRange() {
         val packages = listOf(
             "dev.reticle.sample",
-            "com.loans.easypln.debug",
+            "com.example.lender.debug",
             "com.example.app",
             "a",
             "com.a.very.long.package.name.that.keeps.going",
@@ -41,7 +41,7 @@ class PortMapTest {
         // in practice must land on different ports — that's the whole point.
         assertNotEquals(
             PortMap.derivePort("dev.reticle.sample"),
-            PortMap.derivePort("com.loans.easypln.debug"),
+            PortMap.derivePort("com.example.lender.debug"),
         )
     }
 
@@ -56,12 +56,12 @@ class PortMapTest {
         // Pin exact derived ports so an accidental algorithm change (which would
         // desync the agent and the CLI) fails loudly here instead of in the field.
         assertEquals(EXPECTED_SAMPLE_PORT, PortMap.derivePort("dev.reticle.sample"))
-        assertEquals(EXPECTED_EASYPLN_PORT, PortMap.derivePort("com.loans.easypln.debug"))
+        assertEquals(EXPECTED_SECOND_PORT, PortMap.derivePort("com.example.lender.debug"))
     }
 
     private companion object {
         // Filled in from the reference implementation; see knownVectorsAreStable.
         const val EXPECTED_SAMPLE_PORT = 9763
-        const val EXPECTED_EASYPLN_PORT = 9101
+        const val EXPECTED_SECOND_PORT = 9512
     }
 }

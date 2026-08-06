@@ -5,7 +5,7 @@
       The loopback server needs INTERNET to open a 127.0.0.1 socket. The `linked`
       flavor inherits this from the agent AAR's manifest; the `noagent` flavor must
       declare it itself so an INJECTED server can bind. Real-world targets (e.g.
-      easypln) already hold INTERNET — this keeps the test target honest.
+      a lending app, say) already hold INTERNET — this keeps the test target honest.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!--

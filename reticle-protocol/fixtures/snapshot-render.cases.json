@@ -985,14 +985,14 @@
   },
   {
    "name": "a control's name and its value are two slots: a filled field shows what it holds plus name:\"…\", an empty one falls back to the name, and a component-library select (a button that displays the chosen value) is the same case",
-   "$comment": "Measured on a real framework-built address form. Its inputs set no id, no name, no placeholder and no aria-label — the field name is a sibling <label> with no `for` inside the field's own wrapper — so five textField lines carried nothing to tell them apart and the only way to pick one was its position in the DOM. Doing that put a city into the street box while `act type` reported textLanded=exact focusLanded=self. The accname walk now reaches that label; this case pins that its result never DISPLACES the value, which was the first cut's regression: five filled fields projected as their own names with nothing saying what any of them contained. The `select` node is the shape that forced this beyond text fields: five such dropdowns projected as `button \"大学教育\"`, `button \"我有工作\"`, … — five values with nothing saying which field each belonged to.",
+   "$comment": "Measured on a real framework-built address form. Its inputs set no id, no name, no placeholder and no aria-label — the field name is a sibling <label> with no `for` inside the field's own wrapper — so five textField lines carried nothing to tell them apart and the only way to pick one was its position in the DOM. Doing that put a city into the street box while `act type` reported textLanded=exact focusLanded=self. The accname walk now reaches that label; this case pins that its result never DISPLACES the value, which was the first cut's regression: five filled fields projected as their own names with nothing saying what any of them contained. The `select` node is the shape that forced this beyond text fields: five such dropdowns projected as `button \"<value>\"` … — five values with nothing saying which field each belonged to.",
    "expect": {
     "compact": [
      "@root container [0,0 1080x2400]",
      "@city textField \"Warszawa\" [60,400 960x120] tappable name:\"Miasto\"",
      "@street textField \"Miasto\" [60,600 960x120] tappable",
-     "@code textField \"00-950\" [60,800 960x120] tappable placeholder:\"Kod pocztowy\"",
-     "@education button \"大学教育\" [60,1000 960x120] tappable collapsed name:\"Wykształcenie\""
+     "@code textField \"12-345\" [60,800 960x120] tappable placeholder:\"Postcode\"",
+     "@education button \"Bachelor's\" [60,1000 960x120] tappable collapsed name:\"Education level\""
     ]
    },
    "snapshot": {
@@ -1078,7 +1078,7 @@
       "typeName": "DOMElement",
       "role": "textField",
       "resourceId": "code",
-      "text": "00-950",
+      "text": "12-345",
       "frame": {
        "x": 60,
        "y": 800,
@@ -1089,7 +1089,7 @@
       "custom": {
        "domPlaceholder": {
         "_type": "text",
-        "value": "Kod pocztowy"
+        "value": "Postcode"
        }
       }
      },
@@ -1100,8 +1100,8 @@
       "typeName": "DOMElement",
       "role": "button",
       "resourceId": "education",
-      "contentDescription": "Wykształcenie",
-      "text": "大学教育",
+      "contentDescription": "Education level",
+      "text": "Bachelor's",
       "frame": {
        "x": 60,
        "y": 1000,
