@@ -939,7 +939,15 @@ echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
 echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:cross-origin' \
   && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
 echo "$WALLS" | grep -q "Inside sandboxed frame" \
-  && { echo "FAIL: Android has no per-frame reader, so a sealed frame's content must stay absent"; exit 1; }
+  && { echo "FAIL: the sample app ships no androidx.webkit, so a sealed frame must stay unread"; exit 1; }
+# ...and the reason must be the MECHANISM's, not the page's. Both markers, separately:
+# the page sealed the frame, and the one path that could cross that (a per-frame read
+# over androidx.webkit) is not present in this app. Without the second one, an app that
+# COULD have the capability looks identical to one where the wall is final.
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:probe-unavailable' \
+  || { echo "FAIL: a sealed frame must say WHY it was not read per-frame"; exit 1; }
+echo "$WALLS" | grep -q 'frames.nestedForeignFrame .*iframe:probe-unavailable' \
+  || { echo "FAIL: a cross-origin frame must say why it was not read per-frame"; exit 1; }
 echo "$WALLS" | grep -q 'frames.nestedForeignFrame .*iframe:cross-origin' \
   || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
 # The only shape available for a sealed subtree, and it IS readable across origins:

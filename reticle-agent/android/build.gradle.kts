@@ -66,12 +66,12 @@ dependencies {
     // Compose semantics bridge is reflective + optional; no hard Compose dep so
     // the agent links cleanly into pure-View apps too.
     compileOnly(libs.androidx.compose.ui)
-    // Same treatment, same reason: the per-frame DOM read (WebFrameBridge) is
-    // reflective and compileOnly, so an app that does not ship androidx.webkit links
-    // the agent exactly as before and the read degrades with a marker. It also MUST
-    // stay out of the payload: `app inject` pushes a dex into an arbitrary app, and a
-    // support library bundled there would collide with the host's own copy.
-    compileOnly(libs.androidx.webkit)
+    // androidx.webkit is NOT a dependency at all — not even compileOnly. The
+    // per-frame DOM read (`WebFrameBridge`) reaches it purely by reflection, so the
+    // agent links into an app that has it and an app that does not, identically, and
+    // the `app inject` payload dex — which lands in an arbitrary app — carries no
+    // support library that could collide with the host's own copy. Where the library
+    // is absent the read degrades to a stated marker rather than a guess.
 
     // The exact JARs the injected dex must carry at runtime for the UNLINKED
     // (JDWP-injection) path: reticle-core + kotlin-stdlib + kotlinx-serialization.
@@ -84,9 +84,6 @@ dependencies {
     // The Compose bridge is reflective and compileOnly in main; the tests need the
     // real classes to build a semantics node worth reflecting over.
     testImplementation(libs.androidx.compose.ui)
-    // The per-frame bridge is reflective too; the tests need the real classes to have
-    // something to reflect over.
-    testImplementation(libs.androidx.webkit)
 
     "payload"(project(":reticle-core"))
     "payload"(libs.kotlin.stdlib)
