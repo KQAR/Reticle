@@ -36,7 +36,7 @@ struct SampleApp: App {
     }
 }
 
-/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|wheelPicker|list|canvasControl|webview|swiftui|tabbar|login|permission|overlayWindow|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog`
+/// E2E hook: `RETICLE_SAMPLE_SCENARIO=checkout|agreements|wheelPicker|list|canvasControl|webview|swiftui|tabbar|login|permission|overlayWindow|dialog|lottieDialog|webLottieDialog|webDomBlocked|webComponentDialog|lottieOnlyDialog|webFrames`
 /// (via `SIMCTL_CHILD_…`) opens that scenario directly, so scripted runs don't
 /// depend on synthesizing a navigation tap first.
 private func initialScenario() -> String? {
@@ -86,6 +86,8 @@ private let scenarioEntries: [ScenarioEntry] = [
                   subtitle: "An unreadable DOM degrades to one opaque node: dom:unavailable"),
     ScenarioEntry(tag: "webComponentDialog", title: "Web component dialog",
                   subtitle: "Custom-element modal with open shadow-root content"),
+    ScenarioEntry(tag: "webFrames", title: "Frame walls",
+                  subtitle: "Sandboxed / cross-origin / scaled / scrolling iframes"),
     ScenarioEntry(tag: "lottieOnlyDialog", title: "Lottie-only dialog",
                   subtitle: "Whole dialog (text + buttons) baked into one Lottie"),
 ]
@@ -131,6 +133,8 @@ private func scenarioDestination(_ tag: String) -> some View {
         ScenarioScreen { WebDomBlockedViewController() }.navigationTitle("Web DOM blocked")
     case "webComponentDialog":
         ScenarioScreen { WebComponentDialogViewController() }.navigationTitle("Web component dialog")
+    case "webFrames":
+        ScenarioScreen { WebFramesScenarioViewController() }.navigationTitle("Frame walls")
     case "lottieOnlyDialog":
         ScenarioScreen { LottieOnlyDialogViewController() }.navigationTitle("Lottie-only dialog")
     default:
