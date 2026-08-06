@@ -261,6 +261,8 @@ data class CompactObservation(
                             domUnavailable = node.domUnavailable(),
                             domCappedAt = node.domCappedAt(),
                             crossOriginFrame = node.domCrossOriginFrame(),
+                            frameOpaque = node.domFrameOpaque(),
+                            geometryApprox = node.domGeometryApprox(),
                             domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
                             screencapBlank = node.screencapBlank(),
@@ -564,6 +566,25 @@ data class CompactItem(
      */
     val crossOriginFrame: Boolean = false,
     /**
+     * Why this frame's subtree is empty, when the reason is NOT origin policy:
+     * `"sandboxed"` (the page's own `sandbox` withheld same-origin access — a
+     * same-site frame can land here, so calling it cross-origin sent readers
+     * hunting a domain problem that was never there) or `"not-loaded"` (a `src`
+     * is pending and the frame still answers with its placeholder document —
+     * the one case where retrying IS the right move).
+     *
+     * Rendered as ` iframe:<reason>`. `"cross-origin"` keeps its own field above,
+     * which agents already read, so exactly one marker ever appears.
+     */
+    val frameOpaque: String? = null,
+    /**
+     * True when a frame in this item's chain is rotated or skewed: [frame] is the
+     * axis-aligned hull of the real box, so its centre is not guaranteed to be
+     * inside the element. Rendered as ` geometry:approx` — a tap here may miss,
+     * and that is worth one token rather than a silent 50/50.
+     */
+    val geometryApprox: Boolean = false,
+    /**
      * True when this node's pixels are missing from an IN-PROCESS screenshot (an
      * Android `SurfaceView`, an iOS keyboard host window). The picture is not a
      * second opinion for these — it silently omits them.
@@ -616,6 +637,8 @@ data class CompactItem(
             if (domUnavailable) append(" dom:unavailable")
             domCappedAt?.let { append(" dom:capped($it)") }
             if (crossOriginFrame) append(" iframe:cross-origin")
+            else frameOpaque?.takeIf { it.isNotEmpty() }?.let { append(" iframe:").append(it) }
+            if (geometryApprox) append(" geometry:approx")
             if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")
             if (screencapBlank) append(" screencap:blank")

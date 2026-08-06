@@ -1,0 +1,41 @@
+import Foundation
+
+/// A DOM scroll port's numbers turned into the same `ScrollInfo` a native
+/// container publishes — the twin of `dev.reticle.core.DomScroll`.
+///
+/// Web content used to publish no scroll capability at all: `overflow` sat in the
+/// style channel and nothing said whether a pane could still move, so a form whose
+/// submit button was one flick below the fold looked identical to one that had
+/// none. Inside an iframe it was worse, since the frame scrolls its OWN document —
+/// the host page's `scrollY` says nothing about it, and `scroll-to` had no
+/// container to drive.
+public enum DomScroll {
+
+    /// Sub-pixel layout makes `scrollHeight` exceed `clientHeight` by fractions on
+    /// pages that cannot scroll at all, so a bare `>` reported `scroll:down` on half
+    /// the nodes of an ordinary page. One pixel of slack keeps that noise out while a
+    /// real scroll port — always at least a row taller — still registers.
+    private static let slack: Double = 1.0
+
+    /// nil when this element has no scroll port (the traversal reports -1 for every
+    /// metric), or has one that cannot move in any direction — the same rule a
+    /// native container follows: `ScrollInfo` is present only where there is a
+    /// capability to report.
+    public static func fromMetrics(
+        scrollLeft: Double,
+        scrollTop: Double,
+        scrollWidth: Double,
+        scrollHeight: Double,
+        clientWidth: Double,
+        clientHeight: Double
+    ) -> ScrollInfo? {
+        if scrollWidth < 0 || scrollHeight < 0 || clientWidth < 0 || clientHeight < 0 { return nil }
+        let info = ScrollInfo(
+            canScrollUp: scrollTop > slack,
+            canScrollDown: scrollTop + clientHeight < scrollHeight - slack,
+            canScrollLeft: scrollLeft > slack,
+            canScrollRight: scrollLeft + clientWidth < scrollWidth - slack
+        )
+        return info.isScrollable ? info : nil
+    }
+}

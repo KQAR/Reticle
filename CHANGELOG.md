@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+- **An iframe now reports its identity, its wall, its scale and its scroll — the
+  four ways a frame used to be silently thinner than the rest of the page.** All of
+  it in the shared traversal, so both platforms answer alike.
+  - **The frame walls are three, not one.** `contentDocument` throwing and a frame
+    that has not loaded look identical from outside, and so did a frame the page
+    itself sealed. All three came back as `iframe:cross-origin` (or as nothing at
+    all), while they ask for OPPOSITE moves: use coordinates, retry, or fix the page.
+    They are now `iframe:cross-origin` / `iframe:not-loaded` / `iframe:sandboxed` —
+    the last one measured as the misleading case, since a `sandbox` without
+    `allow-same-origin` seals a frame that is plainly same-site, sending a reader
+    hunting a domain problem that does not exist.
+  - **A sealed frame still publishes what is readable from outside it.** Policy
+    withholds the document, not the element: `name`, `src`, the document URL and
+    ready state when they can be read, and `contentWindow.length` — how many frames
+    are nested behind the wall, which is the only shape available for a subtree
+    nothing can enter.
+  - **A scaled frame's content lands where it is reported.** The fold accumulated
+    the frame's offset and ignored its scale, so a frame under `transform:
+    scale(0.5)` — the shape a responsive third-party widget ships in — reported every
+    child at double size in the wrong place. Silent: the rect looks plausible and the
+    tap dispatches happily. Both factors (the element's transform and a frame
+    viewport that differs from its content box) are accumulated now, and the case a
+    rect genuinely cannot express — a rotated or skewed frame, whose rect is
+    `getBoundingClientRect`'s axis-aligned hull — carries `geometry:approx` instead
+    of passing the hull off as the box.
+  - **A frame publishes its own document's scroll travel, and so does any DOM scroll
+    port.** Web content published no `scroll:` capability at all: `overflow` sat in
+    the style channel and nothing said whether a pane could still move, so a
+    truncated frame looked exactly like a short one and a caller had no container to
+    drive. The rule lives in `DomScroll` (Kotlin) / `DomScroll` (Swift), with the
+    port's own numbers kept as the evidence behind the flag — "one flick left" and
+    "twenty screens left" were the same flag before.
+  - Pinned by a new `snapshot-render.cases.json` case (all three walls, the scroll
+    travel and the hull marker, rendered identically by both languages), `DomScroll`
+    suites on both sides, and new fixtures in the `complex` web screen — a sandboxed
+    frame, a `transform: scale(0.5)` frame whose inner button is tapped BY COORDINATE
+    in both e2e suites (a rect assertion alone passes on a plausible wrong rect), and
+    a frame with more content than fits.
+
 ## 0.18.1 - 2026-08-06
 
 - **`act activate` on Android says it is iOS-only, instead of "unknown gesture".**

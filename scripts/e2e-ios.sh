@@ -722,6 +722,49 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-frame"
 "$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json" | grep -q "Frame clicked" \
   || { echo "FAIL: coordinate tap at the iframe content rect did not fire its onclick"; exit 1; }
+# The frame walls, which must stay THREE markers because they ask for opposite
+# moves: coordinates (cross-origin), fix the page (sandboxed), retry (not-loaded). A
+# `sandbox` without `allow-same-origin` seals a frame that is plainly same-site, so
+# reporting it as cross-origin sent a reader hunting a domain problem that does not
+# exist. (iOS has one web engine, so the cross-origin twin lives in the Android
+# fixture; the sandbox wall is reproducible on both.)
+IOS_FRAMES="$("$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json")"
+echo "$IOS_FRAMES" | grep -q 'complex.sandboxFrame .*iframe:sandboxed' \
+  || { echo "FAIL: a sandboxed frame must say sandboxed, not come back silently empty"; exit 1; }
+echo "$IOS_FRAMES" | grep -q "Inside sandboxed frame" \
+  && { echo "FAIL: a sandboxed frame's content must not be readable"; exit 1; }
+echo "$IOS_FRAMES" | grep -q 'complex.sandboxFrame .*iframe:cross-origin' \
+  && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
+# A frame scrolls its OWN document, which the page's scroll offset says nothing
+# about: without this a truncated frame looked exactly like a short one, and there
+# was no container for a caller to drive.
+echo "$IOS_FRAMES" | grep -q 'complex.scrollFrame .*scroll:down' \
+  || { echo "FAIL: a frame with more content below must publish scroll:down"; exit 1; }
+# A frame under `transform: scale(0.5)`: the content's pixels are not the page's, so
+# a fold that ignores the transform reports every child at double size in the wrong
+# place — silently. Rect containment first, then the consequence.
+/usr/bin/python3 - "$TMP/webview-frame/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "complex.scaledFrame")
+inner = next((n["frame"] for n in nodes
+              if n.get("custom", {}).get("domId", {}).get("value") == "scaled-frame-button"), None)
+if inner is None:
+    print("FAIL: the scaled frame's button was not captured at all")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: scaled-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" \
+  --css "#scaled-frame >>> #scaled-frame-button"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-scaled"
+"$HOST" --target ios ui compact "$TMP/webview-scaled/snapshot.json" | grep -q "Scaled frame clicked" \
+  || { echo "FAIL: a tap at the scaled frame's reported rect missed its button"; exit 1; }
 # In-process dom activation with an observable side effect.
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
 sleep 1
