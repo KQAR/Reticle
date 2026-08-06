@@ -387,13 +387,6 @@ public struct Node: Codable, Sendable {
     /// a DOM `placeholder`, or a native `hint` / `UITextField.placeholder`. One
     /// accessor because the caller's question is the same either way — see the
     /// Kotlin twin for the measurement that made the native half necessary.
-    /// Does this node HOLD typed text, as opposed to merely carrying a label? Its
-    /// value and its name are different facts, kept in different compact slots —
-    /// see `CompactItem.name`.
-    public func isTextField() -> Bool {
-        role == "textField" || typeName.hasSuffix("EditText")
-    }
-
     public func placeholder() -> String? {
         if let dom = domPlaceholder() { return dom }
         if case .text(let v)? = custom["nativeHint"] { return v }

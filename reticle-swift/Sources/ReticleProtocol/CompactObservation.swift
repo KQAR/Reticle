@@ -211,8 +211,12 @@ public struct CompactObservation: Codable, Sendable {
                         // A text field's VALUE owns the label slot and its name gets
                         // its own — see the Kotlin twin. An empty field has no value,
                         // so the name takes the slot rather than leaving it anonymous.
-                        label: node.isTextField() ? (node.text ?? node.contentDescription)
-                            : (node.contentDescription ?? node.text),
+                        // A control's VALUE owns the label slot and its NAME gets its
+                        // own whenever the node carries both — see the Kotlin twin,
+                        // where the component-library selects that forced this beyond
+                        // text fields are written down.
+                        label: (node.text?.isEmpty == false ? node.text : nil)
+                            ?? node.contentDescription,
                         frame: node.frame,
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
@@ -222,7 +226,7 @@ public struct CompactObservation: Codable, Sendable {
                         expanded: node.expanded,
                         hasPopup: node.domHasPopup(),
                         placeholder: node.placeholder(),
-                        name: node.isTextField() && !(node.text ?? "").isEmpty
+                        name: !(node.text ?? "").isEmpty && node.contentDescription != node.text
                             ? node.contentDescription : nil,
                         invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
