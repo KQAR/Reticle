@@ -602,13 +602,6 @@ data class Node(
     fun screencapBlank(): Boolean =
         (custom["screencapStatus"] as? MetadataValue.Text)?.value == "blank"
 
-    /**
-     * Does this node HOLD text the caller typed, as opposed to merely carrying a
-     * label? A text field's value and its name are different facts and the compact
-     * line keeps them in different slots — see [CompactItem.name].
-     */
-    fun isTextField(): Boolean = role == "textField" || typeName.endsWith("EditText")
-
     fun hasTargetingSignal(): Boolean =
         testId != null ||
             resourceId != null ||

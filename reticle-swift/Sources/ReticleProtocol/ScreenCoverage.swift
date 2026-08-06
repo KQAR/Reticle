@@ -263,7 +263,8 @@ public enum ScreenCoverage {
                 x: x, y: y, covered: false, reason: reasonContainerOnly,
                 detail: "the only addressable node here is \(container.ref) "
                     + "(\(container.role ?? container.typeName)), a screen-sized container whose own "
-                    + "tap point is \(taps) — nothing smaller is captured at this point",
+                    + "tap point is \(taps) — nothing smaller is captured at this point"
+                    + namedFieldNote(snapshot, x, y),
                 ref: container.ref, selector: nil
             )
         }
@@ -276,12 +277,26 @@ public enum ScreenCoverage {
         return PointCoverage(
             x: x, y: y, covered: false, reason: reasonNotInteractive,
             detail: "the topmost node here is \(top.ref) (\(top.role ?? top.typeName)) and it is not "
-                + "interactive, so no selector aims at this point",
+                + "interactive, so no selector aims at this point"
+                + namedFieldNote(snapshot, x, y),
             ref: top.ref, selector: nil
         )
     }
 
     /// The whole screen, sampled on a grid of `cellPx` cells.
+    /// The `— inside the named field "…"` clause, when this point falls in one.
+    ///
+    /// See the Kotlin twin: without it the whole-screen report named the field while
+    /// a tap inside that same rect answered "nothing smaller is captured at this
+    /// point" — the two halves of one tool contradicting each other.
+    private static func namedFieldNote(_ snapshot: Snapshot, _ x: Double, _ y: Double) -> String {
+        guard let deepest = deepestAt(snapshot, snapshot.rootRef, x, y),
+              let (name, host) = labelledFieldName(snapshot, deepest.ref)
+        else { return "" }
+        return " — it is inside the named field \"\(name)\" (\(host)), which the page exposes no "
+            + "control for, so a coordinate is the only path to it"
+    }
+
     /// How deep `deepestAt` descends — see the Kotlin twin.
     private static let maxFieldDepth = 60
 
