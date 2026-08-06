@@ -904,6 +904,7 @@ boot_app "$PKG"
 "$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
   --es reticle.webScenario complex >/dev/null 2>&1
 wait_compact "$PKG" "complex.iframeButton"
+R ui report --package "$PKG" --output "$TMP/frames"
 FRAMES="$(R ui compact --live --package "$PKG" --window top)"
 echo "$FRAMES" | grep -q 'complex.foreignFrame .*iframe:cross-origin' \
   || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
@@ -915,6 +916,80 @@ echo "$FRAMES" | grep -q 'complex.iframeButton' \
   || { echo "FAIL: the same-origin frame must still be pierced"; exit 1; }
 echo "$FRAMES" | grep -q 'complex.iframe .*iframe:cross-origin' \
   && { echo "FAIL: a same-origin frame must not be marked cross-origin"; exit 1; }
+
+echo "== EVERY FRAME WALL, ON A PAGE THAT DOES NOT COMPETE FOR THE FOLD =="
+# A dedicated fixture, because these cannot share the complex page: a SEALED frame has
+# no children, and the traversal prunes a childless node below the viewport — so on the
+# long page the frames under test were exactly the ones dropped (measured on an
+# emulator: `#sandbox-frame` and its button absent from a 32-node capture) while the
+# walkable frames survived on the strength of their content.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario frames >/dev/null 2>&1
+wait_compact "$PKG" "frames.scaledFrame"
+R ui report --package "$PKG" --output "$TMP/frames"
+WALLS="$(R ui compact --live --package "$PKG" --window top)"
+# The walls are one family and must stay three, because they ask for OPPOSITE moves:
+# coordinates (cross-origin), fix the page (sandboxed), retry (not-loaded). A sandbox
+# without `allow-same-origin` is the page's own choice on a frame that is plainly
+# same-site, so reporting it as cross-origin sent a reader hunting a domain problem
+# that does not exist.
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
+  || { echo "FAIL: a sandboxed frame must say sandboxed, not cross-origin"; exit 1; }
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:cross-origin' \
+  && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
+echo "$WALLS" | grep -q "Inside sandboxed frame" \
+  && { echo "FAIL: Android has no per-frame reader, so a sealed frame's content must stay absent"; exit 1; }
+echo "$WALLS" | grep -q 'frames.nestedForeignFrame .*iframe:cross-origin' \
+  || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
+# The only shape available for a sealed subtree, and it IS readable across origins:
+# how many frames are nested inside it.
+/usr/bin/python3 - "$TMP/frames/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+foreign = next(n for n in nodes if n.get("testId") == "frames.nestedForeignFrame")
+nested = foreign.get("custom", {}).get("domFrameChildCount", {}).get("value")
+if nested is None or int(nested) < 1:
+    print(f"FAIL: a cross-origin frame must still publish its nested frame count, got {nested!r}")
+    sys.exit(1)
+PY
+
+echo "== A SCALED FRAME'S CONTENT LANDS WHERE IT IS REPORTED =="
+# `transform: scale(0.5)` on the frame element — the shape a responsive third-party
+# widget ships in. The content's own pixels are not the page's, so a fold that
+# ignores the transform reports every child at double size in the wrong place. It is
+# silent: the rect looks perfectly plausible and the tap dispatches happily.
+/usr/bin/python3 - "$TMP/frames/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "frames.scaledFrame")
+inner = next((n["frame"] for n in nodes
+              if (n.get("custom", {}).get("domId", {}).get("value") == "scaled-frame-button")), None)
+if inner is None:
+    print("FAIL: the scaled frame's button was not captured at all")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: scaled-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+# The consequence check, which no rect comparison can replace: a COORDINATE tap at
+# the reported centre must fire the frame's own onclick.
+R act tap --package "$PKG" --css "#scaled-frame >>> #scaled-frame-button" >/dev/null
+wait_compact "$PKG" "Scaled frame clicked" \
+  || { echo "FAIL: a tap at the scaled frame's reported rect missed its button"; exit 1; }
+
+echo "== A FRAME PUBLISHES ITS OWN DOCUMENT'S SCROLL TRAVEL =="
+# A frame scrolls its OWN document, which the host page's scroll offset says nothing
+# about. Without this the frame was an ordinary node and a truncated frame looked
+# exactly like a short one — with no container for a caller to drive.
+FRAME_SCROLL="$(R ui compact --live --package "$PKG" --window top)"
+echo "$FRAME_SCROLL" | grep -q 'frames.scrollFrame .*scroll:down' \
+  || { echo "FAIL: a frame with more content below must publish scroll:down"; exit 1; }
+echo "$FRAME_SCROLL" | grep -q 'frames.scaledFrame .*scroll:' \
+  && { echo "FAIL: a frame whose document fits must publish no scroll travel"; exit 1; }
 
 echo "== A SCREEN COVERED BY ANOTHER, INSIDE ONE WINDOW =="
 # Occlusion was window-level only, which misses the shape a hybrid app really has:

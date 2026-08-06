@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import dev.reticle.core.CheckedState
+import dev.reticle.core.DomScroll
 import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
@@ -188,6 +189,10 @@ object WebViewBridge {
             // could only say `focusLanded=ancestor`, and its read-back had no way to
             // find the field the text actually went into.
             isFocused = element.optBoolean("focused", false),
+            // The DOM's own scroll port, published as the capability a native
+            // container publishes — a pane (or a frame, which scrolls its own
+            // document) that can still move now says so.
+            scroll = scrollInfoFor(element),
             checked = checkedStateOf(element.optString("checked")),
             expanded = when (element.optString("expanded")) {
                 "true" -> true
@@ -207,6 +212,21 @@ object WebViewBridge {
         )
         return ref
     }
+
+    /**
+     * The scroll numbers the traversal read from this element's scroll port, or
+     * null when it has none. The rule lives in [DomScroll] (with a Swift twin), not
+     * here, so both platforms answer alike.
+     */
+    private fun scrollInfoFor(element: JSONObject): dev.reticle.core.ScrollInfo? =
+        DomScroll.fromMetrics(
+            scrollLeft = element.optDouble("scrollLeft", -1.0),
+            scrollTop = element.optDouble("scrollTop", -1.0),
+            scrollWidth = element.optDouble("scrollWidth", -1.0),
+            scrollHeight = element.optDouble("scrollHeight", -1.0),
+            clientWidth = element.optDouble("scrollClientWidth", -1.0),
+            clientHeight = element.optDouble("scrollClientHeight", -1.0),
+        )
 
     /**
      * The script reports a tri-state as a string so an absent third state stays
@@ -259,6 +279,37 @@ object WebViewBridge {
         if (element.optBoolean("clipped", false)) map["domClipped"] = MetadataValue.Bool(true)
         if (element.optBoolean("crossOriginFrame", false)) {
             map["domCrossOriginFrame"] = MetadataValue.Bool(true)
+        }
+        // A frame's identity and the reason its subtree is empty, if it is. All of
+        // these are readable across origins — policy withholds the document, not the
+        // element — and they are what separates "still loading, retry" from "another
+        // origin, use coordinates" from "the page sandboxed it, fix the page".
+        putText("domFrameOpaque", element.optString("frameOpaque"))
+        putText("domFrameName", element.optString("frameName"))
+        putText("domFrameUrl", element.optString("frameUrl"))
+        putText("domFrameReadyState", element.optString("frameReadyState"))
+        putText("domFrameSandbox", element.optString("frameSandbox"))
+        putText("domFrameAllow", element.optString("frameAllow"))
+        putText("domFrameLoading", element.optString("frameLoading"))
+        val childFrames = element.optInt("frameChildCount", -1)
+        if (childFrames >= 0) map["domFrameChildCount"] = MetadataValue.Integer(childFrames.toLong())
+        // A rotated or skewed frame in the chain: the rect is the axis-aligned hull
+        // of the real box, so a tap at its centre can miss. Stated, not smoothed.
+        if (element.optBoolean("geometryApprox", false)) {
+            map["domGeometryApprox"] = MetadataValue.Bool(true)
+        }
+        // The numbers behind the `scroll:` capability, kept as evidence: "one flick
+        // left" and "twenty screens left" are the same flag and different situations.
+        listOf(
+            "domScrollLeft" to "scrollLeft",
+            "domScrollTop" to "scrollTop",
+            "domScrollWidth" to "scrollWidth",
+            "domScrollHeight" to "scrollHeight",
+            "domScrollClientWidth" to "scrollClientWidth",
+            "domScrollClientHeight" to "scrollClientHeight",
+        ).forEach { (metadataKey, elementKey) ->
+            val value = element.optInt(elementKey, -1)
+            if (value >= 0) map[metadataKey] = MetadataValue.Integer(value.toLong())
         }
         putText("domHasPopup", element.optString("hasPopup"))
         // Only where the pointer STARTS, and only as the weak signal it is: the

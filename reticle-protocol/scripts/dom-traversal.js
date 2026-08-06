@@ -250,11 +250,138 @@
     return clean(style ? style[key] : "", max || 40);
   }
   // prefix: the " >>> " selector chain of the enclosing shadow host /
-  // iframe (empty at the top document). offset: accumulated page offset
-  // of the enclosing iframe viewport (0,0 at the top document).
+  // iframe (empty at the top document).
   function chainFor(el, prefix) {
     var local = selectorFor(el);
     return prefix ? prefix + " >>> " + local : local;
+  }
+  // Everything about a frame element that the PARENT document may read — which
+  // includes a frame whose own document it may not. Browser policy withholds the
+  // document, not the element: attributes and `contentWindow.length` stay
+  // readable, and those are what separate "a widget still loading", "a frame the
+  // page itself sealed", and "another origin, forever".
+  function frameFacts(el) {
+    var facts = {
+      doc: null,
+      reason: "",
+      name: clean(el.getAttribute("name"), 120),
+      sandbox: clean(el.getAttribute("sandbox"), 200),
+      allow: clean(el.getAttribute("allow"), 200),
+      loading: clean(el.getAttribute("loading"), 40),
+      url: "",
+      readyState: "",
+      childCount: -1
+    };
+    var hasSandbox = el.hasAttribute("sandbox");
+    var sandboxTokens = facts.sandbox.toLowerCase().split(/\s+/);
+    var sameOriginAllowed = !hasSandbox || sandboxTokens.indexOf("allow-same-origin") >= 0;
+    // Readable across origins — the count of frames nested INSIDE this one. The
+    // only fact available about the shape of a sealed subtree, and the difference
+    // between "an empty wall" and "a wall with three more behind it".
+    try {
+      if (el.contentWindow) facts.childCount = el.contentWindow.length;
+    } catch (e) {}
+    var doc = null;
+    try { doc = el.contentDocument; } catch (e) { doc = null; }
+    if (doc) {
+      facts.doc = doc;
+      try { facts.url = clean(doc.URL, 500); } catch (e) {}
+      try { facts.readyState = clean(doc.readyState, 40); } catch (e) {}
+      // A frame with a pending `src` still answers with the placeholder
+      // about:blank document it was created with: readable, and NOT the content
+      // the page asked for. Reported as its own state, because retrying IS the
+      // right move here and is exactly the wrong move for the two below.
+      if (!doc.body || (facts.url === "about:blank" && clean(el.getAttribute("src"), 500))) {
+        facts.reason = "not-loaded";
+      }
+    } else {
+      // `contentDocument` either throws (Chrome) or returns null (some engines),
+      // and both look exactly like "has not loaded yet" from outside — a caller
+      // that cannot tell them apart retries, waits, then measures pixels off a
+      // screenshot. WHICH wall it is matters too: a sandbox without
+      // `allow-same-origin` is the page's own choice on a frame that may well be
+      // same-site, so calling it cross-origin sent readers hunting a domain
+      // problem that was never there.
+      facts.reason = hasSandbox && !sameOriginAllowed ? "sandboxed" : "cross-origin";
+    }
+    return facts;
+  }
+  // This frame's index among its parent's `window.frames`. The handle a per-frame
+  // evaluation is keyed by on BOTH sides — the frame-probe handshake walks
+  // `window.frames` the same way — and the only identity a frame has that survives
+  // an origin it may not read. -1 when even `contentWindow` was refused.
+  function frameIndexOf(el) {
+    try {
+      var win = el.contentWindow;
+      if (!win) return -1;
+      var frames = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+      for (var i = 0; i < frames.length; i++) {
+        if (frames[i] === win) return i;
+      }
+    } catch (e) {}
+    return -1;
+  }
+  // How a frame's inner coordinates scale on the way out to the page. Two
+  // independent factors, both previously ignored: a CSS transform on the frame
+  // element (`t*`) and a frame viewport that differs from the element's content
+  // box (`s*` folds both). A frame under `transform: scale(0.5)` — the shape a
+  // responsive third-party widget ships in — therefore reported every child at
+  // double size in the wrong place, silently and plausibly.
+  function frameScale(el, rect) {
+    var layoutW = el.offsetWidth || 0;
+    var layoutH = el.offsetHeight || 0;
+    var tx = layoutW > 0 ? rect.width / layoutW : 1;
+    var ty = layoutH > 0 ? rect.height / layoutH : 1;
+    var sx = tx;
+    var sy = ty;
+    var innerW = 0;
+    var innerH = 0;
+    try {
+      var win = el.contentWindow;
+      if (win) {
+        innerW = win.innerWidth || 0;
+        innerH = win.innerHeight || 0;
+      }
+    } catch (e) {}
+    if (innerW > 0 && el.clientWidth > 0) sx = tx * (el.clientWidth / innerW);
+    if (innerH > 0 && el.clientHeight > 0) sy = ty * (el.clientHeight / innerH);
+    return { sx: sx, sy: sy, tx: tx, ty: ty };
+  }
+  // `matrix(a,b,c,d,e,f)`: a non-zero b or c is rotation or skew, so the content
+  // inside is no longer axis-aligned and an (x,y,w,h) rect cannot describe it.
+  // Said out loud rather than approximated in silence — the rect stays the
+  // axis-aligned hull, which is what `getBoundingClientRect` gives.
+  function skewed(style) {
+    var t = styleValue(style, "transform", 200);
+    if (!t || t === "none") return false;
+    if (t.indexOf("matrix3d") === 0) return true;
+    var m = /^matrix\(([^)]*)\)$/.exec(t);
+    if (!m) return false;
+    var p = m[1].split(",");
+    return Math.abs(parseFloat(p[1]) || 0) > 0.001 || Math.abs(parseFloat(p[2]) || 0) > 0.001;
+  }
+  // A scroll port's own numbers, so "there is more content below" is a fact
+  // instead of an inference from `overflow`. `doc` is set for a frame element:
+  // a frame scrolls its OWN document, and the frame element is what a caller
+  // can swipe — so the numbers belong on the frame node.
+  function scrollPortOf(el, style, doc) {
+    var target = null;
+    if (doc) {
+      target = doc.scrollingElement || doc.documentElement;
+    } else {
+      var ox = styleValue(style, "overflowX");
+      var oy = styleValue(style, "overflowY");
+      if ((ox && ox !== "visible") || (oy && oy !== "visible")) target = el;
+    }
+    if (!target) return null;
+    return {
+      scrollLeft: Math.round(target.scrollLeft || 0),
+      scrollTop: Math.round(target.scrollTop || 0),
+      scrollWidth: Math.round(target.scrollWidth || 0),
+      scrollHeight: Math.round(target.scrollHeight || 0),
+      clientWidth: Math.round(target.clientWidth || 0),
+      clientHeight: Math.round(target.clientHeight || 0)
+    };
   }
   // Intersection of every clipping ancestor's box, in the element's own document
   // coordinates. null = nothing clips this subtree.
@@ -276,7 +403,11 @@
     return rect.right <= clip.left || rect.left >= clip.right ||
       rect.bottom <= clip.top || rect.top >= clip.bottom;
   }
-  function walk(el, prefix, offset, parentCursor, clip) {
+  // ctx: how this element's document maps onto the page. `x`/`y` is the enclosing
+  // frame viewport's page offset and `sx`/`sy` its accumulated scale (0,0,1,1 at
+  // the top document); `approx` is set once a frame in the chain is rotated or
+  // skewed, so a rect that can only be a hull says so.
+  function walk(el, prefix, ctx, parentCursor, clip) {
     if (!el || count >= MAX) { if (el) capped = true; return null; }
     var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
     var style = win.getComputedStyle(el);
@@ -296,8 +427,8 @@
     var childClip = (overflowX && overflowX !== "visible") || (overflowY && overflowY !== "visible")
       ? intersect(ownClip, { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom })
       : ownClip;
-    var left = rect.left + offset.x;
-    var top = rect.top + offset.y;
+    var left = ctx.x + rect.left * ctx.sx;
+    var top = ctx.y + rect.top * ctx.sy;
     var chain = chainFor(el, prefix);
     var children = [];
     for (var i = 0; i < el.children.length; i++) {
@@ -306,7 +437,7 @@
       // learns it ran out and the cap stayed silent — which is the whole thing
       // this flag exists to stop.
       if (count >= MAX) { capped = true; break; }
-      var child = walk(el.children[i], prefix, offset, cursor, childClip);
+      var child = walk(el.children[i], prefix, ctx, cursor, childClip);
       if (child) children.push(child);
     }
     // Pierce an OPEN shadow root: same coordinate space as the host,
@@ -314,36 +445,37 @@
     if (el.shadowRoot) {
       for (var s = 0; s < el.shadowRoot.children.length; s++) {
         if (count >= MAX) { capped = true; break; }
-        var shadowChild = walk(el.shadowRoot.children[s], chain, offset, cursor, childClip);
+        var shadowChild = walk(el.shadowRoot.children[s], chain, ctx, cursor, childClip);
         if (shadowChild) children.push(shadowChild);
       }
     }
-    // Pierce a same-origin iframe: content coordinates are relative to
-    // the frame viewport, so accumulate the frame's page offset.
-    // Cross-origin frames throw / return null — they stay opaque.
-    var frameDoc = null;
-    var crossOrigin = false;
-    if (tagOf(el) === "iframe") {
-      try {
-        frameDoc = el.contentDocument;
-      } catch (e) {
-        frameDoc = null;
-      }
-      // Reached only for a frame: `contentDocument` either throws (Chrome) or
-      // returns null (some engines) when the origin differs, and both look exactly
-      // like "the frame has not loaded yet" from the outside. A caller with no way
-      // to tell those apart retries, waits, and eventually measures pixels off a
-      // screenshot — which is what a third-party payment/bank widget costs today.
-      if (!frameDoc) crossOrigin = true;
-    }
-    if (frameDoc && frameDoc.body) {
-      var frameOffset = { x: left + el.clientLeft, y: top + el.clientTop };
-      var frameBody = walk(frameDoc.body, chain, frameOffset, cursor, null);
+    // Pierce a same-origin iframe: content coordinates are relative to the frame
+    // viewport and may be scaled on the way out, so accumulate both. Frames whose
+    // document is withheld stay opaque and carry the reason (see frameFacts).
+    var frame = tagOf(el) === "iframe" ? frameFacts(el) : null;
+    if (frame && frame.doc && frame.doc.body) {
+      var scale = frameScale(el, rect);
+      var frameCtx = {
+        // `clientLeft`/`clientTop` is the frame's border, in the PARENT's pixels:
+        // scaled by the transform on the way out, but not by the frame's own
+        // viewport factor, which applies only inside.
+        x: left + el.clientLeft * ctx.sx * scale.tx,
+        y: top + el.clientTop * ctx.sy * scale.ty,
+        sx: ctx.sx * scale.sx,
+        sy: ctx.sy * scale.sy,
+        approx: ctx.approx || skewed(style)
+      };
+      var frameBody = walk(frame.doc.body, chain, frameCtx, cursor, null);
       if (frameBody) children.push(frameBody);
     }
+    var scrollPort = scrollPortOf(el, style, frame ? frame.doc : null);
+    // Pruned against the element's OWN viewport, not the top window's: `left`/`top`
+    // are page space while a frame's content is laid out in the frame's, so the two
+    // are only comparable in the document the element belongs to. This also prunes
+    // content scrolled out of an inner frame, which the page-space comparison kept.
     var inViewport = rect.width > 0 && rect.height > 0 &&
-      left + rect.width >= 0 && top + rect.height >= 0 &&
-      left <= window.innerWidth && top <= window.innerHeight;
+      rect.left + rect.width >= 0 && rect.top + rect.height >= 0 &&
+      rect.left <= (win.innerWidth || 0) && rect.top <= (win.innerHeight || 0);
     if (!inViewport && children.length === 0) return null;
     count++;
     var id = clean(el.id, 120);
@@ -402,9 +534,51 @@
       // without this a 10-item counter strip puts nine unseeable digits into the
       // tree, where they poison `--label` and pad every projection.
       clipped: !!clipped,
-      // A frame whose document this page may not read. Structural — no wait or
-      // retry clears it — so it is stated rather than left as an empty subtree.
-      crossOriginFrame: !!crossOrigin,
+      // A frame whose document this page may not read BY ORIGIN. Structural — no
+      // wait or retry clears it — so it is stated rather than left as an empty
+      // subtree. Kept as its own field because it is the oldest of these and
+      // agents already read it.
+      crossOriginFrame: frame ? frame.reason === "cross-origin" : false,
+      // The full three-state answer for a frame with no children captured, and the
+      // one that says what to DO: retry (`not-loaded`), stop and use coordinates
+      // (`cross-origin`), or stop and fix the page (`sandboxed`). "" = this frame's
+      // document was read, or this is not a frame.
+      frameOpaque: frame ? frame.reason : "",
+      // The frame's identity, all of it readable across origins. `frameChildCount`
+      // is -1 when even that was refused; 0+ is how many frames are nested inside
+      // — the only shape available for a sealed subtree.
+      frameName: frame ? frame.name : "",
+      frameUrl: frame ? frame.url : "",
+      frameReadyState: frame ? frame.readyState : "",
+      frameSandbox: frame ? frame.sandbox : "",
+      frameAllow: frame ? frame.allow : "",
+      frameLoading: frame ? frame.loading : "",
+      frameChildCount: frame ? frame.childCount : -1,
+      // What a PER-FRAME evaluation needs from this side to place its results: this
+      // frame's index among `window.frames` (the handle both the fold and the
+      // frame-probe handshake are keyed by), its content box in this document's
+      // pixels, and the transform-only factor of its own scale. Emitted for every
+      // frame, read only for the ones this document could not walk itself.
+      frameIndex: frame ? frameIndexOf(el) : -1,
+      frameClientLeft: frame ? el.clientLeft : -1,
+      frameClientTop: frame ? el.clientTop : -1,
+      frameClientWidth: frame ? el.clientWidth : -1,
+      frameClientHeight: frame ? el.clientHeight : -1,
+      frameScaleX: frame ? frameScale(el, rect).tx * ctx.sx : 0,
+      frameScaleY: frame ? frameScale(el, rect).ty * ctx.sy : 0,
+      frameSkewed: frame ? (ctx.approx || skewed(style)) : false,
+      // Set when a frame in this element's chain is rotated or skewed: the rect is
+      // the axis-aligned hull of the real box, so a tap at its centre may miss.
+      geometryApprox: !!ctx.approx,
+      // The scroll port's own numbers when this element has one (a frame element
+      // carries its inner document's). The host turns these into the `scroll:`
+      // capability; the raw numbers stay as the evidence behind it.
+      scrollLeft: scrollPort ? scrollPort.scrollLeft : -1,
+      scrollTop: scrollPort ? scrollPort.scrollTop : -1,
+      scrollWidth: scrollPort ? scrollPort.scrollWidth : -1,
+      scrollHeight: scrollPort ? scrollPort.scrollHeight : -1,
+      scrollClientWidth: scrollPort ? scrollPort.clientWidth : -1,
+      scrollClientHeight: scrollPort ? scrollPort.clientHeight : -1,
       // VIEWPORT coordinates, not page coordinates. These used to carry
       // `+ window.scrollX/Y` and the host folds subtracted the scroll again — a
       // round trip whose two halves were read at DIFFERENT times: every element's
@@ -415,8 +589,10 @@
       // at all, so the two reads cannot disagree.
       left: left,
       top: top,
-      width: rect.width,
-      height: rect.height,
+      // Scaled by the same accumulated frame factor as `left`/`top`: inside a
+      // scaled frame the content's own pixels are not the page's.
+      width: rect.width * ctx.sx,
+      height: rect.height * ctx.sy,
       marginTop: styleValue(style, "marginTop"),
       marginRight: styleValue(style, "marginRight"),
       marginBottom: styleValue(style, "marginBottom"),
@@ -452,7 +628,30 @@
   }
   // The walk runs FIRST: object literals evaluate in source order, so reading
   // `capped` beside `root` would read it before the walk that sets it.
-  var root = walk(document.body || document.documentElement, "", { x: 0, y: 0 }, "", null);
+  // A PER-FRAME evaluation (the path into a frame whose document the page itself may
+  // not read) passes its enclosing frame's fold in through `reticleFrameCtx`, and the
+  // selector chain to prepend through `reticleFramePrefix`. Absent both, this is the
+  // top document and the fold is the identity. Doing it this way keeps every line of
+  // frame geometry in THIS file: the alternative was a second fold written in Swift
+  // and a third in Kotlin, which is how the same rect gets three answers.
+  var incoming = (typeof reticleFrameCtx === "object" && reticleFrameCtx) ? reticleFrameCtx : null;
+  var prefix = (typeof reticleFramePrefix === "string") ? reticleFramePrefix : "";
+  var rootCtx = { x: 0, y: 0, sx: 1, sy: 1, approx: false };
+  if (incoming) {
+    rootCtx.x = incoming.x || 0;
+    rootCtx.y = incoming.y || 0;
+    rootCtx.sx = incoming.sx || 1;
+    rootCtx.sy = incoming.sy || 1;
+    rootCtx.approx = !!incoming.approx;
+    // The parent cannot read a foreign frame's viewport, so it sends the frame
+    // element's CONTENT box and this side finishes the scale — the one factor of the
+    // fold that only the inside knows.
+    var innerW = window.innerWidth || 0;
+    var innerH = window.innerHeight || 0;
+    if (incoming.contentWidth > 0 && innerW > 0) rootCtx.sx = rootCtx.sx * (incoming.contentWidth / innerW);
+    if (incoming.contentHeight > 0 && innerH > 0) rootCtx.sy = rootCtx.sy * (incoming.contentHeight / innerH);
+  }
+  var root = walk(document.body || document.documentElement, prefix, rootCtx, "", null);
   return JSON.stringify({
     viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
     viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,

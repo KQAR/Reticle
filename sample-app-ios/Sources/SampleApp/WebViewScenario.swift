@@ -27,3 +27,28 @@ final class WebViewScenarioViewController: UIViewController {
         Reticle.log("webview_visible", metadata: ["fixture": .text("complex")])
     }
 }
+
+/// The frame-wall page: every frame shape that has its own wall, all above the fold.
+/// Separate from the complex fixture because a sealed frame has no children, and a
+/// childless node below the viewport is pruned — so on one long page the frames under
+/// test were the ones dropped.
+final class WebFramesScenarioViewController: UIViewController {
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let webView = SampleWebFixtures.makeFramesWebView()
+        webView.accessibilityIdentifier = "frames.webView"
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
+        Reticle.log("webview_visible", metadata: ["fixture": .text("frames")])
+    }
+}

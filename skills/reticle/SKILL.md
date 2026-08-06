@@ -745,6 +745,12 @@ and switch tactics — retrying, waiting, or re-capturing will not change it.**
 | `dom:capped(N)` | This web view's DOM walk stopped at the traversal's own node cap after N nodes. Unlike the projection cap, the rest were never captured — no `ui tree` or `ui node --ref` can reach them | Narrow the page, or scroll and re-capture |
 | `dom:unavailable` | The DOM could not be read *at this moment* (a JS modal blocking the page thread, JS off, budget) | Dismiss the modal / re-capture — this one CAN clear |
 | `dom:unsupported-kernel` | A third-party WebView kernel (X5/UC). There is no DOM for it at any level | Target it as a plain view (`--test-id` / `--point`); `--css` will never match |
+| `iframe:cross-origin` | This frame's document is another origin's; browser policy withholds it from the page itself | Coordinates inside the frame's rect are the only path in. `--css` into it never resolves — **unless** the line also shows no `iframe:probe-*`, on iOS, where such a frame is read in its own context and its content IS addressable by chained selector |
+| `iframe:probe-needs-reload` (iOS) | The frame COULD be read in its own context, but the probe that makes that possible only reaches documents loaded after it was installed — and this frame predates it | Drive the app so the frame navigates (its own reload/next step), then re-capture. Reticle will not reload the page for you: that is the app's state, not the observer's |
+| `iframe:probe-budget` / `-depth-budget` / `-failed` / `-no-handle` (iOS) | The per-frame read did not happen: this capture's allowance (6 frames, 4 deep) was spent, the handle went stale, or the frame has no addressable identity | Re-capture on a screen with fewer frames, or fall back to coordinates inside the frame's rect |
+| `iframe:sandboxed` | The page's own `sandbox` attribute has no `allow-same-origin`, so the frame is sealed even though it may be same-site | Same as above for driving it. This one is the PAGE's choice, so it is also the one a code change can lift |
+| `iframe:not-loaded` | A `src` is still pending; the frame is answering with its placeholder document | **The one frame marker where retrying is right** — `act wait` / re-capture |
+| `geometry:approx` | A frame in this element's chain is rotated or skewed, so the rect is the axis-aligned hull of the real box | The centre may be outside the element; prefer `act activate` (in-page dispatch, geometry-free) over a coordinate tap |
 | `pixels:unavailable` | These pixels are missing from the in-process screenshot (Android `SurfaceView`, iOS keyboard window) | Use a device-level capture if you need the picture |
 | `screencap:blank` | A `FLAG_SECURE` window blanks device-level captures | Use the in-process capture (`--package`, agent up) |
 | `occluded-by:<ref>` / `occluded-by:keyboard` | Something is on top of your target's tap point — a higher window, the keyboard, **or a later-drawn sibling in the same window** (a second screen pushed over a still-alive one, which is what a hybrid app does) | Dismiss it (`act hide-keyboard`) or target the thing on top |
@@ -753,7 +759,6 @@ and switch tactics — retrying, waiting, or re-capturing will not change it.**
 
 Also structural, with no marker because there is nothing to mark: a **closed**
 shadow root (the host element is captured, its contents are not — open roots ARE
-pierced), a **cross-origin iframe** (browser policy; same-origin frames are
 pierced), **text baked into a bitmap** (no OCR — that would be a guess dressed as
 an observation; a Lottie is the exception, its text layers are recovered), and a
 **pure-Canvas control** that exposes no accessibility surface at all (only its rect
