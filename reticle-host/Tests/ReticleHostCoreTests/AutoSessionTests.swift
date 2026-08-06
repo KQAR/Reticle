@@ -79,7 +79,7 @@ struct AutoSessionTests {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         try makeSession(home, "checkout-bug", auto: false)
-        try makeSession(home, "easypln-login", auto: false)
+        try makeSession(home, "checkout-login", auto: false)
         for i in 0..<5 { try makeSession(home, "auto-2026072\(i)-000000") }
 
         let removed = AutoSession(home: home).prune(keepSessions: 2, budgetBytes: .max)
@@ -89,7 +89,7 @@ struct AutoSessionTests {
         // A session someone named is theirs; no disk pressure makes deleting it
         // this code's call.
         #expect(sessionNames(home).contains("checkout-bug"))
-        #expect(sessionNames(home).contains("easypln-login"))
+        #expect(sessionNames(home).contains("checkout-login"))
     }
 
     /// The name prefix is a label, not a licence to delete.

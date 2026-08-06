@@ -39,7 +39,7 @@
   of the same gap, both measured on a real form:
   - **A component-library select is a `<button>` that displays the chosen value as
     its own text**, and the accessible-name walk only covered form controls. Five of
-    them projected as `button "大学教育"`, `button "我有工作"`, … — five values with
+    them projected as `button "<value>"` … — five values with
     nothing saying which field each belonged to, so the only way to tell was their
     order down the page: exactly the defect the name walk was added to fix, one
     element type over. It now covers a `<button>`, a `role=button` / `combobox` /
@@ -136,7 +136,7 @@
     passing check reported as a missing one. (The test guarding this case was
     already named for the right behaviour and asserted the wrong one.)
   - **A masked field that lost a character claimed the app had transformed it.**
-    `--text "00-950"` left `00-50`: not a prefix, so it classified as `changed` —
+    `--text "12-345"` left `12-45`: not a prefix, so it classified as `changed` —
     "the app dressed its input, not a defect, never retried" — and a dropped digit
     went out under the same label as an uppercasing. That shape is now `dropped`,
     counted as loss (so the clipboard re-send applies), and judged only where it
@@ -160,11 +160,11 @@
   label and one control (a `fieldset` legend names the group, not a field, and two
   labels beside two inputs is a guess). `domNameSource` records which rule answered,
   so an inferred name is never read as a declared one. The value keeps the label
-  slot and the name gets its own — `textField "00-950" … name:"Kod pocztowy"` —
+  slot and the name gets its own — `textField "12-345" … name:"Postcode"` —
   because the first cut put the name in the label slot and five filled fields
   projected as their own names with nothing saying what any of them contained. An
   EMPTY field has no value to show, so there the name takes the slot rather than
-  leaving the line anonymous. `act type --label "Kod pocztowy"` now drives that form
+  leaving the line anonymous. `act type --label "<field name>"` now drives that form
   directly; the five-field batch that used to fail mid-way lands every field.
 - **`act type` no longer refuses a field it already focused.** The focus
   post-condition compared the fresh capture against the ref the selector resolved
