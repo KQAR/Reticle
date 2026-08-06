@@ -608,6 +608,23 @@ data class Node(
         (custom["domFrameChildCount"] as? MetadataValue.Integer)?.value
 
     /**
+     * Why a frame whose document the page may not read was ALSO not read in its own
+     * context (iOS `WebFrameProbe`): `"needs-reload"` (the probe reaches only
+     * documents loaded after it was installed — a frame already on screen answers
+     * nothing until it navigates; Reticle does not reload the app's page to fix
+     * that), `"budget"` / `"depth-budget"` (this capture's per-frame allowance),
+     * `"no-handle"` (`contentWindow` itself was refused), `"failed"` (the handle was
+     * stale or the read outran its budget). null when the frame was read, or when
+     * there was no wall.
+     *
+     * Kept separate from [domFrameOpaque] because they answer different questions:
+     * that one is about the PAGE, this one about the reading mechanism — and only
+     * this one can change without the page changing.
+     */
+    fun domFrameProbe(): String? =
+        (custom["domFrameProbe"] as? MetadataValue.Text)?.value?.takeIf { it.isNotBlank() }
+
+    /**
      * True when a frame in this node's chain is rotated or skewed, so [frame] is
      * the axis-aligned hull of the real box rather than the box. Its centre may sit
      * outside the element, which is a tap that misses — reported instead of

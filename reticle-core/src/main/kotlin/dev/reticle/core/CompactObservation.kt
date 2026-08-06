@@ -262,6 +262,7 @@ data class CompactObservation(
                             domCappedAt = node.domCappedAt(),
                             crossOriginFrame = node.domCrossOriginFrame(),
                             frameOpaque = node.domFrameOpaque(),
+                            frameProbe = node.domFrameProbe(),
                             geometryApprox = node.domGeometryApprox(),
                             domKernelUnsupported = node.domKernelUnsupported(),
                             pixelsUnavailable = node.pixelsUnavailable(),
@@ -578,6 +579,14 @@ data class CompactItem(
      */
     val frameOpaque: String? = null,
     /**
+     * Why a walled frame was not read in its own context either, when the platform
+     * can do that at all: `"needs-reload"`, `"budget"`, `"depth-budget"`,
+     * `"no-handle"`, `"failed"`. Rendered as ` iframe:probe-<reason>`, beside the
+     * wall marker rather than instead of it — the wall says what the page allows, this
+     * says whether the one mechanism that can cross it got a turn.
+     */
+    val frameProbe: String? = null,
+    /**
      * True when a frame in this item's chain is rotated or skewed: [frame] is the
      * axis-aligned hull of the real box, so its centre is not guaranteed to be
      * inside the element. Rendered as ` geometry:approx` — a tap here may miss,
@@ -638,6 +647,7 @@ data class CompactItem(
             domCappedAt?.let { append(" dom:capped($it)") }
             if (crossOriginFrame) append(" iframe:cross-origin")
             else frameOpaque?.takeIf { it.isNotEmpty() }?.let { append(" iframe:").append(it) }
+            frameProbe?.takeIf { it.isNotEmpty() }?.let { append(" iframe:probe-").append(it) }
             if (geometryApprox) append(" geometry:approx")
             if (domKernelUnsupported) append(" dom:unsupported-kernel")
             if (pixelsUnavailable) append(" pixels:unavailable")

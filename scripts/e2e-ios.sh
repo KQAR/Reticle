@@ -731,10 +731,64 @@ sleep 1
 IOS_FRAMES="$("$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json")"
 echo "$IOS_FRAMES" | grep -q 'complex.sandboxFrame .*iframe:sandboxed' \
   || { echo "FAIL: a sandboxed frame must say sandboxed, not come back silently empty"; exit 1; }
-echo "$IOS_FRAMES" | grep -q "Inside sandboxed frame" \
-  && { echo "FAIL: a sandboxed frame's content must not be readable"; exit 1; }
 echo "$IOS_FRAMES" | grep -q 'complex.sandboxFrame .*iframe:cross-origin' \
   && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
+# The per-frame reader's own limit, asserted as a marker rather than left as an
+# absence: this frame loaded before the probe was installed, so no probe answered for
+# it and its content is still unreadable — and the line SAYS which of those it is.
+echo "$IOS_FRAMES" | grep -q 'complex.sandboxFrame .*iframe:probe-needs-reload' \
+  || { echo "FAIL: a frame the probe could not reach must say so, not just look empty"; exit 1; }
+echo "$IOS_FRAMES" | grep -q "Inside sandboxed frame" \
+  && { echo "FAIL: a sealed frame's content must not be readable before the probe reaches it"; exit 1; }
+
+echo "== A SEALED FRAME IS READ IN ITS OWN CONTEXT ONCE THE PROBE REACHES IT =="
+# The capability this whole path exists for. `evaluateJavaScript` runs in the MAIN
+# frame, so a cross-origin or sandbox-sealed frame used to be a wall: no nodes, no
+# selectors, and on a real device not even a coordinate fallback, since in-process
+# activation is the only input path there. WebKit's per-frame evaluation
+# (`evaluateJavaScript(_:in:contentWorld:)`) crosses it — but a `WKFrameInfo` only
+# arrives with a message FROM a frame, so the probe must already be in the frame,
+# which means the frame must have loaded after the probe was installed.
+#
+# The page's OWN button re-navigates the frame; Reticle does not reload an app's page
+# to widen its own reach.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#reload-frames"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-sealed"
+SEALED="$("$HOST" --target ios ui compact "$TMP/webview-sealed/snapshot.json")"
+echo "$SEALED" | grep -q "Inside sandboxed frame" \
+  || { echo "FAIL: a sealed frame reloaded under the probe must be readable"; exit 1; }
+echo "$SEALED" | grep -q 'complex.sandboxFrame .*iframe:sandboxed' \
+  && { echo "FAIL: a frame that WAS read must not still claim to be a wall"; exit 1; }
+# Its content must be addressable by the chained selector, and its geometry must land
+# inside the frame — the fold for a frame read this way comes from the same script as
+# the same-origin one, and this is what proves that.
+"$HOST" --target ios ui node "$TMP/webview-sealed/snapshot.json" --css "#sandbox-frame >>> #sandbox-button" >/dev/null \
+  || { echo "FAIL: content read per-frame must resolve by its chained selector"; exit 1; }
+/usr/bin/python3 - "$TMP/webview-sealed/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "complex.sandboxFrame")
+inner = next((n["frame"] for n in nodes
+              if n.get("custom", {}).get("domId", {}).get("value") == "sandbox-button"), None)
+if inner is None:
+    print("FAIL: the sealed frame's button was not captured")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: per-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+# And it must be DRIVABLE the way a real device drives web content: in-process
+# activation, routed into the frame it belongs to. A control Reticle reports and
+# cannot act on is half a capability.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#sandbox-frame >>> #sandbox-button"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-sealed-after"
+"$HOST" --target ios ui compact "$TMP/webview-sealed-after/snapshot.json" | grep -q "Sandbox clicked" \
+  || { echo "FAIL: activation into a sealed frame did not fire its onclick"; exit 1; }
 # A frame scrolls its OWN document, which the page's scroll offset says nothing
 # about: without this a truncated frame looked exactly like a short one, and there
 # was no container for a caller to drive.

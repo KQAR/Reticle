@@ -101,6 +101,10 @@ class RenderContractTest {
             "iframe:cross-origin",
             "iframe:sandboxed",
             "iframe:not-loaded",
+            // The wall and the READER's own limit are two markers on purpose: one says
+            // what the page allows, the other whether the mechanism that can cross it
+            // got a turn. A frame that loaded before the probe existed is the second.
+            "iframe:probe-needs-reload",
             "geometry:approx",
         )) {
             assertTrue(rendered.any { it.contains(marker) }, "no case renders '$marker'")

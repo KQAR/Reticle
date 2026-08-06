@@ -95,6 +95,10 @@ final class RenderContractTests: XCTestCase {
             "iframe:cross-origin",
             "iframe:sandboxed",
             "iframe:not-loaded",
+            // The wall and the READER's own limit are two markers on purpose: one says
+            // what the page allows, the other whether the mechanism that can cross it
+            // got a turn. A frame that loaded before the probe existed is the second.
+            "iframe:probe-needs-reload",
             "geometry:approx",
         ] {
             XCTAssertTrue(rendered.contains { $0.contains(marker) }, "no case renders '\(marker)'")
