@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS
+  half landed first; this is the other direction, because Android has no per-frame
+  `evaluateJavascript`. `WebFrameBridge` puts a probe in every frame with
+  `addDocumentStartJavaScript` and a reply channel with `addWebMessageListener`, then the
+  main frame posts a request to `window.frames[...]` — indexed access to a foreign window
+  and `postMessage` to it are both allowed across origins, so a nested frame is addressed
+  directly with no forwarding chain and no id handshake. The probe runs the SAME traversal
+  script with the fold its parent measured and posts the JSON back; the walk splices it in
+  one round per depth level, so a control read that way is an ordinary DOM node with a
+  chained selector.
+  - **androidx.webkit is not a dependency at all** — not even compileOnly. Every call is
+    reflective, so the agent links identically into an app that ships the library and one
+    that does not, and the `app inject` payload dex (which lands in an arbitrary app)
+    carries no support library that could collide with the host's own copy.
+  - Where the library or the WebView provider's feature is missing, the frame says
+    `iframe:probe-unavailable` beside its wall marker. That pairing is the point: without
+    it, an app that *could* have the capability looks exactly like one where the wall is
+    final. Verified live on an emulator — `iframe:sandboxed iframe:probe-unavailable` and
+    `iframe:cross-origin iframe:probe-unavailable`, with the frames' contents correctly
+    still absent.
+  - **Honest limit of this change:** the SUCCESS path is unverified. No app in this repo
+    ships androidx.webkit yet (and the dependency could not be fetched in the environment
+    this was written in), so the reflective call sites have run only down their
+    unavailable branch. The failure mode is contained by design — every reflective call is
+    wrapped, and any miss reports `iframe:probe-unavailable` / `-failed` rather than
+    claiming a read — but until an app with the library exercises it, treat the Android
+    happy path as untested.
+
 - **A sealed frame is now READ on iOS, not just described.** `evaluateJavaScript`
   runs in the main frame, so a cross-origin or `sandbox`-sealed frame was a wall: no
   nodes, no selectors, and on a real device not even a coordinate fallback, since the
