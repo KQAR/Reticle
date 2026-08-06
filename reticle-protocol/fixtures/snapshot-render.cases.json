@@ -1113,6 +1113,357 @@
      }
     }
    }
+  },
+  {
+   "name": "a frame says WHICH wall it is: not-loaded (retry), cross-origin (coordinates only), sandboxed (the page's own choice, here also out of the per-frame reader's reach) - a read frame publishes its own document's scroll travel, and a rotated frame marks its children's rects as hulls",
+   "expect": {
+    "compact": [
+     "@content window [0,0 1080x2400]",
+     "#pay.web webView [0,200 1080x1800] tappable",
+     "#pay.loadingFrame iframe [40,240 1000x300] iframe:not-loaded",
+     "#pay.foreignFrame iframe [40,560 1000x300] iframe:cross-origin",
+     "#pay.sandboxFrame iframe [40,880 1000x300] iframe:sandboxed iframe:probe-needs-reload",
+     "#pay.openFrame iframe [40,1200 1000x300] scroll:down",
+     "#pay.frameButton button \"Confirm\" [60,1220 200x80] tappable",
+     "#pay.rotatedFrame iframe [40,1520 1000x300]",
+     "#pay.rotatedButton button \"Pay\" [60,1540 220x90] tappable geometry:approx"
+    ]
+   },
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 1080,
+      "height": 2400
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "com.android.internal.policy.DecorView",
+      "role": "window",
+      "resourceId": "content",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 1080,
+       "height": 2400
+      },
+      "children": [
+       "web"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "webView",
+      "testId": "pay.web",
+      "frame": {
+       "x": 0,
+       "y": 200,
+       "width": 1080,
+       "height": 1800
+      },
+      "isInteractive": true,
+      "children": [
+       "body"
+      ],
+      "parentRef": "w1"
+     },
+     "body": {
+      "ref": "body",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "body",
+      "frame": {
+       "x": 0,
+       "y": 200,
+       "width": 1080,
+       "height": 1800
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "body"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "body"
+       }
+      },
+      "parentRef": "web",
+      "children": [
+       "fLoading",
+       "fCross",
+       "fSandbox",
+       "fOpen",
+       "fScaled"
+      ]
+     },
+     "fLoading": {
+      "ref": "fLoading",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "iframe",
+      "frame": {
+       "x": 40,
+       "y": 240,
+       "width": 1000,
+       "height": 300
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "iframe"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#loading-frame"
+       },
+       "domFrameOpaque": {
+        "_type": "text",
+        "value": "not-loaded"
+       },
+       "domFrameUrl": {
+        "_type": "text",
+        "value": "about:blank"
+       },
+       "domFrameReadyState": {
+        "_type": "text",
+        "value": "loading"
+       }
+      },
+      "parentRef": "body",
+      "testId": "pay.loadingFrame"
+     },
+     "fCross": {
+      "ref": "fCross",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "iframe",
+      "frame": {
+       "x": 40,
+       "y": 560,
+       "width": 1000,
+       "height": 300
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "iframe"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#foreign-frame"
+       },
+       "domCrossOriginFrame": {
+        "_type": "bool",
+        "value": true
+       },
+       "domFrameOpaque": {
+        "_type": "text",
+        "value": "cross-origin"
+       },
+       "domFrameName": {
+        "_type": "text",
+        "value": "widget"
+       },
+       "domFrameChildCount": {
+        "_type": "int",
+        "value": 2
+       }
+      },
+      "parentRef": "body",
+      "testId": "pay.foreignFrame"
+     },
+     "fSandbox": {
+      "ref": "fSandbox",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "iframe",
+      "frame": {
+       "x": 40,
+       "y": 880,
+       "width": 1000,
+       "height": 300
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "iframe"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#sandbox-frame"
+       },
+       "domFrameOpaque": {
+        "_type": "text",
+        "value": "sandboxed"
+       },
+       "domFrameSandbox": {
+        "_type": "text",
+        "value": "allow-scripts"
+       },
+       "domFrameProbe": {
+        "_type": "text",
+        "value": "needs-reload"
+       }
+      },
+      "parentRef": "body",
+      "testId": "pay.sandboxFrame"
+     },
+     "fOpen": {
+      "ref": "fOpen",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "iframe",
+      "frame": {
+       "x": 40,
+       "y": 1200,
+       "width": 1000,
+       "height": 300
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "iframe"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#open-frame"
+       },
+       "domFrameUrl": {
+        "_type": "text",
+        "value": "about:srcdoc"
+       },
+       "domScrollTop": {
+        "_type": "int",
+        "value": 0
+       },
+       "domScrollHeight": {
+        "_type": "int",
+        "value": 900
+       },
+       "domScrollClientHeight": {
+        "_type": "int",
+        "value": 300
+       }
+      },
+      "parentRef": "body",
+      "testId": "pay.openFrame",
+      "children": [
+       "fOpenButton"
+      ],
+      "scroll": {
+       "canScrollDown": true
+      }
+     },
+     "fOpenButton": {
+      "ref": "fOpenButton",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "button",
+      "frame": {
+       "x": 60,
+       "y": 1220,
+       "width": 200,
+       "height": 80
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#open-frame >>> #frame-button"
+       }
+      },
+      "parentRef": "fOpen",
+      "testId": "pay.frameButton",
+      "text": "Confirm",
+      "isInteractive": true
+     },
+     "fScaled": {
+      "ref": "fScaled",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "iframe",
+      "frame": {
+       "x": 40,
+       "y": 1520,
+       "width": 1000,
+       "height": 300
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "iframe"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#rotated-frame"
+       },
+       "domStyleTransform": {
+        "_type": "text",
+        "value": "matrix(0.87, 0.5, -0.5, 0.87, 0, 0)"
+       }
+      },
+      "parentRef": "body",
+      "testId": "pay.rotatedFrame",
+      "children": [
+       "fScaledButton"
+      ]
+     },
+     "fScaledButton": {
+      "ref": "fScaledButton",
+      "kind": "domNode",
+      "typeName": "DOMElement",
+      "role": "button",
+      "frame": {
+       "x": 60,
+       "y": 1540,
+       "width": 220,
+       "height": 90
+      },
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#rotated-frame >>> #rotated-button"
+       },
+       "domGeometryApprox": {
+        "_type": "bool",
+        "value": true
+       }
+      },
+      "parentRef": "fScaled",
+      "testId": "pay.rotatedButton",
+      "text": "Pay",
+      "isInteractive": true
+     }
+    }
+   }
   }
  ]
 }

@@ -89,6 +89,17 @@ final class RenderContractTests: XCTestCase {
             "wheel:selection-only",
             "wheel:opaque",
             "scroll:",
+            // The three frame walls are one marker family and must stay three: they
+            // ask a caller for opposite moves (coordinates / fix the page / retry),
+            // and collapsing any two of them is the defect this family exists to fix.
+            "iframe:cross-origin",
+            "iframe:sandboxed",
+            "iframe:not-loaded",
+            // The wall and the READER's own limit are two markers on purpose: one says
+            // what the page allows, the other whether the mechanism that can cross it
+            // got a turn. A frame that loaded before the probe existed is the second.
+            "iframe:probe-needs-reload",
+            "geometry:approx",
         ] {
             XCTAssertTrue(rendered.contains { $0.contains(marker) }, "no case renders '\(marker)'")
         }

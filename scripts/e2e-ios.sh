@@ -722,6 +722,106 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-frame"
 "$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json" | grep -q "Frame clicked" \
   || { echo "FAIL: coordinate tap at the iframe content rect did not fire its onclick"; exit 1; }
+echo "== EVERY FRAME WALL, AND A SEALED FRAME READ IN ITS OWN CONTEXT =="
+# A dedicated screen, because these fixtures cannot share the complex page: a SEALED
+# frame has no children, and the traversal prunes a childless node below the viewport —
+# so on the long page the frames under test were exactly the ones dropped (measured on
+# an emulator for the Android twin) while the walkable frames survived on the strength
+# of their content.
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=webFrames
+HOLD="$(hold_launch "$LINKED_ID")"; sleep 3
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames"
+WALLS="$("$HOST" --target ios ui compact "$TMP/frames/snapshot.json")"
+# The walls must stay separate markers: they ask for opposite moves — coordinates
+# (cross-origin), fix the page (sandboxed), retry (not-loaded). A `sandbox` without
+# `allow-same-origin` seals a frame that is plainly same-site, so reporting it as
+# cross-origin sent a reader hunting a domain problem that does not exist.
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
+  || { echo "FAIL: a sandboxed frame must say sandboxed, not come back silently empty"; exit 1; }
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:cross-origin' \
+  && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
+echo "$WALLS" | grep -q 'frames.nestedForeignFrame .*iframe:cross-origin' \
+  || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
+# The per-frame reader's own limit, asserted as a marker rather than left as an absence:
+# this frame loaded before the probe was installed, so no probe answered for it — and
+# the line SAYS which of those it is.
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:probe-needs-reload' \
+  || { echo "FAIL: a frame the probe could not reach must say so, not just look empty"; exit 1; }
+echo "$WALLS" | grep -q "Inside sandboxed frame" \
+  && { echo "FAIL: a sealed frame's content must not be readable before the probe reaches it"; exit 1; }
+# A frame that scrolls its OWN document, which the page's scroll offset says nothing
+# about: without this a truncated frame looked exactly like a short one.
+echo "$WALLS" | grep -q 'frames.scrollFrame .*scroll:down' \
+  || { echo "FAIL: a frame with more content below must publish scroll:down"; exit 1; }
+# A frame under `transform: scale(0.5)`: the content's pixels are not the page's, so a
+# fold that ignores the transform reports every child at double size in the wrong place
+# — silently. Rect containment first, then the consequence.
+/usr/bin/python3 - "$TMP/frames/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "frames.scaledFrame")
+inner = next((n["frame"] for n in nodes
+              if n.get("custom", {}).get("domId", {}).get("value") == "scaled-frame-button"), None)
+if inner is None:
+    print("FAIL: the scaled frame's button was not captured at all")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: scaled-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" \
+  --css "#scaled-frame >>> #scaled-frame-button"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames-scaled"
+"$HOST" --target ios ui compact "$TMP/frames-scaled/snapshot.json" | grep -q "Scaled frame clicked" \
+  || { echo "FAIL: a tap at the scaled frame's reported rect missed its button"; exit 1; }
+
+# The capability the per-frame reader exists for. `evaluateJavaScript` runs in the MAIN
+# frame, so a sealed frame used to be a wall: no nodes, no selectors, and on a real
+# device not even a coordinate fallback, since in-process activation is the only input
+# path there. WebKit's per-frame evaluation crosses it — but a `WKFrameInfo` only
+# arrives with a message FROM a frame, so the probe must already be inside, which means
+# the frame must have loaded after the probe was installed. The page's OWN button
+# re-navigates it; Reticle does not reload an app's page to widen its own reach.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#reload-frames"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames-sealed"
+SEALED="$("$HOST" --target ios ui compact "$TMP/frames-sealed/snapshot.json")"
+echo "$SEALED" | grep -q "Inside sandboxed frame" \
+  || { echo "FAIL: a sealed frame reloaded under the probe must be readable"; exit 1; }
+echo "$SEALED" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
+  && { echo "FAIL: a frame that WAS read must not still claim to be a wall"; exit 1; }
+"$HOST" --target ios ui node "$TMP/frames-sealed/snapshot.json" --css "#sandbox-frame >>> #sandbox-button" >/dev/null \
+  || { echo "FAIL: content read per-frame must resolve by its chained selector"; exit 1; }
+/usr/bin/python3 - "$TMP/frames-sealed/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "frames.sandboxFrame")
+inner = next((n["frame"] for n in nodes
+              if n.get("custom", {}).get("domId", {}).get("value") == "sandbox-button"), None)
+if inner is None:
+    print("FAIL: the sealed frame's button was not captured")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: per-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+# And it must be DRIVABLE the way a real device drives web content: in-process
+# activation, routed into the frame it belongs to. A control Reticle reports and cannot
+# act on is half a capability.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#sandbox-frame >>> #sandbox-button"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames-sealed-after"
+"$HOST" --target ios ui compact "$TMP/frames-sealed-after/snapshot.json" | grep -q "Sandbox clicked" \
+  || { echo "FAIL: activation into a sealed frame did not fire its onclick"; exit 1; }
+
 # In-process dom activation with an observable side effect.
 "$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
 sleep 1

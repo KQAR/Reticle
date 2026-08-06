@@ -344,6 +344,51 @@ public struct Node: Codable, Sendable {
         return false
     }
 
+    /// Why a frame's subtree is empty: `"cross-origin"`, `"sandboxed"`, or
+    /// `"not-loaded"` — nil when this frame's document WAS read, or this is not a
+    /// frame. The three demand opposite moves from a caller (use coordinates, fix the
+    /// page, retry) and used to be one flag. See the Kotlin twin.
+    public func domFrameOpaque() -> String? {
+        if case .text(let v)? = custom["domFrameOpaque"], !v.isEmpty { return v }
+        return nil
+    }
+
+    /// The frame's `name` attribute, its document URL, and how many frames are nested
+    /// inside it — read from the PARENT document, so they survive a frame whose
+    /// contents do not. See the Kotlin twin.
+    public func domFrameName() -> String? {
+        if case .text(let v)? = custom["domFrameName"], !v.isEmpty { return v }
+        return nil
+    }
+
+    public func domFrameUrl() -> String? {
+        if case .text(let v)? = custom["domFrameUrl"], !v.isEmpty { return v }
+        return nil
+    }
+
+    public func domFrameChildCount() -> Int64? {
+        if case .integer(let n)? = custom["domFrameChildCount"] { return n }
+        return nil
+    }
+
+    /// Why a frame whose document the page may not read was ALSO not read in its own
+    /// context: `"needs-reload"` (the probe reaches only documents loaded after it was
+    /// installed), `"budget"` / `"depth-budget"`, `"no-handle"`, `"failed"`. nil when
+    /// the frame WAS read, or when there was no wall. Distinct from `domFrameOpaque` —
+    /// that one is about the page, this one about the mechanism, and only this one can
+    /// change without the page changing. See the Kotlin twin.
+    public func domFrameProbe() -> String? {
+        if case .text(let v)? = custom["domFrameProbe"], !v.isEmpty { return v }
+        return nil
+    }
+
+    /// True when a frame in this node's chain is rotated or skewed, so `frame` is the
+    /// axis-aligned hull of the real box rather than the box. See the Kotlin twin.
+    public func domGeometryApprox() -> Bool {
+        if case .bool(let v)? = custom["domGeometryApprox"] { return v }
+        return false
+    }
+
     /// The element's tag name, lowercased by the traversal script.
     public func domTag() -> String? {
         if case .text(let v)? = custom["domTag"] { return v }

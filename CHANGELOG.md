@@ -1,5 +1,85 @@
 # Changelog
 
+## Unreleased
+
+- **A sealed frame is now READ on iOS, not just described.** `evaluateJavaScript`
+  runs in the main frame, so a cross-origin or `sandbox`-sealed frame was a wall: no
+  nodes, no selectors, and on a real device not even a coordinate fallback, since the
+  only input path there is in-process activation, which resolves selectors *in the
+  page*. A third-party payment or bank widget is exactly that shape — measured
+  earlier at four consecutive steps driven by pixels off a screenshot.
+  - WebKit takes a `WKFrameInfo` (`evaluateJavaScript(_:in:contentWorld:)`) and runs
+    in THAT frame's context, cross-origin included — the seam Playwright gets from the
+    browser protocol. What it has no API for is *enumerating* frames, so
+    `WebFrameProbe` obtains the handles the only way they are handed out: an
+    all-frames `WKUserScript` probe in an isolated content world, an index-path
+    handshake over `postMessage` (allowed across origins, passed down by each probe to
+    its own children), and a script-message reply whose message carries the handle.
+  - The frame is walked by the SAME traversal script, handed its enclosing frame's
+    fold, and spliced under the frame element before nodes are built — so its controls
+    are ordinary DOM nodes with chained selectors (`#sealed >>> #inner`), and
+    `act activate` routes a chain into the frame that owns it
+    (`via=domDispatch:frame`). No second geometry implementation: the fold is passed
+    in, never recomputed natively.
+  - A frame that WAS read stops claiming to be a wall — leaving the marker would tell
+    a caller coordinates are the only way in while a selector resolves, and
+    `ScreenCoverage` reads the same fields.
+  - The limits are markers, not silence: `iframe:probe-needs-reload` (a user script
+    reaches only documents loaded after it is installed, and Reticle will not reload
+    an app's page to widen its own reach), plus `-budget` / `-depth-budget` (6 frames,
+    4 deep per capture) / `-failed` / `-no-handle`.
+  - The frame-scoped evaluation is sent by SELECTOR, not through Swift's refined
+    `Result` signature: that refinement lives in `libswiftWebKit.dylib`, a Swift overlay
+    absent on older OS versions — measured in CI on an iOS 18.5 simulator as the whole
+    bundle failing to load. With a deployment floor of iOS 15, the refined signature
+    would mean ReticleKit refusing to load on every pre-26 device.
+  - Verified on a simulator by `WebFrameProbeTests`: a sealed frame read with its
+    chained selector and its geometry inside the frame, the same frame honestly unread
+    when the probe arrived late, and activation routed into it. The iOS e2e drives the
+    whole shape through the CLI, using the fixture page's OWN button to navigate the
+    frame. Android's equivalent seam
+    (`WebViewCompat.addDocumentStartJavaScript` + `addWebMessageListener`) is not
+    wired up yet — it still walls at the page, and says so.
+
+- **An iframe now reports its identity, its wall, its scale and its scroll — the
+  four ways a frame used to be silently thinner than the rest of the page.** All of
+  it in the shared traversal, so both platforms answer alike.
+  - **The frame walls are three, not one.** `contentDocument` throwing and a frame
+    that has not loaded look identical from outside, and so did a frame the page
+    itself sealed. All three came back as `iframe:cross-origin` (or as nothing at
+    all), while they ask for OPPOSITE moves: use coordinates, retry, or fix the page.
+    They are now `iframe:cross-origin` / `iframe:not-loaded` / `iframe:sandboxed` —
+    the last one measured as the misleading case, since a `sandbox` without
+    `allow-same-origin` seals a frame that is plainly same-site, sending a reader
+    hunting a domain problem that does not exist.
+  - **A sealed frame still publishes what is readable from outside it.** Policy
+    withholds the document, not the element: `name`, `src`, the document URL and
+    ready state when they can be read, and `contentWindow.length` — how many frames
+    are nested behind the wall, which is the only shape available for a subtree
+    nothing can enter.
+  - **A scaled frame's content lands where it is reported.** The fold accumulated
+    the frame's offset and ignored its scale, so a frame under `transform:
+    scale(0.5)` — the shape a responsive third-party widget ships in — reported every
+    child at double size in the wrong place. Silent: the rect looks plausible and the
+    tap dispatches happily. Both factors (the element's transform and a frame
+    viewport that differs from its content box) are accumulated now, and the case a
+    rect genuinely cannot express — a rotated or skewed frame, whose rect is
+    `getBoundingClientRect`'s axis-aligned hull — carries `geometry:approx` instead
+    of passing the hull off as the box.
+  - **A frame publishes its own document's scroll travel, and so does any DOM scroll
+    port.** Web content published no `scroll:` capability at all: `overflow` sat in
+    the style channel and nothing said whether a pane could still move, so a
+    truncated frame looked exactly like a short one and a caller had no container to
+    drive. The rule lives in `DomScroll` (Kotlin) / `DomScroll` (Swift), with the
+    port's own numbers kept as the evidence behind the flag — "one flick left" and
+    "twenty screens left" were the same flag before.
+  - Pinned by a new `snapshot-render.cases.json` case (all three walls, the scroll
+    travel and the hull marker, rendered identically by both languages), `DomScroll`
+    suites on both sides, and new fixtures in the `complex` web screen — a sandboxed
+    frame, a `transform: scale(0.5)` frame whose inner button is tapped BY COORDINATE
+    in both e2e suites (a rect assertion alone passes on a plausible wrong rect), and
+    a frame with more content than fits.
+
 ## 0.18.1 - 2026-08-06
 
 - **`act activate` on Android says it is iOS-only, instead of "unknown gesture".**

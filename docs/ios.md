@@ -87,7 +87,38 @@ Borrowing Playwright's injected-script design (not its runtime — Playwright
 cannot attach to a system WKWebView), the walk additionally pierces **open
 shadow roots** and **same-origin iframes**: pierced elements carry a chained
 selector (`#shadow-host >>> #shadow-button`) and iframe content coordinates are
-folded into page space. Cross-origin frames stay opaque. And `act activate
+folded into page space, scale included (a frame under `transform: scale(…)` folds
+exactly; a rotated one marks its children `geometry:approx` rather than passing a
+hull off as a box). A frame whose document is withheld stays opaque and says which
+wall it is — `iframe:cross-origin`, `iframe:sandboxed`, `iframe:not-loaded` — while
+still publishing what IS readable from outside it (`name`, `src`, nested frame
+count) and, when it was read, its own document's scroll travel.
+
+**And on iOS a sealed frame is not the end of the road.** `evaluateJavaScript`
+runs in the main frame, but WebKit also takes a `WKFrameInfo`
+(`evaluateJavaScript(_:in:contentWorld:)`) and runs in *that* frame's context,
+cross-origin included — the seam Playwright gets from the browser protocol. What
+WebKit has no API for is *enumerating* frames, so `WebFrameProbe` obtains the
+handles the only way they are handed out: a `WKUserScript` with
+`forMainFrameOnly: false` puts a probe in every frame (in an isolated content
+world, invisible to the page and exempt from its CSP), the host asks the main
+frame to `postMessage` an index-path id to each `window.frames[i]` — allowed
+across origins — each probe passes ids down to its own children, and every probe
+answers over a script-message handler whose message carries the `WKFrameInfo`.
+The frame is then walked by the same traversal script, handed its enclosing
+frame's fold, and spliced under the frame element: the resulting nodes are
+ordinary DOM nodes with chained selectors, and `act activate` routes a chain into
+the frame that owns it (`via=domDispatch:frame`) — which matters most on a real
+device, where in-process activation is the only input path there is.
+
+Its limits are markers, not silence: a user script only reaches documents loaded
+**after** it is installed, so a frame already on screen at the first capture
+answers nothing until it navigates (`iframe:probe-needs-reload`; Reticle does not
+reload an app's page to widen its own reach), a frame with no `allow-scripts` can
+run no probe ever, and a capture reads at most 6 frames, 4 deep
+(`iframe:probe-budget` / `iframe:probe-depth-budget`). Pinned by
+`WebFrameProbeTests` on the simulator — a sealed frame read, the same frame
+unread when the probe arrived late, and activation routed into it. And `act activate
 --css <chain>` performs an in-process DOM activation: the agent resolves the
 chain in the live document, runs an actionability check (attached / visible /
 enabled / receives pointer events — honest reasons on failure), then dispatches
