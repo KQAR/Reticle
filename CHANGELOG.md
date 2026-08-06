@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.1 - 2026-08-06
 
 - **`act activate` on Android says it is iOS-only, instead of "unknown gesture".**
   The gesture exists BECAUSE iOS lacks what Android has: it drives a control
