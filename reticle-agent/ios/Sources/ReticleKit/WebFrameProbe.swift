@@ -201,7 +201,9 @@ enum WebFrameProbe {
                 return
             }
             MainActor.assumeIsolated { install(on: webView) }
-            webView.evaluateJavaScript(handshakeScript, in: nil, in: world()) { _ in
+            unsafeBitCast(webView, to: FrameEvaluating.self).evaluateJavaScript(
+                handshakeScript, inFrame: nil, inContentWorld: world()
+            ) { _, _ in
                 done.signal()
             }
         }
@@ -226,8 +228,10 @@ enum WebFrameProbe {
                 semaphore.signal()
                 return
             }
-            webView.evaluateJavaScript(script, in: frame, in: world()) { result in
-                if case .success(let value) = result { box.value = value as? String }
+            unsafeBitCast(webView, to: FrameEvaluating.self).evaluateJavaScript(
+                script, inFrame: frame, inContentWorld: world()
+            ) { value, _ in
+                box.value = value as? String
                 semaphore.signal()
             }
         }
@@ -259,5 +263,30 @@ enum WebFrameProbe {
             WebFrameProbe.table(for: webView).record(path: path, info: message.frameInfo)
         }
     }
+}
+
+/// `WKWebView`'s frame-scoped evaluation, reached by SELECTOR rather than through the
+/// Swift-refined signature.
+///
+/// Swift imports `evaluateJavaScript:inFrame:inContentWorld:completionHandler:` with a
+/// `Result` completion, and that refinement lives in `libswiftWebKit.dylib` — a Swift
+/// overlay that is **not present on older OS versions**. Measured in CI on an iOS 18.5
+/// simulator: the whole bundle failed to load with `Library not loaded:
+/// /usr/lib/swift/libswiftWebKit.dylib`. Since the agent's deployment floor is iOS 15,
+/// using that signature would mean ReticleKit refusing to load on any pre-26 device —
+/// a far worse outcome than the read it enables.
+///
+/// The underlying method is plain Objective-C and has been since iOS 14, so it is
+/// declared here and sent to the view directly. `unsafeBitCast` is safe in the one way
+/// that matters: the receiver IS a `WKWebView` and the selector IS the one it
+/// implements; only the compile-time type is being bypassed.
+@objc private protocol FrameEvaluating {
+    @objc(evaluateJavaScript:inFrame:inContentWorld:completionHandler:)
+    func evaluateJavaScript(
+        _ javaScript: String,
+        inFrame: WKFrameInfo?,
+        inContentWorld: WKContentWorld,
+        completionHandler: ((Any?, Error?) -> Void)?
+    )
 }
 #endif
