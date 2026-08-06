@@ -66,6 +66,12 @@ dependencies {
     // Compose semantics bridge is reflective + optional; no hard Compose dep so
     // the agent links cleanly into pure-View apps too.
     compileOnly(libs.androidx.compose.ui)
+    // androidx.webkit is NOT a dependency at all — not even compileOnly. The
+    // per-frame DOM read (`WebFrameBridge`) reaches it purely by reflection, so the
+    // agent links into an app that has it and an app that does not, identically, and
+    // the `app inject` payload dex — which lands in an arbitrary app — carries no
+    // support library that could collide with the host's own copy. Where the library
+    // is absent the read degrades to a stated marker rather than a guess.
 
     // The exact JARs the injected dex must carry at runtime for the UNLINKED
     // (JDWP-injection) path: reticle-core + kotlin-stdlib + kotlinx-serialization.

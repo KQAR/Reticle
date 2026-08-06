@@ -939,7 +939,58 @@ echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
 echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:cross-origin' \
   && { echo "FAIL: a same-site sandboxed frame must not be reported as cross-origin"; exit 1; }
 echo "$WALLS" | grep -q "Inside sandboxed frame" \
-  && { echo "FAIL: Android has no per-frame reader, so a sealed frame's content must stay absent"; exit 1; }
+  && { echo "FAIL: a sealed frame's content must not be readable before the probe reaches it"; exit 1; }
+# ...and the reason must be the MECHANISM's, not the page's. Both markers, separately:
+# the page sealed the frame, AND the one path that can cross that (a per-frame read over
+# androidx.webkit) had not reached inside it yet — an all-frames probe only covers
+# documents loaded AFTER it is registered. Without the second marker, a frame that is
+# one navigation away from being readable looks exactly like a final wall.
+echo "$WALLS" | grep -q 'frames.sandboxFrame .*iframe:probe-needs-reload' \
+  || { echo "FAIL: a sealed frame must say WHY it was not read per-frame"; exit 1; }
+
+echo "== A SEALED FRAME IS READ IN ITS OWN CONTEXT ONCE THE PROBE REACHES IT =="
+# The capability the per-frame path exists for. `evaluateJavascript` runs in the MAIN
+# frame, so a sealed frame used to be a wall: no nodes, no selectors, coordinates only.
+# androidx.webkit crosses it — an all-frames document-start probe plus a message channel
+# the frame can answer through — but the probe must be inside the frame, which means the
+# frame must have loaded after it was registered. The page's OWN button re-navigates it;
+# Reticle does not reload an app's page to widen its own reach.
+R act tap --package "$PKG" --css "#reload-frames" >/dev/null
+wait_compact "$PKG" "Inside sandboxed frame" \
+  || { echo "FAIL: a sealed frame reloaded under the probe must be readable"; exit 1; }
+R ui report --package "$PKG" --output "$TMP/frames-sealed"
+SEALED="$(R ui compact "$TMP/frames-sealed/snapshot.json")"
+echo "$SEALED" | grep -q 'frames.sandboxFrame .*iframe:sandboxed' \
+  && { echo "FAIL: a frame that WAS read must not still claim to be a wall"; exit 1; }
+# The frame NEXT to it was not re-navigated, so it must still say so — the marker tracks
+# each frame's own state, not the page's.
+echo "$SEALED" | grep -q 'frames.nestedForeignFrame .*iframe:probe-needs-reload' \
+  || { echo "FAIL: a frame the probe still has not reached must keep saying so"; exit 1; }
+# Addressable by the chained selector, and its geometry inside the frame: the fold for a
+# frame read this way comes from the same script as the same-origin one.
+R ui node "$TMP/frames-sealed/snapshot.json" --css "#sandbox-frame >>> #sandbox-button" >/dev/null \
+  || { echo "FAIL: content read per-frame must resolve by its chained selector"; exit 1; }
+/usr/bin/python3 - "$TMP/frames-sealed/snapshot.json" <<'PY' || exit 1
+import json, sys
+nodes = json.load(open(sys.argv[1]))["nodes"].values()
+frame = next(n["frame"] for n in nodes if n.get("testId") == "frames.sandboxFrame")
+inner = next((n["frame"] for n in nodes
+              if n.get("custom", {}).get("domId", {}).get("value") == "sandbox-button"), None)
+if inner is None:
+    print("FAIL: the sealed frame's button was not captured")
+    sys.exit(1)
+inside = (inner["x"] >= frame["x"] - 1 and inner["y"] >= frame["y"] - 1
+          and inner["x"] + inner["width"] <= frame["x"] + frame["width"] + 1
+          and inner["y"] + inner["height"] <= frame["y"] + frame["height"] + 1)
+if not inside:
+    print(f"FAIL: per-frame content rect {inner} is not inside the frame rect {frame}")
+    sys.exit(1)
+PY
+# And the consequence, which no rect comparison can stand in for: a real touch at the
+# reported centre fires the frame's own onclick.
+R act tap --package "$PKG" --css "#sandbox-frame >>> #sandbox-button" >/dev/null
+wait_compact "$PKG" "Sandbox clicked" \
+  || { echo "FAIL: a tap inside a per-frame-read frame did not fire its onclick"; exit 1; }
 echo "$WALLS" | grep -q 'frames.nestedForeignFrame .*iframe:cross-origin' \
   || { echo "FAIL: a cross-origin frame must say so, not just come back empty"; exit 1; }
 # The only shape available for a sealed subtree, and it IS readable across origins:
