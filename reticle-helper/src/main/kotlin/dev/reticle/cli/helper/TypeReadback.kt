@@ -51,7 +51,7 @@ internal object TypeReadback {
          * are MISSING from the middle or the end — characters were dropped, not
          * transformed.
          *
-         * Measured on a masked postcode field: `--text "00-950"` left `00-50`, one
+         * Measured on a masked postcode field: `--text "12-345"` left `12-45`, one
          * digit short. That is not a prefix (the tail `0` arrived), so it used to
          * classify as [CHANGED] — "the app transformed its input, not a defect" —
          * and a lost digit went out under the same label as an uppercasing. The

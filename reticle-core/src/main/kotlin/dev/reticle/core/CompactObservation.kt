@@ -236,10 +236,10 @@ data class CompactObservation(
                             // This started as a text-field rule and a real form showed
                             // why it cannot be: a component-library select is a
                             // `<button>` that displays the chosen value as its own text,
-                            // so five of them projected as `button "大学教育"`,
-                            // `button "我有工作"`, … — five values with nothing saying
-                            // which field each belonged to, the same defect the rule was
-                            // written to fix, one element type over. A node with only one
+                            // so five of them projected as `button "<value>"` — five
+                            // values with nothing saying which field each belonged to,
+                            // the same defect the rule was written to fix, one element
+                            // type over. A node with only one
                             // of the two still puts it in the label slot rather than
                             // leaving the line anonymous.
                             label = node.text?.takeIf { it.isNotEmpty() } ?: node.contentDescription,
