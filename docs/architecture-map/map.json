@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "Reticle",
-    "version": "0.18.0",
+    "version": "0.18.1",
     "tagline": "Inspects the app that is actually running, resolves precise selectors, and drives real input.",
     "generatedFrom": ["AGENTS.md", "docs/architecture.md", "docs/boundaries.md", "docs/ios.md"],
     "invariants": [
