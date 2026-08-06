@@ -1218,6 +1218,20 @@ REF_HANDLE="$(echo "$REF_MISS" | sed -n "s/.*by hand): '\([^']*\)'.*/\1/p")"
 R ui node --live --package "$PKG" --css "$REF_HANDLE" >/dev/null \
   || { echo "FAIL: the offered handle '$REF_HANDLE' does not resolve"; exit 1; }
 
+# What `ui outline` PRINTS for a DOM node is the shortest form that still names it,
+# not its lineage. Measured on a hybrid form, the full-path version cost 17.8 KB for
+# one screen against 5.9 KB for the same screen's `ui compact` — the view documented
+# as the cheap ad-hoc loop was the most expensive one to read. The safety property is
+# what this checks: whatever it prints must re-resolve to the node it labelled.
+OUTLINE="$(R ui outline --live --package "$PKG")"
+OUTLINE_CSS="$(echo "$OUTLINE" | sed -n 's/^@[0-9]* css=\(.*\) textField \[.*/\1/p' | head -1)"
+[ -n "$OUTLINE_CSS" ] || { echo "FAIL: no css handle in the outline of a web screen; got: $OUTLINE"; exit 1; }
+case "$OUTLINE_CSS" in
+  body*) echo "FAIL: an outline handle must not be the whole lineage: $OUTLINE_CSS"; exit 1 ;;
+esac
+R ui node --live --package "$PKG" --css "$OUTLINE_CSS" >/dev/null \
+  || { echo "FAIL: the outline's own handle '$OUTLINE_CSS' does not resolve"; exit 1; }
+
 # A construct the matcher does not implement is REFUSED by name, never answered as
 # a miss: "not understood" and "no such element" lead to opposite next actions.
 UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>&1 || true)"
