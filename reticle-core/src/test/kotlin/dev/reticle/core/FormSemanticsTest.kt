@@ -76,6 +76,45 @@ class FormSemanticsTest {
     }
 
     @Test
+    fun anEmptyFieldAndAFilledOneCannotReadAlike() {
+        // Measured on a real form whose field names come from sibling `<label>`s: an
+        // EMPTY input printed `textField "Given name"`, which is also exactly how a field
+        // someone had typed `Given name` into prints. "Is this filled?" could not be
+        // answered from the projection at all. The name belongs in the slot every
+        // other control already puts it in, and an absent quoted value IS the answer.
+        val snap = snapshot(
+            field("empty", label = "Given name"),
+            Node(
+                ref = "filled", parentRef = "root", kind = NodeKind.domNode, typeName = "DOMElement",
+                role = "textField", text = "Ada", contentDescription = "Given name",
+                frame = Rect(60.0, 600.0, 960.0, 120.0), isInteractive = true,
+            ),
+        )
+
+        val empty = lineFor("empty", snap)
+        val filled = lineFor("filled", snap)
+        assertTrue(empty.contains("name:\"Given name\""), "an empty field must still say which field it is: $empty")
+        assertTrue(!empty.contains("\"Given name\" ["), "an accname must not sit in the value slot: $empty")
+        assertTrue(filled.contains("\"Ada\""), "a filled field shows what it holds: $filled")
+        assertTrue(filled.contains("name:\"Given name\""), "…and still says which field: $filled")
+        assertTrue(empty != filled, "empty and filled must not render identically")
+    }
+
+    @Test
+    fun anEmptyNamedFieldSurvivesTheFold() {
+        // The regression this change could have caused: the fold treats a node with no
+        // testId/label as an anonymous layer, so moving the accname out of the label
+        // slot would have made every empty field foldable into a neighbouring row —
+        // dropping the only thing that says which field it is.
+        val snap = snapshot(
+            field("wrapper", role = "div", label = null),
+            field("empty", label = "Given name"),
+        )
+        val items = CompactObservation.from(snap).items
+        assertTrue(items.any { it.ref == "empty" }, "an empty but named field must not be folded away")
+    }
+
+    @Test
     fun aPlaceholderIsWhatTheFieldAsksForNotWhatItHolds() {
         val snap = snapshot(
             field("empty", custom = mapOf("domPlaceholder" to MetadataValue.Text("Email"))),
