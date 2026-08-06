@@ -140,9 +140,30 @@ enum WebViewBridge {
             styleChannels: domMetadata.keys
                 .filter { $0.hasPrefix("domStyle") }
                 .reduce(into: [String: StyleChannel]()) { $0[$1] = .computedStyle },
-            children: childRefs
+            children: childRefs,
+            // The DOM's own scroll port, published as the capability a native
+            // container publishes — a pane (or a frame, which scrolls its own
+            // document) that can still move now says so.
+            scroll: scrollInfo(for: element)
         )
         return ref
+    }
+
+    /// The scroll numbers the traversal read from this element's scroll port, or nil
+    /// when it has none. The rule lives in `DomScroll` (with a Kotlin twin), not
+    /// here, so both platforms answer alike.
+    private static func scrollInfo(for element: [String: Any]) -> ScrollInfo? {
+        func metric(_ key: String) -> Double {
+            (element[key] as? NSNumber)?.doubleValue ?? -1
+        }
+        return DomScroll.fromMetrics(
+            scrollLeft: metric("scrollLeft"),
+            scrollTop: metric("scrollTop"),
+            scrollWidth: metric("scrollWidth"),
+            scrollHeight: metric("scrollHeight"),
+            clientWidth: metric("scrollClientWidth"),
+            clientHeight: metric("scrollClientHeight")
+        )
     }
 
     private static func metadata(for element: [String: Any], tag: String, fold: CoordinateFold) -> [String: MetadataValue] {
@@ -177,6 +198,35 @@ enum WebViewBridge {
         // thing that says which one is the email field.
         if bool(element["clipped"]) { map["domClipped"] = .bool(true) }
         if bool(element["crossOriginFrame"]) { map["domCrossOriginFrame"] = .bool(true) }
+        // A frame's identity and the reason its subtree is empty, if it is. All of
+        // these are readable across origins — policy withholds the document, not the
+        // element — and they are what separates "still loading, retry" from "another
+        // origin, use coordinates" from "the page sandboxed it, fix the page".
+        putText("domFrameOpaque", "frameOpaque")
+        putText("domFrameName", "frameName")
+        putText("domFrameUrl", "frameUrl")
+        putText("domFrameReadyState", "frameReadyState")
+        putText("domFrameSandbox", "frameSandbox")
+        putText("domFrameAllow", "frameAllow")
+        putText("domFrameLoading", "frameLoading")
+        if let childFrames = element["frameChildCount"] as? NSNumber, childFrames.int64Value >= 0 {
+            map["domFrameChildCount"] = .integer(childFrames.int64Value)
+        }
+        // A rotated or skewed frame in the chain: the rect is the axis-aligned hull
+        // of the real box, so a tap at its centre can miss. Stated, not smoothed.
+        if bool(element["geometryApprox"]) { map["domGeometryApprox"] = .bool(true) }
+        // The numbers behind the `scroll:` capability, kept as evidence: "one flick
+        // left" and "twenty screens left" are the same flag and different situations.
+        for (metadataKey, elementKey) in [
+            ("domScrollLeft", "scrollLeft"), ("domScrollTop", "scrollTop"),
+            ("domScrollWidth", "scrollWidth"), ("domScrollHeight", "scrollHeight"),
+            ("domScrollClientWidth", "scrollClientWidth"),
+            ("domScrollClientHeight", "scrollClientHeight"),
+        ] {
+            if let value = element[elementKey] as? NSNumber, value.int64Value >= 0 {
+                map[metadataKey] = .integer(value.int64Value)
+            }
+        }
         putText("domHasPopup", "hasPopup")
         // Only where the pointer STARTS, and only as the weak signal it is: the
         // page said "clickable" and nothing declared a role.

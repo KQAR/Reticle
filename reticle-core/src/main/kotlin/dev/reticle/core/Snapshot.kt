@@ -578,6 +578,44 @@ data class Node(
     fun domCrossOriginFrame(): Boolean =
         (custom["domCrossOriginFrame"] as? MetadataValue.Bool)?.value ?: false
 
+    /**
+     * Why a frame's subtree is empty: `"cross-origin"`, `"sandboxed"`, or
+     * `"not-loaded"` — null when this frame's document WAS read, or this is not a
+     * frame.
+     *
+     * The three demand opposite moves from a caller — retry, use coordinates, fix
+     * the page — and used to be one flag. A `sandbox` without `allow-same-origin`
+     * in particular is the page's own choice on a frame that may well be same-site,
+     * so reporting it as cross-origin sent readers looking for a domain problem
+     * that was never there.
+     */
+    fun domFrameOpaque(): String? =
+        (custom["domFrameOpaque"] as? MetadataValue.Text)?.value?.takeIf { it.isNotBlank() }
+
+    /**
+     * The frame's `name` attribute, its document URL, and how many frames are
+     * nested inside it — read from the PARENT document, so they survive a frame
+     * whose contents do not. `domFrameChildCount()` is null when even that was
+     * refused.
+     */
+    fun domFrameName(): String? =
+        (custom["domFrameName"] as? MetadataValue.Text)?.value?.takeIf { it.isNotBlank() }
+
+    fun domFrameUrl(): String? =
+        (custom["domFrameUrl"] as? MetadataValue.Text)?.value?.takeIf { it.isNotBlank() }
+
+    fun domFrameChildCount(): Long? =
+        (custom["domFrameChildCount"] as? MetadataValue.Integer)?.value
+
+    /**
+     * True when a frame in this node's chain is rotated or skewed, so [frame] is
+     * the axis-aligned hull of the real box rather than the box. Its centre may sit
+     * outside the element, which is a tap that misses — reported instead of
+     * smoothed over.
+     */
+    fun domGeometryApprox(): Boolean =
+        (custom["domGeometryApprox"] as? MetadataValue.Bool)?.value ?: false
+
     /** The element's tag name, lowercased by the traversal script. */
     fun domTag(): String? = (custom["domTag"] as? MetadataValue.Text)?.value
 

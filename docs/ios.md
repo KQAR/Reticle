@@ -87,7 +87,12 @@ Borrowing Playwright's injected-script design (not its runtime — Playwright
 cannot attach to a system WKWebView), the walk additionally pierces **open
 shadow roots** and **same-origin iframes**: pierced elements carry a chained
 selector (`#shadow-host >>> #shadow-button`) and iframe content coordinates are
-folded into page space. Cross-origin frames stay opaque. And `act activate
+folded into page space, scale included (a frame under `transform: scale(…)` folds
+exactly; a rotated one marks its children `geometry:approx` rather than passing a
+hull off as a box). A frame whose document is withheld stays opaque and says which
+wall it is — `iframe:cross-origin`, `iframe:sandboxed`, `iframe:not-loaded` — while
+still publishing what IS readable from outside it (`name`, `src`, nested frame
+count) and, when it was read, its own document's scroll travel. And `act activate
 --css <chain>` performs an in-process DOM activation: the agent resolves the
 chain in the live document, runs an actionability check (attached / visible /
 enabled / receives pointer events — honest reasons on failure), then dispatches

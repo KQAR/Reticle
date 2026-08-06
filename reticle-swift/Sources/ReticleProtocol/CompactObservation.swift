@@ -235,6 +235,8 @@ public struct CompactObservation: Codable, Sendable {
                         domUnavailable: node.domUnavailable(),
                         domCappedAt: node.domCappedAt(),
                         crossOriginFrame: node.domCrossOriginFrame(),
+                        frameOpaque: node.domFrameOpaque(),
+                        geometryApprox: node.domGeometryApprox(),
                         domKernelUnsupported: node.domKernelUnsupported(),
                         pixelsUnavailable: node.pixelsUnavailable(),
                         screencapBlank: node.screencapBlank()
@@ -423,6 +425,17 @@ public struct CompactItem: Codable, Sendable {
     /// indistinguishable from a frame still loading, so without it the honest
     /// answer reads as "try again". See the Kotlin twin.
     public var crossOriginFrame: Bool
+    /// Why this frame's subtree is empty when the reason is NOT origin policy:
+    /// `"sandboxed"` (the page's own `sandbox` withheld same-origin access, on a
+    /// frame that may well be same-site) or `"not-loaded"` (a pending `src`, the one
+    /// case where retrying IS right). Rendered as ` iframe:<reason>`;
+    /// `"cross-origin"` keeps `crossOriginFrame` above, so exactly one marker
+    /// appears. See the Kotlin twin.
+    public var frameOpaque: String?
+    /// True when a frame in this item's chain is rotated or skewed: `frame` is the
+    /// axis-aligned hull of the real box, so its centre may sit outside the element.
+    /// Rendered as ` geometry:approx`. See the Kotlin twin.
+    public var geometryApprox: Bool
     /// True when this node is a suspected third-party WebView kernel (X5/UC): no
     /// DOM bridge exists for it at all — a structural boundary, not a degrade.
     public var domKernelUnsupported: Bool
@@ -458,6 +471,8 @@ public struct CompactItem: Codable, Sendable {
         domUnavailable: Bool = false,
         domCappedAt: Int64? = nil,
         crossOriginFrame: Bool = false,
+        frameOpaque: String? = nil,
+        geometryApprox: Bool = false,
         domKernelUnsupported: Bool = false,
         pixelsUnavailable: Bool = false,
         screencapBlank: Bool = false
@@ -484,6 +499,8 @@ public struct CompactItem: Codable, Sendable {
         self.domUnavailable = domUnavailable
         self.domCappedAt = domCappedAt
         self.crossOriginFrame = crossOriginFrame
+        self.frameOpaque = frameOpaque
+        self.geometryApprox = geometryApprox
         self.domKernelUnsupported = domKernelUnsupported
         self.pixelsUnavailable = pixelsUnavailable
         self.screencapBlank = screencapBlank
@@ -524,6 +541,8 @@ public struct CompactItem: Codable, Sendable {
         if domUnavailable { state += " dom:unavailable" }
         if let domCappedAt { state += " dom:capped(\(domCappedAt))" }
         if crossOriginFrame { state += " iframe:cross-origin" }
+        else if let frameOpaque, !frameOpaque.isEmpty { state += " iframe:\(frameOpaque)" }
+        if geometryApprox { state += " geometry:approx" }
         if domKernelUnsupported { state += " dom:unsupported-kernel" }
         if pixelsUnavailable { state += " pixels:unavailable" }
         if screencapBlank { state += " screencap:blank" }
@@ -533,7 +552,8 @@ public struct CompactItem: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
         case isFocused, checked, expanded, hasPopup, placeholder, name, invalid, windowRef, occludedBy, scroll, wheel
-        case domUnavailable, domCappedAt, crossOriginFrame, domKernelUnsupported, pixelsUnavailable, screencapBlank
+        case domUnavailable, domCappedAt, crossOriginFrame, frameOpaque, geometryApprox
+        case domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -560,6 +580,8 @@ public struct CompactItem: Codable, Sendable {
         if domUnavailable { try c.encode(domUnavailable, forKey: .domUnavailable) }
         try c.encodeIfPresent(domCappedAt, forKey: .domCappedAt)
         if crossOriginFrame { try c.encode(crossOriginFrame, forKey: .crossOriginFrame) }
+        try c.encodeIfPresent(frameOpaque, forKey: .frameOpaque)
+        if geometryApprox { try c.encode(geometryApprox, forKey: .geometryApprox) }
         if domKernelUnsupported { try c.encode(domKernelUnsupported, forKey: .domKernelUnsupported) }
         if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
         if screencapBlank { try c.encode(screencapBlank, forKey: .screencapBlank) }
@@ -588,6 +610,8 @@ public struct CompactItem: Codable, Sendable {
         domUnavailable = try c.decodeIfPresent(Bool.self, forKey: .domUnavailable) ?? false
         domCappedAt = try c.decodeIfPresent(Int64.self, forKey: .domCappedAt)
         crossOriginFrame = try c.decodeIfPresent(Bool.self, forKey: .crossOriginFrame) ?? false
+        frameOpaque = try c.decodeIfPresent(String.self, forKey: .frameOpaque)
+        geometryApprox = try c.decodeIfPresent(Bool.self, forKey: .geometryApprox) ?? false
         domKernelUnsupported = try c.decodeIfPresent(Bool.self, forKey: .domKernelUnsupported) ?? false
         pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false
         screencapBlank = try c.decodeIfPresent(Bool.self, forKey: .screencapBlank) ?? false

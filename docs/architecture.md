@@ -384,6 +384,29 @@ since a tap then dispatches at the reported centre and reports `settled=1`. The
 page's scroll offset is still reported, as page state rather than as an input to the
 geometry.
 
+**Inside a frame the fold carries a scale as well as an offset.** A same-origin
+frame's content is laid out in its OWN viewport, and two independent factors can
+scale it on the way out: a CSS transform on the frame element, and a frame viewport
+that differs from the element's content box. The walk accumulates both (plus the
+frame's border, which is in the PARENT's pixels and so takes only the transform
+factor), so a frame under `transform: scale(0.5)` — the shape a responsive
+third-party widget ships in — no longer reports every child at double size in the
+wrong place. What a rect cannot express is a box that is not axis-aligned: under a
+`rotate`/`skew`/`matrix3d` frame the reported rect is `getBoundingClientRect`'s
+hull, so every node beneath such a frame carries `geometry:approx` instead of
+passing a hull off as the box.
+
+**A frame that yields no children says which wall it is.** `contentDocument` either
+throws or returns null, and from outside those look identical to a frame that has
+not loaded — so the walk reads what IS available across origins (attributes, the
+document URL when readable, `contentWindow.length`) and reports one of three
+reasons: `cross-origin` (coordinates are the only path), `sandboxed` (the page's own
+`sandbox` without `allow-same-origin`, which a code change can lift), `not-loaded`
+(a pending `src`, the one case where retrying is right). A frame also publishes its
+INNER document's scroll travel, since a frame scrolls itself and the host page's
+scroll offset says nothing about it; the rule that turns those numbers into
+`scroll:` lives in `DomScroll` (with a Swift twin) so both platforms answer alike.
+
 **The script itself is one file, embedded twice.** Both bridges — Android's and the
 WKWebView twin — run the same JavaScript, and it used to be hand-copied between the
 two agents under a `KEEP IN SYNC` comment: with Kotlin raw strings escaping one way

@@ -95,6 +95,13 @@ class RenderContractTest {
             "wheel:selection-only",
             "wheel:opaque",
             "scroll:",
+            // The three frame walls are one marker family and must stay three: they
+            // ask a caller for opposite moves (coordinates / fix the page / retry),
+            // and collapsing any two of them is the defect this family exists to fix.
+            "iframe:cross-origin",
+            "iframe:sandboxed",
+            "iframe:not-loaded",
+            "geometry:approx",
         )) {
             assertTrue(rendered.any { it.contains(marker) }, "no case renders '$marker'")
         }

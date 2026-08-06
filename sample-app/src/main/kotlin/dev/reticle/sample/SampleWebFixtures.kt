@@ -354,7 +354,41 @@ object SampleWebFixtures {
                 is otherwise byte-for-byte what one that has not loaded looks like.
               -->
               <iframe id="foreign-frame" data-testid="complex.foreignFrame"
-                src="data:text/html,%3Cbutton%20id%3D%22foreign-button%22%3EInside%20foreign%20frame%3C%2Fbutton%3E">
+                src="data:text/html,%3Ciframe%20src%3D%22data%3Atext%2Fhtml%2Cnested%22%3E%3C%2Fiframe%3E%3Cbutton%20id%3D%22foreign-button%22%3EInside%20foreign%20frame%3C%2Fbutton%3E">
+              </iframe>
+              <!--
+                Sandboxed, and NOT cross-origin: `sandbox` without
+                `allow-same-origin` gives the frame an opaque origin, so
+                `contentDocument` is refused exactly as it is for another host —
+                on a frame that is plainly same-site. Its own marker
+                (`iframe:sandboxed`) is what stops a reader hunting a domain
+                problem that does not exist.
+              -->
+              <iframe id="sandbox-frame" data-testid="complex.sandboxFrame" sandbox="allow-scripts"
+                srcdoc="<button id='sandbox-button'>Inside sandboxed frame</button>">
+              </iframe>
+              <!--
+                A frame under `transform: scale(0.5)` — the shape a responsive
+                third-party widget ships in. The content's own pixels are not the
+                page's, so a fold that ignores the transform reports the inner
+                button at double size in the wrong place, silently and plausibly.
+                The button flips its own text, so a COORDINATE tap at the reported
+                centre either proves the fold or misses.
+              -->
+              <iframe id="scaled-frame" data-testid="complex.scaledFrame"
+                style="transform: scale(0.5); transform-origin: top left; width: 320px; height: 120px"
+                srcdoc="<button id='scaled-frame-button' style='font-size: 28px'
+                  onclick='this.innerText=&quot;Scaled frame clicked&quot;'>Inside scaled frame</button>">
+              </iframe>
+              <!--
+                A frame that scrolls its OWN document: the host page's scroll offset
+                says nothing about it, so before the frame published its travel there
+                was no container for a caller to drive and no way to tell a short
+                frame from a truncated one.
+              -->
+              <iframe id="scroll-frame" data-testid="complex.scrollFrame"
+                style="width: 320px; height: 80px"
+                srcdoc="<p style='height: 400px'>Frame top</p><button id='scroll-frame-button'>Frame bottom</button>">
               </iframe>
               <p id="hidden-display">Hidden by display</p>
               <p id="hidden-visibility">Hidden by visibility</p>
