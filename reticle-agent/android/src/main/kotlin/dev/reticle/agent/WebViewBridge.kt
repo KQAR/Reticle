@@ -177,8 +177,12 @@ object WebViewBridge {
      * .frames[j]`), so no forwarding chain is involved.
      */
     private fun spliceFrames(root: JSONObject, webView: WebView, handler: Handler) {
-        if (!WebFrameBridge.isAvailable()) {
-            markOpaque(root, WebFrameBridge.PROBE_UNAVAILABLE)
+        val unavailable = WebFrameBridge.unavailableReason()
+        if (unavailable != null) {
+            // WHICH half is missing, on the node: an app that needs a dependency, a
+            // device that needs a newer WebView, and a call of ours that is wrong are
+            // three different situations, and only the last one is a Reticle bug.
+            markOpaque(root, WebFrameBridge.PROBE_UNAVAILABLE, unavailable)
             return
         }
         var budget = WebFrameBridge.FRAME_BUDGET
@@ -280,14 +284,15 @@ object WebViewBridge {
     }
 
     /** Marks every still-sealed frame in this subtree with one mechanism reason. */
-    private fun markOpaque(node: JSONObject, reason: String) {
+    private fun markOpaque(node: JSONObject, reason: String, detail: String? = null) {
         if (node.optString("frameOpaque").isNotBlank() && node.optString("frameProbe").isBlank()) {
             node.put("frameProbe", reason)
+            if (detail != null) node.put("frameProbeDetail", detail)
         }
         val children = node.optJSONArray("children") ?: return
         for (i in 0 until children.length()) {
             val child = children.optJSONObject(i) ?: continue
-            markOpaque(child, reason)
+            markOpaque(child, reason, detail)
         }
     }
 
@@ -443,6 +448,7 @@ object WebViewBridge {
         // whether a retry (or a page navigation) would change anything, the second that
         // these nodes came from inside a wall.
         putText("domFrameProbe", element.optString("frameProbe"))
+        putText("domFrameProbeDetail", element.optString("frameProbeDetail"))
         putText("domFramePierced", element.optString("framePierced"))
         val childFrames = element.optInt("frameChildCount", -1)
         if (childFrames >= 0) map["domFrameChildCount"] = MetadataValue.Integer(childFrames.toLong())

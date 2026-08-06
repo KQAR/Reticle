@@ -76,6 +76,10 @@ dependencies {
     // APK carries none of the runtime classes.
     "linkedImplementation"(project(":reticle-agent:android"))
     implementation(libs.androidx.appcompat)
+    // The library the per-frame DOM read reflects over (`WebFrameBridge`). Linked HERE
+    // and not by the agent: the agent must link into apps that lack it, and this sample is
+    // what exercises the path where it is present.
+    implementation(libs.androidx.webkit)
     // Real Lottie animation view for the native-lottie-dialog scenario.
     implementation(libs.lottie)
     // Compose scenario: the SemanticsNode tree the agent reads reflectively.
