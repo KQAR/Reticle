@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **`ui style --ref` / `--css` scope the report, instead of being accepted and
+  ignored.** The flags were parsed, sent through the host, and dropped at the
+  render, so every call reported the entire screen. Measured on a hybrid screen:
+  `--ref r397` returned the same **2978 lines** as no selector at all — byte for
+  byte — with the asked-for node sitting on line 2912. A silently ignored selector
+  is worse than an unsupported one, because the answer looks like an answer, and the
+  cost lands twice: the wrong data and the tokens to carry it. The same call now
+  reports **12 lines**, and a selector that matches nothing fails the way `ui node`
+  does rather than quietly widening to everything.
+- **A css miss on a screen with a cross-origin frame names the wall.** A selector
+  aimed inside such a frame can never match — browser policy withholds the document,
+  so the walk captured the frame element and nothing under it. Measured against a
+  real bank widget: `--css 'iframe >>> button'` answered with the generic "no
+  matching node … candidates sharing part of it: 'iframe'" plus a recycling-list
+  note that had nothing to do with it, so a case where NO selector exists read as
+  "try another selector". The miss now says the frame is cross-origin, names it with
+  its rect, states that `>>>` cannot cross it either, and points at `--point` and
+  `ui coverage`. The recycling-list note is suppressed for a piercing selector on
+  such a screen, for the same reason it is already suppressed for a `--ref` miss on
+  a DOM screen: it is a wrong lead, not a weak one.
+
 - **A named field's name reaches its control and the point inside it.** Two halves
   of the same gap, both measured on a real form:
   - **A component-library select is a `<button>` that displays the chosen value as
