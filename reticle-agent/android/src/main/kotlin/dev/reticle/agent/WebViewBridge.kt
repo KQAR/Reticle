@@ -104,6 +104,10 @@ object WebViewBridge {
         val payload = decodeJavascriptString(encoded) ?: return Walk(emptyList())
         val json = runCatching { JSONObject(payload) }.getOrNull() ?: return Walk(emptyList())
         val root = json.optJSONObject("root") ?: return Walk(emptyList())
+        // Frames whose document the page may not read are walked IN THEIR OWN context
+        // and spliced into this JSON before any node is built, so a control read that
+        // way is an ordinary DOM node. Only paid for on a screen that has such a frame.
+        if (hasOpaqueFrame(root)) spliceFrames(root, pending.webView, handler)
         val fold = CoordinateFold.from(json, pending.webViewFrame, density)
         val ref = visit(root, pending.parentRef, fold, nodes, makeRef)
         return Walk(
@@ -142,6 +146,149 @@ object WebViewBridge {
         return runCatching {
             JSONObject("{\"value\":$encoded}").optString("value").nullIfBlank()
         }.getOrNull()
+    }
+
+    /**
+     * Is there a frame here whose document the page itself could not walk? Asked before
+     * anything else: the per-frame path costs a JS round trip per frame, and the
+     * overwhelming majority of pages have no such frame.
+     */
+    private fun hasOpaqueFrame(node: JSONObject): Boolean {
+        if (node.optString("frameOpaque").isNotBlank()) return true
+        val children = node.optJSONArray("children") ?: return false
+        for (i in 0 until children.length()) {
+            val child = children.optJSONObject(i) ?: continue
+            if (hasOpaqueFrame(child)) return true
+        }
+        return false
+    }
+
+    /**
+     * Walk every readable-but-sealed frame in its own context and splice the result
+     * under the frame element, in the raw traversal JSON.
+     *
+     * The geometry is NOT recomputed here: the enclosing frame's fold is handed to the
+     * traversal script through `reticleFrameCtx`, exactly as the iOS twin does it, so
+     * every line of frame geometry stays in dom-traversal.js. A second copy in Kotlin
+     * and a third in Swift is how one rect gets three answers.
+     *
+     * One round per depth level, because a frame's own children are only known once it
+     * has answered — and a nested frame is addressed directly (`window.frames[i]
+     * .frames[j]`), so no forwarding chain is involved.
+     */
+    private fun spliceFrames(root: JSONObject, webView: WebView, handler: Handler) {
+        if (!WebFrameBridge.isAvailable()) {
+            markOpaque(root, WebFrameBridge.PROBE_UNAVAILABLE)
+            return
+        }
+        var budget = WebFrameBridge.FRAME_BUDGET
+        var level = listOf("" to root)
+        var depth = 0
+        while (depth < WebFrameBridge.DEPTH_BUDGET && level.isNotEmpty()) {
+            val requests = ArrayList<WebFrameBridge.Request>()
+            val frameNodes = HashMap<String, JSONObject>()
+            for ((prefix, subtree) in level) {
+                budget = collectOpaque(subtree, prefix, budget, requests, frameNodes)
+            }
+            if (requests.isEmpty()) return
+            val payloads = WebFrameBridge.read(webView, requests, handler)
+            val next = ArrayList<Pair<String, JSONObject>>()
+            for (request in requests) {
+                val node = frameNodes[request.path] ?: continue
+                val payload = payloads[request.path]
+                if (payload == null) {
+                    // No probe answered: the document loaded before the injection was
+                    // registered, or the frame cannot script at all. Stated, not guessed
+                    // — and NOT fixed by reloading the app's page from here.
+                    node.put("frameProbe", WebFrameBridge.PROBE_NEEDS_RELOAD)
+                    continue
+                }
+                val childRoot = runCatching { JSONObject(payload).optJSONObject("root") }.getOrNull()
+                if (childRoot == null) {
+                    node.put("frameProbe", WebFrameBridge.PROBE_FAILED)
+                    continue
+                }
+                node.append("children", childRoot)
+                // The wall is no longer a wall. Leaving the marker would tell a caller
+                // coordinates are the only way in while a selector now resolves — and
+                // ScreenCoverage reads the same fields.
+                node.put("frameOpaque", "")
+                node.put("crossOriginFrame", false)
+                node.put("framePierced", "per-frame")
+                next.add(request.path to childRoot)
+            }
+            level = next
+            depth++
+        }
+        // Past the depth allowance: what was dropped says so rather than reading as an
+        // empty frame.
+        for ((_, subtree) in level) markOpaque(subtree, WebFrameBridge.PROBE_DEPTH_BUDGET)
+    }
+
+    /** Collects one level's sealed frames, marking the ones this capture cannot afford. */
+    private fun collectOpaque(
+        node: JSONObject,
+        prefix: String,
+        budgetIn: Int,
+        requests: MutableList<WebFrameBridge.Request>,
+        frameNodes: MutableMap<String, JSONObject>,
+    ): Int {
+        var budget = budgetIn
+        if (node.optString("frameOpaque").isNotBlank()) {
+            val index = node.optInt("frameIndex", -1)
+            when {
+                // No index means `contentWindow` itself was refused, so the frame has no
+                // identity to address it by — there is nothing to ask.
+                index < 0 -> node.put("frameProbe", WebFrameBridge.PROBE_NO_HANDLE)
+                budget <= 0 -> node.put("frameProbe", WebFrameBridge.PROBE_BUDGET)
+                else -> {
+                    budget -= 1
+                    val path = if (prefix.isEmpty()) "$index" else "$prefix/$index"
+                    val chain = node.optString("selector")
+                    requests.add(WebFrameBridge.Request(path, frameContext(node), chain))
+                    frameNodes[path] = node
+                }
+            }
+        }
+        val children = node.optJSONArray("children") ?: return budget
+        for (i in 0 until children.length()) {
+            val child = children.optJSONObject(i) ?: continue
+            // Siblings and descendants in the SAME document keep this document's path: a
+            // path identifies a frame, not an element.
+            budget = collectOpaque(child, prefix, budget, requests, frameNodes)
+        }
+        return budget
+    }
+
+    /** The fold a frame's own walk needs from this side. Mirrors `frameScript` on iOS. */
+    private fun frameContext(node: JSONObject): JSONObject {
+        val scaleX = node.optDouble("frameScaleX", 1.0).let { if (it == 0.0) 1.0 else it }
+        val scaleY = node.optDouble("frameScaleY", 1.0).let { if (it == 0.0) 1.0 else it }
+        return JSONObject()
+            // The frame's border is in the PARENT's pixels, so it takes the transform
+            // factor (already folded into frameScale*) and not the frame's own viewport
+            // factor, which applies only inside.
+            .put("x", node.optDouble("left", 0.0) + node.optDouble("frameClientLeft", 0.0) * scaleX)
+            .put("y", node.optDouble("top", 0.0) + node.optDouble("frameClientTop", 0.0) * scaleY)
+            .put("sx", scaleX)
+            .put("sy", scaleY)
+            .put("approx", node.optBoolean("frameSkewed", false))
+            // The parent cannot read a foreign frame's viewport; the inside finishes the
+            // scale from these.
+            .put("contentWidth", node.optDouble("frameClientWidth", -1.0))
+            .put("contentHeight", node.optDouble("frameClientHeight", -1.0))
+    }
+
+    /** Marks every still-sealed frame in this subtree with one mechanism reason. */
+    private fun markOpaque(node: JSONObject, reason: String) {
+        if (node.optString("frameOpaque").isNotBlank() && node.optString("frameProbe").isBlank()) {
+            node.put("frameProbe", reason)
+        }
+        val children = node.optJSONArray("children") ?: return
+        for (i in 0 until children.length()) {
+            val child = children.optJSONObject(i) ?: continue
+            markOpaque(child, reason)
+        }
     }
 
     private fun visit(
@@ -291,6 +438,12 @@ object WebViewBridge {
         putText("domFrameSandbox", element.optString("frameSandbox"))
         putText("domFrameAllow", element.optString("frameAllow"))
         putText("domFrameLoading", element.optString("frameLoading"))
+        // Why a frame that COULD have been read in its own context was not, and how one
+        // that was got read. Both are about the MECHANISM, not the page: the first says
+        // whether a retry (or a page navigation) would change anything, the second that
+        // these nodes came from inside a wall.
+        putText("domFrameProbe", element.optString("frameProbe"))
+        putText("domFramePierced", element.optString("framePierced"))
         val childFrames = element.optInt("frameChildCount", -1)
         if (childFrames >= 0) map["domFrameChildCount"] = MetadataValue.Integer(childFrames.toLong())
         // A rotated or skewed frame in the chain: the rect is the axis-aligned hull
