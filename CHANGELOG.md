@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS
   half landed first; this is the other direction, because Android has no per-frame
