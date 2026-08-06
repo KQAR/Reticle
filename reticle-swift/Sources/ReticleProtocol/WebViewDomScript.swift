@@ -147,10 +147,9 @@ public enum WebViewDomScript {
       // component library uses for a select: a <button> (or a div declaring the
       // button role, or one declaring a popup / expanded state) that OPENS a list
       // and then displays the chosen value as its own text. Measured on a real
-      // form: five such dropdowns projected as `button "大学教育" collapsed`,
-      // `button "我有工作" collapsed`, … — five values with nothing saying which
-      // field each one belonged to, so the only way to tell was their order down
-      // the page.
+      // form: five such dropdowns projected as `button "<value>" collapsed` — five
+      // values with nothing saying which field each one belonged to, so the only
+      // way to tell was their order down the page.
       function isNameableControl(el) {
         if (isFormControl(el)) return true;
         if (tagOf(el) === "button") return true;
