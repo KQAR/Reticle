@@ -371,6 +371,17 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// Why a frame whose document the page may not read was ALSO not read in its own
+    /// context: `"needs-reload"` (the probe reaches only documents loaded after it was
+    /// installed), `"budget"` / `"depth-budget"`, `"no-handle"`, `"failed"`. nil when
+    /// the frame WAS read, or when there was no wall. Distinct from `domFrameOpaque` —
+    /// that one is about the page, this one about the mechanism, and only this one can
+    /// change without the page changing. See the Kotlin twin.
+    public func domFrameProbe() -> String? {
+        if case .text(let v)? = custom["domFrameProbe"], !v.isEmpty { return v }
+        return nil
+    }
+
     /// True when a frame in this node's chain is rotated or skewed, so `frame` is the
     /// axis-aligned hull of the real box rather than the box. See the Kotlin twin.
     public func domGeometryApprox() -> Bool {

@@ -172,8 +172,21 @@ enum SampleWebFixtures {
                 problem that does not exist.
               -->
               <iframe id="sandbox-frame" data-testid="complex.sandboxFrame" sandbox="allow-scripts"
-                srcdoc="<button id='sandbox-button'>Inside sandboxed frame</button>">
+                srcdoc="<button id='sandbox-button'
+                  onclick='this.innerText=&quot;Sandbox clicked&quot;'>Inside sandboxed frame</button>">
               </iframe>
+              <!--
+                Re-navigates the sealed frames. This is the app's own button on purpose:
+                a per-frame probe only reaches documents loaded AFTER it is installed,
+                and Reticle will not reload a page to widen its own reach — that would
+                be the observer changing the thing observed. So the boundary is
+                exercised the way a real app clears it: the page navigates the frame,
+                and the frame is readable from then on.
+              -->
+              <button id="reload-frames" data-testid="complex.reloadFrames"
+                onclick="var f = document.getElementById('sandbox-frame'); f.srcdoc = f.srcdoc;">
+                Reload sealed frames
+              </button>
               <!--
                 A frame under `transform: scale(0.5)` — the shape a responsive
                 third-party widget ships in. The content's own pixels are not the

@@ -36,9 +36,18 @@ enum WebViewBridge {
             guard let payload = evaluate(p.webView),
                   let data = payload.data(using: .utf8),
                   let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let root = json["root"] as? [String: Any] else {
+                  var root = json["root"] as? [String: Any] else {
                 markDomUnavailable(&snapshot, p.parentRef)
                 continue
+            }
+            // Frames the page itself may not read are walked in their OWN context
+            // (`WebFrameProbe`), then spliced in here. Only paid for on a screen that
+            // has such a frame: the handshake and the per-frame reads are main-queue
+            // round trips, and most pages have none.
+            if hasOpaqueFrame(root) {
+                WebFrameProbe.handshake(p.webView)
+                var budget = WebFrameProbe.frameBudget
+                root = spliceFrames(root, webView: p.webView, path: "", depth: 0, budget: &budget)
             }
             let fold = CoordinateFold(json: json, webViewFrame: p.frame)
             var domNodes: [String: Node] = [:]
@@ -83,6 +92,126 @@ enum WebViewBridge {
     /// between those two points.
     private final class ResultBox: @unchecked Sendable {
         var value: String?
+    }
+
+    // MARK: - Frames the page may not read
+
+    /// Is there a frame on this page whose document the page itself could not walk?
+    /// Asked before anything else, because the per-frame path costs main-queue round
+    /// trips and the overwhelming majority of pages have no such frame.
+    private static func hasOpaqueFrame(_ node: [String: Any]) -> Bool {
+        if str(node["frameOpaque"]) != nil { return true }
+        for case let child as [String: Any] in (node["children"] as? [Any]) ?? [] {
+            if hasOpaqueFrame(child) { return true }
+        }
+        return false
+    }
+
+    /// Walks each opaque frame IN ITS OWN CONTEXT and splices the result under the
+    /// frame element, in the raw traversal JSON — before `visit`, so there is exactly
+    /// one node-building path and the spliced nodes are indistinguishable from any
+    /// other DOM node (which is the point: an agent should not have to know which
+    /// mechanism read a control).
+    ///
+    /// The geometry is NOT recomputed here. The enclosing frame's fold is handed to
+    /// the traversal script through `reticleFrameCtx`, so every line of frame geometry
+    /// stays in `dom-traversal.js` — a second copy in Swift and a third in Kotlin is
+    /// how one rect gets three answers.
+    private static func spliceFrames(
+        _ input: [String: Any],
+        webView: WKWebView,
+        path: String,
+        depth: Int,
+        budget: inout Int
+    ) -> [String: Any] {
+        var node = input
+        // Siblings and descendants in the SAME document keep this document's path — a
+        // path identifies a frame, not an element.
+        if let children = node["children"] as? [Any] {
+            node["children"] = children.map { child -> Any in
+                guard let dict = child as? [String: Any] else { return child }
+                return spliceFrames(dict, webView: webView, path: path, depth: depth, budget: &budget)
+            }
+        }
+        guard str(node["frameOpaque"]) != nil else { return node }
+        // Without an index there is no identity to key a frame by, so there is nothing
+        // to look up: `contentWindow` itself was refused.
+        guard let index = (node["frameIndex"] as? NSNumber)?.intValue, index >= 0 else {
+            node["frameProbe"] = "no-handle"
+            return node
+        }
+        guard depth < WebFrameProbe.depthBudget else {
+            node["frameProbe"] = "depth-budget"
+            return node
+        }
+        guard budget > 0 else {
+            node["frameProbe"] = "budget"
+            return node
+        }
+        let framePath = path.isEmpty ? "\(index)" : "\(path)/\(index)"
+        let table = WebFrameProbe.table(for: webView)
+        // No probe answered for this frame: it was loaded before the probe existed, or
+        // it has no scripting at all. Reported, never guessed at — and NOT fixed by
+        // reloading the app's page from here: that is the app's state, not ours.
+        guard let frame = table.frame(framePath) else {
+            node["frameProbe"] = "needs-reload"
+            return node
+        }
+        let chain = str(node["selector"]) ?? ""
+        guard let script = frameScript(for: node, chain: chain) else {
+            node["frameProbe"] = "failed"
+            return node
+        }
+        budget -= 1
+        table.setChainPrefix(framePath, chain)
+        guard let payload = WebFrameProbe.evaluate(script, in: frame.info, webView: webView),
+              let data = payload.data(using: .utf8),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              var childRoot = json["root"] as? [String: Any] else {
+            node["frameProbe"] = "failed"
+            return node
+        }
+        // A frame we just read may itself hold frames it cannot read.
+        childRoot = spliceFrames(childRoot, webView: webView, path: framePath, depth: depth + 1, budget: &budget)
+        node["children"] = ((node["children"] as? [Any]) ?? []) + [childRoot]
+        // The wall is no longer a wall. Leaving the marker would tell a caller that
+        // coordinates are the only way in while selectors now resolve — and
+        // `ScreenCoverage` reads the same fields to decide whether a region has any
+        // selector over it at all.
+        node["frameOpaque"] = ""
+        node["crossOriginFrame"] = false
+        node["framePierced"] = "per-frame"
+        return node
+    }
+
+    /// The traversal script, prefixed with the fold and selector chain of the frame it
+    /// is about to run in.
+    private static func frameScript(for node: [String: Any], chain: String) -> String? {
+        let scaleX = double(node["frameScaleX"])
+        let scaleY = double(node["frameScaleY"])
+        let ctx: [String: Any] = [
+            // The frame's border is in the PARENT's pixels, so it takes the transform
+            // factor (already folded into frameScale*) and not the frame's own
+            // viewport factor, which applies only inside.
+            "x": double(node["left"]) + double(node["frameClientLeft"]) * scaleX,
+            "y": double(node["top"]) + double(node["frameClientTop"]) * scaleY,
+            "sx": scaleX == 0 ? 1 : scaleX,
+            "sy": scaleY == 0 ? 1 : scaleY,
+            "approx": bool(node["frameSkewed"]),
+            // The parent cannot read a foreign frame's viewport; the inside finishes
+            // the scale from these.
+            "contentWidth": double(node["frameClientWidth"]),
+            "contentHeight": double(node["frameClientHeight"]),
+        ]
+        guard let ctxData = try? JSONSerialization.data(withJSONObject: ctx),
+              let ctxJSON = String(data: ctxData, encoding: .utf8),
+              let chainData = try? JSONSerialization.data(withJSONObject: [chain]),
+              let chainJSON = String(data: chainData, encoding: .utf8) else { return nil }
+        return """
+        var reticleFrameCtx = \(ctxJSON);
+        var reticleFramePrefix = \(chainJSON)[0];
+        \(WebViewDomScript.script)
+        """
     }
 
     private static func visit(
@@ -209,6 +338,12 @@ enum WebViewBridge {
         putText("domFrameSandbox", "frameSandbox")
         putText("domFrameAllow", "frameAllow")
         putText("domFrameLoading", "frameLoading")
+        // Why a frame that COULD have been read per-frame was not, and how one that
+        // was got read. Both are about the mechanism, not the page, and both matter to
+        // a caller: the first says whether anything would change on a retry, the
+        // second that these nodes came from inside a wall.
+        putText("domFrameProbe", "frameProbe")
+        putText("domFramePierced", "framePierced")
         if let childFrames = element["frameChildCount"] as? NSNumber, childFrames.int64Value >= 0 {
             map["domFrameChildCount"] = .integer(childFrames.int64Value)
         }

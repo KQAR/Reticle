@@ -236,6 +236,7 @@ public struct CompactObservation: Codable, Sendable {
                         domCappedAt: node.domCappedAt(),
                         crossOriginFrame: node.domCrossOriginFrame(),
                         frameOpaque: node.domFrameOpaque(),
+                        frameProbe: node.domFrameProbe(),
                         geometryApprox: node.domGeometryApprox(),
                         domKernelUnsupported: node.domKernelUnsupported(),
                         pixelsUnavailable: node.pixelsUnavailable(),
@@ -432,6 +433,12 @@ public struct CompactItem: Codable, Sendable {
     /// `"cross-origin"` keeps `crossOriginFrame` above, so exactly one marker
     /// appears. See the Kotlin twin.
     public var frameOpaque: String?
+    /// Why a walled frame was not read in its own context either, when the platform can
+    /// do that at all: `"needs-reload"`, `"budget"`, `"depth-budget"`, `"no-handle"`,
+    /// `"failed"`. Rendered as ` iframe:probe-<reason>`, BESIDE the wall marker rather
+    /// than instead of it — the wall says what the page allows, this says whether the one
+    /// mechanism that can cross it got a turn. See the Kotlin twin.
+    public var frameProbe: String?
     /// True when a frame in this item's chain is rotated or skewed: `frame` is the
     /// axis-aligned hull of the real box, so its centre may sit outside the element.
     /// Rendered as ` geometry:approx`. See the Kotlin twin.
@@ -472,6 +479,7 @@ public struct CompactItem: Codable, Sendable {
         domCappedAt: Int64? = nil,
         crossOriginFrame: Bool = false,
         frameOpaque: String? = nil,
+        frameProbe: String? = nil,
         geometryApprox: Bool = false,
         domKernelUnsupported: Bool = false,
         pixelsUnavailable: Bool = false,
@@ -500,6 +508,7 @@ public struct CompactItem: Codable, Sendable {
         self.domCappedAt = domCappedAt
         self.crossOriginFrame = crossOriginFrame
         self.frameOpaque = frameOpaque
+        self.frameProbe = frameProbe
         self.geometryApprox = geometryApprox
         self.domKernelUnsupported = domKernelUnsupported
         self.pixelsUnavailable = pixelsUnavailable
@@ -542,6 +551,7 @@ public struct CompactItem: Codable, Sendable {
         if let domCappedAt { state += " dom:capped(\(domCappedAt))" }
         if crossOriginFrame { state += " iframe:cross-origin" }
         else if let frameOpaque, !frameOpaque.isEmpty { state += " iframe:\(frameOpaque)" }
+        if let frameProbe, !frameProbe.isEmpty { state += " iframe:probe-\(frameProbe)" }
         if geometryApprox { state += " geometry:approx" }
         if domKernelUnsupported { state += " dom:unsupported-kernel" }
         if pixelsUnavailable { state += " pixels:unavailable" }
@@ -552,7 +562,7 @@ public struct CompactItem: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case ref, role, testId, resourceId, label, frame, isEnabled, isInteractive
         case isFocused, checked, expanded, hasPopup, placeholder, name, invalid, windowRef, occludedBy, scroll, wheel
-        case domUnavailable, domCappedAt, crossOriginFrame, frameOpaque, geometryApprox
+        case domUnavailable, domCappedAt, crossOriginFrame, frameOpaque, frameProbe, geometryApprox
         case domKernelUnsupported, pixelsUnavailable, screencapBlank
     }
 
@@ -581,6 +591,7 @@ public struct CompactItem: Codable, Sendable {
         try c.encodeIfPresent(domCappedAt, forKey: .domCappedAt)
         if crossOriginFrame { try c.encode(crossOriginFrame, forKey: .crossOriginFrame) }
         try c.encodeIfPresent(frameOpaque, forKey: .frameOpaque)
+        try c.encodeIfPresent(frameProbe, forKey: .frameProbe)
         if geometryApprox { try c.encode(geometryApprox, forKey: .geometryApprox) }
         if domKernelUnsupported { try c.encode(domKernelUnsupported, forKey: .domKernelUnsupported) }
         if pixelsUnavailable { try c.encode(pixelsUnavailable, forKey: .pixelsUnavailable) }
@@ -611,6 +622,7 @@ public struct CompactItem: Codable, Sendable {
         domCappedAt = try c.decodeIfPresent(Int64.self, forKey: .domCappedAt)
         crossOriginFrame = try c.decodeIfPresent(Bool.self, forKey: .crossOriginFrame) ?? false
         frameOpaque = try c.decodeIfPresent(String.self, forKey: .frameOpaque)
+        frameProbe = try c.decodeIfPresent(String.self, forKey: .frameProbe)
         geometryApprox = try c.decodeIfPresent(Bool.self, forKey: .geometryApprox) ?? false
         domKernelUnsupported = try c.decodeIfPresent(Bool.self, forKey: .domKernelUnsupported) ?? false
         pixelsUnavailable = try c.decodeIfPresent(Bool.self, forKey: .pixelsUnavailable) ?? false

@@ -407,6 +407,21 @@ INNER document's scroll travel, since a frame scrolls itself and the host page's
 scroll offset says nothing about it; the rule that turns those numbers into
 `scroll:` lives in `DomScroll` (with a Swift twin) so both platforms answer alike.
 
+**On iOS the wall is crossed rather than only described.** WebKit's
+`evaluateJavaScript(_:in:contentWorld:)` runs in a *named frame's* context,
+cross-origin included, and `WebFrameProbe` obtains those `WKFrameInfo` handles the
+only way WebKit hands them out — an all-frames `WKUserScript` probe in an isolated
+world, an index-path handshake over `postMessage` (allowed across origins), and a
+script-message reply whose message carries the handle. The frame is then walked by
+the SAME traversal script, handed its enclosing frame's fold through
+`reticleFrameCtx`, and spliced into the parent's raw JSON before nodes are built —
+so a control read this way is an ordinary DOM node with a chained selector, and
+`act activate` routes a chain into the frame that owns it. Deliberately *not* a
+second geometry implementation: the fold is passed in, never recomputed in Swift.
+`docs/ios.md` carries the mechanism and its markers; Android's equivalent seam is
+`WebViewCompat.addDocumentStartJavaScript` + `addWebMessageListener` (androidx.webkit),
+which is not wired up yet, so Android still walls at the page.
+
 **The script itself is one file, embedded twice.** Both bridges — Android's and the
 WKWebView twin — run the same JavaScript, and it used to be hand-copied between the
 two agents under a `KEEP IN SYNC` comment: with Kotlin raw strings escaping one way

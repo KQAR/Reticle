@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **A sealed frame is now READ on iOS, not just described.** `evaluateJavaScript`
+  runs in the main frame, so a cross-origin or `sandbox`-sealed frame was a wall: no
+  nodes, no selectors, and on a real device not even a coordinate fallback, since the
+  only input path there is in-process activation, which resolves selectors *in the
+  page*. A third-party payment or bank widget is exactly that shape — measured
+  earlier at four consecutive steps driven by pixels off a screenshot.
+  - WebKit takes a `WKFrameInfo` (`evaluateJavaScript(_:in:contentWorld:)`) and runs
+    in THAT frame's context, cross-origin included — the seam Playwright gets from the
+    browser protocol. What it has no API for is *enumerating* frames, so
+    `WebFrameProbe` obtains the handles the only way they are handed out: an
+    all-frames `WKUserScript` probe in an isolated content world, an index-path
+    handshake over `postMessage` (allowed across origins, passed down by each probe to
+    its own children), and a script-message reply whose message carries the handle.
+  - The frame is walked by the SAME traversal script, handed its enclosing frame's
+    fold, and spliced under the frame element before nodes are built — so its controls
+    are ordinary DOM nodes with chained selectors (`#sealed >>> #inner`), and
+    `act activate` routes a chain into the frame that owns it
+    (`via=domDispatch:frame`). No second geometry implementation: the fold is passed
+    in, never recomputed natively.
+  - A frame that WAS read stops claiming to be a wall — leaving the marker would tell
+    a caller coordinates are the only way in while a selector resolves, and
+    `ScreenCoverage` reads the same fields.
+  - The limits are markers, not silence: `iframe:probe-needs-reload` (a user script
+    reaches only documents loaded after it is installed, and Reticle will not reload
+    an app's page to widen its own reach), plus `-budget` / `-depth-budget` (6 frames,
+    4 deep per capture) / `-failed` / `-no-handle`.
+  - Verified on a simulator by `WebFrameProbeTests`: a sealed frame read with its
+    chained selector and its geometry inside the frame, the same frame honestly unread
+    when the probe arrived late, and activation routed into it. The iOS e2e drives the
+    whole shape through the CLI, using the fixture page's OWN button to navigate the
+    frame. Android's equivalent seam
+    (`WebViewCompat.addDocumentStartJavaScript` + `addWebMessageListener`) is not
+    wired up yet — it still walls at the page, and says so.
+
 - **An iframe now reports its identity, its wall, its scale and its scroll — the
   four ways a frame used to be silently thinner than the rest of the page.** All of
   it in the shared traversal, so both platforms answer alike.

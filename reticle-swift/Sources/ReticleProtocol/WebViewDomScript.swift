@@ -328,6 +328,21 @@ public enum WebViewDomScript {
         }
         return facts;
       }
+      // This frame's index among its parent's `window.frames`. The handle a per-frame
+      // evaluation is keyed by on BOTH sides — the frame-probe handshake walks
+      // `window.frames` the same way — and the only identity a frame has that survives
+      // an origin it may not read. -1 when even `contentWindow` was refused.
+      function frameIndexOf(el) {
+        try {
+          var win = el.contentWindow;
+          if (!win) return -1;
+          var frames = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+          for (var i = 0; i < frames.length; i++) {
+            if (frames[i] === win) return i;
+          }
+        } catch (e) {}
+        return -1;
+      }
       // How a frame's inner coordinates scale on the way out to the page. Two
       // independent factors, both previously ignored: a CSS transform on the frame
       // element (`t*`) and a frame viewport that differs from the element's content
@@ -476,9 +491,13 @@ public enum WebViewDomScript {
           if (frameBody) children.push(frameBody);
         }
         var scrollPort = scrollPortOf(el, style, frame ? frame.doc : null);
+        // Pruned against the element's OWN viewport, not the top window's: `left`/`top`
+        // are page space while a frame's content is laid out in the frame's, so the two
+        // are only comparable in the document the element belongs to. This also prunes
+        // content scrolled out of an inner frame, which the page-space comparison kept.
         var inViewport = rect.width > 0 && rect.height > 0 &&
-          left + rect.width * ctx.sx >= 0 && top + rect.height * ctx.sy >= 0 &&
-          left <= window.innerWidth && top <= window.innerHeight;
+          rect.left + rect.width >= 0 && rect.top + rect.height >= 0 &&
+          rect.left <= (win.innerWidth || 0) && rect.top <= (win.innerHeight || 0);
         if (!inViewport && children.length === 0) return null;
         count++;
         var id = clean(el.id, 120);
@@ -557,6 +576,19 @@ public enum WebViewDomScript {
           frameAllow: frame ? frame.allow : "",
           frameLoading: frame ? frame.loading : "",
           frameChildCount: frame ? frame.childCount : -1,
+          // What a PER-FRAME evaluation needs from this side to place its results: this
+          // frame's index among `window.frames` (the handle both the fold and the
+          // frame-probe handshake are keyed by), its content box in this document's
+          // pixels, and the transform-only factor of its own scale. Emitted for every
+          // frame, read only for the ones this document could not walk itself.
+          frameIndex: frame ? frameIndexOf(el) : -1,
+          frameClientLeft: frame ? el.clientLeft : -1,
+          frameClientTop: frame ? el.clientTop : -1,
+          frameClientWidth: frame ? el.clientWidth : -1,
+          frameClientHeight: frame ? el.clientHeight : -1,
+          frameScaleX: frame ? frameScale(el, rect).tx * ctx.sx : 0,
+          frameScaleY: frame ? frameScale(el, rect).ty * ctx.sy : 0,
+          frameSkewed: frame ? (ctx.approx || skewed(style)) : false,
           // Set when a frame in this element's chain is rotated or skewed: the rect is
           // the axis-aligned hull of the real box, so a tap at its centre may miss.
           geometryApprox: !!ctx.approx,
@@ -618,10 +650,30 @@ public enum WebViewDomScript {
       }
       // The walk runs FIRST: object literals evaluate in source order, so reading
       // `capped` beside `root` would read it before the walk that sets it.
-      var root = walk(
-        document.body || document.documentElement, "",
-        { x: 0, y: 0, sx: 1, sy: 1, approx: false }, "", null
-      );
+      // A PER-FRAME evaluation (the path into a frame whose document the page itself may
+      // not read) passes its enclosing frame's fold in through `reticleFrameCtx`, and the
+      // selector chain to prepend through `reticleFramePrefix`. Absent both, this is the
+      // top document and the fold is the identity. Doing it this way keeps every line of
+      // frame geometry in THIS file: the alternative was a second fold written in Swift
+      // and a third in Kotlin, which is how the same rect gets three answers.
+      var incoming = (typeof reticleFrameCtx === "object" && reticleFrameCtx) ? reticleFrameCtx : null;
+      var prefix = (typeof reticleFramePrefix === "string") ? reticleFramePrefix : "";
+      var rootCtx = { x: 0, y: 0, sx: 1, sy: 1, approx: false };
+      if (incoming) {
+        rootCtx.x = incoming.x || 0;
+        rootCtx.y = incoming.y || 0;
+        rootCtx.sx = incoming.sx || 1;
+        rootCtx.sy = incoming.sy || 1;
+        rootCtx.approx = !!incoming.approx;
+        // The parent cannot read a foreign frame's viewport, so it sends the frame
+        // element's CONTENT box and this side finishes the scale — the one factor of the
+        // fold that only the inside knows.
+        var innerW = window.innerWidth || 0;
+        var innerH = window.innerHeight || 0;
+        if (incoming.contentWidth > 0 && innerW > 0) rootCtx.sx = rootCtx.sx * (incoming.contentWidth / innerW);
+        if (incoming.contentHeight > 0 && innerH > 0) rootCtx.sy = rootCtx.sy * (incoming.contentHeight / innerH);
+      }
+      var root = walk(document.body || document.documentElement, prefix, rootCtx, "", null);
       return JSON.stringify({
         viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
         viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,

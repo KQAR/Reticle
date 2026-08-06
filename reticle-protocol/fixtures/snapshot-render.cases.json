@@ -1115,14 +1115,14 @@
    }
   },
   {
-   "name": "a frame says WHICH wall it is: not-loaded (retry), cross-origin (coordinates only), sandboxed (the page's own choice) - a read frame publishes its own document's scroll travel, and a rotated frame marks its children's rects as hulls",
+   "name": "a frame says WHICH wall it is: not-loaded (retry), cross-origin (coordinates only), sandboxed (the page's own choice, here also out of the per-frame reader's reach) - a read frame publishes its own document's scroll travel, and a rotated frame marks its children's rects as hulls",
    "expect": {
     "compact": [
      "@content window [0,0 1080x2400]",
      "#pay.web webView [0,200 1080x1800] tappable",
      "#pay.loadingFrame iframe [40,240 1000x300] iframe:not-loaded",
      "#pay.foreignFrame iframe [40,560 1000x300] iframe:cross-origin",
-     "#pay.sandboxFrame iframe [40,880 1000x300] iframe:sandboxed",
+     "#pay.sandboxFrame iframe [40,880 1000x300] iframe:sandboxed iframe:probe-needs-reload",
      "#pay.openFrame iframe [40,1200 1000x300] scroll:down",
      "#pay.frameButton button \"Confirm\" [60,1220 200x80] tappable",
      "#pay.rotatedFrame iframe [40,1520 1000x300]",
@@ -1320,6 +1320,10 @@
        "domFrameSandbox": {
         "_type": "text",
         "value": "allow-scripts"
+       },
+       "domFrameProbe": {
+        "_type": "text",
+        "value": "needs-reload"
        }
       },
       "parentRef": "body",
