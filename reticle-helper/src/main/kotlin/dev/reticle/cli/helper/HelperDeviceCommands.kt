@@ -421,6 +421,8 @@ internal object HelperDeviceCommands {
         // focus, so without this a `type --test-id foo` silently typed into the
         // wrong (or no) field. With no target, type into the current focus.
         var focus: ResolvedInputTarget? = null
+        /** [focus]'s ref, re-resolved in whatever capture is being read. */
+        var targetRef: String? = null
         var landing = TypeFocus.Landing.UNKNOWN
         var retargeted: String? = null
         // The tree as it stood the moment before the characters were dispatched:
@@ -436,18 +438,31 @@ internal object HelperDeviceCommands {
             // often the only uniquely-addressable handle — leaves the text going
             // to whatever held focus before. See [TypeFocus].
             before = liveSnapshot(device, pkg, params)
-            landing = focusLanding(before, targetRefIn(before, params, focus.ref))
+            // The ref the resolve produced belongs to the resolve's OWN capture, and
+            // the focusing tap is exactly what invalidates it: a DOM re-render (the
+            // page's focus/blur handlers, a keyboard-driven relayout) renumbers every
+            // ref, and a ref is only a traversal index. Every read against `before`
+            // therefore goes through the ref re-resolved IN `before`.
+            //
+            // Measured on a real form: `act type --label "<field>"` typed the text
+            // into the right field and then reported
+            // `textLanded=unreadable textReadback=unavailable:no-text-field-node`,
+            // because the stale ref pointed at a `<label>` in the new numbering — a
+            // false negative on the one check that exists to catch false positives.
+            targetRef = targetRefIn(before, params, focus.ref)
+            landing = focusLanding(before, targetRef)
             if (!TypeFocus.isLanded(landing)) {
                 // One retarget, and only when it is not a guess: exactly one
                 // focusable text input inside the node the caller named.
-                val candidate = focus.ref?.let { ref ->
+                val candidate = targetRef?.let { ref ->
                     before?.let { TypeFocus.soleFocusableInput(it, ref) }
                 }
                 if (candidate?.frame != null) {
                     input.tap(candidate.frame!!.centerX.toInt(), candidate.frame!!.centerY.toInt())
                     Thread.sleep(FOCUS_SETTLE_MS)
                     before = liveSnapshot(device, pkg, params)
-                    landing = focusLanding(before, targetRefIn(before, params, focus.ref))
+                    targetRef = targetRefIn(before, params, focus.ref)
+                    landing = focusLanding(before, targetRef)
                     if (TypeFocus.isLanded(landing)) retargeted = candidate.ref
                 }
                 if (!TypeFocus.isLanded(landing)) {
@@ -457,7 +472,7 @@ internal object HelperDeviceCommands {
         } else {
             before = liveSnapshot(device, pkg, params)
         }
-        var field = before?.let { TypeReadback.field(it, focus?.ref) }
+        var field = before?.let { TypeReadback.field(it, targetRef) }
         // `--clear`: empty the field BEFORE typing, and prove it is empty.
         //
         // This flag used to be accepted and do nothing at all, which is the worst
@@ -498,7 +513,7 @@ internal object HelperDeviceCommands {
         }
         // What reached the field, before anything else can move the screen —
         // `--submit` in particular clears or navigates away from it.
-        val readback = readBackTypedText(input, device, pkg, params, before, focus?.ref, field, text, typeDelayMs)
+        val readback = readBackTypedText(input, device, pkg, params, before, targetRef, field, text, typeDelayMs)
         val submit = if (params.bool("submit")) submitAfterType(input, device, pkg, params) else null
         return buildJsonObject {
             put("gesture", "type"); put("chars", text.length)
