@@ -28,6 +28,11 @@
     reaches only documents loaded after it is installed, and Reticle will not reload
     an app's page to widen its own reach), plus `-budget` / `-depth-budget` (6 frames,
     4 deep per capture) / `-failed` / `-no-handle`.
+  - The frame-scoped evaluation is sent by SELECTOR, not through Swift's refined
+    `Result` signature: that refinement lives in `libswiftWebKit.dylib`, a Swift overlay
+    absent on older OS versions — measured in CI on an iOS 18.5 simulator as the whole
+    bundle failing to load. With a deployment floor of iOS 15, the refined signature
+    would mean ReticleKit refusing to load on every pre-26 device.
   - Verified on a simulator by `WebFrameProbeTests`: a sealed frame read with its
     chained selector and its geometry inside the frame, the same frame honestly unread
     when the probe arrived late, and activation routed into it. The iOS e2e drives the
