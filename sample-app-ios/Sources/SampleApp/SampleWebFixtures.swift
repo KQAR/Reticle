@@ -13,6 +13,21 @@ enum SampleWebFixtures {
         return webView
     }
 
+
+    /// Every frame shape that has its own WALL, on one small page — the twin of the
+    /// Android sample's `framesFixture`.
+    ///
+    /// These lived in the complex fixture first and could not stay: a frame whose
+    /// document is sealed has no children, and the traversal prunes a childless node
+    /// below the viewport, so the frames under test were exactly the ones dropped while
+    /// the frames that CAN be walked survived on the strength of their content. A page
+    /// whose fixtures compete for the fold tests the fold, not the fixtures.
+    static func makeFramesWebView() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        webView.loadHTMLString(framesHtml, baseURL: URL(string: "https://reticle.dev/sample/frames"))
+        return webView
+    }
+
     /// A modal built with `lottie-web` playing a real Lottie animation.
     static func makeLottieDialogWebView() -> WKWebView {
         let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -66,6 +81,77 @@ enum SampleWebFixtures {
             </section>
           </body>
         </html>
+        """
+
+    static let framesHtml = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body { font-family: sans-serif; margin: 12px; }
+              iframe { display: block; margin: 8px 0; }
+            </style>
+          </head>
+          <body>
+            <h1 id="frames-title" data-testid="frames.title">Frame walls</h1>
+            <!--
+              Sandboxed, and NOT cross-origin: `sandbox` without `allow-same-origin`
+              gives the frame an opaque origin, so `contentDocument` is refused exactly
+              as it is for another host — on a frame that is plainly same-site. Its own
+              marker (`iframe:sandboxed`) is what stops a reader hunting a domain
+              problem that does not exist. `allow-scripts` is what keeps it readable by
+              a per-frame probe (iOS), so the two walls stay separable.
+            -->
+            <iframe id="sandbox-frame" data-testid="frames.sandboxFrame" sandbox="allow-scripts"
+              srcdoc="<button id='sandbox-button'
+                onclick='this.innerText=&quot;Sandbox clicked&quot;'>Inside sandboxed frame</button>">
+            </iframe>
+            <!--
+              Re-navigates the sealed frame. The app's own button on purpose: a
+              per-frame probe only reaches documents loaded AFTER it is installed, and
+              Reticle will not reload a page to widen its own reach — that would be the
+              observer changing the thing observed. So the boundary is exercised the way
+              a real app clears it.
+            -->
+            <button id="reload-frames" data-testid="frames.reloadFrames"
+              onclick="var f = document.getElementById('sandbox-frame'); f.srcdoc = f.srcdoc;">
+              Reload sealed frame
+            </button>
+            <!--
+              A frame under `transform: scale(0.5)` — the shape a responsive third-party
+              widget ships in. The content's own pixels are not the page's, so a fold
+              that ignores the transform reports the inner button at double size in the
+              wrong place, silently and plausibly. The button flips its own text, so a
+              COORDINATE tap at the reported centre either proves the fold or misses.
+            -->
+            <iframe id="scaled-frame" data-testid="frames.scaledFrame"
+              style="transform: scale(0.5); transform-origin: top left; width: 320px; height: 120px"
+              srcdoc="<button id='scaled-frame-button' style='font-size: 28px'
+                onclick='this.innerText=&quot;Scaled frame clicked&quot;'>Inside scaled frame</button>">
+            </iframe>
+            <!--
+              A frame that scrolls its OWN document: the host page's scroll offset says
+              nothing about it, so before the frame published its travel there was no
+              container for a caller to drive and no way to tell a short frame from a
+              truncated one.
+            -->
+            <iframe id="scroll-frame" data-testid="frames.scrollFrame"
+              style="width: 320px; height: 80px"
+              srcdoc="<p style='height: 400px'>Frame top</p><button id='scroll-frame-button'>Frame bottom</button>">
+            </iframe>
+            <!--
+              A cross-origin frame with a frame INSIDE it. `contentWindow.length` is
+              readable across origins, so the count of frames behind the wall is the one
+              shape available for a subtree nothing can enter — and the difference
+              between "an empty wall" and "a wall with more behind it".
+            -->
+            <iframe id="nested-foreign-frame" data-testid="frames.nestedForeignFrame"
+              src="data:text/html,%3Ciframe%20src%3D%22data%3Atext%2Fhtml%2Cnested%22%3E%3C%2Fiframe%3E%3Cbutton%3EInside%20foreign%20frame%3C%2Fbutton%3E">
+            </iframe>
+          </body>
+        </html>
+
         """
 
     static let complexHtml = """
@@ -162,53 +248,6 @@ enum SampleWebFixtures {
               <iframe id="fixture-frame" data-testid="complex.iframe"
                 srcdoc="<button id='iframe-button' data-testid='complex.iframeButton'
                   onclick='this.innerText=&quot;Frame clicked&quot;'>Inside frame</button>">
-              </iframe>
-              <!--
-                Sandboxed, and NOT cross-origin: `sandbox` without
-                `allow-same-origin` gives the frame an opaque origin, so
-                `contentDocument` is refused exactly as it is for another host —
-                on a frame that is plainly same-site. Its own marker
-                (`iframe:sandboxed`) is what stops a reader hunting a domain
-                problem that does not exist.
-              -->
-              <iframe id="sandbox-frame" data-testid="complex.sandboxFrame" sandbox="allow-scripts"
-                srcdoc="<button id='sandbox-button'
-                  onclick='this.innerText=&quot;Sandbox clicked&quot;'>Inside sandboxed frame</button>">
-              </iframe>
-              <!--
-                Re-navigates the sealed frames. This is the app's own button on purpose:
-                a per-frame probe only reaches documents loaded AFTER it is installed,
-                and Reticle will not reload a page to widen its own reach — that would
-                be the observer changing the thing observed. So the boundary is
-                exercised the way a real app clears it: the page navigates the frame,
-                and the frame is readable from then on.
-              -->
-              <button id="reload-frames" data-testid="complex.reloadFrames"
-                onclick="var f = document.getElementById('sandbox-frame'); f.srcdoc = f.srcdoc;">
-                Reload sealed frames
-              </button>
-              <!--
-                A frame under `transform: scale(0.5)` — the shape a responsive
-                third-party widget ships in. The content's own pixels are not the
-                page's, so a fold that ignores the transform reports the inner
-                button at double size in the wrong place, silently and plausibly.
-                The button flips its own text, so a COORDINATE tap at the reported
-                centre either proves the fold or misses.
-              -->
-              <iframe id="scaled-frame" data-testid="complex.scaledFrame"
-                style="transform: scale(0.5); transform-origin: top left; width: 320px; height: 120px"
-                srcdoc="<button id='scaled-frame-button' style='font-size: 28px'
-                  onclick='this.innerText=&quot;Scaled frame clicked&quot;'>Inside scaled frame</button>">
-              </iframe>
-              <!--
-                A frame that scrolls its OWN document: the host page's scroll offset
-                says nothing about it, so before the frame published its travel there
-                was no container for a caller to drive and no way to tell a short
-                frame from a truncated one.
-              -->
-              <iframe id="scroll-frame" data-testid="complex.scrollFrame"
-                style="width: 320px; height: 80px"
-                srcdoc="<p style='height: 400px'>Frame top</p><button id='scroll-frame-button'>Frame bottom</button>">
               </iframe>
               <p id="hidden-display">Hidden by display</p>
               <p id="hidden-visibility">Hidden by visibility</p>
