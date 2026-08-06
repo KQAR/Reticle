@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`act activate` on Android says it is iOS-only, instead of "unknown gesture".**
+  The gesture exists BECAUSE iOS lacks what Android has: it drives a control
+  in-process, which is the only input path on a real iOS device and the fallback when
+  a simulator's private HID surface will not initialize. Android synthesizes real
+  input through `adb shell input`, so it has nothing to fall back from. Answering
+  `unknown act gesture 'activate'` sent the caller looking for a typo — and
+  `docs/boundaries.md` and the skill both recommend `act activate` without naming a
+  platform, so a reader arrives there honestly. The refusal now states the platform,
+  the reason, and Android's own path (`act tap` with the same selector, `--css`
+  included). While there: the gesture list in the unknown-gesture message was missing
+  `wheel`, which has been an Android gesture since 0.17.0.
+
 - **`ui style --ref` / `--css` scope the report, instead of being accepted and
   ignored.** The flags were parsed, sent through the host, and dropped at the
   render, so every call reported the entire screen. Measured on a hybrid screen:
