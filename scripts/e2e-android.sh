@@ -1098,6 +1098,20 @@ UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>
 echo "$UNSUPPORTED" | grep -q "attribute selectors" \
   || { echo "FAIL: an unsupported css construct must be refused by name, got: $UNSUPPORTED"; exit 1; }
 
+# `act activate` is iOS-only, and saying "unknown gesture" for it sent the caller
+# looking for a typo — while `docs/boundaries.md` and the skill recommend it.
+ACTIVATE="$(R act activate --package "$PKG" --css 'body' 2>&1 || true)"
+echo "$ACTIVATE" | grep -q "iOS-only" \
+  || { echo "FAIL: act activate on Android must name the platform, got: $ACTIVATE"; exit 1; }
+echo "$ACTIVATE" | grep -q "act tap" \
+  || { echo "FAIL: the activate refusal must name Android's own path, got: $ACTIVATE"; exit 1; }
+# ...and a real typo still reads as one, with the gesture list up to date.
+TYPO="$(R act tapp --package "$PKG" --point 1,1 2>&1 || true)"
+echo "$TYPO" | grep -q "unknown act gesture 'tapp'" \
+  || { echo "FAIL: an unknown gesture must say so, got: $TYPO"; exit 1; }
+echo "$TYPO" | grep -q "wheel" \
+  || { echo "FAIL: the gesture list must include wheel, got: $TYPO"; exit 1; }
+
 # A miss offers only candidates that share something with the query, by their
 # shortest handle — not every captured path on the page.
 MISS="$(R ui node --live --package "$PKG" --css '.no-such-class' 2>&1 || true)"
