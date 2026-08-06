@@ -84,14 +84,37 @@ object WebFrameBridge {
      * features. Both halves are runtime facts — the support library is compileOnly, and
      * a feature depends on the (updatable) WebView provider.
      */
-    fun isAvailable(): Boolean = feature("DOCUMENT_START_SCRIPT") && feature("WEB_MESSAGE_LISTENER")
+    fun isAvailable(): Boolean = unavailableReason() == null
 
-    private fun feature(name: String): Boolean = runCatching {
-        val featureClass = Class.forName("androidx.webkit.WebViewFeature")
-        val constant = featureClass.getField(name).get(null) as String
-        featureClass.getMethod("isFeatureSupported", String::class.java)
-            .invoke(null, constant) as Boolean
-    }.getOrDefault(false)
+    /**
+     * null when a frame CAN be read in its own context here; otherwise which half is
+     * missing — `"no-library"` (androidx.webkit is not in this app),
+     * `"no-feature:<NAME>"` (this device's WebView provider does not implement it), or
+     * `"reflection:<message>"` (the library is present and did not answer as expected,
+     * which is a Reticle bug rather than an app or device fact).
+     *
+     * Three separate answers on purpose: they were one boolean first, and a boolean
+     * cannot tell an app that needs a dependency from a device that needs a newer
+     * WebView from a call that is simply wrong.
+     */
+    fun unavailableReason(): String? {
+        val featureClass = try {
+            Class.forName("androidx.webkit.WebViewFeature")
+        } catch (_: Throwable) {
+            return "no-library"
+        }
+        for (name in listOf("DOCUMENT_START_SCRIPT", "WEB_MESSAGE_LISTENER")) {
+            val supported = try {
+                val constant = featureClass.getField(name).get(null) as String
+                featureClass.getMethod("isFeatureSupported", String::class.java)
+                    .invoke(null, constant) as Boolean
+            } catch (t: Throwable) {
+                return "reflection:${t.javaClass.simpleName}:${t.message?.take(80)}"
+            }
+            if (!supported) return "no-feature:$name"
+        }
+        return null
+    }
 
     /**
      * Register the probe and the reply channel on this web view. Idempotent, and MUST

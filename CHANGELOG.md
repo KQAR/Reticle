@@ -17,18 +17,26 @@
     that does not, and the `app inject` payload dex (which lands in an arbitrary app)
     carries no support library that could collide with the host's own copy.
   - Where the library or the WebView provider's feature is missing, the frame says
-    `iframe:probe-unavailable` beside its wall marker. That pairing is the point: without
-    it, an app that *could* have the capability looks exactly like one where the wall is
-    final. Verified live on an emulator — `iframe:sandboxed iframe:probe-unavailable` and
-    `iframe:cross-origin iframe:probe-unavailable`, with the frames' contents correctly
-    still absent.
-  - **Honest limit of this change:** the SUCCESS path is unverified. No app in this repo
-    ships androidx.webkit yet (and the dependency could not be fetched in the environment
-    this was written in), so the reflective call sites have run only down their
-    unavailable branch. The failure mode is contained by design — every reflective call is
-    wrapped, and any miss reports `iframe:probe-unavailable` / `-failed` rather than
-    claiming a read — but until an app with the library exercises it, treat the Android
-    happy path as untested.
+    `iframe:probe-unavailable` beside its wall marker; where the probe simply has not
+    reached inside a frame yet (an all-frames injection only covers documents loaded
+    after it is registered), it says `iframe:probe-needs-reload`. Either pairing is the
+    point: without the second marker, a frame that is one navigation away from readable
+    looks exactly like a final wall.
+  - **Which half is missing is stated, not lumped together.** `no-library` (the app has
+    no androidx.webkit), `no-feature:<NAME>` (this device's WebView provider does not
+    implement it), `reflection:<error>` (the library answered unexpectedly — a Reticle
+    bug, not an app or device fact). One boolean could not tell an app that needs a
+    dependency from a device that needs a newer WebView from a call of ours that is
+    simply wrong; the detail rides on the node as `domFrameProbeDetail`.
+  - Measured end to end on an emulator (WebView 133, API 36), with the sample app linking
+    androidx.webkit — which is where the library belongs, since the agent must link into
+    apps that lack it: the first capture reports `iframe:sandboxed
+    iframe:probe-needs-reload` and no content; after the page's own button re-navigates
+    the frame, `#sandbox-button "Inside sandboxed frame"` is an ordinary node inside the
+    frame's rect, `--css '#sandbox-frame >>> #sandbox-button'` resolves, and a real touch
+    at the reported centre fires the frame's onclick ("Sandbox clicked"). The frame beside
+    it, which was not re-navigated, correctly keeps saying `iframe:probe-needs-reload`.
+    Asserted in `scripts/e2e-android.sh`.
 
 - **A sealed frame is now READ on iOS, not just described.** `evaluateJavaScript`
   runs in the main frame, so a cross-origin or `sandbox`-sealed frame was a wall: no
