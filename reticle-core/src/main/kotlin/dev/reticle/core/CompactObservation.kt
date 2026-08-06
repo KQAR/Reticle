@@ -231,14 +231,20 @@ data class CompactObservation(
                             role = node.role ?: node.typeName,
                             testId = node.testId,
                             resourceId = node.resourceId,
-                            // A text field's VALUE owns the label slot, so a filled
-                            // field never projects as its own name; the name keeps its
-                            // own slot beside it. An EMPTY field has no value to show,
-                            // so the name takes the slot rather than leaving the line
-                            // anonymous.
-                            label = if (node.isTextField()) node.text ?: node.contentDescription
-                            else node.contentDescription ?: node.text,
-                            name = node.contentDescription?.takeIf { node.isTextField() && !node.text.isNullOrEmpty() },
+                            // A control's VALUE owns the label slot and its NAME gets
+                            // its own, whenever the node carries both and they differ.
+                            // This started as a text-field rule and a real form showed
+                            // why it cannot be: a component-library select is a
+                            // `<button>` that displays the chosen value as its own text,
+                            // so five of them projected as `button "大学教育"`,
+                            // `button "我有工作"`, … — five values with nothing saying
+                            // which field each belonged to, the same defect the rule was
+                            // written to fix, one element type over. A node with only one
+                            // of the two still puts it in the label slot rather than
+                            // leaving the line anonymous.
+                            label = node.text?.takeIf { it.isNotEmpty() } ?: node.contentDescription,
+                            name = node.contentDescription
+                                ?.takeIf { !node.text.isNullOrEmpty() && it != node.text },
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,

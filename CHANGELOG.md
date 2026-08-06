@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **A named field's name reaches its control and the point inside it.** Two halves
+  of the same gap, both measured on a real form:
+  - **A component-library select is a `<button>` that displays the chosen value as
+    its own text**, and the accessible-name walk only covered form controls. Five of
+    them projected as `button "大学教育"`, `button "我有工作"`, … — five values with
+    nothing saying which field each belonged to, so the only way to tell was their
+    order down the page: exactly the defect the name walk was added to fix, one
+    element type over. It now covers a `<button>`, a `role=button` / `combobox` /
+    `listbox`, and anything declaring `aria-haspopup` / `aria-expanded`. The compact
+    rule generalised with it — a control's VALUE owns the label slot and its NAME
+    gets its own whenever the node carries both — so `button "Contract"` reads
+    `button "Contract" … name:"Employment"`.
+  - **`ui coverage`'s two halves contradicted each other.** The whole-screen report
+    listed `named but inert: "Rodzaj pracy" r404 [57,786 964x195]` while a tap at a
+    point inside that very rect answered `nothing smaller is captured at this
+    point`. The per-point warning is where a caller reads it — at the moment it
+    dispatches the coordinate — so that is the half that needed it: it now ends with
+    `— it is inside the named field "…" (<ref>), which the page exposes no control
+    for, so a coordinate is the only path to it`.
+  The sample app's form fixture grew both shapes (an empty select with no control at
+  all, and a filled one carrying its value) so the case is exercisable without a
+  third-party app.
+
 - **`--verify` compares the two states a tap on a control actually changes.** Its
   watched fields were presence, text, label, enabled, visible, frame and the custom
   metadata — not `checked`, and not `expanded`. Measured on a real consent screen:

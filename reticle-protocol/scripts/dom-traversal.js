@@ -121,8 +121,23 @@
     var tag = tagOf(el);
     return tag === "input" || tag === "textarea" || tag === "select";
   }
+  // A control that can carry a field's name. Form controls, plus the shape a
+  // component library uses for a select: a <button> (or a div declaring the
+  // button role, or one declaring a popup / expanded state) that OPENS a list
+  // and then displays the chosen value as its own text. Measured on a real
+  // form: five such dropdowns projected as `button "大学教育" collapsed`,
+  // `button "我有工作" collapsed`, … — five values with nothing saying which
+  // field each one belonged to, so the only way to tell was their order down
+  // the page.
+  function isNameableControl(el) {
+    if (isFormControl(el)) return true;
+    if (tagOf(el) === "button") return true;
+    var role = clean(el.getAttribute("role"), 40).toLowerCase();
+    if (role === "button" || role === "combobox" || role === "listbox") return true;
+    return el.hasAttribute("aria-expanded") || !!clean(el.getAttribute("aria-haspopup"), 40);
+  }
   function labelledName(el) {
-    if (!isFormControl(el)) return "";
+    if (!isNameableControl(el)) return "";
     var doc = el.ownerDocument || document;
     var id = clean(el.id, 120);
     if (id) {
@@ -141,7 +156,7 @@
         if (ancestorText) return ancestorText;
       }
       var labels = node.querySelectorAll("label, legend");
-      var controls = node.querySelectorAll("input, textarea, select");
+      var controls = node.querySelectorAll("input, textarea, select, button, [role=button]");
       if (labels.length === 1 && controls.length === 1) {
         var nearby = clean(labels[0].innerText || labels[0].textContent, 160);
         if (nearby) return nearby;
