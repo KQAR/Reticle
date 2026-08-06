@@ -699,7 +699,17 @@
     "empty: 0 cell(s) — no captured node contains the point",
     "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
    ],
-   "points": [],
+   "points": [
+    {
+     "x": 64,
+     "y": 40,
+     "covered": false,
+     "reason": "no-interactive-node",
+     "ref": "trigger1",
+     "detail": "the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it",
+     "warning": "no semantic selector covers (64,40) — no-interactive-node: the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it"
+    }
+   ],
    "snapshot": {
     "schemaVersion": 1,
     "capturedAtMillis": 1719400000000,

@@ -420,6 +420,8 @@ object SampleWebFixtures {
               .row { margin: 14px 0; }
               input, select { display: block; width: 90%; padding: 8px; font-size: 15px; }
               .error { color: #d93025; font-size: 13px; }
+              .select-trigger { height: 36px; border: 1px solid #ccc; border-radius: 6px; }
+              .select-value { display: block; width: 90%; padding: 8px; font-size: 15px; text-align: left; }
               [disabled] { background: #eee; color: #999; }
             </style>
           </head>
@@ -443,6 +445,25 @@ object SampleWebFixtures {
             <div class="row">
               <span id="doc-label">Document number</span>
               <input name="document" aria-labelledby="doc-label" placeholder="ABC 123456">
+            </div>
+
+            <!--
+              The shape a component library gives a select: a LABEL beside a control
+              that is a <button>, which displays the chosen value as its own text and
+              opens a list when tapped. Measured on a real form, five of these
+              projected as `button "<value>"` with nothing saying which field each
+              value belonged to. The name comes from the label in the same field
+              wrapper - no `for`, no aria - so both the empty and the filled one are
+              here: the first has no control at all until it is opened (only a
+              coordinate reaches it), the second carries its value.
+            -->
+            <div class="row">
+              <label>Education</label>
+              <div class="select-trigger"></div>
+            </div>
+            <div class="row">
+              <label>Employment</label>
+              <button class="select-value" data-testid="complex.employment">Contract</button>
             </div>
 
             <!--

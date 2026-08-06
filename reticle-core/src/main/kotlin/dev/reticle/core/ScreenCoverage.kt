@@ -391,7 +391,8 @@ object ScreenCoverage {
                 reason = REASON_CONTAINER_ONLY,
                 detail = "the only addressable node here is ${container.ref} " +
                     "(${container.role ?: container.typeName}), a screen-sized container whose own " +
-                    "tap point is $taps — nothing smaller is captured at this point",
+                    "tap point is $taps — nothing smaller is captured at this point" +
+                    namedFieldNote(snapshot, x, y),
                 ref = container.ref,
                 selector = null,
             )
@@ -412,7 +413,7 @@ object ScreenCoverage {
             covered = false,
             reason = REASON_NOT_INTERACTIVE,
             detail = "the topmost node here is ${top.ref} (${top.role ?: top.typeName}) and it is not " +
-                "interactive, so no selector aims at this point",
+                "interactive, so no selector aims at this point" + namedFieldNote(snapshot, x, y),
             ref = top.ref,
             selector = null,
         )
@@ -452,6 +453,23 @@ object ScreenCoverage {
      * dropdowns all sat in `container-only` cells whose ref was the web view, so
      * looking at the verdict's own node found nothing about them.
      */
+    /**
+     * The `— inside the named field "…"` clause, when this point falls in one.
+     *
+     * The whole-screen report already lists these (`named but inert:`), and without
+     * this the two halves of the same tool contradicted each other on the same
+     * screen: `ui coverage` named `"Rodzaj pracy" r404 [57,786 964x195]` while a tap
+     * at a point inside that rect answered `nothing smaller is captured at this
+     * point`. The per-point warning is where a caller reads it — at the moment it
+     * dispatches the coordinate — so it is the half that needed it most.
+     */
+    private fun namedFieldNote(snapshot: Snapshot, x: Double, y: Double): String {
+        val deepest = deepestAt(snapshot, snapshot.rootRef, x, y) ?: return ""
+        val (name, host) = labelledFieldName(snapshot, deepest.ref) ?: return ""
+        return " — it is inside the named field \"$name\" ($host), which the page exposes no " +
+            "control for, so a coordinate is the only path to it"
+    }
+
     private fun deepestAt(snapshot: Snapshot, ref: String, cx: Double, cy: Double): Node? {
         val start = snapshot.nodes[ref] ?: return null
         var best: Node? = start.takeIf { it.frame?.contains(cx, cy) == true }
