@@ -223,15 +223,16 @@ public struct CompactObservation: Codable, Sendable {
                         role: node.role ?? node.typeName,
                         testId: node.testId,
                         resourceId: node.resourceId,
-                        // A text field's VALUE owns the label slot and its name gets
-                        // its own — see the Kotlin twin. An empty field has no value,
-                        // so the name takes the slot rather than leaving it anonymous.
                         // A control's VALUE owns the label slot and its NAME gets its
                         // own whenever the node carries both — see the Kotlin twin,
                         // where the component-library selects that forced this beyond
-                        // text fields are written down.
+                        // text fields are written down. On a VALUE-BEARING node (a text
+                        // field) the quoted slot means "what it holds", so an accessible
+                        // name must not sit there: an empty field would read exactly
+                        // like a filled one. It goes to `name:` instead, and the absent
+                        // quoted value is the reading "empty".
                         label: (node.text?.isEmpty == false ? node.text : nil)
-                            ?? node.contentDescription,
+                            ?? (valueBearing(node) ? nil : node.contentDescription),
                         frame: node.frame,
                         isEnabled: node.isEnabled,
                         isInteractive: node.isInteractive,
@@ -241,8 +242,8 @@ public struct CompactObservation: Codable, Sendable {
                         expanded: node.expanded,
                         hasPopup: node.domHasPopup(),
                         placeholder: node.placeholder(),
-                        name: !(node.text ?? "").isEmpty && node.contentDescription != node.text
-                            ? node.contentDescription : nil,
+                        name: (!(node.text ?? "").isEmpty && node.contentDescription != node.text)
+                            || valueBearing(node) ? node.contentDescription : nil,
                         invalid: node.domInvalidMessage(),
                         occludedBy: occluderOf(node, windowRef: currentWindow),
                         scroll: node.scroll,
@@ -298,7 +299,10 @@ private func collapseWrappers(_ snapshot: Snapshot, _ items: [CompactItem]) -> F
     func node(_ item: CompactItem) -> Node? { snapshot.nodes[item.ref] }
     func identified(_ item: CompactItem) -> Bool {
         guard let n = node(item) else { return true } // unknown node: never fold what we can't inspect
-        return item.testId != nil || item.resourceId != nil || item.label != nil
+        // `name` counts as much as `label`: a value-bearing node's accessible name
+        // travels in that slot, and folding such a field into a neighbouring row
+        // would drop the only thing that says which field it is.
+        return item.testId != nil || item.resourceId != nil || item.label != nil || item.name != nil
             || item.scroll != nil || item.wheel != nil
             || !n.regions.isEmpty || n.charGrid != nil || n.suspectedMultiRegion
             || n.custom["domCssSelector"] != nil
@@ -665,12 +669,17 @@ private func keepMostActionable(_ items: [CompactItem], maxItems: Int) -> [Compa
     return ranked.prefix(maxItems).sorted { $0.offset < $1.offset }.map(\.element)
 }
 
+/// Does the quoted slot on this node's line mean "what it HOLDS"? See the Kotlin
+/// twin, which carries the measurement.
+private func valueBearing(_ node: Node) -> Bool { node.role == "textField" }
+
 /// How much of the cap this item deserves — see `keepMostActionable`.
 private func rank(of item: CompactItem) -> Int {
     if item.isInteractive || controlRoles.contains(item.role) { return 2 }
     if item.testId != nil || item.resourceId != nil { return 1 }
     let label = item.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return label.isEmpty ? 0 : 1
+    let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return label.isEmpty && name.isEmpty ? 0 : 1
 }
 
 /// Roles that are a control even when the platform did not mark them interactive —
