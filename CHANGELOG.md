@@ -39,6 +39,24 @@
     once opened) and an e2e round trip: open by caption, pick an option, and assert a real
     control does NOT carry the note.
 
+- **An in-page dialog is a cover, and it now says so.** Occlusion asked one question —
+  "is the thing on top interactive?" — which is right for a native view and backwards for
+  a DOM element. A native view has to consume the touch to get it; a DOM element eats the
+  click wherever its box lies *unless* the page opted out with `pointer-events: none`, and
+  a framework sheet's backdrop publishes no role, no tabindex and no handler. So a
+  hybrid app's own action sheet was invisible to the check.
+  - Measured on a real hybrid form: with the sheet open, every field behind it projected as
+    an ordinary `tappable` node with no occluder, and `act type --label "<field>"` tapped
+    through the backdrop, **selected an option inside the sheet**, and reported the type as
+    dispatched. A wrong thing changed convincingly — the shape `occluded-by:` exists to
+    prevent.
+  - A DOM cover now counts unless the page opted it out, in `ui compact`'s
+    `occluded-by:<ref>` and in the `occluded:node` warning every tap carries. A full-screen
+    DOM layer additionally has to be **out of flow and paint its own box** to count — that
+    is a dialog backdrop; an unpainted full-bleed wrapper is still scenery, so the marker
+    does not fire on every item on the screen. The tap warning names the reason it actually
+    used ("the page did not opt it out of hit-testing" vs "is itself interactive").
+
 ## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS

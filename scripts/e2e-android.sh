@@ -1078,6 +1078,31 @@ R act tap --package "$PKG" --test-id nested.backdropButton >/dev/null
 wait_compact "$PKG" "Backdrop hit" \
   || { echo "FAIL: the unmarked control was not actually tappable"; exit 1; }
 
+# The same cover with NO window and NO native view of its own: an in-page dialog,
+# which is what a hybrid app's own sheet is. Its backdrop publishes no role, no
+# tabindex and no handler, so the interactivity rule the native path uses skipped it
+# — measured on a real Vue form, every field behind an open action sheet projected as
+# an ordinary tappable node and a `--label` tap on one of them selected an option
+# INSIDE the sheet while reporting the type as dispatched.
+open_scenario scenario.webComponentDialog webComponent.trigger
+R act tap --package "$PKG" --test-id webComponent.trigger >/dev/null
+IN_PAGE="$(R ui compact --live --package "$PKG" --window top)"
+echo "$IN_PAGE" | grep -q 'webComponent.trigger .*occluded-by:' \
+  || { echo "FAIL: a control under an open in-page dialog must say it is occluded"; exit 1; }
+echo "$IN_PAGE" | grep -q 'webComponent.cancel .*occluded-by:' \
+  && { echo "FAIL: the dialog's own buttons must NOT read as occluded"; exit 1; }
+# And the act path has to carry the same fact — the read path knowing on its own is
+# how the measured failure got through.
+IN_PAGE_TAP="$(R act tap --package "$PKG" --test-id webComponent.trigger 2>&1)"
+echo "$IN_PAGE_TAP" | grep -q 'occluded:node' \
+  || { echo "FAIL: a tap under an open in-page dialog must warn about the cover"; exit 1; }
+# Dismissed: the marker clears. A cover that never clears is as useless as one that
+# never fires.
+R act tap --package "$PKG" --test-id webComponent.cancel >/dev/null
+CLEARED="$(R ui compact --live --package "$PKG" --window top)"
+echo "$CLEARED" | grep -q 'webComponent.trigger .*occluded-by:' \
+  && { echo "FAIL: the in-page cover must clear when the dialog closes"; exit 1; }
+
 echo "== CLIPPED NODES AND THE TRAVERSAL'S OWN CAP =="
 # Two things every other web fixture is blind to. Both are about a tree that looks
 # complete and is not.

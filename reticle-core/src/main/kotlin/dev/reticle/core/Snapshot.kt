@@ -636,6 +636,42 @@ data class Node(
     /** The element's tag name, lowercased by the traversal script. */
     fun domTag(): String? = (custom["domTag"] as? MetadataValue.Text)?.value
 
+    /**
+     * True when the page opted this element OUT of hit-testing
+     * (`pointer-events: none`), so a click aimed at what is underneath reaches it.
+     *
+     * The page's own statement, and the ONLY reliable one: a DOM element's default
+     * is to consume the click wherever its box lies, whether or not it publishes a
+     * role, a tabindex or a handler.
+     */
+    fun domPointerEventsNone(): Boolean =
+        (custom["domStylePointerEvents"] as? MetadataValue.Text)?.value == "none"
+
+    /**
+     * True when this element is taken OUT of normal flow (`position: fixed` /
+     * `absolute` / `sticky`) — the shape a framework-built dialog backdrop has, as
+     * opposed to an ordinary content wrapper.
+     */
+    fun domOutOfFlow(): Boolean =
+        (custom["domStylePosition"] as? MetadataValue.Text)?.value in setOf("fixed", "absolute", "sticky")
+
+    /**
+     * True when this element PAINTS its own box — a non-transparent background
+     * colour, or a background image. A dialog backdrop does; a positioning wrapper
+     * does not.
+     */
+    fun domPaintsBackground(): Boolean {
+        val image = (custom["domStyleBackgroundImage"] as? MetadataValue.Text)?.value
+        if (image != null && image.isNotBlank() && image != "none") return true
+        val color = (custom["domStyleBackgroundColor"] as? MetadataValue.Text)?.value ?: return false
+        if (color.isBlank() || color == "transparent") return false
+        // `rgba(r,g,b,0)` is the computed form of `transparent` and of an unset
+        // background on most engines, so a zero alpha is not a painted box.
+        val alpha = Regex("rgba\\([^)]*,\\s*([0-9.]+)\\s*\\)").find(color)?.groupValues?.get(1)
+        if (alpha != null && (alpha.toDoubleOrNull() ?: 1.0) <= 0.0) return false
+        return true
+    }
+
     /** The element's `id` attribute. Also mirrored into [testId]. */
     fun domId(): String? = (custom["domId"] as? MetadataValue.Text)?.value
 

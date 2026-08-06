@@ -1,848 +1,1095 @@
 {
- "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by BOTH the Kotlin (reticle-core ScreenCoverageContractTest) and Swift (ReticleProtocol ScreenCoverageContractTests) suites, so the Android helper and the iOS host cannot answer 'how much of this screen is unreachable?' two ways. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover - and, since a second measurement (a login screen carrying a full-screen debug overlay read as 31% addressable while every control on it worked), those cells are reported on their own line rather than counted as gaps. Case five pins the other half of a tap's honesty: WHO receives the touch. A point can be perfectly addressable and still unreachable - the IME, a window above the target, or a node drawn over it takes the touch while the tap reports settled=1 - so every tap now carries an obstruction verdict, and the quiet cases (nothing in the way, and a screen-sized overlay container, which is scenery rather than an obstruction) are pinned too, because a warning that fires on an ordinary tap is one nobody reads.",
- "cases": [
-  {
-   "name": "a coordinate over an addressable node is an unnecessary fallback, and the hint names the most stable handle each node has",
-   "report": [
-    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
-    "addressable: 6 of 6 touch-relevant cell(s) (100%)",
-    "unreachable: none — every touch-relevant cell has an addressable node over it",
-    "inert: 10 cell(s) — a node is captured there, none of it interactive",
-    "empty: 0 cell(s) — no captured node contains the point",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [
+  "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by BOTH the Kotlin (reticle-core ScreenCoverageContractTest) and Swift (ReticleProtocol ScreenCoverageContractTests) suites, so the Android helper and the iOS host cannot answer 'how much of this screen is unreachable?' two ways. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover - and, since a second measurement (a login screen carrying a full-screen debug overlay read as 31% addressable while every control on it worked), those cells are reported on their own line rather than counted as gaps. Case five pins the other half of a tap's honesty: WHO receives the touch. A point can be perfectly addressable and still unreachable - the IME, a window above the target, or a node drawn over it takes the touch while the tap reports settled=1 - so every tap now carries an obstruction verdict, and the quiet cases (nothing in the way, and a screen-sized overlay container, which is scenery rather than an obstruction) are pinned too, because a warning that fires on an ordinary tap is one nobody reads.",
+  "cases": [
     {
-     "x": 32,
-     "y": 16,
-     "covered": true,
-     "reason": "selector-available",
-     "ref": "b1",
-     "selector": "--test-id pay",
-     "warning": "--point was not needed at (32,16): --test-id pay resolves to b1 (button), whose frame contains this point and would tap (32,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
-    },
-    {
-     "x": 96,
-     "y": 16,
-     "covered": true,
-     "reason": "selector-available",
-     "ref": "t1",
-     "selector": "--label \"Next\"",
-     "warning": "--point was not needed at (96,16): --label \"Next\" resolves to t1 (button), whose frame contains this point and would tap (96,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
-    },
-    {
-     "x": 32,
-     "y": 48,
-     "covered": true,
-     "reason": "selector-available",
-     "ref": "d1",
-     "selector": "--css '#pay'",
-     "warning": "--point was not needed at (32,48): --css '#pay' resolves to d1 (textField), whose frame contains this point and would tap (32,48). A selector tap re-resolves and confirms its target; a coordinate does neither"
-    },
-    {
-     "x": 100,
-     "y": 100,
-     "covered": false,
-     "reason": "no-interactive-node",
-     "ref": "w1",
-     "warning": "no semantic selector covers (100,100) — no-interactive-node: the topmost node here is w1 (window) and it is not interactive, so no selector aims at this point"
-    },
-    {
-     "x": 200,
-     "y": 10,
-     "covered": false,
-     "reason": "off-screen",
-     "warning": "no semantic selector covers (200,10) — off-screen: this point is outside the 128x128 screen"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 128
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "children": [
-       "b1",
-       "t1",
-       "d1"
+      "name": "a coordinate over an addressable node is an unnecessary fallback, and the hint names the most stable handle each node has",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 6 of 6 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "inert: 10 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
       ],
-      "parentRef": "r0"
-     },
-     "b1": {
-      "ref": "b1",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "testId": "pay",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "t1": {
-      "ref": "t1",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "text": "Next",
-      "frame": {
-       "x": 64,
-       "y": 0,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "d1": {
-      "ref": "d1",
-      "kind": "domNode",
-      "typeName": "input",
-      "role": "textField",
-      "frame": {
-       "x": 0,
-       "y": 32,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "custom": {
-       "domTag": {
-        "_type": "text",
-        "value": "input"
-       },
-       "domCssSelector": {
-        "_type": "text",
-        "value": "#pay"
-       }
-      },
-      "parentRef": "w1"
-     }
-    }
-   }
-  },
-  {
-   "name": "a cross-origin frame and a capped DOM walk each justify the coordinate by name, and the gap rows carry the host rects",
-   "report": [
-    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
-    "addressable: 0 of 16 touch-relevant cell(s) (0%)",
-    "unreachable: 16 cell(s)",
-    "  dom:capped(1500) wv [0,64 128x64] 8 cell(s)",
-    "  iframe:cross-origin f1 [0,0 128x64] 8 cell(s)",
-    "inert: 0 cell(s) — a node is captured there, none of it interactive",
-    "empty: 0 cell(s) — no captured node contains the point",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [
-    {
-     "x": 64,
-     "y": 32,
-     "covered": false,
-     "reason": "iframe:cross-origin",
-     "ref": "f1",
-     "warning": "no semantic selector covers (64,32) — iframe:cross-origin: the frame at f1 is cross-origin, so its document is unreadable by browser policy — coordinates are the only path into it"
-    },
-    {
-     "x": 64,
-     "y": 96,
-     "covered": false,
-     "reason": "dom:capped(1500)",
-     "ref": "wv",
-     "warning": "no semantic selector covers (64,96) — dom:capped(1500): the DOM walk under wv stopped at its node cap (1500 node(s) captured), so nodes here were never captured at all — narrow the page or scroll"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "ios",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 128
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "UIApplication",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "UIWindow",
-      "role": "window",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "children": [
-       "f1",
-       "wv"
+      "points": [
+        {
+          "x": 32,
+          "y": 16,
+          "covered": true,
+          "reason": "selector-available",
+          "ref": "b1",
+          "selector": "--test-id pay",
+          "warning": "--point was not needed at (32,16): --test-id pay resolves to b1 (button), whose frame contains this point and would tap (32,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
+        },
+        {
+          "x": 96,
+          "y": 16,
+          "covered": true,
+          "reason": "selector-available",
+          "ref": "t1",
+          "selector": "--label \"Next\"",
+          "warning": "--point was not needed at (96,16): --label \"Next\" resolves to t1 (button), whose frame contains this point and would tap (96,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
+        },
+        {
+          "x": 32,
+          "y": 48,
+          "covered": true,
+          "reason": "selector-available",
+          "ref": "d1",
+          "selector": "--css '#pay'",
+          "warning": "--point was not needed at (32,48): --css '#pay' resolves to d1 (textField), whose frame contains this point and would tap (32,48). A selector tap re-resolves and confirms its target; a coordinate does neither"
+        },
+        {
+          "x": 100,
+          "y": 100,
+          "covered": false,
+          "reason": "no-interactive-node",
+          "ref": "w1",
+          "warning": "no semantic selector covers (100,100) — no-interactive-node: the topmost node here is w1 (window) and it is not interactive, so no selector aims at this point"
+        },
+        {
+          "x": 200,
+          "y": 10,
+          "covered": false,
+          "reason": "off-screen",
+          "warning": "no semantic selector covers (200,10) — off-screen: this point is outside the 128x128 screen"
+        }
       ],
-      "parentRef": "r0"
-     },
-     "f1": {
-      "ref": "f1",
-      "kind": "domNode",
-      "typeName": "iframe",
-      "role": "iframe",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 64
-      },
-      "custom": {
-       "domTag": {
-        "_type": "text",
-        "value": "iframe"
-       },
-       "domCrossOriginFrame": {
-        "_type": "bool",
-        "value": true
-       }
-      },
-      "parentRef": "w1"
-     },
-     "wv": {
-      "ref": "wv",
-      "kind": "view",
-      "typeName": "WKWebView",
-      "role": "webView",
-      "frame": {
-       "x": 0,
-       "y": 64,
-       "width": 128,
-       "height": 64
-      },
-      "custom": {
-       "domCapped": {
-        "_type": "bool",
-        "value": true
-       },
-       "domCaptured": {
-        "_type": "int",
-        "value": 1500
-       }
-      },
-      "parentRef": "w1"
-     }
-    }
-   }
-  },
-  {
-   "name": "a self-drawn wheel, the area outside every node, and the keyboard's own rows are three different answers",
-   "report": [
-    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
-    "addressable: 0 of 2 touch-relevant cell(s) (0%)",
-    "unreachable: 2 cell(s)",
-    "  wheel wheel1 [0,0 64x32] 2 cell(s)",
-    "inert: 7 cell(s) — a node is captured there, none of it interactive",
-    "empty: 3 cell(s) — no captured node contains the point",
-    "keyboard: 4 cell(s) covered by the IME (another process's window)",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [
-    {
-     "x": 32,
-     "y": 16,
-     "covered": false,
-     "reason": "wheel",
-     "ref": "wheel1",
-     "warning": "no semantic selector covers (32,16) — wheel: wheel1 is a wheel column whose candidate values exist only as pixels — drive it with `act swipe`"
-    },
-    {
-     "x": 112,
-     "y": 16,
-     "covered": false,
-     "reason": "nothing-captured",
-     "warning": "no semantic selector covers (112,16) — nothing-captured: no captured node contains this point"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 128
-     },
-     "density": 3.0,
-     "fontScale": 1.0,
-     "keyboard": {
-      "visible": true,
-      "frame": {
-       "x": 0,
-       "y": 96,
-       "width": 128,
-       "height": 32
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "children": [
+              "b1",
+              "t1",
+              "d1"
+            ],
+            "parentRef": "r0"
+          },
+          "b1": {
+            "ref": "b1",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "testId": "pay",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "t1": {
+            "ref": "t1",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "text": "Next",
+            "frame": {
+              "x": 64,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "d1": {
+            "ref": "d1",
+            "kind": "domNode",
+            "typeName": "input",
+            "role": "textField",
+            "frame": {
+              "x": 0,
+              "y": 32,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "input"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": "#pay"
+              }
+            },
+            "parentRef": "w1"
+          }
+        }
       }
-     }
     },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 96,
-       "height": 96
-      },
-      "children": [
-       "wheel1"
+    {
+      "name": "a cross-origin frame and a capped DOM walk each justify the coordinate by name, and the gap rows carry the host rects",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 0 of 16 touch-relevant cell(s) (0%)",
+        "unreachable: 16 cell(s)",
+        "  dom:capped(1500) wv [0,64 128x64] 8 cell(s)",
+        "  iframe:cross-origin f1 [0,0 128x64] 8 cell(s)",
+        "inert: 0 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
       ],
-      "parentRef": "r0"
-     },
-     "wheel1": {
-      "ref": "wheel1",
-      "kind": "view",
-      "typeName": "com.example.SpinnerWheel",
-      "role": "picker",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 64,
-       "height": 32
-      },
-      "suspectedWheel": true,
-      "parentRef": "w1"
-     }
-    }
-   }
-  },
-  {
-   "name": "a screen-sized tappable container is not cover, and it is not a gap either: the cells inside it are reported on their own line so the addressable share stays about controls",
-   "report": [
-    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
-    "addressable: 1 of 1 touch-relevant cell(s) (100%)",
-    "unreachable: none — every touch-relevant cell has an addressable node over it",
-    "container-only: 15 cell(s) — only a screen-sized container answers here (a selector tap on it lands on its own centre)",
-    "inert: 0 cell(s) — a node is captured there, none of it interactive",
-    "empty: 0 cell(s) — no captured node contains the point",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [
-    {
-     "x": 16,
-     "y": 16,
-     "covered": true,
-     "reason": "selector-available",
-     "ref": "b1",
-     "selector": "--test-id ok",
-     "warning": "--point was not needed at (16,16): --test-id ok resolves to b1 (button), whose frame contains this point and would tap (16,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
-    },
-    {
-     "x": 100,
-     "y": 100,
-     "covered": false,
-     "reason": "container-only",
-     "ref": "wv",
-     "warning": "no semantic selector covers (100,100) — container-only: the only addressable node here is wv (webView), a screen-sized container whose own tap point is (64,64) — nothing smaller is captured at this point"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 128
-     },
-     "density": 3.0,
-     "fontScale": 1.0
-    },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "children": [
-       "wv"
+      "points": [
+        {
+          "x": 64,
+          "y": 32,
+          "covered": false,
+          "reason": "iframe:cross-origin",
+          "ref": "f1",
+          "warning": "no semantic selector covers (64,32) — iframe:cross-origin: the frame at f1 is cross-origin, so its document is unreadable by browser policy — coordinates are the only path into it"
+        },
+        {
+          "x": 64,
+          "y": 96,
+          "covered": false,
+          "reason": "dom:capped(1500)",
+          "ref": "wv",
+          "warning": "no semantic selector covers (64,96) — dom:capped(1500): the DOM walk under wv stopped at its node cap (1500 node(s) captured), so nodes here were never captured at all — narrow the page or scroll"
+        }
       ],
-      "parentRef": "r0"
-     },
-     "wv": {
-      "ref": "wv",
-      "kind": "view",
-      "typeName": "android.webkit.WebView",
-      "role": "webView",
-      "resourceId": "webview",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "isInteractive": true,
-      "children": [
-       "b1"
-      ],
-      "parentRef": "w1"
-     },
-     "b1": {
-      "ref": "b1",
-      "kind": "domNode",
-      "typeName": "button",
-      "role": "button",
-      "testId": "ok",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 32,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "wv"
-     }
-    }
-   }
-  },
-  {
-   "name": "a tap is warned when something else receives the touch: the IME, a window above the target, or a node drawn over it — and a screen-sized overlay container is scenery, not an obstruction",
-   "report": [
-    "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
-    "addressable: 4 of 4 touch-relevant cell(s) (100%)",
-    "unreachable: none — every touch-relevant cell has an addressable node over it",
-    "container-only: 8 cell(s) — only a screen-sized container answers here (a selector tap on it lands on its own centre)",
-    "inert: 0 cell(s) — a node is captured there, none of it interactive",
-    "empty: 0 cell(s) — no captured node contains the point",
-    "keyboard: 4 cell(s) covered by the IME (another process's window)",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [],
-   "obstructions": [
-    {
-     "x": 16,
-     "y": 16,
-     "targetRef": "pay",
-     "reason": "occluded:node",
-     "ref": "icon",
-     "warning": "the touch at (16,16) may not reach the target — occluded:node: icon (image) is drawn over pay at this point and is itself interactive, so it consumes the touch"
-    },
-    {
-     "x": 48,
-     "y": 16,
-     "targetRef": "pay"
-    },
-    {
-     "x": 64,
-     "y": 48,
-     "targetRef": "beneath",
-     "reason": "occluded:window",
-     "ref": "w2",
-     "warning": "the touch at (64,48) may not reach the target — occluded:window: a window above beneath covers this point (w2) — the touch lands in that window, not on the target"
-    },
-    {
-     "x": 32,
-     "y": 112,
-     "targetRef": "submit",
-     "reason": "occluded:keyboard",
-     "warning": "the touch at (32,112) may not reach the target — occluded:keyboard: the IME covers this point, so the touch goes to the keyboard and not to the app — dismiss it with `act hide-keyboard` first"
-    },
-    {
-     "x": 64,
-     "y": 48,
-     "targetRef": "ok"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 128
-     },
-     "density": 3.0,
-     "fontScale": 1.0,
-     "keyboard": {
-      "visible": true,
-      "frame": {
-       "x": 0,
-       "y": 96,
-       "width": 128,
-       "height": 32
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "ios",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "UIApplication",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "UIWindow",
+            "role": "window",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "children": [
+              "f1",
+              "wv"
+            ],
+            "parentRef": "r0"
+          },
+          "f1": {
+            "ref": "f1",
+            "kind": "domNode",
+            "typeName": "iframe",
+            "role": "iframe",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 64
+            },
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "iframe"
+              },
+              "domCrossOriginFrame": {
+                "_type": "bool",
+                "value": true
+              }
+            },
+            "parentRef": "w1"
+          },
+          "wv": {
+            "ref": "wv",
+            "kind": "view",
+            "typeName": "WKWebView",
+            "role": "webView",
+            "frame": {
+              "x": 0,
+              "y": 64,
+              "width": 128,
+              "height": 64
+            },
+            "custom": {
+              "domCapped": {
+                "_type": "bool",
+                "value": true
+              },
+              "domCaptured": {
+                "_type": "int",
+                "value": 1500
+              }
+            },
+            "parentRef": "w1"
+          }
+        }
       }
-     }
     },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1",
-       "w2"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "content",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "children": [
-       "pay",
-       "beneath",
-       "submit",
-       "scenery",
-       "icon"
-      ],
-      "parentRef": "r0"
-     },
-     "pay": {
-      "ref": "pay",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "testId": "pay",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "beneath": {
-      "ref": "beneath",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "testId": "beneath",
-      "frame": {
-       "x": 32,
-       "y": 32,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "submit": {
-      "ref": "submit",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "testId": "submit",
-      "frame": {
-       "x": 0,
-       "y": 96,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "scenery": {
-      "ref": "scenery",
-      "kind": "view",
-      "typeName": "android.widget.FrameLayout",
-      "role": "container",
-      "resourceId": "debug_overlay_root",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 128
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "icon": {
-      "ref": "icon",
-      "kind": "view",
-      "typeName": "android.widget.ImageView",
-      "role": "image",
-      "resourceId": "debug_overlay_icon",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 32,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w1"
-     },
-     "w2": {
-      "ref": "w2",
-      "kind": "window",
-      "typeName": "com.android.internal.policy.DecorView",
-      "role": "window",
-      "resourceId": "dialog",
-      "frame": {
-       "x": 32,
-       "y": 32,
-       "width": 64,
-       "height": 32
-      },
-      "children": [
-       "ok"
-      ],
-      "parentRef": "r0"
-     },
-     "ok": {
-      "ref": "ok",
-      "kind": "view",
-      "typeName": "android.widget.Button",
-      "role": "button",
-      "testId": "dialog.ok",
-      "frame": {
-       "x": 32,
-       "y": 32,
-       "width": 64,
-       "height": 32
-      },
-      "isInteractive": true,
-      "parentRef": "w2"
-     }
-    }
-   }
-  },
-  {
-   "name": "a field the page named but exposed no control for is listed by name: 100% addressable must not read as 'every control here has a selector'",
-   "$comment": "Measured on a real loan-application form: five dropdowns whose trigger is a bare <div> with no role, no aria-*, no text and nothing declared clickable. Their <label> IS captured, so those cells came back inert/container-only and the screen read as 100% addressable while the five fields could only be driven by coordinates. Listed, never counted as a gap or as cover: nothing proves the region is tappable, and inferring it from a label would be a guess. The rule is narrow - the enclosing wrapper must hold exactly one label and NO interactive node - so the second field here, which has a real button beside its label, is not listed.",
-   "report": [
-    "coverage: 128x256, sampled on a 4x8 grid of 32px cells",
-    "addressable: 4 of 4 touch-relevant cell(s) (100%)",
-    "unreachable: none — every touch-relevant cell has an addressable node over it",
-    "inert: 28 cell(s) — a node is captured there, none of it interactive",
-    "named but inert: 1 field(s) — the page names these and exposes no control for them, so only a coordinate reaches them",
-    "  \"Education\" field1 [0,0 128x64] 6 cell(s)",
-    "empty: 0 cell(s) — no captured node contains the point",
-    "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
-   ],
-   "points": [
     {
-     "x": 64,
-     "y": 40,
-     "covered": false,
-     "reason": "no-interactive-node",
-     "ref": "trigger1",
-     "detail": "the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it",
-     "warning": "no semantic selector covers (64,40) — no-interactive-node: the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it"
-    }
-   ],
-   "snapshot": {
-    "schemaVersion": 1,
-    "capturedAtMillis": 1719400000000,
-    "platform": "android",
-    "screen": {
-     "size": {
-      "width": 128,
-      "height": 256
-     },
-     "density": 3.0,
-     "fontScale": 1.0
+      "name": "a self-drawn wheel, the area outside every node, and the keyboard's own rows are three different answers",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 0 of 2 touch-relevant cell(s) (0%)",
+        "unreachable: 2 cell(s)",
+        "  wheel wheel1 [0,0 64x32] 2 cell(s)",
+        "inert: 7 cell(s) — a node is captured there, none of it interactive",
+        "empty: 3 cell(s) — no captured node contains the point",
+        "keyboard: 4 cell(s) covered by the IME (another process's window)",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [
+        {
+          "x": 32,
+          "y": 16,
+          "covered": false,
+          "reason": "wheel",
+          "ref": "wheel1",
+          "warning": "no semantic selector covers (32,16) — wheel: wheel1 is a wheel column whose candidate values exist only as pixels — drive it with `act swipe`"
+        },
+        {
+          "x": 112,
+          "y": 16,
+          "covered": false,
+          "reason": "nothing-captured",
+          "warning": "no semantic selector covers (112,16) — nothing-captured: no captured node contains this point"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0,
+          "keyboard": {
+            "visible": true,
+            "frame": {
+              "x": 0,
+              "y": 96,
+              "width": 128,
+              "height": 32
+            }
+          }
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 96,
+              "height": 96
+            },
+            "children": [
+              "wheel1"
+            ],
+            "parentRef": "r0"
+          },
+          "wheel1": {
+            "ref": "wheel1",
+            "kind": "view",
+            "typeName": "com.example.SpinnerWheel",
+            "role": "picker",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "suspectedWheel": true,
+            "parentRef": "w1"
+          }
+        }
+      }
     },
-    "rootRef": "r0",
-    "nodes": {
-     "r0": {
-      "ref": "r0",
-      "kind": "application",
-      "typeName": "android.app.Application",
-      "role": "application",
-      "children": [
-       "w1"
-      ]
-     },
-     "w1": {
-      "ref": "w1",
-      "parentRef": "r0",
-      "kind": "window",
-      "typeName": "DecorView",
-      "role": "window",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 256
-      },
-      "children": [
-       "field1",
-       "field2"
-      ]
-     },
-     "field1": {
-      "ref": "field1",
-      "parentRef": "w1",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "div",
-      "frame": {
-       "x": 0,
-       "y": 0,
-       "width": 128,
-       "height": 64
-      },
-      "children": [
-       "label1",
-       "trigger1"
-      ]
-     },
-     "label1": {
-      "ref": "label1",
-      "parentRef": "field1",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "label",
-      "text": "Education",
-      "frame": {
-       "x": 4,
-       "y": 4,
-       "width": 60,
-       "height": 16
+    {
+      "name": "a screen-sized tappable container is not cover, and it is not a gap either: the cells inside it are reported on their own line so the addressable share stays about controls",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 1 of 1 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "container-only: 15 cell(s) — only a screen-sized container answers here (a selector tap on it lands on its own centre)",
+        "inert: 0 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [
+        {
+          "x": 16,
+          "y": 16,
+          "covered": true,
+          "reason": "selector-available",
+          "ref": "b1",
+          "selector": "--test-id ok",
+          "warning": "--point was not needed at (16,16): --test-id ok resolves to b1 (button), whose frame contains this point and would tap (16,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
+        },
+        {
+          "x": 100,
+          "y": 100,
+          "covered": false,
+          "reason": "container-only",
+          "ref": "wv",
+          "warning": "no semantic selector covers (100,100) — container-only: the only addressable node here is wv (webView), a screen-sized container whose own tap point is (64,64) — nothing smaller is captured at this point"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "children": [
+              "wv"
+            ],
+            "parentRef": "r0"
+          },
+          "wv": {
+            "ref": "wv",
+            "kind": "view",
+            "typeName": "android.webkit.WebView",
+            "role": "webView",
+            "resourceId": "webview",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "isInteractive": true,
+            "children": [
+              "b1"
+            ],
+            "parentRef": "w1"
+          },
+          "b1": {
+            "ref": "b1",
+            "kind": "domNode",
+            "typeName": "button",
+            "role": "button",
+            "testId": "ok",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 32,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "wv"
+          }
+        }
       }
-     },
-     "trigger1": {
-      "ref": "trigger1",
-      "parentRef": "field1",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "div",
-      "frame": {
-       "x": 4,
-       "y": 24,
-       "width": 120,
-       "height": 32
+    },
+    {
+      "name": "a tap is warned when something else receives the touch: the IME, a window above the target, or a node drawn over it — and a screen-sized overlay container is scenery, not an obstruction",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 4 of 4 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "container-only: 8 cell(s) — only a screen-sized container answers here (a selector tap on it lands on its own centre)",
+        "inert: 0 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "keyboard: 4 cell(s) covered by the IME (another process's window)",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [],
+      "obstructions": [
+        {
+          "x": 16,
+          "y": 16,
+          "targetRef": "pay",
+          "reason": "occluded:node",
+          "ref": "icon",
+          "warning": "the touch at (16,16) may not reach the target — occluded:node: icon (image) is drawn over pay at this point and is itself interactive, so it consumes the touch"
+        },
+        {
+          "x": 48,
+          "y": 16,
+          "targetRef": "pay"
+        },
+        {
+          "x": 64,
+          "y": 48,
+          "targetRef": "beneath",
+          "reason": "occluded:window",
+          "ref": "w2",
+          "warning": "the touch at (64,48) may not reach the target — occluded:window: a window above beneath covers this point (w2) — the touch lands in that window, not on the target"
+        },
+        {
+          "x": 32,
+          "y": 112,
+          "targetRef": "submit",
+          "reason": "occluded:keyboard",
+          "warning": "the touch at (32,112) may not reach the target — occluded:keyboard: the IME covers this point, so the touch goes to the keyboard and not to the app — dismiss it with `act hide-keyboard` first"
+        },
+        {
+          "x": 64,
+          "y": 48,
+          "targetRef": "ok"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0,
+          "keyboard": {
+            "visible": true,
+            "frame": {
+              "x": 0,
+              "y": 96,
+              "width": 128,
+              "height": 32
+            }
+          }
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1",
+              "w2"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "content",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "children": [
+              "pay",
+              "beneath",
+              "submit",
+              "scenery",
+              "icon"
+            ],
+            "parentRef": "r0"
+          },
+          "pay": {
+            "ref": "pay",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "testId": "pay",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "beneath": {
+            "ref": "beneath",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "testId": "beneath",
+            "frame": {
+              "x": 32,
+              "y": 32,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "submit": {
+            "ref": "submit",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "testId": "submit",
+            "frame": {
+              "x": 0,
+              "y": 96,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "scenery": {
+            "ref": "scenery",
+            "kind": "view",
+            "typeName": "android.widget.FrameLayout",
+            "role": "container",
+            "resourceId": "debug_overlay_root",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "icon": {
+            "ref": "icon",
+            "kind": "view",
+            "typeName": "android.widget.ImageView",
+            "role": "image",
+            "resourceId": "debug_overlay_icon",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 32,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w1"
+          },
+          "w2": {
+            "ref": "w2",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "resourceId": "dialog",
+            "frame": {
+              "x": 32,
+              "y": 32,
+              "width": 64,
+              "height": 32
+            },
+            "children": [
+              "ok"
+            ],
+            "parentRef": "r0"
+          },
+          "ok": {
+            "ref": "ok",
+            "kind": "view",
+            "typeName": "android.widget.Button",
+            "role": "button",
+            "testId": "dialog.ok",
+            "frame": {
+              "x": 32,
+              "y": 32,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "parentRef": "w2"
+          }
+        }
       }
-     },
-     "field2": {
-      "ref": "field2",
-      "parentRef": "w1",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "div",
-      "frame": {
-       "x": 0,
-       "y": 128,
-       "width": 128,
-       "height": 64
-      },
-      "children": [
-       "label2",
-       "button2"
-      ]
-     },
-     "label2": {
-      "ref": "label2",
-      "parentRef": "field2",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "label",
-      "text": "Job",
-      "frame": {
-       "x": 4,
-       "y": 132,
-       "width": 60,
-       "height": 16
+    },
+    {
+      "name": "a field the page named but exposed no control for is listed by name: 100% addressable must not read as 'every control here has a selector'",
+      "$comment": "Measured on a real loan-application form: five dropdowns whose trigger is a bare <div> with no role, no aria-*, no text and nothing declared clickable. Their <label> IS captured, so those cells came back inert/container-only and the screen read as 100% addressable while the five fields could only be driven by coordinates. Listed, never counted as a gap or as cover: nothing proves the region is tappable, and inferring it from a label would be a guess. The rule is narrow - the enclosing wrapper must hold exactly one label and NO interactive node - so the second field here, which has a real button beside its label, is not listed.",
+      "report": [
+        "coverage: 128x256, sampled on a 4x8 grid of 32px cells",
+        "addressable: 4 of 4 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "inert: 28 cell(s) — a node is captured there, none of it interactive",
+        "named but inert: 1 field(s) — the page names these and exposes no control for them, so only a coordinate reaches them",
+        "  \"Education\" field1 [0,0 128x64] 6 cell(s)",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [
+        {
+          "x": 64,
+          "y": 40,
+          "covered": false,
+          "reason": "no-interactive-node",
+          "ref": "trigger1",
+          "detail": "the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it",
+          "warning": "no semantic selector covers (64,40) — no-interactive-node: the topmost node here is trigger1 (div) and it is not interactive, so no selector aims at this point — it is inside the named field \"Education\" (field1), which the page exposes no control for, so a coordinate is the only path to it"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 256
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "parentRef": "r0",
+            "kind": "window",
+            "typeName": "DecorView",
+            "role": "window",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 256
+            },
+            "children": [
+              "field1",
+              "field2"
+            ]
+          },
+          "field1": {
+            "ref": "field1",
+            "parentRef": "w1",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "div",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 64
+            },
+            "children": [
+              "label1",
+              "trigger1"
+            ]
+          },
+          "label1": {
+            "ref": "label1",
+            "parentRef": "field1",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "label",
+            "text": "Education",
+            "frame": {
+              "x": 4,
+              "y": 4,
+              "width": 60,
+              "height": 16
+            }
+          },
+          "trigger1": {
+            "ref": "trigger1",
+            "parentRef": "field1",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "div",
+            "frame": {
+              "x": 4,
+              "y": 24,
+              "width": 120,
+              "height": 32
+            }
+          },
+          "field2": {
+            "ref": "field2",
+            "parentRef": "w1",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "div",
+            "frame": {
+              "x": 0,
+              "y": 128,
+              "width": 128,
+              "height": 64
+            },
+            "children": [
+              "label2",
+              "button2"
+            ]
+          },
+          "label2": {
+            "ref": "label2",
+            "parentRef": "field2",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "label",
+            "text": "Job",
+            "frame": {
+              "x": 4,
+              "y": 132,
+              "width": 60,
+              "height": 16
+            }
+          },
+          "button2": {
+            "ref": "button2",
+            "parentRef": "field2",
+            "kind": "domNode",
+            "typeName": "DOMElement",
+            "role": "button",
+            "text": "Pick",
+            "testId": "job.pick",
+            "frame": {
+              "x": 4,
+              "y": 152,
+              "width": 120,
+              "height": 32
+            },
+            "isInteractive": true
+          }
+        }
       }
-     },
-     "button2": {
-      "ref": "button2",
-      "parentRef": "field2",
-      "kind": "domNode",
-      "typeName": "DOMElement",
-      "role": "button",
-      "text": "Pick",
-      "testId": "job.pick",
-      "frame": {
-       "x": 4,
-       "y": 152,
-       "width": 120,
-       "height": 32
-      },
-      "isInteractive": true
-     }
+    },
+    {
+      "name": "an in-page dialog is a cover with no window of its own: a field under the backdrop is obstructed, the sheet's own option is not",
+      "report": [
+        "coverage: 128x128, sampled on a 4x4 grid of 32px cells",
+        "addressable: 8 of 8 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "container-only: 8 cell(s) — only a screen-sized container answers here (a selector tap on it lands on its own centre)",
+        "inert: 0 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [],
+      "obstructions": [
+        {
+          "x": 64,
+          "y": 24,
+          "targetRef": "income",
+          "reason": "occluded:node",
+          "ref": "backdrop",
+          "warning": "the touch at (64,24) may not reach the target — occluded:node: backdrop (div) is drawn over income at this point and the page did not opt it out of hit-testing, so it consumes the touch"
+        },
+        {
+          "x": 64,
+          "y": 104,
+          "targetRef": "option"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 128
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "parentRef": "r0",
+            "kind": "window",
+            "typeName": "android.view.ViewRootImpl",
+            "role": "window",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "children": [
+              "web"
+            ]
+          },
+          "web": {
+            "ref": "web",
+            "parentRef": "w1",
+            "kind": "view",
+            "typeName": "android.webkit.WebView",
+            "role": "webView",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "isInteractive": true,
+            "children": [
+              "body"
+            ]
+          },
+          "body": {
+            "ref": "body",
+            "kind": "domNode",
+            "typeName": "body",
+            "role": "body",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "body"
+              }
+            },
+            "parentRef": "web",
+            "children": [
+              "form",
+              "backdrop",
+              "sheet"
+            ]
+          },
+          "form": {
+            "ref": "form",
+            "kind": "domNode",
+            "typeName": "div",
+            "role": "div",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 64
+            },
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "div"
+              }
+            },
+            "parentRef": "body",
+            "children": [
+              "income"
+            ]
+          },
+          "income": {
+            "ref": "income",
+            "kind": "domNode",
+            "typeName": "input",
+            "role": "textField",
+            "frame": {
+              "x": 16,
+              "y": 16,
+              "width": 96,
+              "height": 16
+            },
+            "isInteractive": true,
+            "text": "8000",
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "input"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": "#income"
+              }
+            },
+            "parentRef": "form"
+          },
+          "backdrop": {
+            "ref": "backdrop",
+            "kind": "domNode",
+            "typeName": "div",
+            "role": "div",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 128
+            },
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "div"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": ".van-overlay"
+              },
+              "domStylePosition": {
+                "_type": "text",
+                "value": "fixed"
+              },
+              "domStyleBackgroundColor": {
+                "_type": "text",
+                "value": "rgba(0, 0, 0, 0.7)"
+              }
+            },
+            "parentRef": "body"
+          },
+          "sheet": {
+            "ref": "sheet",
+            "kind": "domNode",
+            "typeName": "div",
+            "role": "div",
+            "frame": {
+              "x": 0,
+              "y": 80,
+              "width": 128,
+              "height": 48
+            },
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "div"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": ".sheet"
+              },
+              "domStylePosition": {
+                "_type": "text",
+                "value": "fixed"
+              },
+              "domStyleBackgroundColor": {
+                "_type": "text",
+                "value": "rgb(255, 255, 255)"
+              }
+            },
+            "parentRef": "body",
+            "children": [
+              "option"
+            ]
+          },
+          "option": {
+            "ref": "option",
+            "kind": "domNode",
+            "typeName": "button",
+            "role": "button",
+            "frame": {
+              "x": 16,
+              "y": 96,
+              "width": 96,
+              "height": 16
+            },
+            "isInteractive": true,
+            "text": "6",
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "button"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": ".sheet button"
+              }
+            },
+            "parentRef": "sheet"
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }
