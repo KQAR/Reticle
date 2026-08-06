@@ -268,8 +268,11 @@ coordinates into device coordinates through the host view's frame and the page's
 scroll offsets. When that fold is wrong, a css tap misses while reporting
 `settled=1`. Reticle states the one case it can prove — a rect whose centre lands
 outside the web view that draws it — as `warning: … folded to a point OUTSIDE the
-web view that draws it`. Re-capture, and if it persists use `act activate --css`,
-which needs no coordinates. A smaller disagreement has no second source to be judged
+web view that draws it`. Re-capture, and if it persists: on **iOS** use `act
+activate --css`, which needs no coordinates; on **Android** there is no such path
+(`act activate` is iOS-only, because it exists to replace an HID surface Android
+has), so fall back to `act tap --point` off a screenshot and say that is what
+happened. A smaller disagreement has no second source to be judged
 against and is NOT guessed at, so a css tap that misses on a page with no warning is
 still worth checking against a screenshot.
 
