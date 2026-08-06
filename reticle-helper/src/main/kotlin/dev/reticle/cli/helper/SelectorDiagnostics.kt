@@ -44,17 +44,54 @@ internal object SelectorDiagnostics {
                 "--resource-id, --css, --ref, --alias @N, or --point x,y."
         }
         val regionHint = selector.region?.let { regionHint(snapshot, selector, it) }
-        // The recycling-list note is about a row that was never bound. For a REF miss
-        // on a screen with a DOM on it, the cause is renumbering, not scrolling — and
-        // measured on such a screen the note pointed at a container nothing had
-        // touched, which is a wrong lead rather than a weak one.
-        val scroll = if (selector.ref != null && snapshot.nodes.values.any { it.kind == NodeKind.domNode }) {
+        // The recycling-list note is about a row that was never bound. Two cases where
+        // it is a wrong lead rather than a weak one, both measured: a REF miss on a
+        // screen with a DOM on it (the cause is renumbering, not scrolling), and a
+        // PIERCING css miss on a screen with a cross-origin frame (the cause is browser
+        // policy, and no amount of scrolling binds that document).
+        val domPresent = snapshot.nodes.values.any { it.kind == NodeKind.domNode }
+        val piercingIntoOpaqueFrame = selector.cssSelector?.contains(">>>") == true &&
+            snapshot.nodes.values.any { it.domCrossOriginFrame() }
+        val scroll = if ((selector.ref != null && domPresent) || piercingIntoOpaqueFrame) {
             null
         } else {
             scrollHint(snapshot)
         }
-        return listOfNotNull(candidates, regionHint, scroll, kernelHint(snapshot, selector))
-            .joinToString(" ")
+        return listOfNotNull(
+            candidates, regionHint, scroll, kernelHint(snapshot, selector),
+            crossOriginHint(snapshot, selector),
+        ).joinToString(" ")
+    }
+
+    /**
+     * The wall behind a css miss when the screen carries a CROSS-ORIGIN frame.
+     *
+     * A selector aimed inside such a frame can never match: browser policy withholds
+     * the document, so the walk captured the frame element and nothing under it.
+     * Measured on a real bank widget — `--css 'iframe >>> button'` answered with the
+     * generic "no matching node … candidates sharing part of it: 'iframe'" plus a
+     * note about recycling lists that had nothing to do with it, so the message read
+     * as "try another selector" for a case where no selector exists. The frame's own
+     * compact line has said `iframe:cross-origin` since 0.13; this is the other half
+     * — the one a caller reads at the moment the selector fails.
+     *
+     * Only for css: a `testId`/`resourceId`/`ref` miss has its own explanations, and
+     * a page inside a frame cannot have contributed either.
+     */
+    private fun crossOriginHint(snapshot: Snapshot, selector: Selector): String? {
+        if (selector.cssSelector == null) return null
+        val frames = snapshot.nodes.values.filter { it.domCrossOriginFrame() }
+        if (frames.isEmpty()) return null
+        val named = frames.joinToString(", ") { frame ->
+            val where = frame.frame?.let {
+                " [${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}]"
+            } ?: ""
+            "${frame.ref}$where"
+        }
+        return "Note: this screen has a cross-origin frame ($named) whose document browser policy " +
+            "withholds, so NOTHING inside it is captured and no selector — `>>>` included — can " +
+            "reach it. If the target is in there, a coordinate (`--point x,y`) is the only path; " +
+            "`ui coverage` reports the frame's rect."
     }
 
     /**

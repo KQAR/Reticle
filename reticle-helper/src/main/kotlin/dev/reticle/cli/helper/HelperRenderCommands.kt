@@ -79,9 +79,25 @@ internal object HelperRenderCommands {
         "outline" -> OutlineRenderer.render(snapshot).first
         "node" -> renderNode(snapshot, params)
         "regions" -> Render.regions(snapshot)
-        "style" -> Render.style(snapshot)
+        "style" -> renderStyle(snapshot, params)
         "coverage" -> Render.coverage(snapshot)
         else -> throw CliError("unknown render view '$view'")
+    }
+
+    /**
+     * `ui style` with a selector reports THAT node and its subtree.
+     *
+     * The selector used to be accepted and dropped, so every call rendered the whole
+     * screen — 2978 lines on a hybrid screen for a one-node question, with no hint
+     * that the flag had done nothing. A selector that matches nothing now fails the
+     * same way `ui node` does rather than silently widening to everything.
+     */
+    private fun renderStyle(snapshot: Snapshot, params: JsonObject): String {
+        val selector = selectorFrom(params)
+        val named = selector.testId ?: selector.resourceId ?: selector.cssSelector ?: selector.ref
+        if (named == null) return Render.style(snapshot)
+        val node = findNode(snapshot, params) ?: throw CliError(SelectorDiagnostics.nodeMiss(snapshot, selector))
+        return Render.style(snapshot, startRef = node.ref)
     }
 
     private fun renderNode(snapshot: Snapshot, params: JsonObject): String {

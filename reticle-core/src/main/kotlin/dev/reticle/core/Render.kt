@@ -196,7 +196,13 @@ object Render {
     }.trimEnd()
 
     /** Geometry + style + provenance for every node that has any. */
-    fun style(snapshot: Snapshot): String = StyleObservation.from(snapshot).render()
+    /**
+     * [startRef] scopes the report to one node and its subtree — see
+     * [StyleObservation.from], where the silently-ignored selector this fixes is
+     * written down.
+     */
+    fun style(snapshot: Snapshot, startRef: String? = null): String =
+        StyleObservation.from(snapshot, startRef = startRef).render()
 
     /**
      * How much of this screen an agent can address, and which regions it cannot.

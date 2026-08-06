@@ -106,7 +106,13 @@ public struct StyleObservation: Codable, Sendable {
     /// or visibility: an unlabelled spacer container is exactly the kind of node a
     /// spacing question is about, and an invisible one still has a specified
     /// style. The compact view is for acting now; this one is for measuring.
-    public static func from(_ snapshot: Snapshot, maxItems: Int = 500) -> StyleObservation {
+    /// `startRef` scopes the walk to one node and its subtree; nil means the whole
+    /// tree. See the Kotlin twin: `ui style --ref` / `--css` used to be accepted and
+    /// ignored, so a one-node question rendered the entire screen — 2978 identical
+    /// lines with the asked-for node on line 2912.
+    public static func from(
+        _ snapshot: Snapshot, maxItems: Int = 500, startRef: String? = nil
+    ) -> StyleObservation {
         let units = StyleUnits(platform: snapshot.platform, screen: snapshot.screen)
         var items: [StyleItem] = []
         var seen = Set<String>()
@@ -141,7 +147,7 @@ public struct StyleObservation: Codable, Sendable {
             }
             for child in node.children { visit(child) }
         }
-        visit(snapshot.rootRef)
+        visit(startRef ?? snapshot.rootRef)
         let kept = Array(items.prefix(maxItems))
         return StyleObservation(
             capturedAtMillis: snapshot.capturedAtMillis,
