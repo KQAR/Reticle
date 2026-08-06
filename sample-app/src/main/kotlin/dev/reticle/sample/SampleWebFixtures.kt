@@ -27,6 +27,7 @@ object SampleWebFixtures {
     private const val SCENARIO_SCROLLED = "scrolled"
     private const val SCENARIO_FRAMES = "frames"
     private const val SCENARIO_RENUMBERING = "renumbering"
+    private const val SCENARIO_CAPTION_FIELD = "captionField"
 
     data class Fixture(
         val heightPx: Int,
@@ -58,6 +59,7 @@ object SampleWebFixtures {
             SCENARIO_SCROLLED -> scrolledFixture(heightPx = 900)
             SCENARIO_FRAMES -> framesFixture(heightPx = 900)
             SCENARIO_RENUMBERING -> renumberingFixture(heightPx = 900)
+            SCENARIO_CAPTION_FIELD -> captionFieldFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -172,6 +174,29 @@ object SampleWebFixtures {
             heightPx = heightPx,
             baseUrl = "https://reticle.dev/sample/renumbering",
             html = renumberingHtml,
+        )
+
+    /**
+     * A field a component library built out of `div`s, with NOTHING published.
+     *
+     * Its click handler is bound in JS, so the row has no `role`, no `tabindex`, no
+     * `aria-*` and not even `cursor: pointer` — and its options do not exist in the
+     * DOM until it is opened. The only string in the tree is the caption, and the
+     * only node under the touch point is a plain `div`.
+     *
+     * Measured on a real framework-built form: five such rows
+     * captured as `div`/`label` with no tappable marker, `ui coverage` reported the
+     * whole area as `container-only`, and driving them meant four commands per field
+     * (read the caption's y, tap a coordinate, re-read for the options, tap one).
+     * A `--label` tap on the caption drives the row in ONE — the tap lands inside the
+     * row and the app's own handler does the rest — which is what this fixture pins,
+     * along with the `targetInert` note that says the tree never vouched for it.
+     */
+    fun captionFieldFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/caption-field",
+            html = captionFieldHtml,
         )
 
     fun scaledFixture(heightPx: Int): Fixture =
@@ -563,6 +588,59 @@ object SampleWebFixtures {
               }
               document.getElementById("amount").addEventListener("focus", insertHints);
               document.getElementById("expenses").addEventListener("focus", insertHints);
+            </script>
+          </body>
+        </html>
+    """.trimIndent()
+
+    private val captionFieldHtml: String = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body { font-family: sans-serif; margin: 16px; }
+              .field { margin: 18px 0; padding: 10px 0; border-bottom: 1px solid #ddd; }
+              .caption { color: #666; font-size: 13px; }
+              .value { font-size: 16px; min-height: 22px; }
+              .sheet { display: none; margin-top: 10px; border: 1px solid #ccc; }
+              .sheet.open { display: block; }
+              .option { padding: 12px; border-top: 1px solid #eee; }
+            </style>
+          </head>
+          <body>
+            <h1>Caption-only field</h1>
+            <!--
+              No role, no tabindex, no aria, no cursor:pointer: everything a reader
+              could use to call this a control is absent, and the handler is bound in
+              JS. The caption is the only string in the tree.
+            -->
+            <div class="field" id="education-row">
+              <div class="caption">Education level</div>
+              <div class="value" id="education-value"></div>
+            </div>
+            <div class="sheet" id="education-sheet"></div>
+            <script>
+              var OPTIONS = ["Primary", "Secondary", "University"];
+              document.getElementById("education-row").addEventListener("click", function () {
+                var sheet = document.getElementById("education-sheet");
+                if (sheet.classList.contains("open")) return;
+                // The options do not EXIST until the row is opened, which is why an
+                // unopened row has nothing to diff against.
+                OPTIONS.forEach(function (name) {
+                  var row = document.createElement("div");
+                  row.className = "option";
+                  row.textContent = name;
+                  row.addEventListener("click", function (event) {
+                    document.getElementById("education-value").textContent = name;
+                    sheet.classList.remove("open");
+                    sheet.textContent = "";
+                    event.stopPropagation();
+                  });
+                  sheet.appendChild(row);
+                });
+                sheet.classList.add("open");
+              });
             </script>
           </body>
         </html>
