@@ -75,14 +75,25 @@ public struct CompactObservation: Codable, Sendable {
         ///
         /// Sibling order is draw order, so this is the same relation the window loop
         /// uses, one level down; walking only the ancestor chain keeps it
-        /// O(depth x siblings). The cover must be **interactive**, which is the honest
-        /// limit: a touch falls through a view that does not consume it. See the
-        /// Kotlin twin.
+        /// O(depth x siblings). The cover must CONSUME the touch — see
+        /// `consumesTouch`, where native and DOM covers have opposite defaults. See
+        /// the Kotlin twin.
         /// A screen-sized interactive container occludes a point only where it
         /// actually draws something there — the Kotlin twin carries the measurement
         /// (a login screen with a full-screen debug overlay marked EVERY item
         /// occluded while every one of them was tappable). A web view is exempt: the
         /// native view eats the touch wherever it lies, whatever its document holds.
+        /// Whether a cover would actually EAT a touch aimed at what is under it.
+        ///
+        /// A native view consumes a touch only if it is interactive. A DOM element is
+        /// the opposite: it consumes the click wherever its box lies unless the page
+        /// opted out with `pointer-events: none` — no role, tabindex or handler has to
+        /// be published, and a framework sheet's backdrop publishes none. See the
+        /// Kotlin twin for the measurement.
+        func consumesTouch(_ node: Node) -> Bool {
+            node.kind == .domNode ? !node.domPointerEventsNone() : node.isInteractive
+        }
+
         let screenArea = snapshot.screen.size.width * snapshot.screen.size.height
         func drawsAt(_ node: Node, _ cx: Double, _ cy: Double) -> Bool {
             guard let frame = node.frame else { return false }
@@ -90,6 +101,10 @@ public struct CompactObservation: Codable, Sendable {
                 return true
             }
             if node.role == "webView" || node.typeName.contains("WebView") { return true }
+            // A full-screen DOM layer that is out of flow AND paints its own box is a
+            // dialog backdrop: it eats every touch across the screen, including where
+            // its own subtree is empty (the sheet's content is a SIBLING of it).
+            if node.kind == .domNode, node.domOutOfFlow(), node.domPaintsBackground() { return true }
             var seen = Set<String>()
             func descendantAt(_ ref: String) -> Bool {
                 guard seen.insert(ref).inserted, let child = snapshot.nodes[ref] else { return false }
@@ -125,7 +140,7 @@ public struct CompactObservation: Codable, Sendable {
                 if let position = p.children.firstIndex(of: current.ref) {
                     for i in stride(from: p.children.count - 1, to: position, by: -1) {
                         guard let above = snapshot.nodes[p.children[i]],
-                              above.isVisible, above.isInteractive else { continue }
+                              above.isVisible, consumesTouch(above) else { continue }
                         guard !insideKeyboardHost(above.ref) else { continue }
                         guard drawsAt(above, cx, cy) else { continue }
                         if above.frame?.contains(cx, cy) == true { return above.ref }

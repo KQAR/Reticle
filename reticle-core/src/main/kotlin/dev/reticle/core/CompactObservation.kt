@@ -60,11 +60,13 @@ data class CompactObservation(
              * level down. Walking only the ancestor chain keeps it O(depth x
              * siblings) rather than comparing every pair of nodes.
              *
-             * Requires the cover to be **interactive**, which is the honest limit:
-             * Android hands a touch to the topmost child that consumes it, and a
-             * non-interactive view lets it fall through to what is underneath. A
-             * decorative transparent frame therefore does not occlude, and is not
-             * reported as doing so.
+             * Requires the cover to CONSUME the touch, which for a native view means
+             * being interactive: Android hands a touch to the topmost child that
+             * consumes it, and a non-interactive view lets it fall through to what is
+             * underneath. A decorative transparent frame therefore does not occlude,
+             * and is not reported as doing so.
+             *
+             * A DOM element has the opposite default — see [consumesTouch].
              */
             // A screen-sized interactive container occludes a point only where it
             // actually DRAWS something there.
@@ -81,10 +83,38 @@ data class CompactObservation(
             // at this point is a cover; a full-screen frame with nothing drawn here
             // is scenery. Small occluders are taken at face value — a floating
             // button 174px across is drawn where it says it is.
+            /**
+             * Whether a cover would actually EAT a touch aimed at what is under it.
+             *
+             * Native and DOM covers have opposite defaults, and using the native one
+             * for both is what made an in-page dialog invisible to this check. A
+             * native view consumes a touch only if it is interactive. A DOM element
+             * consumes the click wherever its box lies *unless* the page opted out
+             * with `pointer-events: none` — no role, tabindex or handler has to be
+             * published, and a framework sheet's backdrop publishes none of them.
+             *
+             * Measured on a real framework-built form: with an action sheet
+             * open, every field behind it was projected as an ordinary `tappable` node
+             * with no occluder, and `act type --label "Monthly income"` tapped
+             * through the backdrop, selected an option in the sheet, and reported the
+             * type as dispatched — a wrong thing changed convincingly.
+             */
+            fun consumesTouch(node: Node): Boolean =
+                if (node.kind == NodeKind.domNode) !node.domPointerEventsNone() else node.isInteractive
+
             val screenArea = snapshot.screen.size.width * snapshot.screen.size.height
             fun drawsAt(node: Node, cx: Double, cy: Double): Boolean {
                 val frame = node.frame ?: return false
                 if (frame.width * frame.height <= screenArea * ScreenCoverage.CONTAINER_AREA_FRACTION) {
+                    return true
+                }
+                // A full-screen DOM layer that is out of flow AND paints its own box is
+                // a dialog backdrop: it eats every touch across the screen, including
+                // where its own subtree happens to be empty (the sheet's content is a
+                // SIBLING of the backdrop, so the top half of the page is covered by
+                // nothing but the backdrop itself). An in-flow wrapper gets no such
+                // benefit and still has to prove it draws here.
+                if (node.kind == NodeKind.domNode && node.domOutOfFlow() && node.domPaintsBackground()) {
                     return true
                 }
                 // A web view is opaque to touch wherever it lies, whether or not its
@@ -135,7 +165,7 @@ data class CompactObservation(
                     if (position >= 0) {
                         for (i in siblings.size - 1 downTo position + 1) {
                             val above = snapshot.nodes[siblings[i]] ?: continue
-                            if (!above.isVisible || !above.isInteractive) continue
+                            if (!above.isVisible || !consumesTouch(above)) continue
                             if (insideKeyboardHost(above.ref)) continue
                             if (!drawsAt(above, cx, cy)) continue
                             if (above.frame?.contains(cx, cy) == true) return above.ref

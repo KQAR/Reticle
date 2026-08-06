@@ -169,18 +169,23 @@ public enum ScreenCoverage {
         if let above = laterSiblingCovering(
             snapshot, node: target, x: x, y: y, containerArea: screenArea * containerAreaFraction
         ) {
+            let why = above.kind == .domNode
+                ? "and the page did not opt it out of hit-testing"
+                : "and is itself interactive"
             return TapObstruction(
                 reason: obstructedByNode,
                 detail: "\(above.ref) (\(above.role ?? above.typeName)) is drawn over \(target.ref) "
-                    + "at this point and is itself interactive, so it consumes the touch",
+                    + "at this point \(why), so it consumes the touch",
                 ref: above.ref
             )
         }
         return nil
     }
 
-    /// The nearest interactive node drawn AFTER `node` that contains the point.
-    /// Screen-sized containers are skipped — see the Kotlin twin.
+    /// The nearest node drawn AFTER `node` that contains the point and would consume
+    /// the touch: interactive for a native view, anything not `pointer-events: none`
+    /// for a DOM element. Screen-sized containers are skipped, except a painted
+    /// out-of-flow DOM layer (a dialog backdrop) — see the Kotlin twin.
     private static func laterSiblingCovering(
         _ snapshot: Snapshot, node: Node, x: Double, y: Double, containerArea: Double
     ) -> Node? {
@@ -192,9 +197,13 @@ public enum ScreenCoverage {
             if let position = p.children.firstIndex(of: current.ref) {
                 for i in stride(from: p.children.count - 1, to: position, by: -1) {
                     guard let above = snapshot.nodes[p.children[i]] else { continue }
-                    guard above.isVisible, above.isInteractive, let frame = above.frame else { continue }
+                    guard above.isVisible, let frame = above.frame else { continue }
+                    let isDom = above.kind == .domNode
+                    if isDom ? above.domPointerEventsNone() : !above.isInteractive { continue }
                     guard frame.contains(x, y) else { continue }
-                    if frame.width * frame.height > containerArea { continue }
+                    if frame.width * frame.height > containerArea {
+                        guard isDom, above.domOutOfFlow(), above.domPaintsBackground() else { continue }
+                    }
                     return above
                 }
             }
