@@ -95,7 +95,18 @@ data class StyleObservation(
          * one still has a specified style. The compact view is for acting now;
          * this one is for measuring.
          */
-        fun from(snapshot: Snapshot, maxItems: Int = 500): StyleObservation {
+        /**
+         * [startRef] scopes the walk to one node and its subtree. Null means the
+         * whole tree — the historical behaviour, and still the default.
+         *
+         * `ui style --ref` / `--css` used to be ACCEPTED and ignored: the flags were
+         * parsed, passed through the host, and then dropped here, so every call
+         * rendered the entire screen. Measured on a hybrid screen: `--ref r397`
+         * returned the same 2978 lines as no selector at all, byte for byte, with
+         * the asked-for node sitting on line 2912. A silently ignored selector is
+         * worse than an unsupported one — the answer looks like an answer.
+         */
+        fun from(snapshot: Snapshot, maxItems: Int = 500, startRef: String? = null): StyleObservation {
             val units = StyleUnits(snapshot.platform, snapshot.screen)
             val items = ArrayList<StyleItem>()
             // Seen-set, aligned with the Swift twin (which already had one): a
@@ -141,7 +152,7 @@ data class StyleObservation(
                 }
                 node.children.forEach { visit(it) }
             }
-            visit(snapshot.rootRef)
+            visit(startRef ?: snapshot.rootRef)
             val kept = items.take(maxItems)
             return StyleObservation(
                 capturedAtMillis = snapshot.capturedAtMillis,
