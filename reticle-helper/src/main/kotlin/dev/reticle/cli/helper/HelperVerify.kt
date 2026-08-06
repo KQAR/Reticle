@@ -22,7 +22,7 @@ internal object HelperVerify {
 
     fun captureState(client: RuntimeClient, sel: Selector): VerifyState {
         val node = findNode(client.snapshot(), selectorParams(sel))
-            ?: return VerifyState(false, null, null, false, false, null, emptyMap())
+            ?: return VerifyState(false, null, null, false, false, null, null, null, emptyMap())
         return VerifyState(
             found = true,
             text = node.text,
@@ -30,6 +30,8 @@ internal object HelperVerify {
             enabled = node.isEnabled,
             visible = node.isVisible,
             frame = node.frame?.let { "${it.x.toInt()},${it.y.toInt()} ${it.width.toInt()}x${it.height.toInt()}" },
+            checked = node.checked?.name,
+            expanded = node.expanded?.toString(),
             custom = node.custom.mapValues { it.value.displayString() },
         )
     }
@@ -74,6 +76,19 @@ internal object HelperVerify {
         val enabled: Boolean,
         val visible: Boolean,
         val frame: String?,
+        /**
+         * Toggle state, and disclosure state — the two things a tap on a checkbox or
+         * a dropdown CHANGES and nothing else here records.
+         *
+         * Measured on a real consent screen: `act tap --label "…" --verify` on an
+         * `unchecked` select-all reported one change — the DOM node's css path,
+         * because the page happened to add an `active` class. Nothing said the box
+         * was now ticked. A native checkbox, or a page that styles its own state
+         * without a class change, would have reported "this node's watched fields
+         * are unchanged" for the one field that did change.
+         */
+        val checked: String?,
+        val expanded: String?,
         val custom: Map<String, String>,
     )
 
@@ -85,7 +100,7 @@ internal object HelperVerify {
         sel.label?.let { put("label", it) }
     }
 
-    private fun diff(before: VerifyState?, after: VerifyState): Map<String, Pair<String?, String?>> {
+    internal fun diff(before: VerifyState?, after: VerifyState): Map<String, Pair<String?, String?>> {
         if (before == null) return emptyMap()
         val out = LinkedHashMap<String, Pair<String?, String?>>()
         if (before.found != after.found) out["present"] = before.found.toString() to after.found.toString()
@@ -94,6 +109,8 @@ internal object HelperVerify {
         if (before.enabled != after.enabled) out["enabled"] = before.enabled.toString() to after.enabled.toString()
         if (before.visible != after.visible) out["visible"] = before.visible.toString() to after.visible.toString()
         if (before.frame != after.frame) out["frame"] = before.frame to after.frame
+        if (before.checked != after.checked) out["checked"] = before.checked to after.checked
+        if (before.expanded != after.expanded) out["expanded"] = before.expanded to after.expanded
         (before.custom.keys + after.custom.keys).forEach { k ->
             val b = before.custom[k]
             val a = after.custom[k]
