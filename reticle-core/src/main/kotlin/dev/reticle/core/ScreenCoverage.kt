@@ -215,14 +215,18 @@ object ScreenCoverage {
      *
      *  1. the IME — another process's window above every app window;
      *  2. a HIGHER window layer than the target's (dialog, popup, toast);
-     *  3. a later interactive sibling in the same window (draw order).
+     *  3. a later sibling in the same window (draw order) that consumes the touch —
+     *     interactive for a native view, anything not `pointer-events: none` for a
+     *     DOM element, whose default is to eat the click.
      *
      * A screen-sized interactive container is deliberately NOT an obstruction: it
      * is the same scenery [CONTAINER_AREA_FRACTION] exists for. An app that wraps
      * its content in one full-screen clickable frame (debug overlays do exactly
      * this) would otherwise mark every tap on the screen as obstructed, and a
-     * warning that fires on every tap is one nobody reads. A real modal scrim gets
-     * caught by rule 2 instead, because it lives in its own window.
+     * warning that fires on every tap is one nobody reads. A NATIVE modal scrim gets
+     * caught by rule 2 instead, because it lives in its own window; an in-page one
+     * has no window of its own, so it is caught by rule 3 as a painted out-of-flow
+     * DOM layer.
      */
     fun obstruction(
         snapshot: Snapshot,
@@ -259,10 +263,15 @@ object ScreenCoverage {
         }
         val screenArea = snapshot.screen.size.width * snapshot.screen.size.height
         laterSiblingCovering(snapshot, target, x, y, screenArea * CONTAINER_AREA_FRACTION)?.let { above ->
+            val why = if (above.kind == NodeKind.domNode) {
+                "and the page did not opt it out of hit-testing"
+            } else {
+                "and is itself interactive"
+            }
             return TapObstruction(
                 reason = OBSTRUCTED_BY_NODE,
                 detail = "${above.ref} (${above.role ?: above.typeName}) is drawn over ${target.ref} " +
-                    "at this point and is itself interactive, so it consumes the touch",
+                    "at this point $why, so it consumes the touch",
                 ref = above.ref,
             )
         }
@@ -296,10 +305,21 @@ object ScreenCoverage {
             if (position >= 0) {
                 for (i in siblings.size - 1 downTo position + 1) {
                     val above = snapshot.nodes[siblings[i]] ?: continue
-                    if (!above.isVisible || !above.isInteractive) continue
+                    if (!above.isVisible) continue
+                    val isDom = above.kind == NodeKind.domNode
+                    // A native cover has to be interactive to eat the touch; a DOM
+                    // element eats it by default unless the page said
+                    // `pointer-events: none`. See CompactObservation.consumesTouch.
+                    if (if (isDom) above.domPointerEventsNone() else !above.isInteractive) continue
                     val frame = above.frame ?: continue
                     if (!frame.contains(x, y)) continue
-                    if (frame.width * frame.height > containerArea) continue
+                    if (frame.width * frame.height > containerArea) {
+                        // Scenery is exempt (see the doc above) — but a full-screen DOM
+                        // layer that is out of flow AND paints its own box is a dialog
+                        // backdrop, which is the one full-screen cover that really does
+                        // consume every touch on the screen.
+                        if (!(isDom && above.domOutOfFlow() && above.domPaintsBackground())) continue
+                    }
                     return above
                 }
             }

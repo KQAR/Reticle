@@ -395,6 +395,43 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
+    /// True when the page opted this element OUT of hit-testing
+    /// (`pointer-events: none`), so a click aimed at what is underneath reaches it.
+    /// The page's own statement, and the only reliable one: a DOM element's default
+    /// is to consume the click wherever its box lies. See the Kotlin twin.
+    public func domPointerEventsNone() -> Bool {
+        if case .text(let v)? = custom["domStylePointerEvents"] { return v == "none" }
+        return false
+    }
+
+    /// True when this element is taken OUT of normal flow (`position: fixed` /
+    /// `absolute` / `sticky`) — the shape a framework-built dialog backdrop has.
+    public func domOutOfFlow() -> Bool {
+        guard case .text(let v)? = custom["domStylePosition"] else { return false }
+        return v == "fixed" || v == "absolute" || v == "sticky"
+    }
+
+    /// True when this element PAINTS its own box — a non-transparent background
+    /// colour, or a background image. A dialog backdrop does; a wrapper does not.
+    public func domPaintsBackground() -> Bool {
+        if case .text(let image)? = custom["domStyleBackgroundImage"], !image.isEmpty, image != "none" {
+            return true
+        }
+        guard case .text(let color)? = custom["domStyleBackgroundColor"],
+              !color.isEmpty, color != "transparent" else { return false }
+        // `rgba(r,g,b,0)` is the computed form of `transparent`, so a zero alpha is
+        // not a painted box.
+        if let match = color.range(of: "rgba\\([^)]*,\\s*([0-9.]+)\\s*\\)", options: .regularExpression) {
+            let inner = color[match]
+            if let alphaText = inner.split(separator: ",").last?
+                .trimmingCharacters(in: CharacterSet(charactersIn: ") \t")),
+               let alpha = Double(alphaText), alpha <= 0 {
+                return false
+            }
+        }
+        return true
+    }
+
     /// The element's `id` attribute. Also mirrored into `testId`.
     public func domId() -> String? {
         if case .text(let v)? = custom["domId"] { return v }
