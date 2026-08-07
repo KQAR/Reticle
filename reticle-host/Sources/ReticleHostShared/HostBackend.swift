@@ -462,13 +462,18 @@ public struct ActOutcome: @unchecked Sendable {
     /// Set when a DOM node's rect was folded to a point outside the web view that
     /// draws it — impossible for a correct fold, so the coordinate cannot be right.
     public var rectSuspect: String? { raw["rectSuspect"] as? String }
+    /// Set when the node this selector resolved publishes no interactivity of its
+    /// own — a caption, a wrapper, a plain row. The touch still went out; what is
+    /// missing is the tree's vouching for the target, which a framework-built field
+    /// (handler bound in JS, no role/tabindex/aria) never provides.
+    public var targetInert: String? { raw["targetInert"] as? String }
 
     /// The result minus the sub-objects and sentences that have their own printers.
     public var displayFields: [String: Any] {
         raw.filter {
             $0.key != "verify" && $0.key != "trace" && $0.key != "coverage"
                 && $0.key != "obstruction" && $0.key != "reach" && $0.key != "clearDetail"
-                && $0.key != "rectSuspect"
+                && $0.key != "rectSuspect" && $0.key != "targetInert"
         }
     }
 }

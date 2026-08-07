@@ -234,6 +234,22 @@ internal object HelperDeviceCommands {
                     domRectComplaint(traceBefore?.snapshot, target!!.ref)?.let {
                         put("rectSuspect", it)
                     }
+                    // The node this selector resolved publishes NO control of its
+                    // own: it is a caption, a wrapper, a plain row. The touch was
+                    // still dispatched — a framework-built field binds its handler in
+                    // JS and publishes no role, no tabindex and no `aria-*`, so the
+                    // row really is driven this way — but "I tapped a control" and "I
+                    // tapped a caption and relied on the app's own handler" are
+                    // different claims, and only the first one is evidence.
+                    //
+                    // Measured on a real Vue form: five field rows (`Education level`,
+                    // `Employment type`, …) captured as plain `div`/`label` with no
+                    // tappable marker, so an agent went to coordinates for all five
+                    // — four commands per field — while a `--label` tap on the caption
+                    // drives them in one.
+                    inertTargetNote(traceBefore?.snapshot, target!!.ref)?.let {
+                        put("targetInert", it)
+                    }
                 }
             }
             "swipe", "drag" -> {
@@ -945,6 +961,23 @@ internal object HelperDeviceCommands {
     }
 
     /** Re-find [field] in a fresh tree; null when the runtime or the node is gone. */
+    /**
+     * A note when the tap's resolved node published no interactivity of its own.
+     *
+     * Null for an ordinary control, so the marker means exactly one thing when it
+     * appears. Not a refusal and not a warning about the touch: nothing says the tap
+     * is wrong, only that the tree did not vouch for the target. See the call site
+     * for the measurement.
+     */
+    private fun inertTargetNote(snapshot: Snapshot?, ref: String?): String? {
+        val node = ref?.let { snapshot?.nodes?.get(it) } ?: return null
+        if (node.isInteractive) return null
+        val what = node.role ?: node.typeName
+        return "the resolved node ($ref, $what) publishes no control of its own — the touch was " +
+            "dispatched at its centre and only the app's own handler can act on it, so treat this " +
+            "as a coordinate-grade tap and verify the effect"
+    }
+
     private fun readFieldText(
         device: DeviceController,
         pkg: String,

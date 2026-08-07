@@ -21,6 +21,24 @@
     --css '…'`), which had the same 400-character problem in a line whose whole job is to
     be read.
 
+- **A tap says when the tree never vouched for its target.** A component library builds
+  a select out of `div`s: the handler is bound in JS, so the row publishes no `role`, no
+  `tabindex`, no `aria-*`, often not even `cursor: pointer`, and its options do not exist
+  in the DOM until it is opened. Measured on a real Vue form, five such rows read as plain
+  `div`/`label`, `ui coverage` called the whole area `container-only`, and an agent spent
+  four commands per field hunting coordinates.
+  - `act tap --label "<the caption>"` drives such a row in ONE command — the tap lands
+    inside the row and the app's own handler does the rest — and the options that appear
+    are tappable the same way. That path already worked; nothing said so, so coordinates
+    looked like the only option.
+  - Such a tap now prints `note: the resolved node (rN, div) publishes no control of its
+    own …`. A note, not a warning: this is how those rows work. What it prevents is
+    reading `settled=1` as "a control was named and hit" when the tree vouched for
+    nothing. A real control prints nothing, so the marker means one thing.
+  - New `captionField` web fixture (a caption + a JS-handler row + options that only exist
+    once opened) and an e2e round trip: open by caption, pick an option, and assert a real
+    control does NOT carry the note.
+
 ## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS

@@ -1249,6 +1249,35 @@ done
 R ui compact --live --package "$PKG" --window top | grep -q '#amount textField "8000"' \
   || { echo "FAIL: the text did not land in the field it was aimed at"; exit 1; }
 
+# A field a component library built out of `div`s, with NOTHING published: handler
+# bound in JS, no role, no tabindex, no aria, no cursor:pointer, and options that do
+# not exist until it is opened. Measured on a real Vue form, five of these took four
+# commands each because nothing in the tree looked tappable. The caption is the
+# handle, and the tap says the tree did not vouch for the target.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario captionField >/dev/null 2>&1
+wait_compact "$PKG" "Education level"
+CAPTION_TAP="$(R act tap --package "$PKG" --label "Education level" 2>&1)"
+echo "$CAPTION_TAP" | grep -q "publishes no control of its own" \
+  || { echo "FAIL: a tap on a node the tree did not vouch for must say so; got: $CAPTION_TAP"; exit 1; }
+sleep 1
+R ui compact --live --package "$PKG" --window top | grep -q 'University' \
+  || { echo "FAIL: the caption tap did not open the field's own sheet"; exit 1; }
+# The options are the same shape, and picking one is one more command — not a
+# coordinate hunt.
+R act tap --package "$PKG" --label "University" >/dev/null
+sleep 1
+R ui compact --live --package "$PKG" --window top | grep -q '#education-value div "University"' \
+  || { echo "FAIL: the option tap did not commit the value"; exit 1; }
+# And a REAL control prints no such note, so the marker means one thing.
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario form >/dev/null 2>&1
+wait_compact "$PKG" "First name"
+CONTROL_TAP="$(R act tap --package "$PKG" --test-id complex.employment 2>&1)"
+echo "$CONTROL_TAP" | grep -q "publishes no control" \
+  && { echo "FAIL: a real control must not be reported as inert; got: $CONTROL_TAP"; exit 1; }
+
 # A construct the matcher does not implement is REFUSED by name, never answered as
 # a miss: "not understood" and "no such element" lead to opposite next actions.
 UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>&1 || true)"
