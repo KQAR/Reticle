@@ -885,7 +885,21 @@ R ui node "$TMP/webview/snapshot.json" --css "#web-pay" >/dev/null \
   || { echo "FAIL: --css lookup on a folded domNode"; exit 1; }
 # DOM tap with an observable side effect: #web-pay sets #web-status to
 # "Web paid" via its onclick — proof the tap reached the DOM element.
-R act tap --package "$PKG" --css "#web-pay" >/dev/null
+DOM_TAP="$(R act tap --package "$PKG" --css "#web-pay")"
+echo "$DOM_TAP"
+# The page's own account of that touch, and the half of it that matters most: on an
+# ordinary tap it says NOTHING. The witness exists because a wrong page-to-device fold
+# is silent (#234), and a warning that fires on every screen is one nobody reads — so
+# `landed=` appearing here would be the regression, not its absence.
+echo "$DOM_TAP" | grep -q "landed=" \
+  && { echo "FAIL: a tap that hit its target must report no landing complaint, got: $DOM_TAP"; exit 1; }
+# The record itself is on the tree either way, so a caller can see the coordinate the
+# page received even when there is nothing to complain about.
+R ui report --package "$PKG" --output "$TMP/webview-landed" >/dev/null
+grep -q '"domPointerHit"' "$TMP/webview-landed/snapshot.json" \
+  || { echo "FAIL: the page must record which element the touch landed on"; exit 1; }
+grep -q '"domPointerMatched"' "$TMP/webview-landed/snapshot.json" \
+  || { echo "FAIL: the web view host must carry the pointer record"; exit 1; }
 sleep 1
 R ui report --package "$PKG" --output "$TMP/webview-after"
 R ui compact "$TMP/webview-after/snapshot.json" | grep -q "Web paid" \
@@ -1111,6 +1125,16 @@ echo "$COVERED" | grep -q 'nested.overlayButton .*occluded-by:' \
 echo "$COVERED" | grep -q 'nested.overlayWebView .*occluded-by:' \
   && { echo "FAIL: the top-most cover must not report itself occluded"; exit 1; }
 
+# And the SECOND source for the same fact, which is the one that does not depend on
+# the projection getting occlusion right: ask the page whether it received the touch.
+# Everything else a tap reports is what it INTENDED — the selector resolved, the rect
+# settled, the coordinate dispatched — so a rect that disagrees with what is rendered
+# is silent (#234). Here the touch really does go to the cover, so the covered page
+# saw no pointer at all and now says so.
+COVERED_TAP="$(R act tap --package "$PKG" --css '#backdrop-button')"
+echo "$COVERED_TAP"
+echo "$COVERED_TAP" | grep -q 'landed=the page received no pointer event' \
+  || { echo "FAIL: a tap the page never received must say so, got: $COVERED_TAP"; exit 1; }
 
 # And the inset variant is the false-positive guard: there the backdrop's top
 # controls are genuinely visible and must carry no marker, while the full-bleed
