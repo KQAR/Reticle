@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.0 - 2026-08-07
 
 - **`ui outline` prints a DOM node's shortest handle, not its lineage.** The traversal
   captures each element's full ancestor path because that form is guaranteed unique;
@@ -72,6 +72,16 @@
   - `name` now counts as identity in the fold and the projection cap, so an empty-but-named
     field cannot be folded into a neighbouring row (which would have dropped the only
     thing saying which field it is).
+
+- **The `type` read-back stopped reading a ref from a different capture.** `type`
+  resolves its target in one capture, taps to focus, then RE-CAPTURES for its two
+  post-conditions: where focus went, and what the field held before. The focus check
+  re-resolved the selector in that second capture; the read-back did not, and a ref is a
+  traversal index that any re-render renumbers — so it could be reading whatever inherited
+  that index. Both post-conditions now use the same re-resolved ref, and the one-shot
+  retarget looks for its sole focusable input under it. New `renumbering` web fixture (a
+  page whose focus handler inserts six hint rows ABOVE the fields) pins that the whole
+  resolve/tap/re-capture path survives a page renumbering under it.
 
 - **The `type` read-back reads the screen on top.** A capture holds EVERY live window of
   the process, and a screen pushed over a still-alive one is the common case on Android.
