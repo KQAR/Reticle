@@ -26,6 +26,7 @@ object SampleWebFixtures {
     private const val SCENARIO_CLIPPED = "clipped"
     private const val SCENARIO_SCROLLED = "scrolled"
     private const val SCENARIO_FRAMES = "frames"
+    private const val SCENARIO_RENUMBERING = "renumbering"
 
     data class Fixture(
         val heightPx: Int,
@@ -56,6 +57,7 @@ object SampleWebFixtures {
             SCENARIO_CLIPPED -> clippedFixture(heightPx = 900)
             SCENARIO_SCROLLED -> scrolledFixture(heightPx = 900)
             SCENARIO_FRAMES -> framesFixture(heightPx = 900)
+            SCENARIO_RENUMBERING -> renumberingFixture(heightPx = 900)
             else -> basicFixture(heightPx = 280)
         }
     }
@@ -149,6 +151,29 @@ object SampleWebFixtures {
      * with distance from the origin. It never errors: the rect is plausible, the
      * tap "succeeds", and the flow silently does not advance.
      */
+    /**
+     * A page that RENUMBERS its refs the moment a field takes focus.
+     *
+     * A ref is a traversal index, so anything inserted above a node moves it — and
+     * a page inserting a hint row on focus is entirely ordinary (validation
+     * summaries, "format: …" hints, floating labels that become real elements). The
+     * shape this exists for: `type` resolves its target in one capture, taps to
+     * focus, then re-captures for the focus and read-back post-conditions. If those
+     * read the FIRST capture's ref, they are reading whatever inherited that index.
+     *
+     * Measured on a real form before the fix: `act type --label "<field>"` put the
+     * text in the right field and then reported
+     * `textLanded=unreadable textReadback=unavailable:no-text-field-node`, because
+     * the stale ref had landed on a `<label>` — a false negative on the one check
+     * that exists to catch false positives.
+     */
+    fun renumberingFixture(heightPx: Int): Fixture =
+        Fixture(
+            heightPx = heightPx,
+            baseUrl = "https://reticle.dev/sample/renumbering",
+            html = renumberingHtml,
+        )
+
     fun scaledFixture(heightPx: Int): Fixture =
         Fixture(
             heightPx = heightPx,
@@ -499,6 +524,49 @@ object SampleWebFixtures {
         </html>
     """.trimIndent()
 
+
+    private val renumberingHtml: String = """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>
+              body { font-family: sans-serif; margin: 16px; }
+              .row { margin: 14px 0; }
+              input { display: block; width: 90%; padding: 8px; font-size: 15px; }
+              .hint { color: #555; font-size: 13px; }
+            </style>
+          </head>
+          <body>
+            <h1>Renumbering fixture</h1>
+            <div id="hints"></div>
+            <div class="row">
+              <label id="amount-label" for="amount">Monthly income</label>
+              <input id="amount" aria-labelledby="amount-label" placeholder="0">
+            </div>
+            <div class="row">
+              <label id="expenses-label" for="expenses">Monthly expenses</label>
+              <input id="expenses" aria-labelledby="expenses-label" placeholder="0">
+            </div>
+            <script>
+              // Inserted ABOVE the fields, so every ref below shifts. Six rows, to
+              // put the old index well clear of the node it used to name.
+              function insertHints() {
+                var hints = document.getElementById("hints");
+                if (hints.childElementCount > 0) return;
+                for (var i = 0; i < 6; i++) {
+                  var p = document.createElement("p");
+                  p.className = "hint";
+                  p.textContent = "Enter a whole number (" + (i + 1) + ")";
+                  hints.appendChild(p);
+                }
+              }
+              document.getElementById("amount").addEventListener("focus", insertHints);
+              document.getElementById("expenses").addEventListener("focus", insertHints);
+            </script>
+          </body>
+        </html>
+    """.trimIndent()
 
     private val formHtml: String = """
         <!doctype html>
