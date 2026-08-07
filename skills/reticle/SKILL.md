@@ -469,8 +469,15 @@ the pitch is `height / 3` (the platform default) rather than a reading, so a swi
 built on it can be off by a row. `items` means the full label set is on the node:
 read it with `ui node --test-id <wheel>` (`wheelItems`, plus `wheelItemsTruncated`
 when the list is longer than the capture's cap) — it is not on the compact line
-because a year wheel has 120 of them. None of these appear for a self-drawn wheel;
-absent is absent, never estimated.
+because a year wheel has 120 of them.
+
+The first form is **not** limited to platform widgets. The third-party families most
+date/region pickers are built on (`WheelView`, `LoopView`, `PickerView`) publish
+nothing to the tree and still publish their position, count and item text through
+public accessors on their own class, so they read as the first form too — with
+`wheelSource` on the node naming the accessors that answered, because a name-matched
+reading is one you should be able to audit. `wheel:opaque` therefore means what it
+says: this column answered none of them. Absent is absent, never estimated.
 
 **Moving a wheel that publishes its state: `act wheel`.** When the marker carries a
 value, the column can be driven by name and the tool converges on the wheel's own
@@ -486,7 +493,8 @@ It aims each swipe at the rows still between here and the target (that is what
 and how many swipes it took (`from=09 value=17 index=17 swipes=2 rowsPerSwipe=7`).
 An estimated pitch (`~`) costs an extra iteration, never a wrong answer, and the
 result flags it. It refuses rather than pretending: a `wheel:opaque` column has no
-reading to converge on, a value the wheel does not offer is named as such, and a
+reading to converge on (only a column that publishes nothing at all is one), a value
+the wheel does not offer is named as such, and a
 wheel that stops moving is reported **where it stopped** — "it is at its end" and
 "the tool gave up" are different facts. Android only for now: on iOS a wheel's
 visible rows are real nodes, so `act tap --label "<value>"` selects one directly (the
