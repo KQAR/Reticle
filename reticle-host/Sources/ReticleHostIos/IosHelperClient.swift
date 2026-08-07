@@ -452,20 +452,39 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             return try scrollTo(pkg, params, udid: udid)
         case "type":
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
-            // No HID surface — a real device, or a simulator whose private
-            // SimulatorKit layout does not match — so type from INSIDE the app
-            // instead: `insertText` through the agent, the same entry point the
-            // system keyboard uses. The other gestures have to fail without HID;
-            // typing does not, so it takes this route and says which one it took
-            // rather than refusing work it can still do.
-            let hidUnavailable = simUdid.map { !IosInputBackend(udid: $0).isAvailable() } ?? false
-            guard let udid = simUdid, !hidUnavailable else {
+            // No HID surface — a real device (whose `--serial` is a hardware ECID,
+            // not a simulator udid), or a simulator whose private SimulatorKit
+            // layout does not match — so type from INSIDE the app instead:
+            // `insertText` through the agent, the same entry point the system
+            // keyboard uses. The other gestures have to fail without HID; typing
+            // does not, so it takes this route and says which one it took rather
+            // than refusing work it can still do.
+            //
+            // `isSimulator` is the check that matters, and it was added because the
+            // device suite caught the alternative being wrong: with no `--serial`,
+            // `resolveUdid` falls back to the BOOTED SIMULATOR, so a device run
+            // dispatched its keystrokes at the simulator's screen and reported
+            // `via=hid` while the phone's field stayed empty.
+            let isSim = simUdid.map { Simctl.isSimulator($0) } ?? false
+            let hidUnavailable = isSim ? !IosInputBackend(udid: simUdid!).isAvailable() : true
+            guard let udid = simUdid, isSim, !hidUnavailable else {
                 let before = tracer?.capture()
                 var result = try typeInProcess(pkg, params, text: text)
-                if hidUnavailable { result["hid"] = "unavailable — typed in-process instead" }
+                if isSim, hidUnavailable { result["hid"] = "unavailable — typed in-process instead" }
                 return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
                                        point: nil, source: result["focusedVia"] as? String,
                                        ref: result["ref"] as? String, result: result)
+            }
+            // The app must actually be on THAT simulator's screen. HID goes to the
+            // screen, not to the process Reticle is talking to — and the agent is
+            // reached over loopback, which a real device shares through a USB
+            // tunnel, so "healthy" says nothing about where the keys will land.
+            guard Simctl.isAppInstalled(udid: udid, bundleId: pkg) else {
+                throw HelperError(
+                    "\(pkg) is not installed on simulator \(udid), so HID keystrokes would go to "
+                    + "whatever IS on that screen. If you meant a real device, pass its hardware "
+                    + "ECID as --serial (`idevice_id -l`) — typing then goes through the agent."
+                )
             }
             let before = tracer?.capture()
             // If the caller named a target field, tap it first so the text lands

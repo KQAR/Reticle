@@ -351,7 +351,21 @@ limit exists, what was measured, and which route was tried and rejected.
   `status / ui report / ui compact / ui screenshot / act activate / mutate /
   debug logs` and the **action-trace evidence package** all work over that
   tunnel; screenshots come from the agent's in-process render. See
-  `scripts/e2e-ios-device.sh`. Two device gotchas the script handles: use the
+  `scripts/e2e-ios-device.sh`.
+
+  Two things the device suite measured about *driving* a phone, both now guarded.
+  An **input gesture needs `--serial <ECID>`** even though observation does not:
+  with no serial the host resolves its target to the booted **simulator**, so a
+  device `act type` dispatched at the simulator's screen and reported `via=hid`
+  while the phone's field stayed empty. The host now refuses HID for a udid that
+  is not a simulator (or one the app is not installed on) and names the ECID
+  instead. And the **tunnel port collides with the same app on a simulator**,
+  because the port is derived from the bundle id and a simulator shares the host
+  loopback: a leftover simulator app holds `:<derivedPort>`, `iproxy` cannot bind,
+  and every command then answers from the simulator while reading `runtime:
+  healthy`. The script refuses to start in that state.
+
+  Two more device gotchas the script handles: use the
   hardware **ECID** as the device id (`idevice_id -l`) — it is the one id that
   works for `xcodebuild -destination`, `devicectl`, and `iproxy` alike (the
   `devicectl list devices` coredevice UUID does not match an xcodebuild
