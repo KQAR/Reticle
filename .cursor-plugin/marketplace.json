@@ -10,7 +10,7 @@
     {
       "name": "reticle",
       "source": "./",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "description": "Runtime UI evidence + action harness for Android and iOS apps. Inspect the running app's view / accessibility / Compose-semantics / SwiftUI / WebView DOM tree, resolve precise CSS selectors and per-phrase tap regions, drive real input, capture action traces, and live-patch UI properties without rebuilding."
     }
   ]
