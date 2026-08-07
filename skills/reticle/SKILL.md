@@ -564,6 +564,14 @@ four things a form screen otherwise made you look at pixels for:
   Android `EditText.hint`, or a `UITextField.placeholder` — the same marker for all
   three, since the question ("value, or prompt?") is the same. It is also a
   `--label` handle, which for an empty field is often the only one;
+- ` name:"…"` — the control's **accessible name**, kept out of the quoted slot on a
+  `textField` for the same reason: on a text field the quoted slot means *what it
+  holds*, so a field whose name comes from a sibling `<label>` used to print
+  `textField "Given name"` whether it was empty or someone had typed `Given name` into it. An
+  empty input now reads `textField [rect] tappable name:"Given name"` — **the absence of a
+  quoted value is the reading "empty"**. On a control whose text really is its value
+  (a component-library select is a `<button>` displaying the chosen option) the value
+  stays quoted and `name:` says which field it belongs to;
 - ` invalid` / ` invalid:"…"` — the field declares itself invalid
   (`aria-invalid`), with the message its `aria-describedby` names. Without it a
   validation error is a sibling node belonging to nothing;
