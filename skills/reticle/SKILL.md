@@ -588,6 +588,27 @@ when tappability rested on it. It is applied only at the node where the pointer
 **starts**: `cursor` is inherited, so a pointer on a wrapper computes as pointer on
 every descendant, and marking all of them would turn one control into four.
 
+**A field with nothing published is driven by its CAPTION.** A component library
+builds a select out of `div`s: the handler is bound in JS, so the row has no
+`role`, no `tabindex`, no `aria-*` and often not even `cursor: pointer` — nothing
+in the tree calls it a control, and its options do not exist in the DOM until it is
+opened. Measured on a real form, five such rows read as plain `div`/`label`, `ui
+coverage` called the whole area `container-only`, and driving one took four
+commands (read the caption's y, tap a coordinate, re-read for the options, tap
+one). Don't reach for coordinates there — `act tap --label "<the caption>"` lands
+inside the row and the app's own handler does the rest, and the options that appear
+are tappable the same way:
+
+```bash
+reticle act tap --package <pkg> --label "Education level"   # opens the sheet
+reticle act tap --package <pkg> --label "University"        # picks the option
+```
+
+Such a tap prints `note: the resolved node (rN, div) publishes no control of its
+own …`. It is not a warning about the touch — this is how these rows work — it says
+the tree never vouched for the target, so **verify the effect** (the row shows the
+chosen value, or `--verify`) rather than reading `settled=1` as success.
+
 `--label` resolves a **caption and the control it names** to the control. One
 string legitimately belongs to two nodes in different subtrees (`aria-labelledby`,
 `<label for>`) and only one of them does anything when tapped, so the single
