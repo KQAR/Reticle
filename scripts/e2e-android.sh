@@ -439,6 +439,26 @@ echo "$WHEEL" | grep -q '#wheel.year .* wheel:opaque' \
 R ui node --live --package "$PKG" --test-id wheel.year | grep -q "wheelValue" \
   && { echo "FAIL: a self-drawn wheel must not carry invented wheel facts"; exit 1; }
 
+# ...and the column beside it, self-drawn in exactly the same way, is READ — because
+# the wheel families real date/region pickers are built on publish their position,
+# their item count and their item text through ordinary public accessors on their own
+# class. `wheel:opaque` was a fact about the TREE that read as a fact about the widget:
+# the caller who measured a row pitch off a screenshot was reverse-engineering what the
+# control had a getter for. Which of the two a column is cannot be told from outside,
+# so both stay pinned here.
+echo "$WHEEL" | grep -qE '#wheel.region .* wheel:value="Region-[0-9]+" [0-9]+/60 pitch=[0-9]+px items' \
+  || { echo "FAIL: a third-party wheel's own state must be read, got: $WHEEL"; exit 1; }
+# A name-matched reading has to be auditable, or it is a value taken on faith.
+REGION_FACTS="$(R ui node --live --package "$PKG" --test-id wheel.region)"
+echo "$REGION_FACTS" | grep -q "reflect:AdapterWheelView.getCurrentItem/getViewAdapter.getItemText" \
+  || { echo "FAIL: a reflected wheel must name the accessors that answered, got: $REGION_FACTS"; exit 1; }
+# And it drives with the same command and the same evidence as a NumberPicker: the
+# verdict is the widget's own reading, not a swipe count.
+REGION_MOVE="$(R act wheel --package "$PKG" --test-id wheel.region --to "Region-52")"
+echo "$REGION_MOVE"
+echo "$REGION_MOVE" | grep -q "value=Region-52" \
+  || { echo "FAIL: act wheel must land a third-party column too, got: $REGION_MOVE"; exit 1; }
+
 # `act wheel`: converge on a value using the wheel's OWN reading, instead of
 # calibrating a swipe from pixels. The whole point is that the verdict comes from the
 # widget, so the assertion is the value it reports afterwards.
@@ -455,6 +475,11 @@ R ui compact --live --package "$PKG" | grep '#wheel.hour' | grep -q 'wheel:value
 R act tap --package "$PKG" --test-id wheel.confirm >/dev/null
 wait_compact "$PKG" "Time: 17" \
   || { echo "FAIL: the app did not commit the value act wheel selected"; exit 1; }
+# The same verdict for the reflected column: the app's own committed state, not the
+# reading Reticle took off the widget. If the reflection were reading the wrong field
+# this is the assertion that would catch it.
+R ui compact --live --package "$PKG" | grep -q "Region: Region-52" \
+  || { echo "FAIL: the app did not commit the value act wheel selected on the third-party column"; exit 1; }
 # Backwards, and further, in the same run: a wheel is not a one-way ratchet, and one
 # swipe now travels several rows (bounded by the screen rather than by the column).
 WHEEL_BACK="$(R act wheel --package "$PKG" --test-id wheel.hour --to "03")"
@@ -1085,6 +1110,7 @@ echo "$COVERED" | grep -q 'nested.overlayButton .*occluded-by:' \
 # above still reports occlusion at every point.
 echo "$COVERED" | grep -q 'nested.overlayWebView .*occluded-by:' \
   && { echo "FAIL: the top-most cover must not report itself occluded"; exit 1; }
+
 
 # And the inset variant is the false-positive guard: there the backdrop's top
 # controls are genuinely visible and must carry no marker, while the full-bleed
