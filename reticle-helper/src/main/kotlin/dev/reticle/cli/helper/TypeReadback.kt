@@ -188,7 +188,20 @@ internal object TypeReadback {
      * the field's.
      */
     fun field(snapshot: Snapshot, targetRef: String?): Node? {
-        snapshot.nodes.values.firstOrNull { it.isFocused && isTextField(it) }?.let { return it }
+        // Scoped to the window on top, because a capture holds EVERY live window of
+        // the process and a screen pushed over a still-alive one is the common case on
+        // Android. A background screen's field keeps `isFocused` — the platform focus
+        // is per-window — so an unscoped search can lock onto a field on a screen
+        // nobody is looking at.
+        //
+        // Observed while driving a hybrid app with several instances of one Activity
+        // stacked: the `before` capture held eight focused text fields, seven of them
+        // on dead screens with old values, and the read-back took one of those as the
+        // baseline. It reported `text= textLanded=changed` for a field that visibly
+        // held the typed string — a wrong verdict, in the direction of a false alarm.
+        topWindowFirst(snapshot, snapshot.nodes.values.filter { it.isFocused && isTextField(it) })
+            .firstOrNull()
+            ?.let { return it }
         val target = targetRef?.let { snapshot.nodes[it] } ?: return null
         if (isTextField(target)) return target
         return TypeFocus.soleFocusableInput(snapshot, target.ref)
@@ -229,7 +242,11 @@ internal object TypeReadback {
      * rather than the first, since a re-layout moves rects too.
      */
     fun refind(snapshot: Snapshot, field: Node): Node? {
-        val nodes = snapshot.nodes.values
+        // Same window scoping as [field], and for a sharper reason here: every
+        // identity lookup below insists on `singleOrNull`, so a stacked screen's
+        // duplicate of the field turns a perfectly good handle into "ambiguous" and
+        // drops the read-back to the rect fallback — or, for a DOM node, to GONE.
+        val nodes = topWindowFirst(snapshot, snapshot.nodes.values.toList())
         field.testId?.let { id ->
             nodes.filter { it.testId == id }.singleOrNull()?.let { return it }
         }
@@ -269,6 +286,22 @@ internal object TypeReadback {
         // selector or rect is reported as GONE rather than as a stranger's value.
         if (field.kind == NodeKind.domNode) return null
         return snapshot.nodes[field.ref]?.takeIf { it.typeName == field.typeName }
+    }
+
+    /**
+     * [candidates] narrowed to the topmost window, when any of them is in it.
+     *
+     * "When any of them is in it" is the whole care taken here: a capture with no
+     * window nodes at all (an iOS snapshot of a bare view tree, a fixture) and a
+     * field that genuinely lives outside the top window both keep every candidate,
+     * so this can only ever remove a node that has a same-named sibling on the
+     * screen the caller is actually driving.
+     */
+    private fun topWindowFirst(snapshot: Snapshot, candidates: List<Node>): List<Node> {
+        if (candidates.size < 2) return candidates
+        val top = snapshot.topWindowRef() ?: return candidates
+        val inTop = candidates.filter { snapshot.windowRefOf(it.ref) == top }
+        return inTop.ifEmpty { candidates }
     }
 
     /** Does this node hold typed text as its own value? */

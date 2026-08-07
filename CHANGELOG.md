@@ -73,6 +73,23 @@
     field cannot be folded into a neighbouring row (which would have dropped the only
     thing saying which field it is).
 
+- **The `type` read-back reads the screen on top.** A capture holds EVERY live window of
+  the process, and a screen pushed over a still-alive one is the common case on Android.
+  Platform focus is per-window, so a background screen's field keeps `isFocused` — and the
+  read-back's "first focused text field" search was unscoped.
+  - Observed while driving a hybrid app with several instances of one Activity stacked: the
+    pre-type capture held eight focused text fields, seven on dead screens holding old
+    values, and the read-back took one of those as its baseline. It reported
+    `text= textLanded=changed` for a field that visibly held the typed string — a wrong
+    verdict, in the direction of a false alarm.
+  - `refind` is scoped the same way, for a sharper reason: its identity lookups insist on a
+    single match, so a stacked screen's copy of the field turned a perfectly good handle
+    into "ambiguous" and dropped the read-back to the rect fallback (or, for a DOM node, to
+    `GONE`).
+  - A capture with no window nodes at all, and a field that genuinely lives outside the top
+    window, both keep every candidate — the scoping can only ever drop a node that has a
+    same-named sibling on the screen being driven.
+
 ## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS
