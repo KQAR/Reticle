@@ -7,10 +7,15 @@ import Foundation
 /// - `activate` (`/activate`) is **iOS-only**. It has no Android counterpart:
 ///   there, host-side HID synthesis reaches a real device, so an in-process
 ///   activation path is not needed.
+/// - `typeText` (`/type`) is **iOS-only**, for the same reason as `activate`:
+///   a real device has no host-reachable HID keyboard, so the text is inserted
+///   from inside the app through UIKit's own text-input pipeline.
 /// - `/editor-action` is **Android-only** (`Endpoints.EDITOR_ACTION` in
-///   reticle-core, absent here). It drives `TextView.onEditorAction()`; UIKit
-///   has no equivalent "perform the return key's action" entry point, so
-///   `act type --submit` on iOS goes through the HID return key instead.
+///   reticle-core, absent here). It drives `TextView.onEditorAction()`; the iOS
+///   analogue is not a separate endpoint but `typeText`'s `submit` flag, which
+///   fires the return key's action in-process (`textFieldShouldReturn` +
+///   `.editingDidEndOnExit`). On a simulator `act type --submit` still goes
+///   through the HID return key.
 ///
 /// Anything else in either list without a twin is drift, not design.
 public enum Endpoints {
@@ -30,6 +35,14 @@ public enum Endpoints {
     /// app, so it works on a real device where host-side HID synthesis cannot
     /// reach — the on-device analogue of a tap. Limited to activatable targets.
     public static let activate = "/activate"
+
+    /// iOS-only (no Android counterpart — see the type doc).
+    /// In-process text entry (POST, body: TypeTextRequest). The agent focuses the
+    /// resolved field and inserts the text through `UIKeyInput.insertText` — the
+    /// same entry point the system keyboard uses, so delegates, `.editingChanged`
+    /// and SwiftUI bindings all fire. This is the on-device analogue of `act type`,
+    /// where host-side HID key synthesis cannot reach.
+    public static let typeText = "/type"
 
     /// Current system-keyboard state, probed from inside the app (GET).
     public static let keyboard = "/keyboard"
@@ -73,6 +86,85 @@ public struct ActivationResult: Codable, Sendable {
         self.ref = ref
         self.typeName = typeName
         self.via = via
+        self.message = message
+    }
+}
+
+/// Request to type into a field from inside the app (the on-device "type").
+///
+/// `selector` is optional: with none, the text goes to whatever holds focus —
+/// the same rule the HID path follows. The host resolves a `--label` / region
+/// selector to a `ref` before sending, so the agent only ever matches by
+/// `testId` / `ref` (its own resolver has no label channel).
+public struct TypeTextRequest: Codable, Sendable {
+    public var selector: Selector?
+    public var text: String
+    /// Empty the field before typing, and prove it is empty in the result.
+    public var clear: Bool
+    /// Fire the return key's action after the text lands.
+    public var submit: Bool
+    /// Gap between characters, for a field whose formatter drops keystrokes it
+    /// receives in one burst (`act type --type-delay`).
+    public var perCharDelayMs: Int?
+
+    public init(selector: Selector? = nil, text: String, clear: Bool = false,
+                submit: Bool = false, perCharDelayMs: Int? = nil) {
+        self.selector = selector
+        self.text = text
+        self.clear = clear
+        self.submit = submit
+        self.perCharDelayMs = perCharDelayMs
+    }
+}
+
+/// What `--clear` did in-process, and whether the field is provably empty.
+/// The iOS agent's twin of the host-side `ClearOutcome` on the HID path.
+public struct TypeClearOutcome: Codable, Sendable {
+    public var emptied: Bool
+    public var before: String?
+    public var after: String?
+    public var deletes: Int
+    public var unavailable: String?
+
+    public init(emptied: Bool, before: String? = nil, after: String? = nil,
+                deletes: Int = 0, unavailable: String? = nil) {
+        self.emptied = emptied
+        self.before = before
+        self.after = after
+        self.deletes = deletes
+        self.unavailable = unavailable
+    }
+}
+
+/// Result of in-process typing. `typed` is false with a `message` when no
+/// typeable field could be resolved or focused — Reticle never reports text it
+/// did not land. `before`/`after` are the field read back around the insert
+/// (masked for a secure field, as everywhere else).
+public struct TypeTextResult: Codable, Sendable {
+    public var typed: Bool
+    public var ref: String?
+    public var typeName: String?
+    public var via: String?
+    public var before: String?
+    public var after: String?
+    public var secure: Bool?
+    public var cleared: TypeClearOutcome?
+    /// How the return key's action was fired, when `submit` was asked for.
+    public var submitted: String?
+    public var message: String?
+
+    public init(typed: Bool, ref: String? = nil, typeName: String? = nil, via: String? = nil,
+                before: String? = nil, after: String? = nil, secure: Bool? = nil,
+                cleared: TypeClearOutcome? = nil, submitted: String? = nil, message: String? = nil) {
+        self.typed = typed
+        self.ref = ref
+        self.typeName = typeName
+        self.via = via
+        self.before = before
+        self.after = after
+        self.secure = secure
+        self.cleared = cleared
+        self.submitted = submitted
         self.message = message
     }
 }

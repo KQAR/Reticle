@@ -12,7 +12,7 @@ description: >-
   multi-action evidence timeline, mock or replay network traffic, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
   rebuilding. iOS needs `--target ios`; on a real iOS device the paths are
-  observation + in-process activation, not HID.
+  observation plus in-process activation and typing, not HID.
   Triggers: "inspect the running app", "tap the … button on device", "what's on
   screen", "drive the app", "find the element", "test the agreement checkbox",
   "change this label at runtime", adb/UiAutomator/Espresso/XCUITest-style UI
@@ -705,8 +705,14 @@ Add `--submit` to press the keyboard's action key after the text lands —
 Android performs the focused field's IME editor action in-process (Done / Next
 / Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens
 for), falling back to `KEYCODE_ENTER` when the agent is unreachable; iOS sends
-a HID Return. For OTP/login flows this replaces the `type` → `hide-keyboard` →
-`tap submit` three-step with one command.
+a HID Return on the simulator. On a real iOS device there is no HID at all:
+`type` inserts the characters through the app itself (`UIKeyInput.insertText`,
+so the field's delegate, `.editingChanged` and SwiftUI bindings all fire) and
+`--submit` fires the return key's action in-process. That reaches a UIKit
+field's `textFieldShouldReturn`; a SwiftUI `.onSubmit` is a measured miss and
+the result says so — activate the screen's submit button instead. For OTP/login
+flows this replaces the `type` → `hide-keyboard` → `tap submit` three-step with
+one command.
 
 Beyond a single gesture, in the order you usually need them:
 

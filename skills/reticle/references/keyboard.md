@@ -32,7 +32,9 @@ when the keyboard is already gone.
 
 All of this works identically on iOS (`--target ios`): the agent tracks the
 keyboard notification stream and dismisses via `resignFirstResponder`, so
-`act hide-keyboard` needs no HID surface and works on real devices too.
+`act hide-keyboard` needs no HID surface and works on real devices too — as
+does `act type`, which on a device (or any simulator whose HID surface is
+missing) types from inside the app and reports `via=agent insertText`.
 Simulator caveat: with "Connect Hardware Keyboard" enabled (Simulator.app
 I/O > Keyboard), iOS never shows the software keyboard at all — disable it
 and reboot the sim device if `keyboardVisible` stays false after typing.

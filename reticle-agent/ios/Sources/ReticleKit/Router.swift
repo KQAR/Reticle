@@ -44,6 +44,12 @@ struct Router {
                 return try mutate(request.body)
             case ("POST", Endpoints.activate):
                 return try activate(request.body)
+            case ("POST", Endpoints.typeText):
+                #if canImport(UIKit)
+                return try typeText(request.body)
+                #else
+                return HttpResponse.text(503, "in-process typing needs UIKit")
+                #endif
             case ("POST", Endpoints.clipboard):
                 return clipboard(request.body)
             default:
@@ -120,6 +126,16 @@ struct Router {
         let result = try MainThread.sync { ActivationEngine().activate(req) }
         return try json(result)
     }
+
+    #if canImport(UIKit)
+    /// Typing paces itself between characters, so — like `hideKeyboard` — the
+    /// waiting happens on THIS (server) thread and only the UIKit calls hop to
+    /// main. `TextInputSession` owns that split.
+    private func typeText(_ body: Data) throws -> HttpResponse {
+        let req = try ReticleJSON.decode(TypeTextRequest.self, from: body)
+        return try json(TextInputSession.run(req))
+    }
+    #endif
 
     private func clipboard(_ body: Data) -> HttpResponse {
         let text = String(decoding: body, as: UTF8.self)

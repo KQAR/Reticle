@@ -93,33 +93,11 @@ struct ActivationEngine {
     }
 
     private func resolveAxElement(_ selector: ReticleProtocol.Selector, snapshot: Snapshot, axIndex: [String: NSObject]) -> (String, NSObject)? {
-        if let testId = selector.testId {
-            for (ref, node) in snapshot.nodes where node.testId == testId && node.kind == .axElement {
-                if let element = axIndex[ref] { return (ref, element) }
-            }
-        }
-        if let ref = selector.ref, let element = axIndex[ref] { return (ref, element) }
-        return nil
+        NodeResolver.axElement(selector, snapshot: snapshot, axIndex: axIndex)
     }
 
     private func resolve(_ selector: ReticleProtocol.Selector, snapshot: Snapshot, index: [String: UIView]) -> (String, UIView)? {
-        if let testId = selector.testId {
-            for (ref, node) in snapshot.nodes where node.testId == testId {
-                if let v = index[ref] { return (ref, v) }
-            }
-        }
-        if let ref = selector.ref, let v = index[ref] { return (ref, v) }
-        if let point = selector.point {
-            // Numeric ref order, not lexicographic — see RefOrder.
-            let cg = CGPoint(x: point.x, y: point.y)
-            for (ref, view) in RefOrder.descending(index) {
-                if let window = view.window {
-                    let local = window.convert(cg, to: view)
-                    if view.point(inside: local, with: nil) && (view is UIControl) { return (ref, view) }
-                }
-            }
-        }
-        return nil
+        NodeResolver.view(selector, snapshot: snapshot, index: index)
     }
 }
 #endif
