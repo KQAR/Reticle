@@ -1232,6 +1232,23 @@ esac
 R ui node --live --package "$PKG" --css "$OUTLINE_CSS" >/dev/null \
   || { echo "FAIL: the outline's own handle '$OUTLINE_CSS' does not resolve"; exit 1; }
 
+# A page that RENUMBERS its refs the moment a field takes focus — six hint rows
+# inserted above the fields by the focus handler, which is an ordinary thing for a
+# form to do. `type` resolves its target in one capture and then re-captures for the
+# focus and read-back post-conditions, so anything reading the FIRST capture's ref is
+# reading whatever inherited that index. Both fields must come back verbatim.
+boot_app "$PKG"
+"$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
+  --es reticle.webScenario renumbering >/dev/null 2>&1
+wait_compact "$PKG" "Monthly income"
+for pair in "Monthly income:8000" "Monthly expenses:2000"; do
+  RENUM="$(R act type --package "$PKG" --label "${pair%%:*}" --text "${pair##*:}" 2>&1)"
+  echo "$RENUM" | grep -q "textLanded=exact" \
+    || { echo "FAIL: a renumbering page must not break the type read-back; got: $RENUM"; exit 1; }
+done
+R ui compact --live --package "$PKG" --window top | grep -q '#amount textField "8000"' \
+  || { echo "FAIL: the text did not land in the field it was aimed at"; exit 1; }
+
 # A construct the matcher does not implement is REFUSED by name, never answered as
 # a miss: "not understood" and "no such element" lead to opposite next actions.
 UNSUPPORTED="$(R ui node --live --package "$PKG" --css 'input[type=checkbox]' 2>&1 || true)"
