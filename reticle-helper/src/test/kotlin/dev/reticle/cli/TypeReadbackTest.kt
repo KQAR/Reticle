@@ -348,4 +348,88 @@ class TypeReadbackTest {
         val verdict = TypeReadback.classify(before = "abc", after = "abX", typed = "de")
         assertEquals(TypeReadback.Landed.CHANGED, verdict.landed)
     }
+    /**
+     * A capture holds EVERY live window of the process, and a screen pushed over a
+     * still-alive one is the common case on Android. Platform focus is per-window, so
+     * a background screen's field keeps `isFocused` and an unscoped search can lock
+     * onto a field nobody is looking at.
+     *
+     * Observed while driving a hybrid app with several instances of one Activity
+     * stacked: the pre-type capture held eight focused text fields, seven of them on
+     * dead screens holding old values, and the read-back took one of those as its
+     * baseline — reporting `text= textLanded=changed` for a field that visibly held
+     * the typed string.
+     */
+    @Test
+    fun theFieldIsTakenFromTheWindowOnTop() {
+        val snapshot = stackedWindows(deadValue = "1111", liveValue = null)
+        val field = TypeReadback.field(snapshot, targetRef = null)
+        assertEquals("live.input", field?.ref, "the read-back must read the screen on top")
+    }
+
+    @Test
+    fun aDuplicateOnADeadScreenDoesNotMakeAHandleAmbiguous() {
+        // `refind`'s identity lookups insist on a single match, so a stacked screen's
+        // copy of the same field used to turn a perfectly good handle into "ambiguous"
+        // and drop the read-back to the rect fallback — or, for a DOM node, to GONE.
+        val snapshot = stackedWindows(deadValue = "1111", liveValue = "2222")
+        val live = snapshot.nodes["live.input"]!!
+        assertEquals("live.input", TypeReadback.refind(snapshot, live)?.ref)
+    }
+
+    @Test
+    fun aCaptureWithNoWindowsKeepsEveryCandidate() {
+        // The scoping can only ever drop a node that has a same-named sibling on the
+        // screen being driven: with no window nodes at all (a bare view tree) nothing
+        // is filtered.
+        val input = Node(
+            ref = "only", parentRef = "app", kind = NodeKind.view, typeName = "android.widget.EditText",
+            role = "textField", text = "x", isFocused = true, isInteractive = true,
+            frame = Rect(0.0, 0.0, 100.0, 40.0),
+        )
+        val snapshot = Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+            rootRef = "app",
+            nodes = linkedMapOf(
+                "app" to Node(ref = "app", kind = NodeKind.application, typeName = "Application", children = listOf("only")),
+                "only" to input,
+            ),
+        )
+        assertEquals("only", TypeReadback.field(snapshot, targetRef = null)?.ref)
+    }
+
+    /** Two live windows, each with a focused text field carrying the same handle. */
+    private fun stackedWindows(deadValue: String?, liveValue: String?): Snapshot {
+        fun input(ref: String, parent: String, value: String?, y: Double) = Node(
+            ref = ref, parentRef = parent, kind = NodeKind.view,
+            typeName = "android.widget.EditText", role = "textField",
+            testId = "amount", text = value, isFocused = true, isInteractive = true,
+            frame = Rect(60.0, y, 960.0, 120.0),
+        )
+        return Snapshot(
+            capturedAtMillis = 0L,
+            screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+            rootRef = "app",
+            nodes = linkedMapOf(
+                "app" to Node(
+                    ref = "app", kind = NodeKind.application, typeName = "Application",
+                    // Stacking order: the topmost window is last.
+                    children = listOf("dead.window", "live.window"),
+                ),
+                "dead.window" to Node(
+                    ref = "dead.window", parentRef = "app", kind = NodeKind.window,
+                    typeName = "DecorView", role = "window",
+                    frame = Rect(0.0, 0.0, 1080.0, 2400.0), children = listOf("dead.input"),
+                ),
+                "dead.input" to input("dead.input", "dead.window", deadValue, 400.0),
+                "live.window" to Node(
+                    ref = "live.window", parentRef = "app", kind = NodeKind.window,
+                    typeName = "DecorView", role = "window",
+                    frame = Rect(0.0, 0.0, 1080.0, 2400.0), children = listOf("live.input"),
+                ),
+                "live.input" to input("live.input", "live.window", liveValue, 400.0),
+            ),
+        )
+    }
 }
