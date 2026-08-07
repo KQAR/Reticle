@@ -57,6 +57,22 @@
     does not fire on every item on the screen. The tap warning names the reason it actually
     used ("the page did not opt it out of hit-testing" vs "is itself interactive").
 
+- **An empty field and a filled one no longer read alike.** On a text field the quoted
+  slot means *what it holds*, so an accessible name in it is a lie shaped like evidence.
+  Measured on a real form whose field names come from sibling `<label>`s (no id, no
+  placeholder, no `aria-label`): an EMPTY input printed `textField "Given name"` — byte for
+  byte how a field someone had typed `Given name` into prints. "Is this filled?" could not be
+  answered from the projection at all.
+  - A value-bearing node's accessible name now travels in `name:"…"`, where every other
+    control already puts it: `textField [rect] tappable name:"Given name"`. The absence of a
+    quoted value IS the reading "empty".
+  - A control whose text really is its value is untouched — a component-library select is
+    a `<button>` displaying the chosen option, and it keeps `button "Bachelor's" …
+    name:"Education level"`.
+  - `name` now counts as identity in the fold and the projection cap, so an empty-but-named
+    field cannot be folded into a neighbouring row (which would have dropped the only
+    thing saying which field it is).
+
 ## 0.19.0 - 2026-08-06
 
 - **Android reads a sealed frame too — through androidx.webkit, reflectively.** The iOS

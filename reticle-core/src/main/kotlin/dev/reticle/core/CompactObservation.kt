@@ -272,9 +272,11 @@ data class CompactObservation(
                             // type over. A node with only one
                             // of the two still puts it in the label slot rather than
                             // leaving the line anonymous.
-                            label = node.text?.takeIf { it.isNotEmpty() } ?: node.contentDescription,
-                            name = node.contentDescription
-                                ?.takeIf { !node.text.isNullOrEmpty() && it != node.text },
+                            label = node.text?.takeIf { it.isNotEmpty() }
+                                ?: node.contentDescription?.takeUnless { valueBearing(node) },
+                            name = node.contentDescription?.takeIf {
+                                (!node.text.isNullOrEmpty() && it != node.text) || valueBearing(node)
+                            },
                             frame = node.frame,
                             isEnabled = node.isEnabled,
                             isInteractive = node.isInteractive,
@@ -351,7 +353,11 @@ private fun keepMostActionable(items: List<CompactItem>, maxItems: Int): List<Co
 /** How much of the cap this item deserves — see [keepMostActionable]. */
 private fun rankOf(item: CompactItem): Int {
     if (item.isInteractive || item.role in CONTROL_ROLES) return 2
-    if (item.testId != null || item.resourceId != null || !item.label.isNullOrBlank()) return 1
+    if (item.testId != null || item.resourceId != null ||
+        !item.label.isNullOrBlank() || !item.name.isNullOrBlank()
+    ) {
+        return 1
+    }
     return 0
 }
 
@@ -363,6 +369,24 @@ private fun rankOf(item: CompactItem): Int {
 private val CONTROL_ROLES = setOf(
     "button", "textField", "checkbox", "radio", "switch", "slider", "link", "menuItem", "tab",
 )
+
+/**
+ * Does the quoted slot on this node's line mean "what it HOLDS"?
+ *
+ * For a text input it does, and that makes an accessible name in that slot a lie of
+ * the worst kind — one that reads like evidence. Measured on a real form: an empty
+ * field whose name came from its `<label>` printed `textField "Given name"`, exactly like
+ * a field a caller had already typed `Given name` into, so "is this filled?" could not be
+ * answered from the projection at all. The name still travels, in `name:"…"`, which
+ * is where every other control already puts it — so an empty input now reads
+ * `textField [rect] tappable name:"Given name"`, and the absence of a quoted value IS the
+ * answer.
+ *
+ * A `<button>` that displays its chosen value as its own text is deliberately NOT
+ * in here: there the text really is the value, and `name:` already carries the
+ * field it belongs to.
+ */
+private fun valueBearing(node: Node): Boolean = node.role == "textField"
 
 /** The item list after folding, and how many anonymous layers went into it. */
 private data class Folded(val items: List<CompactItem>, val collapsed: Int)
@@ -403,7 +427,12 @@ private fun collapseWrappers(snapshot: Snapshot, items: List<CompactItem>): Fold
     fun node(item: CompactItem) = snapshot.nodes[item.ref]
     fun identified(item: CompactItem): Boolean {
         val n = node(item) ?: return true // unknown node: never fold what we can't inspect
+        // `name` counts as much as `label`: an empty input's accessible name now
+        // travels in that slot instead of the value slot, and folding such a field
+        // into a neighbouring row would drop the only thing that says which field
+        // it is.
         return item.testId != null || item.resourceId != null || item.label != null ||
+            item.name != null ||
             item.scroll != null || item.wheel != null ||
             n.regions.isNotEmpty() || n.charGrid != null || n.suspectedMultiRegion ||
             // A DOM node's css selector is its handle, same as a testId. Read the
