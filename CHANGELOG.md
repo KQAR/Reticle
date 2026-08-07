@@ -27,6 +27,17 @@
     true while running the handler for none of the routes tried — so the result names the
     coordinator rather than reading as a submit that worked. New row in
     `docs/boundaries.md`, and the e2e fails loudly if a future iOS makes it work.
+  - Validated on an iPhone 13 Pro Max / iOS 26 (`scripts/e2e-ios-device.sh`, whole
+    suite green): the field reads back what was typed, `keyboardVisible=true` and
+    `occluded-by:keyboard` prove the real keyboard came up, `--clear` reports
+    `emptied(6ch)`, `--submit` flips the app's own status line, and non-ASCII lands
+    as-is. Two device-only defects it caught on the way, both now guarded: an input
+    gesture with no `--serial` resolved its target to the booted **simulator** and
+    typed there while reporting `via=hid` (the host now refuses HID for a udid that
+    is not a simulator, or one the app is not installed on, and names the device's
+    ECID), and the USB tunnel silently lost to a leftover simulator app holding the
+    same derived port — `iproxy` could not bind, so every command answered from the
+    simulator while reading `runtime: healthy` (the suite now refuses to start).
   - Two things it does better than HID: non-ASCII lands as-is with no clipboard detour
     (the HID keyboard can only emit printable ASCII), and `--type-delay` — which reached
     the iOS host and did nothing, the same silent-flag defect `--clear` had — now paces
