@@ -255,6 +255,15 @@ navigation or modal changes: `@N` numbering describes the outlined screen, not
 the new one. The `item i/n` text is a hint, not a selector. Stable automation
 should still prefer `--test-id`, `--resource-id`, or `--css`.
 
+A DOM node's `css=` on those lines is the **shortest form that still names that one
+node** in the capture — `#id` when it has a unique one, otherwise the shortest tail
+of its path (`div.form-row:nth-of-type(3) > … > input.control`), and the full
+lineage only when nothing shorter is unique. It used to be the whole ancestor path,
+~400 characters per line: measured on a hybrid form, one screen's outline was
+**17.8 KB against 5.9 KB for the same screen's `ui compact`**, so the view sold as
+the cheap loop was by far the most expensive to read. Copy the handle as-is — it is
+what `--css` will re-resolve.
+
 **`rN` refs are single-snapshot handles.** A ref is the traversal INDEX of a node
 in the capture it came from — any relayout, and in a WebView any re-render,
 renumbers the whole tree. On a DOM-heavy screen a ref read out of one `ui report`
