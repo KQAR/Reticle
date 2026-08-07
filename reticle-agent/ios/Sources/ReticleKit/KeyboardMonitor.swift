@@ -91,11 +91,21 @@ final class KeyboardMonitor {
     /// which is why the unit tests skip that case rather than assert it — but
     /// so did the walk, which enumerated the same (empty) scene list.
     private func textInputFirstResponder() -> UIResponder? {
+        guard let responder = FirstResponderLookup.current(), responder is UIKeyInput else { return nil }
+        return responder
+    }
+}
+
+/// The current first responder, whichever window holds it — shared by the
+/// keyboard probe and by in-process typing (which types into the focused field
+/// when the caller named no target, exactly as the HID path does).
+@MainActor
+enum FirstResponderLookup {
+    static func current() -> UIResponder? {
         let probe = FirstResponderProbe()
         UIApplication.shared.sendAction(
             #selector(UIResponder.reticleReportFirstResponder(_:)), to: nil, from: probe, for: nil)
-        guard let responder = probe.responder, responder is UIKeyInput else { return nil }
-        return responder
+        return probe.responder
     }
 }
 

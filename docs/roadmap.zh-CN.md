@@ -46,7 +46,7 @@
 | --- | --- |
 | **观察**（Android） | View 树 + Compose semantics + WebView DOM 合并进同一张扁平 `ref → Node`；语义树与 compact 在进程内派生；多目标控件有 regions / 字符网格 |
 | **观察**（iOS） | UIKit 树 + SwiftUI `axElement` 桥（含单个 `Text` 内部的链接）+ `WKWebView` DOM；同一套协议 JSON |
-| **驱动** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`，选择器优先，支持 `--region`、`--label`、`--settle`、`--verify`、`act batch`（`@N` 别名**仅 Android**——outline 缓存未移植到 iOS host，`Render.swift` 就地写明了这一点）。Android 与 iOS 模拟器上是真实 HID；iOS 真机用进程内 activation |
+| **驱动** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`，选择器优先，支持 `--region`、`--label`、`--settle`、`--verify`、`act batch`（`@N` 别名**仅 Android**——outline 缓存未移植到 iOS host，`Render.swift` 就地写明了这一点）。Android 与 iOS 模拟器上是真实 HID；iOS 真机上 `activate` 与 `type` 走进程内（无 HID，因此没有坐标类手势） |
 | **证据** | 操作 trace（前后快照 + 截图 + 排过序、自描述的 diff），默认录制；`trace log` 摘要、`replay gif`、session 时间线，以及"说出缺席"的词汇表（`window: UNFOCUSED`、`dom:unavailable`、`dom:unsupported-kernel`、`pixels:unavailable`、`screencap:blank`、`occluded-by:*`、`scroll:*`） |
 | **网络** | `reticle serve` 抓包线跑在 Loom 的 `ProxyEngine` 上，HTTPS MITM + CA 签发，session 级流量规则（`mock`/`block`/`mapRemote`/`passthrough` + 修饰符），flow replay + diff。Android 与 iOS（模拟器与真机）均可用 |
 | **面板** | 本地只读证据面板：trace、产物、网络卡片（过滤、按规则分组、"copy as rule"）。设计上只展示 |
@@ -60,8 +60,8 @@
 覆盖模拟器与真机：iOS agent、host 平台层、WebView 桥、操作 trace、抓包代理都已落地，
 链接 agent 的真机路径在 iPhone 13 Pro Max / iOS 26 上验证通过
 （`scripts/e2e-ios-device.sh`——USB 隧道上的观察、`activate`、`mutate`、trace 证据，
-外加代理绑 LAN 后一条解密的 HTTPS 事件）。唯一剩下的结构性缺口是**真机 HID 输入**
-（第 5 项）。HarmonyOS 尚未开始且零验证——见"暂缓"。
+外加代理绑 LAN 后一条解密的 HTTPS 事件）。唯一剩下的结构性缺口是**真机坐标输入**
+（第 5 项）——activation 与打字已经在真机上以进程内方式跑通。HarmonyOS 尚未开始且零验证——见"暂缓"。
 
 ---
 
@@ -131,10 +131,11 @@ session 时间线已经把 UI 操作 + 网络 + 截图统一了，但一次校�
 
 ### 5. iOS 真机输入悬崖 — L，先量化再动手
 
-真机只有 `act activate`（靠选择器）；坐标点击、复杂手势、键盘 `type` 都需要模拟器的
-HID 面。因此任何"没有稳定选择器"的真机步骤都没被覆盖。要补就得上 XCUITest/WDA 或
-CoreDevice，是个真项目。**先量清楚 `activate` 到底覆盖不了多少真机动作**——适用"先查
-病因"规则。
+真机现在有两条进程内路径，都靠选择器：`act activate` 和 `act type`（走
+`UIKeyInput.insertText`，delegate、格式化器、SwiftUI binding 全都会触发）。剩下的缺口
+是所有需要坐标的动作：点坐标、swipe、drag、`scroll-to`、复杂手势——因此"没有稳定选择器"
+或"必须先滚动才能看到"的真机步骤仍没被覆盖。要补这些就得上 XCUITest/WDA 或 CoreDevice，
+是个真项目。**先量清楚这两条进程内路径到底覆盖不了多少真机动作**——适用"先查病因"规则。
 
 ### 6. 阶段遗留 — S–L，纯增量
 
