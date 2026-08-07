@@ -776,6 +776,27 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-frame"
 "$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json" | grep -q "Frame clicked" \
   || { echo "FAIL: coordinate tap at the iframe content rect did not fire its onclick"; exit 1; }
+# In-process dom activation with an observable side effect. It lives HERE, inside
+# the WEBVIEW section, because `#echo-name` is on THIS page: it used to sit after the
+# frame-wall section below, which relaunches the app into the `webFrames` scenario —
+# so the element was gone and the step failed, aborting the suite before the login,
+# dialog, Lottie and permission sections ever ran. Measured 2026-08-08: `error:
+# activation failed: no dom element matched selector #echo-name`.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
+"$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
+  || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
+# Web evidence hooks: the report above installed them; the button logs to the
+# console and fetches, and both must surface through /logs. Also on THIS page, and
+# stranded after the frame-wall section for the same reason as the step above.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#web-evidence"
+sleep 1
+WEBLOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$WEBLOGS" | grep -q "web_console: evidence button clicked" \
+  || { echo "FAIL: expected the web console event in /logs"; exit 1; }
+echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
+  || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 echo "== EVERY FRAME WALL, AND A SEALED FRAME READ IN ITS OWN CONTEXT =="
 # A dedicated screen, because these fixtures cannot share the complex page: a SEALED
 # frame has no children, and the traversal prunes a childless node below the viewport —
@@ -875,22 +896,6 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames-sealed-after"
 "$HOST" --target ios ui compact "$TMP/frames-sealed-after/snapshot.json" | grep -q "Sandbox clicked" \
   || { echo "FAIL: activation into a sealed frame did not fire its onclick"; exit 1; }
-
-# In-process dom activation with an observable side effect.
-"$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
-sleep 1
-"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
-"$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
-  || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
-# Web evidence hooks: the report above installed them; the button logs to the
-# console and fetches, and both must surface through /logs.
-"$HOST" --target ios act activate --package "$LINKED_ID" --css "#web-evidence"
-sleep 1
-WEBLOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
-echo "$WEBLOGS" | grep -q "web_console: evidence button clicked" \
-  || { echo "FAIL: expected the web console event in /logs"; exit 1; }
-echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
-  || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== TAB BAR (SwiftUI TabView) =="
