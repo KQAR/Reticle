@@ -414,6 +414,23 @@ confirms the point repeats before dispatching and reports:
 - `rectMoved=<dx>,<dy>` — **only when the first read was stale**. The confirm fixed
   the tap, and this says the screen you reasoned about had already moved.
 
+**A tap on a DOM node also asks the page where it landed.** Everything above is about
+Reticle's own intent — resolved, confirmed, dispatched — so a page-to-device fold that
+is wrong keeps all of it true while the touch goes elsewhere. The page is therefore
+asked directly, and `landed=` appears **only when it disagrees**:
+
+- `landed=the touch arrived in the page at (x,y) on rN ('<css>'), not on '<target>'` —
+  the projected rect does not match what is rendered. Re-capture and compare the two
+  rects; on iOS `act activate --css` needs no coordinate at all.
+- `landed=the page received no pointer event for this tap …` — nothing in the page was
+  touched: the coordinate went to a native view drawn over the web view, or to a place
+  the page does not occupy. Screenshot it.
+
+No `landed=` line is the normal case and means the touch reached the target (or an
+element inside it, which is the same thing). The record is on the tree either way:
+`domPointerHit` on the element that received it, `domPointerX/Y/AgeMs/Matched` on the
+web view host.
+
 `--settle` still exists and now means *this target IS animating*: it raises the
 budget from 800ms to 2s (`--settle-timeout <ms>` overrides either). `--no-settle`
 opts out and dispatches on the single read. A raw `--point` never confirms (nothing

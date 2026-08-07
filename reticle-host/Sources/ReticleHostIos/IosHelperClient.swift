@@ -410,6 +410,14 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                let complaint = DomRectCheck.outsideHost(snapshot, ref: ref) {
                 result["rectSuspect"] = complaint
             }
+            // And where the touch ACTUALLY landed, according to the page — the one
+            // answer a tap has that is not Reticle's own arithmetic, so it is the only
+            // one that can catch a fold that is wrong by an amount nothing else can
+            // judge. Quiet on every ordinary tap. Only for the HID path: `activate`
+            // dispatches on the element itself and uses no coordinate to be wrong.
+            if !rawPoint, let landing = domTapLanding(pkg, params, target: target) {
+                result["landed"] = landing
+            }
             return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)
@@ -741,6 +749,30 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     /// from the same capture, so both trees still describe one frame.
     func resolveTapPoint(_ params: [String: Any], snapshot: Snapshot) throws -> Point {
         try resolveTarget(params, snapshot: snapshot).point
+    }
+
+    /// Ask the PAGE where the touch went, for a tap that resolved to a DOM node.
+    ///
+    /// Twin of the Android helper's `domTapLanding`. Costs one snapshot and only on a
+    /// DOM tap: the witness's record lives in the page, so it can only be read after the
+    /// gesture. Silent whenever it cannot judge — a selector that no longer resolves
+    /// (the tap navigated), an unreadable page, a sealed frame — because a check that
+    /// could not run is not evidence. See `DomTapWitness`.
+    private func domTapLanding(
+        _ pkg: String, _ params: [String: Any], target: SelectorResolution.Resolved
+    ) -> String? {
+        guard target.source.hasPrefix("dom") else { return nil }
+        // Let the page's own handler run before asking it what it received.
+        Thread.sleep(forTimeInterval: 0.2)
+        guard let after = try? fetchSnapshot(pkg),
+            let resolved = ((try? SelectorResolution.resolve(
+                snapshot: after,
+                semantic: SemanticTree.build(from: after),
+                selector: selectorFromParams(params)
+            )) ?? nil),
+            let ref = resolved.ref
+        else { return nil }
+        return DomTapWitness.describe(after, intendedRef: ref)
     }
 
     func resolveTarget(
