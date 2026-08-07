@@ -5,6 +5,22 @@
   // projection's own cap announces itself; this one used to stop silently, so a
   // partial tree read as the whole screen.
   var capped = false;
+  // The last pointer that arrived in this page, recorded by `dom-pointer-witness.js`
+  // (a separate script, because that one adds a listener and this one must stay a
+  // read). Read here rather than in its own round trip so the ELEMENT can be compared
+  // by identity against the element being captured: that is the only join between an
+  // event target and a captured node that cannot drift — a second selector
+  // implementation would be a third answer to "which node is this".
+  //
+  // Absent when nothing has been tapped, when the witness was never installed, or in
+  // a per-frame evaluation whose parent window is sealed. `pointerSeen` distinguishes
+  // "a touch arrived on an element in this tree" from "a touch arrived somewhere
+  // else", which is the whole diagnostic value: a selector tap that reports
+  // `settled=1` and lands 130px away is otherwise silent.
+  var pointer = null;
+  try { pointer = window.__reticlePointer || null; } catch (e) { pointer = null; }
+  if (pointer && !pointer.ts) pointer = null;
+  var pointerSeen = false;
   function clean(value, max) {
     if (value == null) return "";
     return String(value).replace(/\s+/g, " ").trim().slice(0, max || 160);
@@ -481,6 +497,8 @@
     var id = clean(el.id, 120);
     var tag = el.tagName.toLowerCase();
     var image = tag === "img" ? el : null;
+    var pointerHit = !!(pointer && pointer.target && pointer.target === el);
+    if (pointerHit) pointerSeen = true;
     return {
       tag: clean(tag, 40),
       id: id,
@@ -520,6 +538,10 @@
       // Recorded only where it STARTS, and only as the weak signal it is: the page
       // said pointer, nothing declared a role.
       pointerOrigin: !!pointerOrigin,
+      // THIS element is where the page's last pointer event actually landed. The
+      // fact a tap has no other source for: everything else about a tap is what
+      // Reticle intended, this is what the page received.
+      pointerHit: pointerHit,
       // Page-truth sibling positions, so `:nth-of-type(n)` / `:nth-child(n)` can be
       // matched instead of refused. The captured path already carries the first one
       // per segment; these carry both as numbers for the element itself, which is
@@ -661,6 +683,15 @@
     scrollY: window.scrollY || window.pageYOffset || 0,
     capped: capped,
     captured: count,
+    // The page's own account of the last touch it received: where it arrived in
+    // VIEWPORT coordinates, how long ago, and whether its target is one of the
+    // elements above. `pointerTs` being 0 means no touch has been witnessed at all,
+    // which is a different fact from one that landed off-tree.
+    pointerX: pointer ? pointer.x : 0,
+    pointerY: pointer ? pointer.y : 0,
+    pointerAgeMs: pointer ? Math.max(0, Date.now() - pointer.ts) : -1,
+    pointerTs: pointer ? pointer.ts : 0,
+    pointerMatched: pointerSeen,
     root: root
   });
 })();

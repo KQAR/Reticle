@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+- **A tap asks the PAGE where it landed.** Every other answer a tap gives is about its
+  own intent: the selector resolved, the rect was re-read and had stopped moving, the
+  coordinate was dispatched. If the page-to-device fold is wrong, all of that stays true
+  while the touch lands somewhere else and the result still reads `settled=1` — the shape
+  measured on a real hybrid page whose DOM rects were off by roughly 130px, where a
+  `--css` tap missed twice and only a screenshot revealed it (#234).
+  - New `reticle-protocol/scripts/dom-pointer-witness.js` — the one script Reticle runs
+    in a page that is not a read — installs a capture-phase listener per document that
+    records the last pointer event's target. The traversal compares that target against
+    each element it captures **by identity** and marks the one that matches
+    (`domPointerHit`), publishing the coordinate, the age and whether it matched anything
+    on the web view host node. Identity is the join, deliberately: a second selector
+    implementation would be a third answer to "which node is this".
+  - `act tap` on a DOM target now reports `landed=` when the page disagrees — either the
+    element that received the touch (named, with the viewport coordinate it arrived at
+    and whether it CONTAINS the target) or that no pointer reached the page at all, which
+    is what a coordinate swallowed by a native view drawn over the web view looks like
+    from inside. Measured on the nested-web-view fixture: a covered page's button tapped
+    by `--css` reported `settled=1` and the page confirmed it never saw a touch.
+  - Quiet on every ordinary tap — the target, or anything inside it (a button's caption
+    span IS that button). Silent rather than guessing whenever the evidence cannot carry
+    a verdict: a non-DOM target, an unreadable page, a target inside a frame the witness
+    cannot be installed in (events do not cross that boundary either), or a record too
+    old to belong to the gesture being reported.
+  - The witness's own boundary is pinned by its tests: it may add listeners and may not
+    call `preventDefault`/`stopPropagation` or touch page state — a witness that
+    suppressed the app's own handler would become the bug it is diagnosing. The judgement
+    is pinned for both ports by `dom-tap-witness.cases.json`; both ports carry it, both
+    e2e suites assert the quiet case and the record on the tree.
+
 ## 0.20.0 - 2026-08-07
 
 - **`ui outline` prints a DOM node's shortest handle, not its lineage.** The traversal
