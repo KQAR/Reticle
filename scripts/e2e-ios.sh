@@ -388,6 +388,60 @@ sleep 1
 # The char grid rides along, so a phrase that is NOT a link is addressable too.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id swiftui.agreement --region "Read the" \
   || { echo "FAIL: the reconstructed char grid must resolve a non-link substring"; exit 1; }
+
+# ---- in-process typing, the REAL-DEVICE path, on the same screen ----------
+#
+# A phone has no host-reachable HID keyboard, so `act type` there hands the
+# characters to the app itself (`/type` -> `UIKeyInput.insertText`). That path is
+# forced here by naming a serial that resolves to no HID surface: the host then
+# takes exactly the branch a device takes, against an agent it reaches over the
+# simulator's shared loopback. Without this, the device branch would only ever run
+# in scripts/e2e-ios-device.sh, which needs a phone and does not run in CI.
+NO_HID_SERIAL="reticle-no-hid-surface"
+TYPED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+  --test-id swiftui.nickname --text "héllo 世界")"
+echo "$TYPED"
+echo "$TYPED" | grep -q "via=agent insertText" \
+  || { echo "FAIL: the no-HID path must type in-process, got: $TYPED"; exit 1; }
+# Non-ASCII needs no clipboard here — `insertText` takes the string as it is,
+# where the HID keyboard can only emit printable ASCII.
+echo "$TYPED" | grep -q "after=héllo 世界" \
+  || { echo "FAIL: in-process typing must read the field back with the text it typed"; exit 1; }
+# The side effect that separates this from `mutate --property text`: the value
+# went through the input pipeline, so SwiftUI's @State binding updated and the
+# echo below the field moved. A direct `.text` assignment leaves it stale.
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "swiftui.nicknameEcho" \
+  | grep -q "Nickname: héllo 世界" \
+  || { echo "FAIL: in-process typing did not drive the SwiftUI binding"; exit 1; }
+# `--clear` on this path deletes what is there (one backspace per character,
+# through the same pipeline) and proves the field was empty before typing.
+CLEARED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+  --test-id swiftui.nickname --text "abc" --clear)"
+echo "$CLEARED"
+echo "$CLEARED" | grep -q "cleared=emptied(8ch)" \
+  || { echo "FAIL: --clear must report emptying the 8 characters that were there; got: $CLEARED"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "swiftui.nicknameEcho" \
+  | grep -q "Nickname: abc" \
+  || { echo "FAIL: the field must hold exactly what was typed after --clear"; exit 1; }
+# NOT asserted here: that the keyboard came up. Focusing in-process does raise it,
+# but this simulator may already be in the hardware-keyboard state any earlier HID
+# `type` puts it in for the rest of the boot (see the LOGIN section and
+# docs/boundaries.md), and that would fail for a reason that has nothing to do with
+# this path. scripts/e2e-ios-device.sh asserts it where the state is real.
+# `--submit` on a SwiftUI field is a MEASURED MISS, and the assertion is that it
+# says so. SwiftUI's own coordinator is the field's delegate; it answers
+# `textFieldShouldReturn` with true and runs `.onSubmit` for none of the routes
+# tried (see `TextInputEngine.submit`). The sample's handler would set
+# "submitted 42" if it ever fired — it does not, so what must not happen is the
+# result reading like a submit that worked.
+SUBMITTED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+  --test-id swiftui.nickname --text "42" --clear --submit)"
+echo "$SUBMITTED"
+echo "$SUBMITTED" | grep -q "swiftui-coordinator" \
+  || { echo "FAIL: an in-process --submit on a SwiftUI field must carry the coordinator caveat"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "swiftui.status" \
+  | grep -q "submitted 42" \
+  && { echo "FAIL: SwiftUI .onSubmit now fires in-process — drop the caveat and assert it instead"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== LONG LIST (lazy boundary + scroll evidence) =="
@@ -722,6 +776,27 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-frame"
 "$HOST" --target ios ui compact "$TMP/webview-frame/snapshot.json" | grep -q "Frame clicked" \
   || { echo "FAIL: coordinate tap at the iframe content rect did not fire its onclick"; exit 1; }
+# In-process dom activation with an observable side effect. It lives HERE, inside
+# the WEBVIEW section, because `#echo-name` is on THIS page: it used to sit after the
+# frame-wall section below, which relaunches the app into the `webFrames` scenario —
+# so the element was gone and the step failed, aborting the suite before the login,
+# dialog, Lottie and permission sections ever ran. Measured 2026-08-08: `error:
+# activation failed: no dom element matched selector #echo-name`.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
+sleep 1
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
+"$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
+  || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
+# Web evidence hooks: the report above installed them; the button logs to the
+# console and fetches, and both must surface through /logs. Also on THIS page, and
+# stranded after the frame-wall section for the same reason as the step above.
+"$HOST" --target ios act activate --package "$LINKED_ID" --css "#web-evidence"
+sleep 1
+WEBLOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
+echo "$WEBLOGS" | grep -q "web_console: evidence button clicked" \
+  || { echo "FAIL: expected the web console event in /logs"; exit 1; }
+echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
+  || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 echo "== EVERY FRAME WALL, AND A SEALED FRAME READ IN ITS OWN CONTEXT =="
 # A dedicated screen, because these fixtures cannot share the complex page: a SEALED
 # frame has no children, and the traversal prunes a childless node below the viewport —
@@ -821,22 +896,6 @@ sleep 1
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/frames-sealed-after"
 "$HOST" --target ios ui compact "$TMP/frames-sealed-after/snapshot.json" | grep -q "Sandbox clicked" \
   || { echo "FAIL: activation into a sealed frame did not fire its onclick"; exit 1; }
-
-# In-process dom activation with an observable side effect.
-"$HOST" --target ios act activate --package "$LINKED_ID" --css "#echo-name"
-sleep 1
-"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-after"
-"$HOST" --target ios ui compact "$TMP/webview-after/snapshot.json" | grep -q "Echo: Ada" \
-  || { echo "FAIL: dom activation did not fire #echo-name onclick"; exit 1; }
-# Web evidence hooks: the report above installed them; the button logs to the
-# console and fetches, and both must surface through /logs.
-"$HOST" --target ios act activate --package "$LINKED_ID" --css "#web-evidence"
-sleep 1
-WEBLOGS="$("$HOST" --target ios debug logs --package "$LINKED_ID")"
-echo "$WEBLOGS" | grep -q "web_console: evidence button clicked" \
-  || { echo "FAIL: expected the web console event in /logs"; exit 1; }
-echo "$WEBLOGS" | grep -q "web_network: GET data:text/plain,ok" \
-  || { echo "FAIL: expected the web fetch event in /logs"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
 echo "== TAB BAR (SwiftUI TabView) =="
@@ -985,6 +1044,17 @@ echo "$CLEAR_OUT" | grep -q "cleared=emptied(${BEFORE_LEN}ch)" \
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/login-cleared"
 "$HOST" --target ios ui compact "$TMP/login-cleared/snapshot.json" | grep "login.codeField" | grep -q "9999" \
   || { echo "FAIL: the field must hold exactly what was typed after --clear"; exit 1; }
+# The same field, typed the way a real DEVICE types it (no HID surface): the
+# characters go through the agent, and `--submit` fires the return-key action
+# in-process — `textFieldShouldReturn` on a UIKit field, which this screen
+# implements. The proof is the app's own status line, not the reported `via`.
+DEVICE_PATH_SUBMIT="$("$HOST" --target ios --serial "reticle-no-hid-surface" act type \
+  --package "$LINKED_ID" --test-id login.codeField --text "4321" --clear --submit)"
+echo "$DEVICE_PATH_SUBMIT"
+echo "$DEVICE_PATH_SUBMIT" | grep -q "via=agent insertText" \
+  || { echo "FAIL: the no-HID path must type in-process, got: $DEVICE_PATH_SUBMIT"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep "login.status" | grep -q "Logged in: 4321" \
+  || { echo "FAIL: in-process --submit did not fire the field's return action"; exit 1; }
 # Put the code back for the submit assertions below.
 "$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" --test-id login.codeField --text "123456" --clear >/dev/null
 

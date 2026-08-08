@@ -90,6 +90,25 @@ public struct Simctl {
         return out
     }
 
+    /// Whether this udid names a SIMULATOR at all. A `--serial` can equally be a
+    /// real device's hardware ECID (the id the device path uses everywhere), and
+    /// the two must not be confused: a simulator has a HID surface, a device has
+    /// none. Unparseable/failed `simctl` answers false — a udid we cannot place in
+    /// the simulator list is not one we may assume HID for.
+    static func isSimulator(_ udid: String) -> Bool {
+        ((try? listDevices()) ?? []).contains { $0.udid == udid }
+    }
+
+    /// Whether `bundleId` is installed on this simulator (`simctl listapps`).
+    /// Used before dispatching HID at a simulator: keys and touches go to whatever
+    /// is on THAT screen, so an app that is not even installed there means the
+    /// input would land somewhere else entirely while the agent — reached over
+    /// loopback, which a device shares through a USB tunnel — answers healthy.
+    static func isAppInstalled(udid: String, bundleId: String) -> Bool {
+        guard let r = try? run(["listapps", udid]), r.code == 0 else { return true }
+        return r.out.contains("\"\(bundleId)\"") || r.out.contains(bundleId)
+    }
+
     /// Resolve a device: an explicit udid, else the (single) booted simulator.
     /// Public because the daemon needs to attribute captured traffic to a booted
     /// simulator. One of exactly two entry points this target exposes upward.
