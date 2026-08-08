@@ -150,6 +150,72 @@ TDIR="$(dirname "$TRACE_JSON")"
   || { echo "FAIL: trace missing before/after snapshot+screenshot artifacts"; exit 1; }
 echo "action-trace evidence package written on device: $TDIR"
 
+echo "== COORDINATE GESTURES ON A PHONE (in-process touch synthesis) =="
+# The gap that used to be structural: no HID surface is reachable from the host, so
+# a point tap, a `--region` tap, a swipe and `scroll-to` were all refused by name.
+# The agent runs inside the app, so it synthesizes the touch there — a `UITouch` in
+# the application's own `UITouchesEvent`, sent through `-sendEvent:`, which is the
+# call UIKit makes for a finger. Hit-testing, gesture recognizers and scroll views
+# therefore behave as they do under one, and that is what every assertion here
+# checks: the app's own handler, not the dispatch reporting success.
+#
+# `--serial "$DEV_UDID"` for the same reason as typing: an input gesture must name
+# where to dispatch, or the host falls back to a booted simulator.
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"agreements"}' "$BUNDLE" >/dev/null
+READY=0
+for _ in $(seq 1 12); do
+  sleep 1
+  if "$HOST" --target ios status --package "$BUNDLE" 2>/dev/null | grep -q "runtime: healthy"; then READY=1; break; fi
+done
+[ "$READY" = 1 ] || { echo "FAIL: agent not reachable after agreements relaunch"; exit 1; }
+
+# A text-range region, which has NO in-process activation surface and was therefore
+# unreachable on a device: per-phrase, and the app names the phrase it received, so
+# a rect that is merely plausible fails here.
+MARKER_TAP="$("$HOST" --target ios --serial "$DEV_UDID" act tap --package "$BUNDLE" \
+  --test-id agreement.markdown --region "«Privacy»")"
+echo "$MARKER_TAP"
+echo "$MARKER_TAP" | grep -q "source=region:textMarker" \
+  || { echo "FAIL: the region tap must report how it resolved; got: $MARKER_TAP"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep -q 'opened «Privacy» (markdown link)' \
+  || { echo "FAIL: tapping the «Privacy» marker did not fire the app's link handler"; exit 1; }
+# The char grid too: a plain phrase with no markers at all.
+"$HOST" --target ios --serial "$DEV_UDID" act tap --package "$BUNDLE" \
+  --test-id agreement.plain --region "Privacy Policy" >/dev/null
+sleep 1
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep -q "opened Privacy Policy (plain phrase)" \
+  || { echo "FAIL: a char-grid region tap did not reach the phrase handler"; exit 1; }
+# And the row whose behaviour lives in a UIGestureRecognizer — proven unreachable
+# by activation earlier in this suite, reachable by a real touch.
+POINT_TAP="$("$HOST" --target ios --serial "$DEV_UDID" act tap --package "$BUNDLE" --point 214,427)"
+echo "$POINT_TAP"
+echo "$POINT_TAP" | grep -q "via=agent uikit" \
+  || { echo "FAIL: a device coordinate tap must go through the agent's touch surface"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep -q "tapped color row (manual hit-test)" \
+  || { echo "FAIL: the gesture-recognizer row must be reachable by a real touch"; exit 1; }
+
+# `scroll-to`: the gesture a device needed most, since a lazy list's unrealized row
+# has no node at all until something scrolls it into view — and activation cannot
+# scroll. `list.item55` is absent at launch; the assertion is that it resolves after.
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"list"}' "$BUNDLE" >/dev/null
+sleep 5
+"$HOST" --target ios ui report --package "$BUNDLE" --output "$OUT/list-before" >/dev/null
+grep -q "list.item55" "$OUT/list-before/snapshot.json" \
+  && { echo "FAIL: list.item55 should NOT be realized at launch (the premise of this check)"; exit 1; }
+SCROLLED="$("$HOST" --target ios --serial "$DEV_UDID" act scroll-to --package "$BUNDLE" --test-id list.item55)"
+echo "$SCROLLED"
+echo "$SCROLLED" | grep -q "found=true" \
+  || { echo "FAIL: scroll-to must realize a row a lazy list had not built; got: $SCROLLED"; exit 1; }
+echo "$SCROLLED" | grep -q "via=agent uikit" \
+  || { echo "FAIL: scroll-to on a device must drag through the agent's touch surface"; exit 1; }
+# A swipe, reported with the surface that carried it.
+SWIPED="$("$HOST" --target ios --serial "$DEV_UDID" act swipe --package "$BUNDLE" \
+  --from 214,700 --to 214,300 --duration 400)"
+echo "$SWIPED" | grep -q "via=agent uikit" \
+  || { echo "FAIL: a device swipe must go through the agent's touch surface; got: $SWIPED"; exit 1; }
+
 echo "== ACTIVATION IS THREE-STATE (what in-process driving can and cannot reach) =="
 # Measured on this device and the reason `unconfirmed` exists: a UITextView holding
 # a `.link` run OPENS that link (its delegate runs, the status label changes) and
@@ -295,4 +361,4 @@ sleep 1
 "$HOST" --target ios ui compact "$OUT/tabbar-orders/snapshot.json" | grep -q "Selected: orders" \
   || { echo "FAIL: activating the Orders tab did not update tabbar.status"; exit 1; }
 
-echo "== OK (no HID on a real device; activation and in-process typing are) — artifacts in $OUT =="
+echo "== OK (no host HID on a real device; touch, typing and activation are all in-process) — artifacts in $OUT =="

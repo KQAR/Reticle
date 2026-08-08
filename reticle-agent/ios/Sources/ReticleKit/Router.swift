@@ -28,6 +28,14 @@ struct Router {
                 return try json(LogBatch(entries: ReticleRuntime.shared.collectedLogs()))
             case ("GET", Endpoints.screenshot):
                 return screenshot()
+            case ("GET", Endpoints.touch):
+                #if canImport(UIKit)
+                let probe = MainThread.sync { DeviceTouch.probe() }
+                return HttpResponse.json(200, Data(
+                    #"{"available":\#(probe.available),"paths":"\#(probe.report)"}"#.utf8))
+                #else
+                return HttpResponse.text(503, "touch synthesis needs UIKit")
+                #endif
             case ("GET", Endpoints.keyboard):
                 #if canImport(UIKit)
                 return try json(MainThread.sync { KeyboardMonitor.shared.status() })
@@ -44,6 +52,12 @@ struct Router {
                 return try mutate(request.body)
             case ("POST", Endpoints.activate):
                 return try activate(request.body)
+            case ("POST", Endpoints.touch):
+                #if canImport(UIKit)
+                return try touch(request.body)
+                #else
+                return HttpResponse.text(503, "touch synthesis needs UIKit")
+                #endif
             case ("POST", Endpoints.typeText):
                 #if canImport(UIKit)
                 return try typeText(request.body)
@@ -128,6 +142,31 @@ struct Router {
     }
 
     #if canImport(UIKit)
+    /// A synthesized touch: the UIKit calls hop to main, the WAITING (a tap's
+    /// hold, a drag's steps) happens on THIS thread — the main thread has to stay
+    /// free to run the hit-test, the recognizer and the scroll it is driving.
+    private func touch(_ body: Data) throws -> HttpResponse {
+        let req = try ReticleJSON.decode(TouchRequest.self, from: body)
+        let from = CGPoint(x: req.from.x, y: req.from.y)
+        do {
+            switch req.kind {
+            case .tap:
+                try DeviceTouch.tap(at: from, holdMs: req.durationMs ?? 60)
+            case .longPress:
+                try DeviceTouch.longPress(at: from, durationMs: req.durationMs ?? 600)
+            case .drag:
+                guard let to = req.to else {
+                    return try json(TouchResult(dispatched: false, message: "drag needs a `to` point"))
+                }
+                try DeviceTouch.drag(from: from, to: CGPoint(x: to.x, y: to.y),
+                                     durationMs: req.durationMs ?? 300)
+            }
+        } catch {
+            return try json(TouchResult(dispatched: false, message: "\(error)"))
+        }
+        return try json(TouchResult(dispatched: true, via: "uikit:sendEvent"))
+    }
+
     /// Typing paces itself between characters, so — like `hideKeyboard` — the
     /// waiting happens on THIS (server) thread and only the UIKit calls hop to
     /// main. `TextInputSession` owns that split.
