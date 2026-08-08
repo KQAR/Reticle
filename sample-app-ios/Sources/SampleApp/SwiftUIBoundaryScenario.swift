@@ -10,12 +10,28 @@ import ReticleKit
 struct SwiftUIBoundaryView: View {
     @State private var taps = 0
     @State private var lastAction = "none"
+    @State private var nickname = ""
 
     var body: some View {
         VStack(spacing: 24) {
             Text("SwiftUI boundary")
                 .font(.title2)
                 .accessibilityIdentifier("swiftui.title")
+
+            // The in-process typing target: a pure SwiftUI TextField whose value
+            // lives in a @State binding. The echo below it is the observable side
+            // effect — a `mutate` on the backing UITextField would change the
+            // field's pixels and leave this line stale, so only text that went
+            // through the real input pipeline moves it.
+            TextField("Nickname", text: $nickname)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("swiftui.nickname")
+                // SwiftUI wires `.onSubmit` through the backing field's
+                // `textFieldShouldReturn`, which is the hook `act type --submit`
+                // fires in-process on a device (no return key to press).
+                .onSubmit { lastAction = "submitted \(nickname)" }
+            Text("Nickname: \(nickname)")
+                .accessibilityIdentifier("swiftui.nicknameEcho")
 
             Button("Sign In") { taps += 1 }
                 .accessibilityIdentifier("login.signIn")

@@ -451,11 +451,41 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             try assertHidAvailable(udid)
             return try scrollTo(pkg, params, udid: udid)
         case "type":
-            guard let udid = simUdid else {
-                throw HelperError("type needs a booted simulator (real devices have no HID input surface)")
-            }
-            try assertHidAvailable(udid)
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
+            // No HID surface — a real device (whose `--serial` is a hardware ECID,
+            // not a simulator udid), or a simulator whose private SimulatorKit
+            // layout does not match — so type from INSIDE the app instead:
+            // `insertText` through the agent, the same entry point the system
+            // keyboard uses. The other gestures have to fail without HID; typing
+            // does not, so it takes this route and says which one it took rather
+            // than refusing work it can still do.
+            //
+            // `isSimulator` is the check that matters, and it was added because the
+            // device suite caught the alternative being wrong: with no `--serial`,
+            // `resolveUdid` falls back to the BOOTED SIMULATOR, so a device run
+            // dispatched its keystrokes at the simulator's screen and reported
+            // `via=hid` while the phone's field stayed empty.
+            let isSim = simUdid.map { Simctl.isSimulator($0) } ?? false
+            let hidUnavailable = isSim ? !IosInputBackend(udid: simUdid!).isAvailable() : true
+            guard let udid = simUdid, isSim, !hidUnavailable else {
+                let before = tracer?.capture()
+                var result = try typeInProcess(pkg, params, text: text)
+                if isSim, hidUnavailable { result["hid"] = "unavailable — typed in-process instead" }
+                return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
+                                       point: nil, source: result["focusedVia"] as? String,
+                                       ref: result["ref"] as? String, result: result)
+            }
+            // The app must actually be on THAT simulator's screen. HID goes to the
+            // screen, not to the process Reticle is talking to — and the agent is
+            // reached over loopback, which a real device shares through a USB
+            // tunnel, so "healthy" says nothing about where the keys will land.
+            guard Simctl.isAppInstalled(udid: udid, bundleId: pkg) else {
+                throw HelperError(
+                    "\(pkg) is not installed on simulator \(udid), so HID keystrokes would go to "
+                    + "whatever IS on that screen. If you meant a real device, pass its hardware "
+                    + "ECID as --serial (`idevice_id -l`) — typing then goes through the agent."
+                )
+            }
             let before = tracer?.capture()
             // If the caller named a target field, tap it first so the text lands
             // in THAT field — HID typing and clipboard paste both go to whatever
@@ -496,8 +526,20 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             }
             let via: String
             if IosText.isHidTypeable(text) {
-                try IosInputBackend(udid: udid).type(text)
-                via = "hid"
+                // `--type-delay <ms>`: one key event per character with a gap, for a
+                // field whose formatter drops keystrokes it receives in one burst.
+                // The flag reached here and did nothing before — the same silent-flag
+                // defect `--clear` had; Android has honoured it all along.
+                if let gap = typeDelayMs(params), gap > 0 {
+                    for character in text {
+                        try IosInputBackend(udid: udid).type(String(character))
+                        Thread.sleep(forTimeInterval: Double(gap) / 1000.0)
+                    }
+                    via = "hid (paced \(gap)ms)"
+                } else {
+                    try IosInputBackend(udid: udid).type(text)
+                    via = "hid"
+                }
             } else {
                 // The HID keyboard can't emit non-ASCII (CJK / emoji / accented).
                 // Stage it on the clipboard via the in-process agent, then Cmd+V —
@@ -516,6 +558,12 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 via = "clipboard paste"
             }
             var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            if via == "clipboard paste", let gap = typeDelayMs(params), gap > 0 {
+                // Say so rather than let a paced-typing request read as honoured:
+                // a paste lands the whole string in one event, so there is nothing
+                // to pace.
+                result["typeDelayIgnored"] = "non-ASCII text pastes in one event"
+            }
             if let clearedSummary { result["cleared"] = clearedSummary }
             if let cleared { result["clearDetail"] = cleared }
             if let focusedVia { result["focusedVia"] = focusedVia }
@@ -597,6 +645,73 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         var out: [String: Any] = ["gesture": "activate", "activated": true, "via": r.via ?? "sendActions"]
         if let ref = r.ref { out["ref"] = ref }
         if let tn = r.typeName { out["typeName"] = tn }
+        return out
+    }
+
+    /// `--type-delay <ms>`, as the CLI passes it through.
+    func typeDelayMs(_ params: [String: Any]) -> Int? {
+        if let value = params["typeDelayMs"] as? Int { return value }
+        if let text = params["typeDelayMs"] as? String { return Int(text) }
+        return nil
+    }
+
+    /// In-process typing via the agent's `/type` endpoint — the real-device path,
+    /// where no HID keyboard is reachable from the host.
+    ///
+    /// The selector is resolved HERE, to a `ref`, through the shared
+    /// `SelectorResolution`: that is what gives the device path the same `--label`
+    /// / region / semantic-first precedence as everything else, instead of the
+    /// agent growing a second, weaker resolver. With no selector the agent types
+    /// into whatever holds focus, exactly as the HID path does.
+    func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) throws -> [String: Any] {
+        if params["point"] != nil {
+            throw HelperError("typing at a --point needs a simulator HID surface; on a real device "
+                + "name the field (--test-id / --label) so it can be focused in-process")
+        }
+        var selector: ReticleProtocol.Selector? = nil
+        var focusedVia: String? = nil
+        let requested = selectorFromParams(params)
+        if requested.describe() != "<empty>" {
+            let snapshot = try fetchSnapshot(pkg)
+            let resolved = try resolveTarget(params, snapshot: snapshot)
+            guard let ref = resolved.ref else {
+                throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
+                    + "and in-process typing needs a node to focus")
+            }
+            selector = ReticleProtocol.Selector(ref: ref)
+            focusedVia = "selector"
+        }
+        let request = TypeTextRequest(
+            selector: selector, text: text,
+            clear: isTruthy(params["clear"]), submit: isTruthy(params["submit"]),
+            perCharDelayMs: typeDelayMs(params)
+        )
+        let body = try ReticleJSON.encodeWire(request)
+        let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.typeText, body: body)
+        let r = try ReticleJSON.decode(TypeTextResult.self, from: data)
+        guard r.typed else {
+            throw HelperError("in-process type failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
+        }
+        var out: [String: Any] = ["gesture": "type", "via": "agent insertText", "text": text]
+        if let ref = r.ref { out["ref"] = ref }
+        if let typeName = r.typeName { out["typeName"] = typeName }
+        if let focusedVia { out["focusedVia"] = focusedVia }
+        // The read-back IS the evidence the text landed — the device path has no
+        // second channel (no HID echo, no screenshot of the keyboard) to fall back on.
+        if let before = r.before { out["before"] = before }
+        if let after = r.after { out["after"] = after }
+        if r.secure == true { out["secure"] = true }
+        if let cleared = r.cleared {
+            out["cleared"] = cleared.emptied
+                ? (cleared.deletes == 0 ? "already-empty" : "emptied(\(cleared.deletes)ch)")
+                : "failed"
+            out["clearDetail"] = ["emptied": cleared.emptied, "deletes": cleared.deletes,
+                                  "before": cleared.before ?? "", "after": cleared.after ?? ""]
+        }
+        if let submitted = r.submitted { out["submit"] = ["via": submitted] }
+        if let visible = (try? IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+            out["keyboardVisible"] = visible
+        }
         return out
     }
 

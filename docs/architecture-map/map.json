@@ -138,7 +138,7 @@
       "kind": "channel",
       "layer": "wire",
       "sub": "simctl · CoreSimulator",
-      "detail": "Observation goes over plain loopback HTTP (host and simulator share the network stack, so no forward is needed). Input is a digitizer IOHIDEvent through SimDeviceLegacyHIDClient — a capability, not a version cutoff, verified on iOS 26.2 and 26.3. A real device has no host-reachable HID surface, so coordinate taps are refused there and act activate drives controls in-process instead.",
+      "detail": "Observation goes over plain loopback HTTP (host and simulator share the network stack, so no forward is needed). Input is a digitizer IOHIDEvent through SimDeviceLegacyHIDClient — a capability, not a version cutoff, verified on iOS 26.2 and 26.3. A real device has no host-reachable HID surface, so coordinate taps are refused there while act activate drives controls and act type inserts text (UIKeyInput.insertText) in-process instead.",
       "x": 760, "y": 505, "w": 240, "h": 52
     },
 
@@ -157,7 +157,7 @@
       "kind": "swift-package",
       "layer": "device",
       "sub": "ReticleKit + ReticleInjection",
-      "detail": "The same shape as the Android agent: loopback server, UIKit view-tree capture, a SwiftUI bridge that emits axElement nodes only from natively-exposed accessibility elements (never private SwiftUI internals), allowlist mutation, in-process screenshot, the Reticle facade, and dual auto-start (a DYLD-constructor bootstrap for injection plus a linked Reticle.start()). Emits platform=\"ios\" protocol JSON.",
+      "detail": "The same shape as the Android agent: loopback server, UIKit view-tree capture, a SwiftUI bridge that emits axElement nodes only from natively-exposed accessibility elements (never private SwiftUI internals), allowlist mutation, in-process activation and text entry (the no-HID drive paths a real device needs), in-process screenshot, the Reticle facade, and dual auto-start (a DYLD-constructor bootstrap for injection plus a linked Reticle.start()). Emits platform=\"ios\" protocol JSON.",
       "x": 760, "y": 614, "w": 240, "h": 56
     },
     {

@@ -1,8 +1,9 @@
 # Reticle on iOS
 
 Reticle's iOS support inspects and drives a **running** iOS app on the
-**Simulator**, plus a limited observation path on a real device via a linked
-framework. It speaks the same `reticle-protocol` wire contract as Android
+**Simulator**, plus an observation-and-in-process-drive path on a real device
+via a linked framework (no HID there: controls are activated and text is typed
+from inside the app). It speaks the same `reticle-protocol` wire contract as Android
 (`platform="ios"`), so the host commands and the panel are reused; only the
 device seams differ. Select it with `--target ios`.
 
@@ -279,8 +280,50 @@ limit exists, what was measured, and which route was tried and rejected.
   (`UIControl.sendActions`, else `accessibilityActivate()`), returning
   `unsupported_activation_target` for inert views. Verified on an iPhone 13 Pro
   Max: activating the sample's UIKit button incremented its counter. This is
-  limited to activatable controls (no coordinate taps, gestures, or `type` on a
-  real device); use the simulator's HID path for those.
+  limited to activatable controls — no coordinate taps and no gestures on a real
+  device; use the simulator's HID path for those. **Typing is not in that list
+  any more**: see the next bullet.
+- **`act type` on a real device inserts the text in-process, through UIKit's own
+  input pipeline.** The agent focuses the resolved field and calls
+  `UIKeyInput.insertText` per character (`/type` → `TextInputEngine`), which is
+  the entry point the system keyboard itself uses — so `.editingChanged`, the
+  text-did-change notification and a SwiftUI `TextField`'s `@State` binding all
+  fire, and the keyboard really comes up. It is NOT `mutate --property text`,
+  which assigns `.text` and fires nothing. Three things were measured while
+  building it, and each shaped the implementation:
+  - `insertText` publishes `.editingChanged` but does **not** call
+    `textField(_:shouldChangeCharactersIn:replacementString:)` — the text input
+    system does that, and a programmatic insert skips it. Every app that formats,
+    masks or length-limits in that delegate would have had its rule silently
+    bypassed, so the engine asks the delegate itself, in UIKit's order (compute
+    the caret range → ask → insert only on yes). A delegate that formats by
+    rewriting the text and returning false therefore wins, as under a real key.
+  - `insertText` / `deleteBackward` on a field that is **not** the first responder
+    still change the text while firing nothing at all. That is `mutate` behaviour
+    wearing a keypress's name, so focus is enforced: the field is focused first,
+    and a field that loses focus mid-type stops the run with
+    `focus-lost-after N of M character(s)` rather than typing into a dead field.
+  - `--submit` fires the return key's action without a return key
+    (`textFieldShouldReturn` + `.editingDidEndOnExit`), which is the iOS answer to
+    Android's `/editor-action`. It reaches a **UIKit** field. A **SwiftUI**
+    `TextField` is a measured miss: its delegate is SwiftUI's own
+    `PlatformTextFieldCoordinator`, which answers `textFieldShouldReturn` with
+    true while `.onSubmit` fires from none of the routes tried
+    (`textFieldShouldReturn`, `.editingDidEndOnExit`, `.primaryActionTriggered`,
+    `.editingDidEnd`, `textFieldDidEndEditing(reason: .committed)`,
+    `resignFirstResponder`, inserting a newline). Since the delegate says yes
+    either way, the invocation cannot be checked from inside, so the result names
+    the coordinator instead of reading as a submit that worked — activate the
+    screen's submit button instead.
+
+  Two things this path does *better* than HID: non-ASCII needs no clipboard
+  detour (`insertText` takes the string as it is, where the HID keyboard can only
+  emit printable ASCII 0x20–0x7E), and `--type-delay` paces real per-character
+  inserts. `--point` has no meaning here and is refused by name. The host resolves
+  `--label` / `--region` selectors to a `ref` before sending, so the device path
+  keeps the same selector precedence as everything else. The same branch runs on a
+  simulator whose HID surface is missing — typing says `hid: unavailable — typed
+  in-process instead` rather than refusing work it can still do.
 - **`DYLD_INSERT_LIBRARIES` injection is simulator-only; real-device injection
   needs a Mach-O rewrite of a dev-signed debug build.** The built-in `app inject`
   (DYLD via `SIMCTL_CHILD_*`) is a simulator mechanism. A **production / App-Store
@@ -308,7 +351,21 @@ limit exists, what was measured, and which route was tried and rejected.
   `status / ui report / ui compact / ui screenshot / act activate / mutate /
   debug logs` and the **action-trace evidence package** all work over that
   tunnel; screenshots come from the agent's in-process render. See
-  `scripts/e2e-ios-device.sh`. Two device gotchas the script handles: use the
+  `scripts/e2e-ios-device.sh`.
+
+  Two things the device suite measured about *driving* a phone, both now guarded.
+  An **input gesture needs `--serial <ECID>`** even though observation does not:
+  with no serial the host resolves its target to the booted **simulator**, so a
+  device `act type` dispatched at the simulator's screen and reported `via=hid`
+  while the phone's field stayed empty. The host now refuses HID for a udid that
+  is not a simulator (or one the app is not installed on) and names the ECID
+  instead. And the **tunnel port collides with the same app on a simulator**,
+  because the port is derived from the bundle id and a simulator shares the host
+  loopback: a leftover simulator app holds `:<derivedPort>`, `iproxy` cannot bind,
+  and every command then answers from the simulator while reading `runtime:
+  healthy`. The script refuses to start in that state.
+
+  Two more device gotchas the script handles: use the
   hardware **ECID** as the device id (`idevice_id -l`) — it is the one id that
   works for `xcodebuild -destination`, `devicectl`, and `iproxy` alike (the
   `devicectl list devices` coredevice UUID does not match an xcodebuild
@@ -371,9 +428,10 @@ limit exists, what was measured, and which route was tried and rejected.
   fails with an error (no silent no-op), the host guards `act tap/swipe/drag/type`
   by a **capability probe** (`reticle_sim_hid_available`), failing loudly with
   guidance to use `act activate` only when the private class/symbols are absent
-  (a mismatched Xcode SimulatorKit layout) — not by iOS version. A real device
-  has no HID surface regardless; use `act activate` (selector or `--css`) for
-  the real-device-capable path.
+  (a mismatched Xcode SimulatorKit layout) — not by iOS version. `act type` is the
+  exception: with no HID surface it types in-process instead of failing, and says
+  which path it took. A real device has no HID surface regardless; `act activate`
+  (selector or `--css`) and `act type` are the two gestures that work there.
 - **SwiftUI `Text` with inline markdown links collapses in accessibility.** The
   whole Text surfaces as one `axElement` ("Read the Terms and Privacy") with no
   per-link child elements, so individual links inside one SwiftUI `Text` are not

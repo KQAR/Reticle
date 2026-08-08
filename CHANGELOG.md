@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+- **`act type` works on a real iOS device.** A phone has no host-reachable HID keyboard,
+  so typing there used to be refused outright (`type needs a booted simulator`) and every
+  form flow on a device stopped at the first field. The agent runs inside the app, so it
+  now takes the characters: the new `/type` endpoint focuses the resolved field and calls
+  `UIKeyInput.insertText` per character — the entry point the system keyboard itself uses.
+  `--clear`, `--submit` and `--type-delay` all work on that path, and the same branch runs
+  on a simulator whose HID surface is missing (`hid: unavailable — typed in-process
+  instead`) rather than refusing work it can still do.
+  - This is **not** `mutate --property text`, which assigns `.text` and fires nothing:
+    `.editingChanged`, the text-did-change notification and a SwiftUI `TextField`'s
+    `@State` binding all fire, and focusing the field raises the real keyboard.
+  - Measured while building it, and each measurement is in the code: `insertText` does
+    **not** call `textField(_:shouldChangeCharactersIn:replacementString:)` (the text input
+    system does, and a programmatic insert skips it), so every app that formats, masks or
+    length-limits in that delegate would have had its rule silently bypassed — the engine
+    now asks the delegate itself, in UIKit's order, and a delegate that refuses wins.
+    `insertText`/`deleteBackward` into a field that is **not** first responder change the
+    text while firing nothing at all, so focus is enforced and a field that loses focus
+    mid-type stops the run instead of typing into a dead field.
+  - `--submit` fires the return key's action with no return key to press. It reaches a
+    UIKit field's `textFieldShouldReturn` + `.editingDidEndOnExit`. A SwiftUI `.onSubmit`
+    is a **measured miss** — SwiftUI's own coordinator answers `textFieldShouldReturn` with
+    true while running the handler for none of the routes tried — so the result names the
+    coordinator rather than reading as a submit that worked. New row in
+    `docs/boundaries.md`, and the e2e fails loudly if a future iOS makes it work.
+  - Validated on an iPhone 13 Pro Max / iOS 26 (`scripts/e2e-ios-device.sh`, whole
+    suite green): the field reads back what was typed, `keyboardVisible=true` and
+    `occluded-by:keyboard` prove the real keyboard came up, `--clear` reports
+    `emptied(6ch)`, `--submit` flips the app's own status line, and non-ASCII lands
+    as-is. Two device-only defects it caught on the way, both now guarded: an input
+    gesture with no `--serial` resolved its target to the booted **simulator** and
+    typed there while reporting `via=hid` (the host now refuses HID for a udid that
+    is not a simulator, or one the app is not installed on, and names the device's
+    ECID), and the USB tunnel silently lost to a leftover simulator app holding the
+    same derived port — `iproxy` could not bind, so every command answered from the
+    simulator while reading `runtime: healthy` (the suite now refuses to start).
+  - Two things it does better than HID: non-ASCII lands as-is with no clipboard detour
+    (the HID keyboard can only emit printable ASCII), and `--type-delay` — which reached
+    the iOS host and did nothing, the same silent-flag defect `--clear` had — now paces
+    real per-character input on both paths.
+
 ## 0.20.0 - 2026-08-07
 
 - **`ui outline` prints a DOM node's shortest handle, not its lineage.** The traversal

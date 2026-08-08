@@ -55,7 +55,7 @@ language fits.
 | --- | --- |
 | **Observe** (Android) | View tree + Compose semantics + WebView DOM in one flat `ref → Node` map; semantic tree and compact observation derived in-process; regions/char grid for multi-target controls |
 | **Observe** (iOS) | UIKit tree + SwiftUI `axElement` bridge (including links inside one `Text`) + `WKWebView` DOM; same protocol JSON |
-| **Drive** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`, selector-first with `--region`, `--label`, `--settle`, `--verify`, `act batch` (plus `@N` aliases, which are **Android-only** — the outline cache is not ported to the iOS host, and `Render.swift` says so in place). Real HID on Android and the iOS simulator; in-process activation on iOS devices |
+| **Drive** | `tap` / `swipe` / `drag` / `scroll-to` / `type` / `hide-keyboard` / `activate`, selector-first with `--region`, `--label`, `--settle`, `--verify`, `act batch` (plus `@N` aliases, which are **Android-only** — the outline cache is not ported to the iOS host, and `Render.swift` says so in place). Real HID on Android and the iOS simulator; on iOS devices `activate` and `type` run in-process (no HID, so no coordinate gestures) |
 | **Evidence** | Action traces (before/after snapshots + screenshots + a ranked, self-describing diff), recorded by default; `trace log` digest, `replay gif`, session timeline, the absence vocabulary (`window: UNFOCUSED`, `dom:unavailable`, `dom:unsupported-kernel`, `pixels:unavailable`, `screencap:blank`, `occluded-by:*`, `scroll:*`) |
 | **Network** | `reticle serve` capture lane on Loom's `ProxyEngine`, HTTPS MITM with CA issuance, session-scoped traffic rules (`mock`/`block`/`mapRemote`/`passthrough` + modifiers), flow replay + diff. Android and iOS (simulator and device) |
 | **Panel** | Localhost read-only evidence panel: traces, artifacts, network cards with filters and rule grouping, "copy as rule". Display-only by design |
@@ -71,7 +71,7 @@ host platform, WebView bridge, action traces and the capture proxy all ship, and
 the linked-agent real-device path is validated on an iPhone 13 Pro Max / iOS 26
 (`scripts/e2e-ios-device.sh` — observation, `activate`, `mutate`, trace evidence
 over the USB tunnel, plus a decrypted HTTPS event with the proxy bound to the LAN).
-The one structural gap left is **real-device HID input** (item 5). HarmonyOS is
+The one structural gap left is **real-device coordinate input** (item 5) — activation and typing already work in-process there. HarmonyOS is
 unstarted and unvalidated — see Deferred.
 
 ---
@@ -159,11 +159,14 @@ layer, not a new capture mechanism.
 
 ### 5. iOS real-device input cliff — L, quantify before building
 
-A real device has only `act activate` (selector-driven); point taps, complex
-gestures and keyboard `type` need a booted simulator's HID surface, so any
-real-device step without a stable selector is uncovered. Closing it means
-XCUITest/WDA or CoreDevice — a real project. **First measure how many real-device
-actions `activate` genuinely cannot cover**; the cause-check rule applies.
+A real device has `act activate` and `act type`, both selector-driven and both
+in-process (typing lands through `UIKeyInput.insertText`, so delegates, formatters
+and SwiftUI bindings all run). What is still gone is everything that needs a
+coordinate: point taps, swipes, drags, `scroll-to`, complex gestures — so a
+real-device step without a stable selector, or one that must scroll a row into
+view, is uncovered. Closing THAT means XCUITest/WDA or CoreDevice — a real
+project. **First measure how many real-device actions the two in-process paths
+genuinely cannot cover**; the cause-check rule applies.
 
 ### 6. Phase remainders — S–L, additive
 

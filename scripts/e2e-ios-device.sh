@@ -82,6 +82,21 @@ xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing 
 
 echo "== USB tunnel host:$PORT -> device:$PORT =="
 pkill -f "iproxy .*$PORT" 2>/dev/null || true
+# The port is derived from the bundle id, so the SAME app on a booted simulator
+# listens on the SAME host port — and a simulator shares the host loopback. If
+# anything already holds it, iproxy cannot bind and every command below silently
+# talks to that process instead of to the phone. Measured: a leftover simulator
+# app answered `status: healthy` and served ITS screen over the "tunnel", and the
+# run failed further down on an assertion about content that was never on the
+# device. Refuse instead.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "FAIL: host port $PORT is already in use — the tunnel would not bind and every"
+  echo "      command would hit that process instead of the device. Most likely the same"
+  echo "      app on a booted simulator (same bundle id -> same derived port):"
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN | sed 's/^/      /'
+  echo "      Terminate it (xcrun simctl terminate <udid> $BUNDLE) and re-run."
+  exit 1
+fi
 iproxy -u "$DEV_UDID" "$PORT:$PORT" >/dev/null 2>&1 & IPROXY=$!
 trap 'kill $IPROXY 2>/dev/null || true' EXIT
 
@@ -135,6 +150,52 @@ TDIR="$(dirname "$TRACE_JSON")"
   || { echo "FAIL: trace missing before/after snapshot+screenshot artifacts"; exit 1; }
 echo "action-trace evidence package written on device: $TDIR"
 
+echo "== IN-PROCESS TYPING (no HID on a phone) =="
+# The device path for `act type`: the host cannot synthesize keys, so the agent
+# hands them to the app through `UIKeyInput.insertText`. Every assertion below is
+# an observable side effect, never the result claiming success.
+#
+# `--serial "$DEV_UDID"` is REQUIRED here and the suite caught why: observation
+# goes over the tunnel and needs no serial, but an input gesture must know WHERE
+# to dispatch, and with no serial the host falls back to the booted SIMULATOR.
+# Measured on the first device run of this section: the keystrokes went to the
+# simulator's screen and the result read `via=hid` while the phone's field stayed
+# empty. Naming the device (its hardware ECID) is what makes it the target.
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"login"}' "$BUNDLE" >/dev/null
+READY=0
+for _ in $(seq 1 12); do
+  sleep 1
+  if "$HOST" --target ios status --package "$BUNDLE" 2>/dev/null | grep -q "runtime: healthy"; then READY=1; break; fi
+done
+[ "$READY" = 1 ] || { echo "FAIL: agent not reachable after login relaunch"; exit 1; }
+TYPED="$("$HOST" --target ios --serial "$DEV_UDID" act type --package "$BUNDLE" --test-id login.codeField --text "123456")"
+echo "$TYPED"
+echo "$TYPED" | grep -q "via=agent insertText" \
+  || { echo "FAIL: a real device must type in-process, got: $TYPED"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep "login.codeField" | grep -q "123456" \
+  || { echo "FAIL: in-process typing did not land the code in the field"; exit 1; }
+# Focusing in-process raises the REAL system keyboard — on a phone there is no
+# hardware-keyboard artifact to muddy this, so the state channel is asserted here.
+echo "$TYPED" | grep -q "keyboardVisible=true" \
+  || { echo "FAIL: typing must focus the field, raising the device keyboard"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep "login.submitButton" | grep -q "occluded-by:keyboard" \
+  || { echo "FAIL: the keyboard the typing raised must mark the submit button occluded"; exit 1; }
+# `--clear` deletes what is there, one backspace per character, and proves it.
+CLEARED="$("$HOST" --target ios --serial "$DEV_UDID" act type --package "$BUNDLE" --test-id login.codeField --text "4321" --clear --submit)"
+echo "$CLEARED"
+echo "$CLEARED" | grep -q "cleared=emptied(6ch)" \
+  || { echo "FAIL: --clear must report emptying the 6 characters that were there; got: $CLEARED"; exit 1; }
+# `--submit` fires the return key's action with no return key to press.
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep "login.status" | grep -q "Logged in: 4321" \
+  || { echo "FAIL: in-process --submit did not fire the field's return action"; exit 1; }
+# Non-ASCII needs no clipboard on this path — `insertText` takes the string whole,
+# where the simulator's HID keyboard can only emit printable ASCII.
+"$HOST" --target ios --serial "$DEV_UDID" act type --package "$BUNDLE" --test-id login.codeField --text "héllo 世界" --clear >/dev/null
+"$HOST" --target ios ui compact --live --package "$BUNDLE" | grep "login.codeField" | grep -q "héllo 世界" \
+  || { echo "FAIL: in-process typing must land non-ASCII text as-is"; exit 1; }
+"$HOST" --target ios act hide-keyboard --package "$BUNDLE" >/dev/null
+
 echo "== TAB BAR scenario (SwiftUI TabView, device) =="
 # Relaunch straight into the tabbar scenario via the env deep-link; a fresh
 # process keeps this section independent of the navigation state left above.
@@ -178,4 +239,4 @@ sleep 1
 "$HOST" --target ios ui compact "$OUT/tabbar-orders/snapshot.json" | grep -q "Selected: orders" \
   || { echo "FAIL: activating the Orders tab did not update tabbar.status"; exit 1; }
 
-echo "== OK (HID gestures are NOT available on a real device; activation is) — artifacts in $OUT =="
+echo "== OK (no HID on a real device; activation and in-process typing are) — artifacts in $OUT =="

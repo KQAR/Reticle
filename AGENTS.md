@@ -156,7 +156,12 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   PR descriptions; record the OS version and entitlements instead, and pass ids
   on the command line.
 - The agent observes app state. It is not the place where input events are
-  synthesized — real input comes from the host via `adb shell input`.
+  synthesized — real input comes from the host via `adb shell input`. The one
+  carve-out is iOS on a **real device**, where no HID surface is reachable from
+  the host at all: there the agent activates controls (`/activate`) and inserts
+  text (`/type`) in-process, because the alternative is no input path, not a
+  cleaner one. Both are iOS-only and documented as such in `Protocol.swift`;
+  neither is a licence to move Android input into the agent.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
   first for movement and input; selector actions fall back to view frames only
   when no semantic match exists.
