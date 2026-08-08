@@ -23,7 +23,7 @@ extension IosHelperClient {
     /// Slow drags on purpose: a flick leaves the list decelerating after the
     /// gesture returns, so the point reported would already be stale for the next
     /// command. `settled` says whether the position was confirmed to have stopped.
-    func scrollTo(_ pkg: String, _ params: [String: Any], udid: String) throws -> [String: Any] {
+    func scrollTo(_ pkg: String, _ params: [String: Any], surface: IosTouchSurface) throws -> [String: Any] {
         let selector = selectorFromParams(params)
         let maxSwipes = Int((params["maxSwipes"] as? String) ?? "") ?? 12
         let requested = (params["direction"] as? String)?.lowercased()
@@ -40,7 +40,7 @@ extension IosHelperClient {
             if let point = resolvedInside(snapshot, params, container: container) {
                 let settled = confirmSettled(pkg, params, container: container, first: point)
                 var out: [String: Any] = [
-                    "gesture": "scroll-to", "via": "hid", "found": true, "swipes": swipes,
+                    "gesture": "scroll-to", "via": surface.describe, "found": true, "swipes": swipes,
                     "x": settled.point.x, "y": settled.point.y, "settled": settled.stable,
                 ]
                 if let lastDirection { out["direction"] = lastDirection }
@@ -65,7 +65,7 @@ extension IosHelperClient {
                     + "The container can still scroll \(direction) — raise --max-swipes.")
             }
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            try drag(frame, direction, udid: udid, screen: screen)
+            try drag(frame, direction, surface: surface, screen: screen)
             lastDirection = direction
             swipes += 1
             Thread.sleep(forTimeInterval: 0.35)
@@ -162,13 +162,13 @@ extension IosHelperClient {
     }
 
     func drag(
-        _ frame: Rect, _ direction: String, udid: String, screen: (Double, Double)
+        _ frame: Rect, _ direction: String, surface: IosTouchSurface, screen: (Double, Double)
     ) throws {
         let cx = frame.x + frame.width / 2
         let cy = frame.y + frame.height / 2
         let dx = frame.width * 0.3
         let dy = frame.height * 0.3
-        let backend = IosInputBackend(udid: udid)
+        let backend = surface
         // Content moves with the finger: dragging up scrolls DOWN.
         switch direction {
         case "down": try backend.swipe(from: (cx, cy + dy), to: (cx, cy - dy), screen: screen, durationMs: 700)

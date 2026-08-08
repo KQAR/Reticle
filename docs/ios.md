@@ -1,9 +1,10 @@
 # Reticle on iOS
 
 Reticle's iOS support inspects and drives a **running** iOS app on the
-**Simulator**, plus an observation-and-in-process-drive path on a real device
-via a linked framework (no HID there: controls are activated and text is typed
-from inside the app). It speaks the same `reticle-protocol` wire contract as Android
+**Simulator** and on a **real device** via a linked framework. A device has no
+host-reachable HID surface, so everything is driven from inside the app instead:
+touches are synthesized into UIKit's own event path, text goes through
+`UIKeyInput`, and controls can also be activated directly. It speaks the same `reticle-protocol` wire contract as Android
 (`platform="ios"`), so the host commands and the panel are reused; only the
 device seams differ. Select it with `--target ios`.
 
@@ -287,9 +288,39 @@ evidence Reticle emits instead — is [boundaries.md](boundaries.md). What follo
 the iOS **mechanism** detail behind the rows that are platform-specific: why the
 limit exists, what was measured, and which route was tried and rejected.
 
-- **`act` on a real device uses in-process activation, not HID.** The host cannot
-  synthesize hardware input to a physical device, so `act tap --test-id X` (and
-  `act activate`) resolve the control in the linked agent and fire it in-process
+- **Coordinate gestures on a real device are synthesized inside the app.** The host
+  cannot reach a device with anything HID-shaped, so `act tap` (selector,
+  `--region` or `--point`), `act swipe`, `act drag` and `act scroll-to` are carried
+  by the agent: a `UITouch` placed in the application's own `UITouchesEvent` and
+  delivered through `-sendEvent:` — the call UIKit makes for a finger. Hit-testing,
+  gesture recognizers, scroll views and momentum therefore behave exactly as they
+  do under one, which is what activation could never do. Measured on an iPhone 13
+  Pro Max / iOS 26: the self-drawn agreement rows (unreachable by activation), a
+  `textMarker` and a char-grid phrase per-link, and `scroll-to` realizing a row a
+  lazy SwiftUI `List` had not built. The host picks the surface once
+  (`IosTouchSurface`: `hid` on a simulator, `agent` on a device) so every gesture's
+  evidence — `source=region:textMarker`, `settled`, coverage, obstruction, trace —
+  is identical on both.
+
+  **A route tried and rejected, so it is not tried again:** the digitizer
+  `IOHIDEvent` this repo builds for the simulator CAN be constructed in-process on a
+  device — IOKit's constructors resolve and `UIApplication` answers both
+  `_enqueueHIDEvent:` and `_handleHIDEvent:` — and it is accepted and routed
+  nowhere. All 16 combinations of sink, sender id, display-integrated flag and
+  coordinate space dispatched without error and did nothing.
+
+  **What is still out of reach is another process's UI**: a system alert, the remote
+  keyboard's own window, SpringBoard, Home and app-switcher gestures. A coordinate
+  no window of this process holds is refused by name (`no window of this process
+  contains that point`) rather than reported as dispatched. Closing that would need
+  an XCUITest/WDA runner — a separate process, tracked in the roadmap.
+
+  Everything the private surface rests on is capability-probed
+  (`GET /touch`), and `DeviceTouchTests` is the canary that fails by NAME when a
+  future iOS moves one of the pieces.
+
+- **`act activate` remains the action-firing path, and is still what a control
+  wants.** It resolves the control in the linked agent and fires it in-process
   (`UIControl.sendActions`, else `accessibilityActivate()`).
 
   **The answer is three-state** (`ActivationOutcome`: `activated` / `unconfirmed` /

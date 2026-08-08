@@ -327,11 +327,18 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
 
         switch gesture {
         case "tap":
-            // With a selector and no simulator HID (i.e. a real device), fall back
-            // to in-process activation — the device analogue of a tap.
-            if simUdid == nil {
+            // A real device now HAS a touch surface: the agent synthesizes the touch
+            // inside the app (see `IosTouchSurface`), so a coordinate tap, a
+            // `--region` tap and a selector tap all behave as they do on a simulator
+            // — hit-testing, gesture recognizers and scroll views included. Only when
+            // that surface is absent (an older agent, or the private UIKit surface
+            // gone) does a SELECTOR tap fall back to in-process activation, which
+            // fires an action instead of delivering a touch.
+            let deviceIsSim = simUdid.map { Simctl.isSimulator($0) } ?? false
+            if !deviceIsSim, !IosTouchSurface.agentTouchAvailable(pkg) {
                 if params["point"] != nil {
-                    throw HelperError("point taps need a simulator HID surface; on a real device use `act activate` with a selector")
+                    throw HelperError("point taps need a touch surface; this device has none "
+                        + "(no agent `POST /touch`), so name the target and use `act activate`")
                 }
                 let before = tracer?.capture()
                 var result = try activate(pkg, params)
@@ -346,7 +353,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                                        point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
                                        result: result)
             }
-            try assertHidAvailable(simUdid!)
+            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "tap")
             let snapshot = try fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let target = try resolveTarget(params, snapshot: snapshot)
@@ -379,9 +386,9 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // is then eaten by the IME or by a window above the one it aimed at.
             let obstruction = ScreenCoverage.obstruction(snapshot, x: point.x, y: point.y, targetRef: target.ref)
             let before = tracer?.capture()
-            try IosInputBackend(udid: simUdid!).tap(x: point.x, y: point.y, screen: screen)
+            try surface.tap(x: point.x, y: point.y, screen: screen)
             var result: [String: Any] = [
-                "gesture": "tap", "via": "hid", "x": point.x, "y": point.y,
+                "gesture": "tap", "via": surface.describe, "x": point.x, "y": point.y,
                 // How it resolved, in the shared vocabulary (`semantic:testId`,
                 // `region:span`, `charGrid:approx`, …). It used to report the
                 // coarse "selector", which threw away exactly the distinction an
@@ -414,10 +421,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)
         case "swipe", "drag":
-            guard let udid = simUdid else {
-                throw HelperError("\(gesture) needs a booted simulator (real devices have no HID input surface)")
-            }
-            try assertHidAvailable(udid)
+            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: gesture)
             guard let from = parsePoint(params["from"]), let to = parsePoint(params["to"]) else {
                 throw HelperError("\(gesture) needs --from x,y and --to x,y")
             }
@@ -425,10 +429,11 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let duration = Double((params["duration"] as? String) ?? "") ?? (gesture == "drag" ? 600 : 250)
             let before = tracer?.capture()
-            try IosInputBackend(udid: udid).swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
+            try surface.swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
             return try finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
                                    point: from, source: "point", ref: nil,
-                                   result: ["gesture": gesture, "via": "hid", "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"])
+                                   result: ["gesture": gesture, "via": surface.describe,
+                                            "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"])
         case "wheel":
             // Refused BY NAME rather than half-implemented. The Android gesture
             // converges on the wheel's own published value; on iOS a `UIPickerView`
@@ -445,11 +450,10 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                     + "that is off screen, swipe the column and re-read that region."
             )
         case "scroll-to", "scrollTo":
-            guard let udid = simUdid else {
-                throw HelperError("scroll-to needs a booted simulator (real devices have no HID input surface)")
-            }
-            try assertHidAvailable(udid)
-            return try scrollTo(pkg, params, udid: udid)
+            // The gesture a device needed most: a lazy list's unrealized row has no
+            // node until something scrolls it into view, and activation cannot scroll.
+            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "scroll-to")
+            return try scrollTo(pkg, params, surface: surface)
         case "type":
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             // No HID surface — a real device (whose `--serial` is a hardware ECID,

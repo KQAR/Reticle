@@ -44,6 +44,10 @@ public enum Endpoints {
     /// where host-side HID key synthesis cannot reach.
     public static let typeText = "/type"
 
+    /// iOS-only. In-process touch synthesis for a real device (no host-reachable
+    /// HID there). GET reports the capability probe; POST dispatches.
+    public static let touch = "/touch"
+
     /// Current system-keyboard state, probed from inside the app (GET).
     public static let keyboard = "/keyboard"
 
@@ -117,6 +121,47 @@ public struct ActivationResult: Codable, Sendable {
     /// reporting `activated=false` meant "refused", which is what it said then.
     public var resolvedOutcome: ActivationOutcome {
         outcome ?? (activated ? .activated : .refused)
+    }
+}
+
+/// Request to synthesize a real touch inside the app process (the real-device
+/// answer to a coordinate gesture, where no host HID surface exists).
+///
+/// Points are in SCREEN coordinates, the same space every rect Reticle reports
+/// lives in, so a caller hands over what it read rather than converting.
+public struct TouchRequest: Codable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case tap
+        case longPress
+        case drag
+    }
+    public var kind: Kind
+    public var from: Point
+    /// Required for `drag`; ignored otherwise.
+    public var to: Point?
+    /// `tap`: how long the touch stays down. `longPress`/`drag`: the gesture's
+    /// duration. Defaulted by the agent when absent.
+    public var durationMs: Int?
+
+    public init(kind: Kind, from: Point, to: Point? = nil, durationMs: Int? = nil) {
+        self.kind = kind
+        self.from = from
+        self.to = to
+        self.durationMs = durationMs
+    }
+}
+
+/// Result of an in-process touch. `dispatched` false carries the private-API
+/// path that was missing, never a silent no-op.
+public struct TouchResult: Codable, Sendable {
+    public var dispatched: Bool
+    public var via: String?
+    public var message: String?
+
+    public init(dispatched: Bool, via: String? = nil, message: String? = nil) {
+        self.dispatched = dispatched
+        self.via = via
+        self.message = message
     }
 }
 
