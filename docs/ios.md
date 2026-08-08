@@ -69,6 +69,19 @@ locating the substring through the char grid — same semantics as Android.
 own `accessibilityActivate()` — the navigation/tap path that also works on a
 real device.
 
+**Discovering a region is not the same as being able to drive it**, and on a real
+device (no HID) that distinction is the whole story. What `activate` can reach is
+decided by who handles the touch: a `UIControl`'s target-action, or a view /
+accessibility element that implements `accessibilityActivate()`. A view whose
+behaviour lives in a `UIGestureRecognizer` or in `touchesBegan/Ended` has no
+in-process entry point — measured on an iPhone 13 Pro Max / iOS 26 against the
+sample's own agreement rows, which are exactly that shape. `a11yVirtual` regions
+are in the same position: `UIAccessibilityElement.accessibilityActivate()` answers
+false unless the app implements it, and a self-drawn control usually implements
+touch handling instead (measured for BOTH container conventions in
+`scenario.canvasControl`). The rows in [boundaries.md](boundaries.md) carry the
+measurements; what the code does about it is the three-state answer below.
+
 ## WKWebView DOM
 
 The read-only DOM bridge is ported: a WKWebView seen during the view walk stays
@@ -277,8 +290,23 @@ limit exists, what was measured, and which route was tried and rejected.
 - **`act` on a real device uses in-process activation, not HID.** The host cannot
   synthesize hardware input to a physical device, so `act tap --test-id X` (and
   `act activate`) resolve the control in the linked agent and fire it in-process
-  (`UIControl.sendActions`, else `accessibilityActivate()`), returning
-  `unsupported_activation_target` for inert views. Verified on an iPhone 13 Pro
+  (`UIControl.sendActions`, else `accessibilityActivate()`).
+
+  **The answer is three-state** (`ActivationOutcome`: `activated` / `unconfirmed` /
+  `refused`), and the middle state was forced by a measurement: on an iPhone 13 Pro
+  Max / iOS 26 a `UITextView` holding a `.link` run **opens that link** — the
+  delegate's `shouldInteractWith` runs, the status label changes, the app logs the
+  click — and `accessibilityActivate()` answers `false` anyway. Trusting the Bool
+  produced the worst kind of wrong: `error: unsupported_activation_target`, exit 1,
+  `{"ok":false}` about a screen that had already navigated — and because the host
+  threw, `--verify` recorded nothing and `--trace-output` wrote no package, so no
+  channel could contradict it. Now a dispatched-but-unacknowledged activation is
+  `unconfirmed`: a warning naming the measurement, `ok:true`, and BOTH evidence
+  channels run, so `--verify '#some.status'` prints either the change (it worked)
+  or `unchanged` (it did not). Only a target with no activation surface at all — an
+  unmatched selector, a text-range region — is `refused`, which still errors.
+  Nothing in-process can tell the two `false`s apart, which is why the caller is
+  handed the evidence instead of a verdict. Verified on an iPhone 13 Pro
   Max: activating the sample's UIKit button incremented its counter. This is
   limited to activatable controls — no coordinate taps and no gestures on a real
   device; use the simulator's HID path for those. **Typing is not in that list

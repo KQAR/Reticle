@@ -701,6 +701,19 @@ help — it is an ordinary node. A toast raised by ANOTHER process (the system's
 "Screenshot saved") is filtered out rather than attributed to your app. The watch
 costs ~25ms of `adb shell`; `--no-toast-probe` turns it off.
 
+**On a real iOS device, `act activate`'s answer is three-state.** `outcome=activated`
+means the target acknowledged it. `outcome=refused` (an error) means nothing was
+dispatched — an unmatched selector, or a text-range region, which has no in-process
+surface. `outcome=unconfirmed` means it WAS dispatched and the target answered
+`false` — which UIKit also does for activations it performed, measured: a
+`UITextView` opens its `.link` run and still answers false. So `unconfirmed` is not
+a failure and not a success: add `--verify '<selector>'` (or `--trace-output`) to the
+same command and read the diff — that is the only thing that settles it. What is
+genuinely unreachable in-process is a view that handles raw touches (a
+`UIGestureRecognizer`, `touchesBegan/Ended` with its own hit-testing), which is what
+most self-drawn agreement rows and `a11yVirtual` sub-elements turn out to be; web
+text is unaffected, since `act activate --css` dispatches inside the page.
+
 Add `--submit` to press the keyboard's action key after the text lands —
 Android performs the focused field's IME editor action in-process (Done / Next
 / Go / Search / Send; the exact hook React Native's `onSubmitEditing` listens

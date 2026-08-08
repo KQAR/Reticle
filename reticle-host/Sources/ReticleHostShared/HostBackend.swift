@@ -443,7 +443,8 @@ public struct ActOutcome: @unchecked Sendable {
     public init(raw: [String: Any]) { self.raw = raw }
 
     public var gesture: String? { raw["gesture"] as? String }
-    /// `wait` only: `resolved` / `absent` / `unknowable`.
+    /// `wait`: `resolved` / `absent` / `unknowable`. `activate` (and a device
+    /// `tap`, which routes through it): `activated` / `unconfirmed` / `refused`.
     public var outcome: String? { raw["outcome"] as? String }
     public var predicate: String? { raw["predicate"] as? String }
     public var reasons: [String] { (raw["reasons"] as? [Any])?.map { "\($0)" } ?? [] }
@@ -468,12 +469,17 @@ public struct ActOutcome: @unchecked Sendable {
     /// (handler bound in JS, no role/tabindex/aria) never provides.
     public var targetInert: String? { raw["targetInert"] as? String }
 
+    /// Set when an in-process activation came back `unconfirmed`: it WAS dispatched
+    /// and the target answered `false`, which UIKit also does for activations it
+    /// performed. The sentence names the flags that settle it.
+    public var activationWarning: String? { raw["warning"] as? String }
+
     /// The result minus the sub-objects and sentences that have their own printers.
     public var displayFields: [String: Any] {
         raw.filter {
             $0.key != "verify" && $0.key != "trace" && $0.key != "coverage"
                 && $0.key != "obstruction" && $0.key != "reach" && $0.key != "clearDetail"
-                && $0.key != "rectSuspect" && $0.key != "targetInert"
+                && $0.key != "rectSuspect" && $0.key != "targetInert" && $0.key != "warning"
         }
     }
 }

@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **An in-process activation no longer reports failure about a screen it just drove.**
+  Measured on an iPhone 13 Pro Max / iOS 26: a `UITextView` holding a `.link` run
+  OPENS that link when asked — the delegate's `shouldInteractWith` runs, the app's
+  status label changes, the app logs the click — and `accessibilityActivate()` answers
+  `false` anyway. Reticle trusted the Bool, so `act activate --test-id agreement.span`
+  printed `error: unsupported_activation_target`, exited 1 and answered
+  `{"ok":false}` about a screen that had already navigated. Worse, the host threw
+  before `performAct` returned, so the two channels that could have contradicted it
+  never ran: `--verify` recorded nothing and `--trace-output` wrote no package.
+  - `ActivationOutcome` makes the answer three-state, for the reason `act wait` is:
+    `activated` (acknowledged), `unconfirmed` (dispatched, answered false — which
+    UIKit also does for activations it performed), `refused` (nothing dispatched: an
+    unmatched selector, or a text-range region with no in-process surface). Only
+    `refused` errors. `unconfirmed` is a field plus a warning that names the
+    measurement and the flags that settle it, and BOTH evidence channels run for it —
+    so `--verify '#agreement.status'` now prints the change that proves it worked, or
+    `unchanged` for a row nothing drove. The wire field is optional and
+    `resolvedOutcome` keeps an older agent's two-state meaning.
+  - `a11yVirtual` regions are now asked through BOTH accessibility-container
+    conventions (the `accessibilityElements` array AND
+    `accessibilityElementCount()`/`accessibilityElement(at:)`), the same two
+    `RegionProbe` reads to discover them. Asking only the array meant a region
+    Reticle had reported was then refused for a reason that was Reticle's, not the
+    app's.
+- **Corrected a claim the docs and code comments made.** "Only an a11yVirtual region
+  carries its own activatable element" was optimistic: `UIAccessibilityElement`
+  answers `accessibilityActivate()` false unless the app implements it, and a
+  self-drawn control that does its own hit-testing implements touch handling instead
+  — measured on a device for BOTH conventions in `scenario.canvasControl`, neither
+  activates. The real boundary is **who handles the touch**, not the node's kind: a
+  `UIGestureRecognizer` / `touchesBegan` view has no in-process entry point at all,
+  which is the shape most agreement rows ship as. Two new rows in
+  `docs/boundaries.md` carry the measurements; `docs/ios.md` and the skill say what to
+  do about it (verify, or drive the screen's button; web text is unaffected because
+  `act activate --css` dispatches inside the page).
+
 - **`act type` works on a real iOS device.** A phone has no host-reachable HID keyboard,
   so typing there used to be refused outright (`type needs a booted simulator`) and every
   form flow on a device stopped at the first field. The agent runs inside the app, so it
