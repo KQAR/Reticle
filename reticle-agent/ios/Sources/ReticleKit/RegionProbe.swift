@@ -233,7 +233,11 @@ enum RegionProbe {
     /// most. `accessibilityElementCount()` returns `NSNotFound` for a view that
     /// isn't a container, so a non-container still costs one call and yields
     /// nothing.
-    private static func containerElements(_ view: UIView) -> [Any] {
+    /// Internal, not private: `ActivationEngine` reads the same two conventions
+    /// when it activates an a11yVirtual region. Reading only the array there while
+    /// the probe read both is how a region could be REPORTED and then found
+    /// unreachable for a reason that was Reticle's, not the app's.
+    static func containerElements(_ view: UIView) -> [Any] {
         if let elements = view.accessibilityElements, !elements.isEmpty { return elements }
         let count = view.accessibilityElementCount()
         guard count != NSNotFound, count > 0 else { return [] }

@@ -232,6 +232,12 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     // tabindex or aria), so the tap is legitimate; what the caller must not assume is
     // that a control was named.
     if let inert = outcome.targetInert { print("note: \(inert)") }
+    // An in-process activation that was dispatched and answered `false` — which
+    // UIKit also does for activations it PERFORMED. A warning rather than an error,
+    // for exactly that reason: it used to throw, which reported `ok:false` about a
+    // screen that had already navigated and skipped the verify/trace that would
+    // have shown it.
+    if let unconfirmed = outcome.activationWarning { print("warning: \(unconfirmed)") }
     if let verify = outcome.verify { printVerify(verify) }
     if let trace = outcome.trace {
         printTrace(trace)

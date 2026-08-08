@@ -86,3 +86,37 @@ final class AgentSurfaceTests: XCTestCase {
         XCTAssertEqual(response.status, 404)
     }
 }
+
+/// The three-state activation answer, at the seam the host reads. A full
+/// `ActivationEngine.activate()` needs a UIWindowScene (absent in a headless test
+/// process), so what is pinned here is the mapping and the message — the part that
+/// went wrong: a `false` from `accessibilityActivate()` used to be reported as
+/// "unsupported", which the host turned into an error about a screen that had
+/// already acted.
+@MainActor
+final class ActivationOutcomeSurfaceTests: XCTestCase {
+
+    func testAFalseAnswerIsUnconfirmedRatherThanRefused() {
+        let r = ActivationEngine.unconfirmed(ref: "r14", typeName: "UITextView", target: "UITextView")
+
+        XCTAssertEqual(r.outcome, .unconfirmed)
+        XCTAssertEqual(r.resolvedOutcome, .unconfirmed)
+        // Not "activated": nobody knows, and the flag must not claim otherwise.
+        XCTAssertFalse(r.activated)
+        XCTAssertEqual(r.via, "accessibilityActivate")
+    }
+
+    func testTheMessageCarriesTheMeasurementAndNamesTheWayOut() {
+        let message = ActivationEngine.unconfirmed(ref: "r14", typeName: "UITextView",
+                                                   target: "UITextView").message ?? ""
+
+        XCTAssertTrue(message.hasPrefix("unconfirmed_activation:"))
+        // The measurement, so a reader does not re-derive it from the Bool.
+        XCTAssertTrue(message.contains("UIKit ALSO does for activations it performed"))
+        // And the two channels that settle it — a warning with no next step is noise.
+        XCTAssertTrue(message.contains("--verify"))
+        XCTAssertTrue(message.contains("--trace-output"))
+        // The genuine wall, named: raw-touch handling cannot be driven in-process.
+        XCTAssertTrue(message.contains("UIGestureRecognizer"))
+    }
+}
