@@ -11,8 +11,9 @@ description: >-
   recorded run did (`trace log`), show a read-only local Web panel for a
   multi-action evidence timeline, mock or replay network traffic, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
-  rebuilding. iOS needs `--target ios`; on a real iOS device the paths are
-  observation plus in-process activation and typing, not HID.
+  rebuilding. iOS needs `--target ios`; on a real iOS device the gestures are
+  synthesized inside the app rather than by HID, so only another process's UI is
+  out of reach.
   Triggers: "inspect the running app", "tap the … button on device", "what's on
   screen", "drive the app", "find the element", "test the agreement checkbox",
   "change this label at runtime", adb/UiAutomator/Espresso/XCUITest-style UI
@@ -700,6 +701,17 @@ An in-app overlay (a view a "toast library" adds through `WindowManager`) is not
 help — it is an ordinary node. A toast raised by ANOTHER process (the system's
 "Screenshot saved") is filtered out rather than attributed to your app. The watch
 costs ~25ms of `adb shell`; `--no-toast-probe` turns it off.
+
+**On a real iOS device every gesture works, but not on other apps.** `act tap`
+(selector, `--region`, `--point`), `act swipe`, `act drag`, `act scroll-to` and
+`act type` are all carried inside the app under test — a real synthesized touch, so
+gesture recognizers and scroll views behave normally and `scroll-to` can realize a
+lazy row. `via=agent uikit` in the result is how you know which surface carried it.
+What a device cannot do is touch UI the app does not own: a system alert, the
+keyboard's own window, SpringBoard, Home. Those are refused by name (`no window of
+this process contains that point`), never reported as dispatched. An input gesture
+on a device must also name it: pass `--serial <device-ECID>`, or the host resolves
+its target to a booted simulator instead.
 
 **On a real iOS device, `act activate`'s answer is three-state.** `outcome=activated`
 means the target acknowledged it. `outcome=refused` (an error) means nothing was
