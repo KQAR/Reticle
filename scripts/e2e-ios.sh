@@ -350,6 +350,29 @@ echo "$REGIONS" | grep -q "colorSpan"   || { echo "FAIL: expected a colorSpan re
 # in-process activation surface, so this is HID-only.
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.markdown --region "Privacy"
 "$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --test-id agreement.plain --region "Privacy Policy"
+
+# ---- activation is three-state, and the middle state is the point --------------
+#
+# Measured on an iPhone 13 Pro Max / iOS 26 (the reason `unconfirmed` exists): a
+# UITextView holding a `.link` run OPENS that link — its delegate runs, this
+# screen's status label changes — and answers `false` to accessibilityActivate()
+# anyway. Reported as a failure, that was a lie about a screen that had already
+# acted, and because the host threw, `--verify` recorded nothing and
+# `--trace-output` wrote no package. Asserted here rather than only on a device: the
+# mechanism is the agent's, so it behaves the same on a simulator.
+SPAN_ACT="$("$HOST" --target ios act activate --package "$LINKED_ID" --test-id agreement.span \
+  --verify '#agreement.status')"
+echo "$SPAN_ACT"
+echo "$SPAN_ACT" | grep -q "outcome=unconfirmed" \
+  || { echo "FAIL: a dispatched-but-unacknowledged activation must read unconfirmed; got: $SPAN_ACT"; exit 1; }
+echo "$SPAN_ACT" | grep -q "opened agreement (link attribute)" \
+  || { echo "FAIL: --verify must run for an unconfirmed activation and show the side effect"; exit 1; }
+# A text-range region dispatches NOTHING, so it must stay an error — collapsing the
+# two into one answer is exactly what this split exists to prevent.
+if "$HOST" --target ios act activate --package "$LINKED_ID" --test-id agreement.color \
+     --region "Terms of Service" >/dev/null 2>&1; then
+  echo "FAIL: a text-range region must be refused, not reported as attempted"; exit 1
+fi
 kill "$HOLD" 2>/dev/null || true
 
 echo "== SWIFTUI TEXT LINKS (two links inside ONE Text) =="
