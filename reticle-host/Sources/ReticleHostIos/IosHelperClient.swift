@@ -634,17 +634,34 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     }
 
     /// In-process control activation via the agent's /activate endpoint.
+    ///
+    /// `refused` throws — nothing was dispatched, which IS a tool failure.
+    /// `unconfirmed` does NOT: the activation was dispatched and the target
+    /// answered `false`, which UIKit also does for activations it performed, so
+    /// throwing here both hid a real side effect behind `ok:false` AND skipped the
+    /// two channels that could have settled it — `performAct` never returned, so
+    /// `--verify` recorded nothing and `--trace-output` wrote no package. The
+    /// outcome is a FIELD instead (the rule `act wait` already follows), and the
+    /// warning names the flag that answers the question.
     func activate(_ pkg: String, _ params: [String: Any]) throws -> [String: Any] {
         let request = ActivationRequest(selector: selectorFromParams(params))
         let body = try ReticleJSON.encodeWire(request)
         let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.activate, body: body)
         let r = try ReticleJSON.decode(ActivationResult.self, from: data)
-        if !r.activated {
+        if r.resolvedOutcome == .refused {
             throw HelperError("activation failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
         }
-        var out: [String: Any] = ["gesture": "activate", "activated": true, "via": r.via ?? "sendActions"]
+        var out: [String: Any] = [
+            "gesture": "activate",
+            "activated": r.activated,
+            "outcome": r.resolvedOutcome.rawValue,
+            "via": r.via ?? "sendActions",
+        ]
         if let ref = r.ref { out["ref"] = ref }
         if let tn = r.typeName { out["typeName"] = tn }
+        if r.resolvedOutcome == .unconfirmed {
+            out["warning"] = r.message ?? "unconfirmed_activation"
+        }
         return out
     }
 

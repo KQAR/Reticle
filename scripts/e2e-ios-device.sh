@@ -150,6 +150,62 @@ TDIR="$(dirname "$TRACE_JSON")"
   || { echo "FAIL: trace missing before/after snapshot+screenshot artifacts"; exit 1; }
 echo "action-trace evidence package written on device: $TDIR"
 
+echo "== ACTIVATION IS THREE-STATE (what in-process driving can and cannot reach) =="
+# Measured on this device and the reason `unconfirmed` exists: a UITextView holding
+# a `.link` run OPENS that link (its delegate runs, the status label changes) and
+# answers `false` to accessibilityActivate() anyway. That used to be reported as
+# `error: unsupported_activation_target` with exit 1 — a lie about a screen that had
+# already acted — and because the host threw, --verify recorded nothing.
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"agreements"}' "$BUNDLE" >/dev/null
+READY=0
+for _ in $(seq 1 12); do
+  sleep 1
+  if "$HOST" --target ios status --package "$BUNDLE" 2>/dev/null | grep -q "runtime: healthy"; then READY=1; break; fi
+done
+[ "$READY" = 1 ] || { echo "FAIL: agent not reachable after agreements relaunch"; exit 1; }
+SPAN_OUT="$("$HOST" --target ios act activate --package "$BUNDLE" --test-id agreement.span \
+  --verify '#agreement.status')"
+echo "$SPAN_OUT"
+echo "$SPAN_OUT" | grep -q "outcome=unconfirmed" \
+  || { echo "FAIL: a dispatched-but-unacknowledged activation must read unconfirmed, got: $SPAN_OUT"; exit 1; }
+# The point of not throwing: --verify RAN, and it is what proves the link opened.
+echo "$SPAN_OUT" | grep -q "opened agreement (link attribute)" \
+  || { echo "FAIL: --verify must show the side effect the Bool denied"; exit 1; }
+
+# The other half of the same honesty: a row whose behaviour lives in a gesture
+# recognizer is genuinely unreachable in-process, and the evidence — not the Bool —
+# is what says so. `unchanged` here is the correct, useful answer.
+COLOR_OUT="$("$HOST" --target ios act activate --package "$BUNDLE" --test-id agreement.color \
+  --verify '#agreement.status')"
+echo "$COLOR_OUT"
+echo "$COLOR_OUT" | grep -q "outcome=unconfirmed" \
+  || { echo "FAIL: the gesture-recognizer row must also read unconfirmed, got: $COLOR_OUT"; exit 1; }
+echo "$COLOR_OUT" | grep -q "unchanged" \
+  || { echo "FAIL: --verify must report the watched node unchanged for a row nothing drove"; exit 1; }
+
+# A text-range region has no in-process surface at all: nothing was dispatched, so
+# this one MUST still be an error rather than an unconfirmed guess.
+if "$HOST" --target ios act activate --package "$BUNDLE" --test-id agreement.color \
+     --region "Terms of Service" >/dev/null 2>&1; then
+  echo "FAIL: a text-range region must be refused, not reported as attempted"; exit 1
+fi
+
+# a11yVirtual: BOTH accessibility-container conventions must be ASKED the same way
+# they were discovered (the array-only reader refused the container-methods one for a
+# reason that was Reticle's). Neither activates in this app — its virtual elements
+# implement touch handling — so both must read unconfirmed, never "no surface".
+xcrun devicectl device process launch --device "$DEV_UDID" --terminate-existing \
+  --environment-variables '{"RETICLE_SAMPLE_SCENARIO":"canvasControl"}' "$BUNDLE" >/dev/null
+sleep 4
+for pair in "canvas.segments|Weekly" "canvas.seats|A3"; do
+  CID="${pair%%|*}"; CREG="${pair##*|}"
+  CANVAS_OUT="$("$HOST" --target ios act activate --package "$BUNDLE" --test-id "$CID" --region "$CREG" \
+    --verify '#canvas.status')"
+  echo "$CANVAS_OUT" | grep -q "outcome=unconfirmed" \
+    || { echo "FAIL: a11yVirtual region $CID/$CREG must be attempted (unconfirmed), got: $CANVAS_OUT"; exit 1; }
+done
+
 echo "== IN-PROCESS TYPING (no HID on a phone) =="
 # The device path for `act type`: the host cannot synthesize keys, so the agent
 # hands them to the app through `UIKeyInput.insertText`. Every assertion below is

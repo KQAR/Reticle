@@ -71,22 +71,52 @@ public struct ActivationRequest: Codable, Sendable {
     public init(selector: Selector) { self.selector = selector }
 }
 
-/// Result of an in-process activation. `activated` is false with a `message` of
-/// "unsupported_activation_target" when the resolved node cannot be activated
-/// programmatically (not a control and no accessibility activation action).
+/// Three-state, for the same reason `WaitVerdict` is: the middle state is the
+/// point. Collapsing it into `refused` is how an observer lies — measured on an
+/// iPhone 13 Pro Max / iOS 26, `UITextView.accessibilityActivate()` OPENS the
+/// link it contains (the delegate's `shouldInteractWith` runs) and returns
+/// `false` anyway, so a reader that trusts the Bool reports "nothing happened"
+/// about a screen that has already navigated.
+public enum ActivationOutcome: String, Codable, Sendable {
+    /// Dispatched, and the target said so.
+    case activated
+    /// Dispatched, and the target answered `false` — which UIKit also does for
+    /// activations it PERFORMED. Nothing in-process can tell the two apart, so
+    /// the caller has to look: `--verify` / `--trace-output` (which run for this
+    /// outcome) or a fresh observation.
+    case unconfirmed
+    /// Nothing was dispatched — no node matched, or the resolved target has no
+    /// activation surface at all (a text-range region, a plain view).
+    case refused
+}
+
+/// Result of an in-process activation. `activated` is true only for
+/// `outcome == .activated`; see `ActivationOutcome` for why `false` is two
+/// different answers and why they must not be merged.
 public struct ActivationResult: Codable, Sendable {
     public var activated: Bool
     public var ref: String?
     public var typeName: String?
     public var via: String?
     public var message: String?
+    /// Absent from an agent that predates the three-state answer; read it
+    /// through `resolvedOutcome`, which falls back to the old two-state meaning.
+    public var outcome: ActivationOutcome?
 
-    public init(activated: Bool, ref: String? = nil, typeName: String? = nil, via: String? = nil, message: String? = nil) {
+    public init(activated: Bool, ref: String? = nil, typeName: String? = nil, via: String? = nil,
+                message: String? = nil, outcome: ActivationOutcome? = nil) {
         self.activated = activated
         self.ref = ref
         self.typeName = typeName
         self.via = via
         self.message = message
+        self.outcome = outcome
+    }
+
+    /// The outcome, with the pre-three-state fallback applied: an older agent
+    /// reporting `activated=false` meant "refused", which is what it said then.
+    public var resolvedOutcome: ActivationOutcome {
+        outcome ?? (activated ? .activated : .refused)
     }
 }
 
