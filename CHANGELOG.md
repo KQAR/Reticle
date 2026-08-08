@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.21.0 - 2026-08-09
+
+One theme: **a real iOS device stopped being a read-only target.** At 0.20.0 a phone
+could be observed and its controls activated; everything that needed a coordinate or
+a keystroke was refused by name, so any verification step without a stable selector —
+or one that had to scroll a row into view — was uncovered. All of it is now driven
+from inside the app, and the two lies found on the way out are fixed.
+
+Numbered a MINOR rather than a PATCH because two readings CHANGE: `act activate` on
+iOS answers three-state (`activated` / `unconfirmed` / `refused`) where it used to
+throw, and a device `act tap` now delivers a real touch and reports `via=agent uikit`
+where it previously fell back to activation. A reader that pattern-matched the old
+spelling needs to know.
+
 
 - **A real iOS device can be driven by coordinate now: taps, `--region` taps, swipe,
   drag and `scroll-to`.** These were refused by name (`needs a booted simulator`),
