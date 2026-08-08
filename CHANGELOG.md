@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **A real iOS device can be driven by coordinate now: taps, `--region` taps, swipe,
+  drag and `scroll-to`.** These were refused by name (`needs a booted simulator`),
+  which left the pain the audit measured: a self-drawn agreement row whose behaviour
+  lives in a `UIGestureRecognizer` was unreachable, a `textMarker` or char-grid phrase
+  could be discovered and not tapped, and a lazy list's unrealized row could not be
+  scrolled into existence at all. The agent runs inside the app, so it synthesizes
+  the touch there: a `UITouch` placed in the application's own `UITouchesEvent` and
+  delivered through `-sendEvent:` — the call UIKit makes for a finger, so
+  hit-testing, gesture recognizers, scroll views and momentum behave as they do
+  under one.
+  - Verified on an iPhone 13 Pro Max / iOS 26: the gesture-recognizer row fires from
+    a `--point` tap, `«Privacy»` and `《Data》` fire per-link from `--region` taps, a
+    char-grid phrase fires, and `scroll-to list.item55` realizes a row a SwiftUI
+    `List` had not built (4 drags, `found=true`).
+  - The host picks the surface once (`IosTouchSurface`: `hid` on a simulator, `agent`
+    on a device), so the evidence is identical on both — `source=region:textMarker`,
+    `settled`, coverage warnings, obstruction, trace packages — and the result says
+    which carried it (`via=agent uikit`).
+  - **A route tried and rejected, recorded so it is not tried again:** the digitizer
+    `IOHIDEvent` this repo builds for the simulator can be constructed in-process on
+    a device (IOKit's constructors resolve; `UIApplication` answers both
+    `_enqueueHIDEvent:` and `_handleHIDEvent:`) and is accepted and routed NOWHERE —
+    all 16 combinations of sink, sender id, display-integrated flag and coordinate
+    space dispatched without error and did nothing.
+  - Still out of reach, and stated as such: another process's UI — a system alert,
+    the remote keyboard's own window, SpringBoard, Home / app-switcher gestures. A
+    coordinate no window of this process holds is refused by name rather than
+    reported as dispatched. Roadmap item 5 is rescoped to exactly that.
+  - The private surface is capability-probed (`GET /touch`), and `DeviceTouchTests`
+    is a canary that fails by NAME when a future iOS moves one of the pieces.
+
 - **An in-process activation no longer reports failure about a screen it just drove.**
   Measured on an iPhone 13 Pro Max / iOS 26: a `UITextView` holding a `.link` run
   OPENS that link when asked — the delegate's `shouldInteractWith` runs, the app's

@@ -33,8 +33,16 @@ let package = Package(
             name: "ReticleKit",
             dependencies: [
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
+                "CReticleDeviceTouch",
             ],
             path: "Sources/ReticleKit"
+        ),
+        // In-process touch synthesis for a real device (private API, probed).
+        // ObjC rather than Swift for the same reason CReticleSimHID is: the
+        // dlsym + objc_msgSend poking reads as itself there.
+        .target(
+            name: "CReticleDeviceTouch",
+            path: "Sources/CReticleDeviceTouch"
         ),
         .target(
             name: "CReticleBootstrap",
