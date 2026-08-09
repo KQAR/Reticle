@@ -685,22 +685,27 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     /// agent growing a second, weaker resolver. With no selector the agent types
     /// into whatever holds focus, exactly as the HID path does.
     func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) throws -> [String: Any] {
-        if params["point"] != nil {
-            throw HelperError("typing at a --point needs a simulator HID surface; on a real device "
-                + "name the field (--test-id / --label) so it can be focused in-process")
-        }
         var selector: ReticleProtocol.Selector? = nil
         var focusedVia: String? = nil
         let requested = selectorFromParams(params)
         if requested.describe() != "<empty>" {
-            let snapshot = try fetchSnapshot(pkg)
-            let resolved = try resolveTarget(params, snapshot: snapshot)
-            guard let ref = resolved.ref else {
-                throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
-                    + "and in-process typing needs a node to focus")
+            // A raw --point is passed straight through: the agent focuses a
+            // canvas-toolkit field by touching it, which needs a coordinate and
+            // not a node. Only a selector that WAS meant to name a node is
+            // resolved to a ref here.
+            if params["point"] != nil, requested.point != nil, requested.ref == nil, requested.testId == nil {
+                selector = requested
+                focusedVia = "point"
+            } else {
+                let snapshot = try fetchSnapshot(pkg)
+                let resolved = try resolveTarget(params, snapshot: snapshot)
+                guard let ref = resolved.ref else {
+                    throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
+                        + "and in-process typing needs a node to focus")
+                }
+                selector = ReticleProtocol.Selector(ref: ref)
+                focusedVia = "selector"
             }
-            selector = ReticleProtocol.Selector(ref: ref)
-            focusedVia = "selector"
         }
         let request = TypeTextRequest(
             selector: selector, text: text,

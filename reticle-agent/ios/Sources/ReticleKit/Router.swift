@@ -148,6 +148,7 @@ struct Router {
     private func touch(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(TouchRequest.self, from: body)
         let from = CGPoint(x: req.from.x, y: req.from.y)
+        let hit = MainThread.sync { DeviceTouch.hitView(at: from) }
         do {
             switch req.kind {
             case .tap:
@@ -164,7 +165,8 @@ struct Router {
         } catch {
             return try json(TouchResult(dispatched: false, message: "\(error)"))
         }
-        return try json(TouchResult(dispatched: true, via: "uikit:sendEvent"))
+        return try json(TouchResult(dispatched: true, via: "uikit:sendEvent",
+                                    message: hit.map { "hitView=\($0)" }))
     }
 
     /// Typing paces itself between characters, so — like `hideKeyboard` — the

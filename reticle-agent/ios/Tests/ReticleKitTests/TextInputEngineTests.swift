@@ -163,14 +163,35 @@ final class TextInputEngineTests: XCTestCase {
         XCTAssertTrue(TextInputEngine().textInput(in: container) === field)
     }
 
-    func testAHiddenFieldIsNotTypedInto() {
+    func testAHiddenFieldIsUsedWhenItIsTheOnlyOne() {
+        // This used to assert nil. A canvas toolkit's text input is an INVISIBLE
+        // proxy — Compose Multiplatform parks a hidden `IntermediateTextInputUIView`
+        // and draws the field itself — so excluding hidden views meant the only
+        // real input on such a screen was the one thing never looked at, and every
+        // field on it answered `unsupported_text_target`. Measured on a KMP app on
+        // an iPhone 13 Pro Max / iOS 26.
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 300, height: 60))
         let field = UITextField(frame: CGRect(x: 0, y: 0, width: 200, height: 40))
         field.isHidden = true
         container.addSubview(field)
         root.addSubview(container)
 
-        XCTAssertNil(TextInputEngine().textInput(in: container))
+        XCTAssertTrue(TextInputEngine().textInput(in: container) === field)
+    }
+
+    func testAVisibleFieldWinsOverAHiddenOne() {
+        // Visibility still RANKS candidates — it just no longer excludes them.
+        // A form row that happens to contain a hidden field must not have the
+        // typing aimed at it while the visible one sits beside it.
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 300, height: 120))
+        let hidden = UITextField(frame: CGRect(x: 0, y: 0, width: 200, height: 40))
+        hidden.isHidden = true
+        let visible = UITextField(frame: CGRect(x: 0, y: 60, width: 200, height: 40))
+        container.addSubview(hidden)
+        container.addSubview(visible)
+        root.addSubview(container)
+
+        XCTAssertTrue(TextInputEngine().textInput(in: container) === visible)
     }
 
     func testInsertRefusesAnUnfocusedFieldRatherThanAssignTextSilently() {

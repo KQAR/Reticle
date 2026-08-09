@@ -62,7 +62,7 @@ int reticle_device_touch_probe(char *out, size_t outlen) {
 // See the header for the route that was tried and rejected (an in-process
 // digitizer IOHIDEvent, which UIKit accepts and routes nowhere on a device).
 
-static UIWindow *window_at(CGPoint screenPoint, UIView **hitView) {
+static UIWindow *window_at(CGPoint screenPoint, UIView **hitView, UIEvent *event) {
     NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
@@ -79,10 +79,46 @@ static UIWindow *window_at(CGPoint screenPoint, UIView **hitView) {
     for (UIWindow *w in windows) {
         CGPoint inWindow = [w convertPoint:screenPoint fromWindow:nil];
         if (!CGRectContainsPoint(w.bounds, inWindow)) continue;
-        UIView *hit = [w hitTest:inWindow withEvent:nil];
+        // WITH the event, never nil. A view is entitled to inspect the event in
+        // `hitTest:withEvent:` and some do: Compose Multiplatform's overlay input
+        // layer claims a nil-event hit and then routes nothing, so every tap on a
+        // Compose screen dispatched successfully and did nothing. Measured on an
+        // iPhone 13 Pro Max / iOS 26 against a KMP app.
+        UIView *hit = [w hitTest:inWindow withEvent:event];
         if (hit) { if (hitView) *hitView = hit; return w; }
     }
     return nil;
+}
+
+int reticle_device_touch_hit_view(double x, double y, char *out, size_t outlen) {
+    @autoreleasepool {
+        if (!out || outlen == 0) return 1;
+        out[0] = '\0';
+        if (!NSThread.isMainThread) {
+            set_err(out, outlen, @"must be called on the main thread");
+            return 1;
+        }
+        SEL touchesEvent = sel_getUid("_touchesEvent");
+        id event = [UIApplication.sharedApplication respondsToSelector:touchesEvent]
+            ? ((id (*)(id, SEL))objc_msgSend)(UIApplication.sharedApplication, touchesEvent)
+            : nil;
+        UIView *hit = nil;
+        UIWindow *window = window_at(CGPointMake(x, y), &hit, event);
+        if (!window || !hit) {
+            set_err(out, outlen, @"none");
+            return 2;
+        }
+        NSMutableArray<NSString *> *recognizers = [NSMutableArray array];
+        for (UIView *v = hit; v != nil; v = v.superview) {
+            for (UIGestureRecognizer *g in v.gestureRecognizers) {
+                if (g.isEnabled) [recognizers addObject:NSStringFromClass(g.class)];
+            }
+        }
+        set_err(out, outlen, [NSString stringWithFormat:@"%@ in %@ recognizers=[%@]",
+                              NSStringFromClass(hit.class), NSStringFromClass(window.class),
+                              [recognizers componentsJoinedByString:@" "]]);
+        return 0;
+    }
 }
 
 int reticle_device_touch_send(double x, double y, int phase, char *err, size_t errlen) {
@@ -112,9 +148,18 @@ int reticle_device_touch_send(double x, double y, int phase, char *err, size_t e
             return 20;
         }
 
+        // The event is fetched BEFORE the hit test, because the hit test needs it:
+        // `hitTest:withEvent:` is allowed to consult the event, and a nil one
+        // makes some views answer wrongly (see window_at).
+        id event = ((id (*)(id, SEL))objc_msgSend)(UIApplication.sharedApplication, touchesEvent);
+        if (!event) {
+            set_err(err, errlen, @"_touchesEvent returned nil");
+            return 22;
+        }
+
         CGPoint screenPoint = CGPointMake(x, y);
         UIView *hitView = nil;
-        UIWindow *window = window_at(screenPoint, &hitView);
+        UIWindow *window = window_at(screenPoint, &hitView, event);
         if (!window) {
             set_err(err, errlen, @"no window of this process contains that point");
             return 21;
@@ -138,11 +183,6 @@ int reticle_device_touch_send(double x, double y, int phase, char *err, size_t e
                                             : UITouchPhaseEnded;
         ((void (*)(id, SEL, NSInteger))objc_msgSend)(sTouch, setPhase, uiPhase);
 
-        id event = ((id (*)(id, SEL))objc_msgSend)(UIApplication.sharedApplication, touchesEvent);
-        if (!event) {
-            set_err(err, errlen, @"_touchesEvent returned nil");
-            return 22;
-        }
         if ([event respondsToSelector:clearTouches]) {
             ((void (*)(id, SEL))objc_msgSend)(event, clearTouches);
         }
