@@ -11,19 +11,14 @@ description: >-
   recorded run did (`trace log`), show a read-only local Web panel for a
   multi-action evidence timeline, mock or replay network traffic, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
-  rebuilding. iOS needs `--target ios`; on a real iOS device the gestures are
-  synthesized inside the app rather than by HID, so only another process's UI is
-  out of reach.
-  Triggers: "inspect the running app", "tap the … button on device", "what's on
-  screen", "drive the app", "find the element", "test the agreement checkbox",
-  "change this label at runtime", adb/UiAutomator/Espresso/XCUITest-style UI
-  verification.
+  rebuilding. iOS needs `--target ios`.
+  Triggers: "what's on screen", "drive the app", "change this label at runtime",
+  adb/UiAutomator/Espresso/XCUITest-style UI verification.
 ---
 
 # Reticle — runtime UI evidence + action harness (Android + iOS)
 
-Reticle inspects the app that is **actually running** and drives real input. It
-runs a tiny HTTP server inside the app process (loopback) and a host CLI talks to
+A tiny HTTP server runs inside the app process (loopback) and a host CLI talks to
 it — over `adb forward` on Android, the shared host loopback on an iOS simulator,
 `iproxy` over USB on an iOS device. Prefer Reticle over guessing from screenshots
 when you need precise selectors, coordinates, or live UI state.
@@ -45,6 +40,7 @@ are doing**, since none of it is needed to inspect a screen or tap a button:
 | `references/webview-dom-and-style.md` | The target is inside a WebView, or the question is computed style / geometry |
 | `references/daemon-and-panel.md` | A run needs a durable timeline across many commands, a browser-visible panel, or network capture |
 | `references/network-rules.md` | The app must see a different network — mock, block, map to another origin, add latency |
+| `references/ios-agent-setup.md` | `--target ios` and the runtime is unreachable — linking `ReticleKit`, or injecting into a device debug build |
 
 ## Install (how the `reticle` binary is obtained)
 
@@ -97,18 +93,13 @@ The full launcher resolution order and its env overrides (`RETICLE_HOST`,
     to still see the screen). The bundled `sample-app` links the agent (the
     `noagent` flavor is the test target for `app inject`).
 
-On **iOS** (`--target ios`) the same "get the agent in" story has an analogue —
-see `docs/ios.md`:
-  - **Simulator**: `reticle --target ios app inject` (DYLD) or a linked build.
-  - **Real device, linked (recommended)**: link the `ReticleKit` product
-    (SwiftPM, or the shipped CocoaPods podspecs for KMP/CocoaPods apps) and call
-    `Reticle.start()` at launch; drive over `iproxy -u <ecid> <port> <port>`.
-    `scripts/e2e-ios-device.sh` runs the full round trip.
-  - **Real device, injection (no source change)**: only for a **debug build you
-    sign** (production/App-Store apps cannot be injected — Apple's security
-    model). `scripts/inject-ios-device.sh <identity> <bundle> <app>` rewrites the
-    binary with an `LC_LOAD_DYLIB` and re-signs; `DYLD_INSERT_LIBRARIES` and lldb
-    `dlopen` do **not** work on-device. Prefer the linked path.
+On **iOS** (`--target ios`) the same "get the agent in" story has an analogue,
+but **`app inject` above is Android-only, and its DYLD twin is simulator-only** —
+neither reaches a real device. A simulator takes `reticle --target ios app
+inject` or a linked build; a real device takes a linked build (recommended) or a
+Mach-O rewrite of a debug build you signed, and a production / App-Store build is
+unreachable by design. Routes, prerequisites and the two on-device dead ends:
+`references/ios-agent-setup.md`.
 
 ## Ports are per-app (no more 8765 collisions)
 
@@ -516,6 +507,24 @@ and reports the point the next command can use. If the container runs out of
 travel it fails loudly — that is the honest "nothing under that selector came into
 view", not a claim about the app.
 
+Three flags steer it, and its two failures mean different things:
+
+```bash
+reticle act scroll-to --package <pkg> --test-id list.item40 \
+  --container list.orders --direction down --max-swipes 20
+```
+
+`--container <test-id|resource-id|ref>` picks **which** scroller to drag — needed
+whenever the screen stacks more than one (a page that scrolls behind an inner
+list), since the default picks the top-most window's own scrollable. `--direction
+down|up|left|right` overrides the auto-pick; without it the direction is chosen
+once from the container's remaining travel and then **locked** for the whole run,
+so reaching the end is a complete sweep of one axis rather than a ping-pong.
+`--max-swipes` (default 12) is the budget. Budget-exhausted (`the container can
+still scroll <dir> — raise --max-swipes`) means "not far enough yet, try again
+bigger"; travel-exhausted means "this list does not contain it" — only the second
+is a fact about the app.
+
 `act type` types **any** text. Give it a targeting selector (`--test-id`,
 `--label`, `--css`, `--point`, …) and it taps that field first so the text lands in *that*
 field; with no selector it types into whatever currently holds focus. Text is
@@ -848,8 +857,9 @@ each one.
 - If the runtime is unreachable (app not linked / not injected), report that
   honestly; never fabricate a tree or coordinates. For a debuggable app without
   the AAR, try `reticle app inject --package <pkg>` before giving up.
-- Authorized testing only: injecting into an app you don't own requires explicit
-  authorization. Default to the bundled `sample-app` for demos.
+- Authorized testing only: injecting into — or, on iOS, re-signing — an app you
+  don't own requires explicit authorization from its owner. Default to the
+  bundled `sample-app` / `sample-app-ios` for demos.
 
 For architecture, the Compose-semantics boundary, and the region/char-grid
 design, see `${CLAUDE_PLUGIN_ROOT}/docs/architecture.md` and
