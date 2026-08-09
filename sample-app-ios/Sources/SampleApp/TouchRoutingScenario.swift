@@ -20,20 +20,20 @@ import ReticleKit
 /// flips from `idle` to `hit`.
 ///
 /// **Measured on an iPhone 13 Pro Max / iOS 26 with `act tap`:** every row lands
-/// EXCEPT the two that combine a recognizer-driven target with a claiming
-/// overlay (`recognizerOverlay`, `recognizerBoth`). So neither the overlay nor
-/// the scroll view eats a synthesized touch on its own, and the delayed-touches
-/// recognizer — the thing that looked guilty from the outside — is irrelevant.
-/// What breaks is a recognizer that never runs because the touch's view is the
-/// overlay and the target is not on its responder chain.
+/// except the four involving a recognizer and a claiming overlay together —
+/// whether the recognizer sits UNDER the overlay (`recognizerOverlay`,
+/// `recognizerBoth`) or ON it (`overlayRecognizer`, `overlayRecognizerScroll`),
+/// which is where a toolkit actually puts it, the overlay being its input layer.
+/// So neither the overlay nor the scroll view eats a synthesized touch on its
+/// own, and the delayed-touches recognizer — the thing that looked guilty from
+/// the outside — is irrelevant.
 ///
-/// **And it is not a synthesis gap.** The same eight taps run on a SIMULATOR,
-/// where Reticle drives real HID through UIKit's full event pipeline — what a
-/// finger uses — fail on exactly the same two rows. UIKit gathers recognizers
-/// from the views it TRAVERSES while hit-testing, and an overlay that returns
-/// `self` without descending is never traversed past, so the recognizer beneath
-/// it is unreachable for a finger too. Recorded in `docs/boundaries.md`; keep
-/// this scenario as the guard that the other six stay drivable.
+/// **And it is not a synthesis gap.** The same rows run on a SIMULATOR, where
+/// Reticle drives real HID through UIKit's full event pipeline — what a finger
+/// uses — fail identically. UIKit gathers recognizers from the views it
+/// TRAVERSES while hit-testing; an overlay that returns `self` without
+/// descending is never traversed past. Recorded in `docs/boundaries.md`; keep
+/// this scenario as the guard that the other rows stay drivable.
 ///
 /// No row uses a `UIControl`: that would answer `act activate` and hide the very
 /// failure under test.
@@ -48,6 +48,8 @@ final class TouchRoutingViewController: UIViewController {
         case recognizerOverlay
         case recognizerScroll
         case recognizerBoth
+        case overlayRecognizer
+        case overlayRecognizerScroll
 
         var title: String {
             switch self {
@@ -59,6 +61,8 @@ final class TouchRoutingViewController: UIViewController {
             case .recognizerOverlay: return "Recognizer under overlay"
             case .recognizerScroll: return "Recognizer in scroll view"
             case .recognizerBoth: return "Recognizer in overlay+scroll"
+            case .overlayRecognizer: return "Recognizer ON the overlay"
+            case .overlayRecognizerScroll: return "Recognizer ON overlay, in scroll"
             }
         }
 
@@ -74,9 +78,18 @@ final class TouchRoutingViewController: UIViewController {
 
         var wrapsInOverlay: Bool {
             self == .overlay || self == .both || self == .recognizerOverlay || self == .recognizerBoth
+                || self == .overlayRecognizer || self == .overlayRecognizerScroll
+        }
+
+        /// The recognizer sits on the CLAIMING OVERLAY itself rather than on a
+        /// view beneath it — which is where a cross-platform toolkit actually
+        /// puts it, since the overlay IS its input layer.
+        var recognizerOnOverlay: Bool {
+            self == .overlayRecognizer || self == .overlayRecognizerScroll
         }
         var wrapsInScrollView: Bool {
             self == .scroll || self == .both || self == .recognizerScroll || self == .recognizerBoth
+                || self == .overlayRecognizerScroll
         }
     }
 
@@ -113,7 +126,9 @@ final class TouchRoutingViewController: UIViewController {
         status.accessibilityIdentifier = "touchRouting.\(variant.rawValue).status"
         statuses[variant] = status
 
-        let button = CanvasTapTarget(title: variant.title, handlesTouches: !variant.usesRecognizer)
+        let button = CanvasTapTarget(
+            title: variant.title,
+            handlesTouches: !variant.usesRecognizer && !variant.recognizerOnOverlay)
         button.accessibilityIdentifier = "touchRouting.\(variant.rawValue).button"
         button.onTap = { [weak self] in
             self?.statuses[variant]?.text = "hit"
@@ -125,7 +140,12 @@ final class TouchRoutingViewController: UIViewController {
 
         var host: UIView = button
         if variant.wrapsInOverlay {
-            host = ClaimingOverlayHost(content: host)
+            let overlay = ClaimingOverlayHost(content: host)
+            if variant.recognizerOnOverlay {
+                overlay.addGestureRecognizer(
+                    UITapGestureRecognizer(target: button, action: #selector(CanvasTapTarget.recognized)))
+            }
+            host = overlay
         }
         if variant.wrapsInScrollView {
             host = DelayingScrollHost(content: host)
