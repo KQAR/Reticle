@@ -19,6 +19,15 @@ reticle act wait --package <pkg> --idle                              # screen st
 reticle act wait --package <pkg> --for 'css=#pay' --timeout 15000
 ```
 
+Two budgets, not one. `--timeout <ms>` (default 10000) is how long to keep
+looking; `--quiet-for <ms>` (default 400) is how long the tree must stop changing
+before that stillness counts. `--idle` is defined **entirely** by the second one —
+it returns the moment the screen has been unchanged for `--quiet-for`, without
+burning the rest of the timeout — so raise it for a screen with a looping
+animation or a polling badge, which would otherwise never be quiet, and lower it
+for a fast static screen you do not want to pay 400 ms for. For the other
+predicates it only decides whether the answer is reported as settled.
+
 `--for` takes the same token grammar as `--verify` (`#testId`, `@resourceId`,
 `css=…`, `ref=…`, a bare ref), or use the ordinary `--test-id` / `--css` flags.
 It refuses `--point` (a raw coordinate always "resolves", so there is nothing to

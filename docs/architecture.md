@@ -570,6 +570,12 @@ semantic node. If you want the semantic projection instead, read
 Only the **action** path (`act tap`) is semantic-first; the **inspection**
 path (`ui node`) is always the view tree.
 
+Both indented views take `--depth <n>` to stop the walk at depth `n` (root is 0;
+unbounded by default). It truncates the *print*, not the capture — the snapshot
+still holds everything, so `ui node --ref` reaches a node the depth limit hid.
+Reach for it when the question is "what is the shape of this screen" and a deep
+tree would answer with thousands of lines.
+
 ## Style evidence (`ui style`)
 
 The question behind it is "does this screen match the design" — spacing between
@@ -1035,6 +1041,13 @@ never mistaken for a quiet screen. Recording is on by default and lands in an
 auto session when no daemon owns one; pruning is gated on a marker file Reticle
 writes, never on the directory's name, so it can only ever delete its own.
 Both diff ports are pinned by `reticle-protocol/fixtures/action-trace-diff.cases.json`.
+
+The *after* frame is captured once the screen has had a moment to react:
+`--trace-delay <ms>` sets that settle (default 250). Raise it when the effect
+under test is a transition or a network round trip, which a 250 ms after-frame
+photographs mid-flight and the diff then reports as "nothing changed". It applies
+only to the trace's own settle — with `--verify` present the verify poll owns the
+timing instead and the delay is skipped, so the two never stack.
 
 ## Honest boundaries: what Reticle cannot reach
 
