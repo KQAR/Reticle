@@ -90,6 +90,8 @@ private let scenarioEntries: [ScenarioEntry] = [
                   subtitle: "Sandboxed / cross-origin / scaled / scrolling iframes"),
     ScenarioEntry(tag: "lottieOnlyDialog", title: "Lottie-only dialog",
                   subtitle: "Whole dialog (text + buttons) baked into one Lottie"),
+    ScenarioEntry(tag: "touchRouting", title: "Touch routing layers",
+                  subtitle: "Claiming overlay / delaying scroll view: which one eats a tap"),
 ]
 
 /// The destination view for a scenario tag — shared by the home list rows and
@@ -107,6 +109,8 @@ private func scenarioDestination(_ tag: String) -> some View {
         ListScenarioView().navigationTitle("Long list")
     case "canvasControl":
         ScenarioScreen { CanvasControlViewController() }.navigationTitle("Canvas control")
+    case "touchRouting":
+        ScenarioScreen { TouchRoutingViewController() }.navigationTitle("Touch routing")
     case "webview":
         ScenarioScreen { WebViewScenarioViewController() }.navigationTitle("WebView DOM")
     case "swiftui":

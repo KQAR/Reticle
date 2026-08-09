@@ -27,6 +27,16 @@ enum DeviceTouch {
         return (rc == 0, string(from: buffer))
     }
 
+    /// Which view a touch at this point would reach. Reported alongside every
+    /// dispatched touch: an action that changed nothing is a different finding
+    /// depending on whether it landed on the intended control or on an overlay.
+    @MainActor
+    static func hitView(at point: CGPoint) -> String? {
+        var buffer = [CChar](repeating: 0, count: 256)
+        let rc = reticle_device_touch_hit_view(Double(point.x), Double(point.y), &buffer, buffer.count)
+        return rc == 0 ? string(from: buffer) : nil
+    }
+
     enum TouchError: Error, CustomStringConvertible {
         case unavailable(String)
         var description: String {
