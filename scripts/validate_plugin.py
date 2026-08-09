@@ -34,6 +34,10 @@ DIR_KEYS = ("skills", "commands", "agents", "hooks", "rules")
 errors = []
 # (label, version) pairs collected from every source, checked for agreement.
 versions = []
+# (label, description) pairs — the same blurb is declared in four manifests, so
+# it drifts the way versions used to: an edit lands in one file and the other
+# three keep shipping the stale claim. Checked for agreement, same as versions.
+descriptions = []
 
 
 def load(path):
@@ -68,6 +72,9 @@ def validate_plugin(data, label, cursor=False):
         errors.append(f"{label}: 'version' must be a string")
     elif isinstance(v, str):
         versions.append((label, v))
+    d = data.get("description")
+    if isinstance(d, str):
+        descriptions.append((label, d))
     # Cursor declares the dirs it ships as relative paths; they must exist so an
     # install doesn't silently drop skills/commands.
     if cursor:
@@ -110,6 +117,9 @@ def validate_marketplace(data, label):
             errors.append(f"{where}: 'version' must be a string")
         elif isinstance(v, str):
             versions.append((where, v))
+        d = entry.get("description")
+        if isinstance(d, str):
+            descriptions.append((where, d))
         src = entry.get("source")
         if src is None:
             errors.append(f"{where}: required field 'source' is missing")
@@ -169,6 +179,21 @@ def check_version_lockstep():
         )
 
 
+def check_description_parity():
+    """One blurb, four manifests. Two wordings of the same list is not a style
+    choice — it is two places to update and one of them will be forgotten (it was:
+    the plugin.json pair described the iOS input path in terms the marketplace
+    pair never carried, and both went stale independently). `metadata.description`
+    is deliberately NOT in this set: it names the host (Claude Code / Cursor) and
+    must differ."""
+    distinct = {d for _, d in descriptions}
+    if len(distinct) > 1:
+        detail = "; ".join(f"{lbl}={d[:60]}…" for lbl, d in descriptions)
+        errors.append(
+            "plugin description drift across manifests — all must match: " + detail
+        )
+
+
 def check_skill_references():
     """Progressive disclosure only works if the pointers resolve both ways.
 
@@ -206,6 +231,7 @@ def main():
 
     collect_code_versions()
     check_version_lockstep()
+    check_description_parity()
     check_skill_references()
 
     if errors:
@@ -218,6 +244,8 @@ def main():
         print(f"  - {rel}")
     if versions:
         print(f"  - version lockstep OK ({versions[0][1]})")
+    if descriptions:
+        print(f"  - description parity OK ({len(descriptions)} manifests)")
 
 
 if __name__ == "__main__":
