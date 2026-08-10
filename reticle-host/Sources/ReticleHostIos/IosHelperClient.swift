@@ -677,6 +677,15 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         return out
     }
 
+    /// A DOM node's own selector chain, when the ref names one. Typing has to be
+    /// routed by what the target IS rather than by which flag named it: a DOM node
+    /// has no UIKit responder whatever found it, so a `--ref` that lands on one
+    /// takes the same page-level path `--css` does.
+    func webChain(forRef ref: String, in snapshot: Snapshot) -> String? {
+        guard let node = snapshot.nodes[ref], node.kind == .domNode else { return nil }
+        return node.domCssSelector()
+    }
+
     /// The one thing an action can say about a window it cannot see. `windowFocused`
     /// is read from `UIApplication.applicationState`, so false is not a guess about
     /// z-order — it is the system telling the app it is not the one receiving input,
@@ -732,14 +741,25 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                     throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
                         + "and in-process typing needs a node to focus")
                 }
-                // The POINT rides along with the ref. A ref is a handle into the
-                // snapshot it came from, and the agent captures its own before
-                // resolving — which for a DOM node inside a re-rendering web view
-                // is routinely a different tree, so the ref lands on nothing.
-                // The rect resolved HERE is still where the field is on screen,
-                // and touching it is how a web input takes focus anyway.
-                selector = ReticleProtocol.Selector(ref: ref, point: resolved.point)
-                focusedVia = "selector"
+                // Route by what the target IS, not by which flag named it. A DOM
+                // node has no UIKit responder to type into whatever selector
+                // found it, so a `--ref`/`--test-id` that lands on one must take
+                // the same page-level path `--css` does. It used to be decided by
+                // the selector's kind, so the natural loop — `ui compact`, copy a
+                // ref, `act type --ref` — answered `unsupported_text_target` for a
+                // field that `--css` typed into fine. The snapshot is already in
+                // hand here, so this costs nothing.
+                if let chain = webChain(forRef: ref, in: snapshot) {
+                    selector = ReticleProtocol.Selector(cssSelector: chain)
+                    focusedVia = "ref->css"
+                } else {
+                    // The POINT rides along with the ref. A ref is a handle into
+                    // the snapshot it came from, and the agent captures its own
+                    // before resolving, so the rect resolved HERE is the sturdier
+                    // half — and touching it is how a field takes focus anyway.
+                    selector = ReticleProtocol.Selector(ref: ref, point: resolved.point)
+                    focusedVia = "selector"
+                }
             }
         }
         let request = TypeTextRequest(
