@@ -399,6 +399,14 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // Only part of the frame was reachable, so the tap aimed at the visible
             // part rather than at a centre that is no longer inside it.
             if let reachNote = target.reachNote { result["reach"] = reachNote }
+            // The app was not the active one when this was dispatched, which on a
+            // device means another PROCESS's window — a system prompt — holds input.
+            // `ui compact` has always said so on its first line; the action said
+            // nothing, so a tap into an inactive app read as an ordinary success and
+            // the empty diff that followed got blamed on the target. Measured: a
+            // StoreKit account prompt over the app under test made every tap on its
+            // content inert while the dispatch kept reporting success.
+            if let inactive = inactiveWarning(snapshot) { result["warning"] = inactive }
             if let coverage { result["coverage"] = coverage.jsonObject }
             if let obstruction { result["obstruction"] = obstruction.jsonObject(x: point.x, y: point.y) }
             // Honest flag, as in scroll-to: false means the target was still moving
@@ -669,6 +677,18 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         return out
     }
 
+    /// The one thing an action can say about a window it cannot see. `windowFocused`
+    /// is read from `UIApplication.applicationState`, so false is not a guess about
+    /// z-order — it is the system telling the app it is not the one receiving input,
+    /// which on a device is the only trace another process's alert leaves.
+    func inactiveWarning(_ snapshot: Snapshot?) -> String? {
+        guard snapshot?.screen.windowFocused == false else { return nil }
+        return "the app was NOT active when this was dispatched — another process's window "
+            + "(a system prompt, which is in no tree and in no in-process screenshot) holds input. "
+            + "Actions on this app's own content can be inert while still reporting success; "
+            + "deal with that prompt first"
+    }
+
     /// `--type-delay <ms>`, as the CLI passes it through.
     func typeDelayMs(_ params: [String: Any]) -> Int? {
         if let value = params["typeDelayMs"] as? Int { return value }
@@ -687,6 +707,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) throws -> [String: Any] {
         var selector: ReticleProtocol.Selector? = nil
         var focusedVia: String? = nil
+        var resolvedAgainst: Snapshot? = nil
         let requested = selectorFromParams(params)
         if requested.describe() != "<empty>" {
             // A raw --point is passed straight through: the agent focuses a
@@ -705,6 +726,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                 focusedVia = "point"
             } else {
                 let snapshot = try fetchSnapshot(pkg)
+                resolvedAgainst = snapshot
                 let resolved = try resolveTarget(params, snapshot: snapshot)
                 guard let ref = resolved.ref else {
                     throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
@@ -732,6 +754,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             throw HelperError("in-process type failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
         }
         var out: [String: Any] = ["gesture": "type", "via": "agent insertText", "text": text]
+        if let inactive = inactiveWarning(resolvedAgainst) { out["warning"] = inactive }
         if let ref = r.ref { out["ref"] = ref }
         if let typeName = r.typeName { out["typeName"] = typeName }
         if let focusedVia { out["focusedVia"] = focusedVia }
