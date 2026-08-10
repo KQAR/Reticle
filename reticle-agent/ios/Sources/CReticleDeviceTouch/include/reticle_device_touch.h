@@ -41,6 +41,13 @@ int reticle_device_touch_probe(char *out, size_t outlen);
 /// belongs to the caller.
 int reticle_device_touch_send(double x, double y, int phase, char *err, size_t errlen);
 
+/// The class name of the view a touch at this point would be delivered to, and
+/// the window it belongs to, written to `out` as `<view> in <window>`. This is
+/// the ONE fact that separates "the touch went nowhere" from "the touch went
+/// somewhere that ignored it" — without it a no-op tap and a tap that landed on
+/// a dead overlay read identically. Returns 0 when a view was found.
+int reticle_device_touch_hit_view(double x, double y, char *out, size_t outlen);
+
 #ifdef __cplusplus
 }
 #endif

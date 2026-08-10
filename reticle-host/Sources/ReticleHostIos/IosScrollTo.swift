@@ -54,10 +54,18 @@ extension IosHelperClient {
             let direction = requested ?? lockedDirection ?? firstDirection(scroll)
             lockedDirection = direction
             guard let direction, canScroll(scroll, direction) else {
+                let containerOnly = matchedTheContainer(
+                    (try? resolveTarget(params, snapshot: snapshot))?.ref, container: container, snapshot: snapshot)
                 throw HelperError("scroll-to reached the end of "
                     + "'\(container.testId ?? container.ref)' after \(swipes) drag(s) without resolving "
                     + "\(selector.describe()) (container now reports \(scroll.describe())). "
-                    + "Nothing realized under that selector came into view.")
+                    + "Nothing realized under that selector came into view."
+                    + (containerOnly
+                        ? " The only thing that DID match is the container itself — a scroll host carries the "
+                          + "concatenated text of the rows it has realized, so a --label for a value that is not "
+                          + "on screen matches the list rather than a row. Target a row's own handle, or drive "
+                          + "the list with `act swipe` and read back what rendered."
+                        : ""))
             }
             if swipes >= maxSwipes {
                 throw HelperError("scroll-to gave up after \(maxSwipes) drag(s) \(direction) inside "
@@ -73,11 +81,41 @@ extension IosHelperClient {
     }
 
     func resolvedInside(_ snapshot: Snapshot, _ params: [String: Any], container: Node?) -> Point? {
-        guard let point = try? resolveTapPoint(params, snapshot: snapshot) else { return nil }
+        guard let resolved = try? resolveTarget(params, snapshot: snapshot) else { return nil }
+        // The match must be something INSIDE the list, not the list. A scroll host
+        // captures the concatenated text of every row it has realized, so a
+        // `--label` for a value that is not on screen substring-matches the
+        // container and resolves to its centre — which is inside its own frame, so
+        // the loop declared success with `swipes=0` for a row that does not exist.
+        // Measured on a virtualized web date wheel: `scroll-to --label "1995"`
+        // answered `found=true settled=true swipes=0` while 1995 was in no node of
+        // the tree and nothing had scrolled. `found` then means "go tap it", and
+        // the tap lands on the wheel instead.
+        if matchedTheContainer(resolved.ref, container: container, snapshot: snapshot) { return nil }
+        let point = resolved.point
         guard let frame = container?.frame else { return point }
         let inside = point.x >= frame.x && point.x <= frame.x + frame.width
             && point.y >= frame.y && point.y <= frame.y + frame.height
         return inside ? point : nil
+    }
+
+    /// True when the selector resolved to the scroll container itself, to an
+    /// ancestor of it, or to another scrollable node — none of which is a row that
+    /// scrolling could bring into view.
+    func matchedTheContainer(_ ref: String?, container: Node?, snapshot: Snapshot) -> Bool {
+        guard let ref, let node = snapshot.nodes[ref] else { return false }
+        if node.scroll != nil { return true }
+        guard let container else { return false }
+        if ref == container.ref { return true }
+        // An ancestor of the container is equally not a row inside it.
+        var walker: String? = container.parentRef
+        var hops = 0
+        while let current = walker, hops < 64 {
+            if current == ref { return true }
+            walker = snapshot.nodes[current]?.parentRef
+            hops += 1
+        }
+        return false
     }
 
     /// A point plus whether its position was confirmed to have stopped moving.
