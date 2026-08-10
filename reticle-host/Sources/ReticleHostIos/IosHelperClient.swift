@@ -693,7 +693,14 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // canvas-toolkit field by touching it, which needs a coordinate and
             // not a node. Only a selector that WAS meant to name a node is
             // resolved to a ref here.
-            if params["point"] != nil, requested.point != nil, requested.ref == nil, requested.testId == nil {
+            if let css = requested.cssSelector, !css.isEmpty {
+                // Passed through verbatim, exactly as `activate --css` does: the
+                // agent resolves a DOM chain against the live page, and a ref
+                // resolved here would be a handle into a tree the page may have
+                // re-rendered out from under.
+                selector = ReticleProtocol.Selector(cssSelector: css)
+                focusedVia = "css"
+            } else if params["point"] != nil, requested.point != nil, requested.ref == nil, requested.testId == nil {
                 selector = requested
                 focusedVia = "point"
             } else {
@@ -703,7 +710,13 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
                     throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
                         + "and in-process typing needs a node to focus")
                 }
-                selector = ReticleProtocol.Selector(ref: ref)
+                // The POINT rides along with the ref. A ref is a handle into the
+                // snapshot it came from, and the agent captures its own before
+                // resolving — which for a DOM node inside a re-rendering web view
+                // is routinely a different tree, so the ref lands on nothing.
+                // The rect resolved HERE is still where the field is on screen,
+                // and touching it is how a web input takes focus anyway.
+                selector = ReticleProtocol.Selector(ref: ref, point: resolved.point)
                 focusedVia = "selector"
             }
         }

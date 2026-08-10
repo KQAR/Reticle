@@ -68,7 +68,7 @@ struct TextInputEngine {
         // never re-routed through a synthetic touch.
         if resolved.field == nil, let rect = resolved.frame {
             focusByTap(rect)
-            if let focused = FirstResponderLookup.current() as? UIView & UIKeyInput {
+            if let view = FirstResponderLookup.current() as? UIView, let focused = asKeyInput(view) {
                 resolved.field = focused
                 resolved.via = "tap-to-focus"
             } else if let field = windowTextInput() {
@@ -285,7 +285,7 @@ struct TextInputEngine {
 
     private func resolveField(_ selector: ReticleProtocol.Selector?) -> Resolved {
         guard let selector else {
-            if let focused = FirstResponderLookup.current() as? UIView & UIKeyInput {
+            if let view = FirstResponderLookup.current() as? UIView, let focused = asKeyInput(view) {
                 return Resolved(field: focused)
             }
             // A canvas toolkit reports its touch layer as the responder while the
@@ -306,10 +306,19 @@ struct TextInputEngine {
             )
         }
         guard let (ref, view) = NodeResolver.view(selector, snapshot: snapshot, index: index) else {
-            // A raw --point has no node behind it, but it is still a place to
-            // touch — the same path a canvas field is focused through.
+            // A DOM node resolves to no UIView by construction — it lives inside
+            // the web view — but it has a rect, and touching that rect is how a
+            // web input takes focus. Without this a `--css` type reported "no
+            // view matched" for a field the same selector could tap.
+            if let ref = selector.ref, let rect = rect(of: ref, in: snapshot) {
+                return Resolved(ref: ref, resolvedTypeName: snapshot.nodes[ref]?.typeName, frame: rect)
+            }
+            // The point the HOST resolved, which is the only handle that survives
+            // a re-render: a ref indexes the snapshot it came from, and this
+            // capture is a newer one. Also the raw `--point` path.
             if let point = selector.point {
-                return Resolved(frame: CGRect(x: CGFloat(point.x), y: CGFloat(point.y), width: 0, height: 0))
+                return Resolved(ref: selector.ref,
+                                frame: CGRect(x: CGFloat(point.x), y: CGFloat(point.y), width: 0, height: 0))
             }
             return Resolved()
         }
@@ -321,6 +330,24 @@ struct TextInputEngine {
         guard let frame = snapshot.nodes[ref]?.frame else { return nil }
         return CGRect(x: CGFloat(frame.x), y: CGFloat(frame.y),
                       width: CGFloat(frame.width), height: CGFloat(frame.height))
+    }
+
+    /// `UIKeyInput` at RUNTIME rather than by declared conformance.
+    ///
+    /// `WKWebView` is the case that forces this: focus a field in a web page and
+    /// it becomes the first responder and answers `insertText:` — but it does not
+    /// publish the protocol, so `as? UIKeyInput` refuses it and a web form is
+    /// untypable while the same selector can tap it. UIKeyInput is an ObjC
+    /// protocol, so responding to all three of its members IS satisfying it as
+    /// far as dispatch is concerned; the cast only re-labels a class that already
+    /// implements every method that will be called on it.
+    private func asKeyInput(_ view: UIView) -> (UIView & UIKeyInput)? {
+        if let declared = view as? UIView & UIKeyInput { return declared }
+        guard view.responds(to: #selector(UIKeyInput.insertText(_:))),
+              view.responds(to: #selector(UIKeyInput.deleteBackward)),
+              view.responds(to: #selector(getter: UIKeyInput.hasText))
+        else { return nil }
+        return unsafeBitCast(view, to: (UIView & UIKeyInput).self)
     }
 
     /// Every app window, searched for a text input. The last resort behind a
@@ -359,7 +386,7 @@ struct TextInputEngine {
         var hiddenKeyInput: (UIView & UIKeyInput)?
 
         func consider(_ candidate: UIView, visible: Bool) -> (UIView & UITextInput)? {
-            guard let field = candidate as? UIView & UIKeyInput, field.canBecomeFirstResponder else { return nil }
+            guard let field = asKeyInput(candidate), field.canBecomeFirstResponder else { return nil }
             let document = field as? UIView & UITextInput
             if visible {
                 if let document { return document }
