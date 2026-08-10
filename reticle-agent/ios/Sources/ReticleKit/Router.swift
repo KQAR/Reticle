@@ -148,6 +148,7 @@ struct Router {
     private func touch(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(TouchRequest.self, from: body)
         let from = CGPoint(x: req.from.x, y: req.from.y)
+        let hit = MainThread.sync { DeviceTouch.hitView(at: from) }
         do {
             switch req.kind {
             case .tap:
@@ -164,7 +165,8 @@ struct Router {
         } catch {
             return try json(TouchResult(dispatched: false, message: "\(error)"))
         }
-        return try json(TouchResult(dispatched: true, via: "uikit:sendEvent"))
+        return try json(TouchResult(dispatched: true, via: "uikit:sendEvent",
+                                    message: hit.map { "hitView=\($0)" }))
     }
 
     /// Typing paces itself between characters, so — like `hideKeyboard` — the
@@ -172,6 +174,17 @@ struct Router {
     /// main. `TextInputSession` owns that split.
     private func typeText(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(TypeTextRequest.self, from: body)
+        #if canImport(WebKit)
+        // A CSS selector targets a domNode, and a web field has no UIKit
+        // responder to type into — the page itself is the input surface. Same
+        // split `activate` makes, and for the same reason.
+        if let css = req.selector?.cssSelector, !css.isEmpty {
+            let transport = MainThread.sync { SnapshotCapture().captureForTransport() }
+            return try json(WebTextInput.type(
+                selectorChain: css, text: req.text, clear: req.clear, submit: req.submit,
+                pending: transport.pendingWebViews))
+        }
+        #endif
         return try json(TextInputSession.run(req))
     }
     #endif

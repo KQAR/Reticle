@@ -399,6 +399,14 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             // Only part of the frame was reachable, so the tap aimed at the visible
             // part rather than at a centre that is no longer inside it.
             if let reachNote = target.reachNote { result["reach"] = reachNote }
+            // The app was not the active one when this was dispatched, which on a
+            // device means another PROCESS's window — a system prompt — holds input.
+            // `ui compact` has always said so on its first line; the action said
+            // nothing, so a tap into an inactive app read as an ordinary success and
+            // the empty diff that followed got blamed on the target. Measured: a
+            // StoreKit account prompt over the app under test made every tap on its
+            // content inert while the dispatch kept reporting success.
+            if let inactive = inactiveWarning(snapshot) { result["warning"] = inactive }
             if let coverage { result["coverage"] = coverage.jsonObject }
             if let obstruction { result["obstruction"] = obstruction.jsonObject(x: point.x, y: point.y) }
             // Honest flag, as in scroll-to: false means the target was still moving
@@ -669,6 +677,27 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         return out
     }
 
+    /// A DOM node's own selector chain, when the ref names one. Typing has to be
+    /// routed by what the target IS rather than by which flag named it: a DOM node
+    /// has no UIKit responder whatever found it, so a `--ref` that lands on one
+    /// takes the same page-level path `--css` does.
+    func webChain(forRef ref: String, in snapshot: Snapshot) -> String? {
+        guard let node = snapshot.nodes[ref], node.kind == .domNode else { return nil }
+        return node.domCssSelector()
+    }
+
+    /// The one thing an action can say about a window it cannot see. `windowFocused`
+    /// is read from `UIApplication.applicationState`, so false is not a guess about
+    /// z-order — it is the system telling the app it is not the one receiving input,
+    /// which on a device is the only trace another process's alert leaves.
+    func inactiveWarning(_ snapshot: Snapshot?) -> String? {
+        guard snapshot?.screen.windowFocused == false else { return nil }
+        return "the app was NOT active when this was dispatched — another process's window "
+            + "(a system prompt, which is in no tree and in no in-process screenshot) holds input. "
+            + "Actions on this app's own content can be inert while still reporting success; "
+            + "deal with that prompt first"
+    }
+
     /// `--type-delay <ms>`, as the CLI passes it through.
     func typeDelayMs(_ params: [String: Any]) -> Int? {
         if let value = params["typeDelayMs"] as? Int { return value }
@@ -685,22 +714,53 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
     /// agent growing a second, weaker resolver. With no selector the agent types
     /// into whatever holds focus, exactly as the HID path does.
     func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) throws -> [String: Any] {
-        if params["point"] != nil {
-            throw HelperError("typing at a --point needs a simulator HID surface; on a real device "
-                + "name the field (--test-id / --label) so it can be focused in-process")
-        }
         var selector: ReticleProtocol.Selector? = nil
         var focusedVia: String? = nil
+        var resolvedAgainst: Snapshot? = nil
         let requested = selectorFromParams(params)
         if requested.describe() != "<empty>" {
-            let snapshot = try fetchSnapshot(pkg)
-            let resolved = try resolveTarget(params, snapshot: snapshot)
-            guard let ref = resolved.ref else {
-                throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
-                    + "and in-process typing needs a node to focus")
+            // A raw --point is passed straight through: the agent focuses a
+            // canvas-toolkit field by touching it, which needs a coordinate and
+            // not a node. Only a selector that WAS meant to name a node is
+            // resolved to a ref here.
+            if let css = requested.cssSelector, !css.isEmpty {
+                // Passed through verbatim, exactly as `activate --css` does: the
+                // agent resolves a DOM chain against the live page, and a ref
+                // resolved here would be a handle into a tree the page may have
+                // re-rendered out from under.
+                selector = ReticleProtocol.Selector(cssSelector: css)
+                focusedVia = "css"
+            } else if params["point"] != nil, requested.point != nil, requested.ref == nil, requested.testId == nil {
+                selector = requested
+                focusedVia = "point"
+            } else {
+                let snapshot = try fetchSnapshot(pkg)
+                resolvedAgainst = snapshot
+                let resolved = try resolveTarget(params, snapshot: snapshot)
+                guard let ref = resolved.ref else {
+                    throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
+                        + "and in-process typing needs a node to focus")
+                }
+                // Route by what the target IS, not by which flag named it. A DOM
+                // node has no UIKit responder to type into whatever selector
+                // found it, so a `--ref`/`--test-id` that lands on one must take
+                // the same page-level path `--css` does. It used to be decided by
+                // the selector's kind, so the natural loop — `ui compact`, copy a
+                // ref, `act type --ref` — answered `unsupported_text_target` for a
+                // field that `--css` typed into fine. The snapshot is already in
+                // hand here, so this costs nothing.
+                if let chain = webChain(forRef: ref, in: snapshot) {
+                    selector = ReticleProtocol.Selector(cssSelector: chain)
+                    focusedVia = "ref->css"
+                } else {
+                    // The POINT rides along with the ref. A ref is a handle into
+                    // the snapshot it came from, and the agent captures its own
+                    // before resolving, so the rect resolved HERE is the sturdier
+                    // half — and touching it is how a field takes focus anyway.
+                    selector = ReticleProtocol.Selector(ref: ref, point: resolved.point)
+                    focusedVia = "selector"
+                }
             }
-            selector = ReticleProtocol.Selector(ref: ref)
-            focusedVia = "selector"
         }
         let request = TypeTextRequest(
             selector: selector, text: text,
@@ -714,6 +774,7 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
             throw HelperError("in-process type failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
         }
         var out: [String: Any] = ["gesture": "type", "via": "agent insertText", "text": text]
+        if let inactive = inactiveWarning(resolvedAgainst) { out["warning"] = inactive }
         if let ref = r.ref { out["ref"] = ref }
         if let typeName = r.typeName { out["typeName"] = typeName }
         if let focusedVia { out["focusedVia"] = focusedVia }

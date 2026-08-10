@@ -16,4 +16,5 @@ Pod::Spec.new do |s|
   s.source_files     = 'Sources/ReticleKit/**/*.swift'
   s.frameworks       = 'UIKit', 'WebKit', 'Network'
   s.dependency 'ReticleProtocol'
+  s.dependency 'CReticleDeviceTouch'
 end
