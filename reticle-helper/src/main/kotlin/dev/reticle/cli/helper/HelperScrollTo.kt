@@ -113,7 +113,12 @@ internal object HelperScrollTo {
                 ?: throw CliError(describeExhausted(scrollable, selector, swipes, lastDirection))
             lockedDirection = direction
             if (!canScroll(scrollable, direction)) {
-                throw CliError(describeExhausted(scrollable, selector, swipes, direction))
+                val containerOnly = matchedTheContainer(
+                    SelectorResolver(snapshot, SemanticTree.build(snapshot)).resolve(selector)?.ref,
+                    container,
+                    snapshot,
+                )
+                throw CliError(describeExhausted(scrollable, selector, swipes, direction, containerOnly))
             }
             if (swipes >= maxSwipes) {
                 throw CliError(
@@ -180,10 +185,39 @@ internal object HelperScrollTo {
     ): ResolvedTarget? {
         val semantic = SemanticTree.build(snapshot)
         val resolved = SelectorResolver(snapshot, semantic).resolve(selector) ?: return null
+        // The match must be something INSIDE the list, not the list. A scroll host
+        // carries the concatenated text of every row it has realized, so a
+        // `--label` for a value that is not on screen substring-matches the
+        // container and resolves to its centre — which is inside its own frame, so
+        // this reported `found=true swipes=0` for a row that does not exist, and
+        // `found` means "go tap it". Measured on iOS against a virtualized date
+        // wheel; the same resolution runs here, so the same hole was here.
+        if (matchedTheContainer(resolved.ref, container, snapshot)) return null
         val frame = container?.frame ?: return ResolvedTarget(resolved.point, resolved.source, resolved.ref)
         val inside = resolved.point.x >= frame.x && resolved.point.x <= frame.x + frame.width &&
             resolved.point.y >= frame.y && resolved.point.y <= frame.y + frame.height
         return if (inside) ResolvedTarget(resolved.point, resolved.source, resolved.ref) else null
+    }
+
+    /**
+     * True when the selector resolved to the scroll container itself, to an
+     * ancestor of it, or to another scrollable node — none of which is a row that
+     * scrolling could bring into view. The iOS twin is
+     * `IosHelperClient.matchedTheContainer`.
+     */
+    internal fun matchedTheContainer(ref: String?, container: Node?, snapshot: Snapshot): Boolean {
+        val node = ref?.let { snapshot.nodes[it] } ?: return false
+        if (node.scroll != null) return true
+        if (container == null) return false
+        if (ref == container.ref) return true
+        var walker = container.parentRef
+        var hops = 0
+        while (walker != null && hops < 64) {
+            if (walker == ref) return true
+            walker = snapshot.nodes[walker]?.parentRef
+            hops++
+        }
+        return false
     }
 
     internal data class ResolvedTarget(
@@ -288,11 +322,20 @@ internal object HelperScrollTo {
         selector: Selector,
         swipes: Int,
         direction: String?,
+        containerOnlyMatch: Boolean = false,
     ): String {
         val id = container.testId ?: container.resourceId ?: container.ref
         val dir = direction ?: "any direction"
         return "scroll-to reached the end of '$id' after $swipes swipe(s) $dir without resolving " +
             "'${selector.describe()}' (container now reports ${container.scroll?.describe() ?: "no travel"}). " +
-            "Nothing bound under that selector came into view."
+            "Nothing bound under that selector came into view." +
+            if (containerOnlyMatch) {
+                " The only thing that DID match is the container itself — a scroll host carries the " +
+                    "concatenated text of the rows it has bound, so a --label for a value that is not on " +
+                    "screen matches the list rather than a row. Target a row's own handle, or drive the " +
+                    "list with `act swipe` and read back what rendered."
+            } else {
+                ""
+            }
     }
 }
