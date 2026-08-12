@@ -96,6 +96,40 @@ enum IosTouchSurface {
         }
     }
 
+    /// Which system-channel step the caller needs next, based on where that
+    /// channel actually is. "Not installed" and "installed but not connected" need
+    /// different commands, so a single generic hint would send half of callers to
+    /// the wrong one.
+    static func systemChannelHint(_ bundleId: String, udid: String?) -> String {
+        let config = IosRunnerConfig(appBundleId: bundleId)
+        let next: String
+        if let udid {
+            // Worth one device round-trip on an error path: the two states need
+            // DIFFERENT commands, and a generic hint sends half of callers to the
+            // wrong one.
+            switch IosRunnerLifecycle(config: config, udid: udid).state() {
+            case .notInstalled:
+                next = "it is NOT installed yet — run `reticle system prepare --team <id>` first"
+            case .installed:
+                next = "it is installed but not running — the next `system` command starts it"
+            case .connected:
+                next = "it is connected and ready"
+            }
+        } else {
+            // No device id is available at this call site (`.agent` carries only a
+            // bundle id), so the two states cannot be told apart here. Name BOTH
+            // commands rather than guessing — `system status` is what distinguishes
+            // them, and sending someone to `prepare` when the channel is merely
+            // stopped would waste a full rebuild.
+            next = "run `reticle system status --target ios` first — if it says "
+                + "notInstalled run `system prepare --team <id>`; if it says installed "
+                + "the next `system` command starts it"
+        }
+        return next
+            + ", then `system overlay` to see what is covering the app and "
+            + "`system tap --label <text>` to act on it"
+    }
+
     private func post(_ bundleId: String, _ request: TouchRequest) throws {
         let body = try ReticleJSON.encodeWire(request)
         let (data, _) = try IosAgentHTTP(bundleId: bundleId).post(Endpoints.touch, body: body)
@@ -104,7 +138,23 @@ enum IosTouchSurface {
             // Never a silent no-op: the agent names the surface that was missing, or
             // the fact that no window of this process holds that point (which is what
             // a coordinate aimed at another process's UI looks like from inside).
-            throw HelperError("in-process touch failed: \(result.message ?? "unknown")")
+            // Two very different causes produce this, and a caller who assumes the
+            // wrong one wastes the next several minutes:
+            //
+            //  1. the coordinate is simply wrong — by far the common case;
+            //  2. the target genuinely belongs to ANOTHER process (a system alert,
+            //     the keyboard's own window, SpringBoard).
+            //
+            // Deliberately NOT auto-rerouting to the system channel for case 2:
+            // a mistyped coordinate would then be dispatched into some other
+            // process instead of failing, which is worse than failing.
+            throw HelperError(
+                "in-process touch failed: \(result.message ?? "unknown"). "
+                + "Either that coordinate is not where you think it is, or the target "
+                + "belongs to another process (a system alert, the IME, SpringBoard) — "
+                + "this path only reaches THIS app's windows. For the second case use "
+                + "the system channel: \(IosTouchSurface.systemChannelHint(bundleId, udid: nil))"
+            )
         }
     }
 }
