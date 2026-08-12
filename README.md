@@ -214,6 +214,13 @@ arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
   CoreSimulator HID). `reticle serve` owns the local daemon session/event surface
   via Hummingbird 2.25.0, with the capture proxy in its own `ReticleNetworkLane`
   target and the iOS backend in `ReticleHostIos`.
+- `reticle-runner-ios` — the **system channel** for iOS real devices: a resident
+  out-of-process XCUITest runner, independent of the app under test. It reaches
+  what the in-app agent structurally cannot (a system permission alert,
+  SpringBoard, the Home gesture) and reads much less of what it reaches (one
+  accessibility layer — no view class, no DOM, no styles, no regions). Driven by
+  `reticle system …`; its results are `SystemNode`, never `Node`, so the two
+  channels can never be mistaken for each other.
 - `sample-app` / `sample-app-ios` — demo apps that link each agent end to end,
   each with an agent-free flavor for testing the injection path.
 

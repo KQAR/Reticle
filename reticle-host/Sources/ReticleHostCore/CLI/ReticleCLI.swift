@@ -207,6 +207,10 @@ public enum ReticleCLI {
             }
         case "inject": try cmdInject(backend, args)
         case "launch": try cmdLaunch(backend, args)
+        // The out-of-process channel. It does NOT go through `backend`: a
+        // `HostBackend` is the in-app channel, shared with Android, and the system
+        // channel has neither an Android twin nor any method in common with it.
+        case "system": try ReticleSystemCommands.dispatch(args)
         case "act": return try cmdAct(backend, args)
         case "mutate": try cmdMutate(backend, args)
         case "debug": try cmdDebug(backend, args)

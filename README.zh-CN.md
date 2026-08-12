@@ -179,6 +179,11 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
   loopback HTTP、CoreSimulator HID)。`reticle serve` 持有本机 daemon 的 session /
   event surface(Hummingbird 2.25.0),捕获代理在独立的 `ReticleNetworkLane` target 里,
   iOS 后端在 `ReticleHostIos` 里。
+- `reticle-runner-ios`——iOS 真机的 **system 通道**:一个常驻的进程外 XCUITest
+  runner,独立于被测 app。它能触达进程内 agent 结构性够不到的东西(系统权限弹窗、
+  SpringBoard、Home 手势),但看到的深度远不如后者(只有无障碍一层——没有视图类名、
+  没有 DOM、没有样式、没有 region)。由 `reticle system …` 驱动;其结果类型是
+  `SystemNode` 而非 `Node`,从类型上杜绝两条通道被混为一谈。
 - `sample-app` / `sample-app-ios`——端到端链接各自 agent 的演示应用,各带一个无 agent
   的 flavor 用于测试注入路径。
 
