@@ -7,6 +7,10 @@ import Foundation
 /// — a non-Sendable dictionary cannot leave it. The wire shape is the helper
 /// protocol's, not something to bend for a lock.
 final class HelperClient: HelperCalling, @unchecked Sendable {
+    /// `Process`, not `Shell`: this is a long-lived child spoken to over a live
+    /// JSONL protocol on its stdin/stdout across many calls. `Subprocess` models
+    /// that as one closure owning the whole session, which does not fit a client
+    /// that is started once and called from synchronous command paths afterwards.
     private let process = Process()
     private let stdinPipe = Pipe()
     private let stdoutPipe = Pipe()

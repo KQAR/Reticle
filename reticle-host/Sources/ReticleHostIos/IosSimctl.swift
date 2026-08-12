@@ -23,41 +23,17 @@ public struct Simctl {
     }
 
     /// Run `xcrun simctl <args>` and return (stdout, stderr, exitCode).
+    ///
+    /// `throws` is kept although `Shell` reports a launch failure as `code == -1`
+    /// rather than throwing: every caller here already branches on the code, and
+    /// changing the signature would churn 28 call sites for nothing.
     @discardableResult
     static func run(_ args: [String], env extraEnv: [String: String] = [:]) throws -> (out: String, err: String, code: Int32) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["simctl"] + args
-        if !extraEnv.isEmpty {
-            var env = ProcessInfo.processInfo.environment
-            for (k, v) in extraEnv { env[k] = v }
-            process.environment = env
-        }
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        // Drain both pipes concurrently. Reading stdout fully before touching
-        // stderr deadlocks when a chatty subcommand fills stderr's ~64KB pipe
-        // buffer while we're still blocked on stdout (the reason Android's Adb
-        // drains on separate threads). Read stderr off-thread, stdout here.
-        let errHandle = errPipe.fileHandleForReading
-        let errBox = ResultBox<Data>(fallback: .success(Data()))
-        let errDone = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
-            errBox.set(.success(errHandle.readDataToEndOfFile()))
-            errDone.signal()
-        }
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        errDone.wait()
-        let errData = (try? errBox.value.get()) ?? Data()
-        process.waitUntilExit()
-        return (
-            String(decoding: outData, as: UTF8.self),
-            String(decoding: errData, as: UTF8.self),
-            process.terminationStatus
-        )
+        // The concurrent two-pipe drain this used to hand-roll (stderr off-thread
+        // so a chatty subcommand filling its ~64KB buffer cannot deadlock a
+        // caller blocked on stdout) now lives once, in `Shell`.
+        let result = Shell.runSync("/usr/bin/xcrun", ["simctl"] + args, extraEnvironment: extraEnv)
+        return (result.out, result.err, result.code)
     }
 
     /// All simulator devices across runtimes (from `simctl list -j devices`).

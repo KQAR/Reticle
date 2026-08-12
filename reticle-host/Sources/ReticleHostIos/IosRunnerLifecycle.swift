@@ -308,6 +308,10 @@ public final class IosRunnerLifecycle: Sendable {
 
     /// Launch the resident test run. Held as a child process because ending it is
     /// how the channel goes down — there is no other handle on a never-ending test.
+    ///
+    /// `Process`, not `Shell`: `Subprocess.run` owns the child for the duration of
+    /// the call and reaps it on return, which is the opposite of what this needs —
+    /// a process that outlives the function and is killed later by `stop()`.
     private func startServing() -> (out: String, err: String, code: Int32) {
         guard let xctestrun = xctestrunPath(derivedDataPath: derivedDataPath) else {
             return ("", "no xctestrun in \(derivedDataPath); run `system prepare` first", -1)
@@ -333,6 +337,8 @@ public final class IosRunnerLifecycle: Sendable {
         // A device's loopback is not the host's, so the port is forwarded over USB.
         // Same mechanism scripts/inject-ios-device.sh uses; ECID is the id here.
         _ = Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
+        // `Process` for the same reason as `startServing`: the tunnel must outlive
+        // this call. The `pkill` above is one-shot, so it goes through `Shell`.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = ["iproxy", "-u", udid, "\(config.port)", "\(config.port)"]
@@ -392,56 +398,12 @@ public final class IosRunnerLifecycle: Sendable {
 
     @discardableResult
     static func shell(_ launchPath: String, _ args: [String]) -> (out: String, err: String, code: Int32) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: launchPath)
-        p.arguments = args
-        let outPipe = Pipe(), errPipe = Pipe()
-        p.standardOutput = outPipe
-        p.standardError = errPipe
-        do { try p.run() } catch { return ("", "\(error)", -1) }
-
-        // Drain BOTH pipes concurrently. Reading stdout to EOF first and stderr
-        // afterwards deadlocks as soon as the child fills stderr's 64KB buffer
-        // while we are still blocked on stdout — and `xcodebuild` is exactly the
-        // kind of child that writes megabytes to both.
-        let group = DispatchGroup()
-        // A reference box rather than two captured `var`s: the drain closures run
-        // on other threads, and a captured `var` mutated across threads is a data
-        // race the compiler diagnoses (the lock it is under is invisible to it).
-        let drained = DrainedOutput()
-        for (handle, isOut) in [(outPipe.fileHandleForReading, true),
-                                (errPipe.fileHandleForReading, false)] {
-            group.enter()
-            DispatchQueue.global().async {
-                let data = handle.readDataToEndOfFile()
-                drained.store(data, isOut: isOut)
-                group.leave()
-            }
-        }
-        group.wait()
-        p.waitUntilExit()
-        let (outData, errData) = drained.take()
-        return (String(decoding: outData, as: UTF8.self),
-                String(decoding: errData, as: UTF8.self),
-                p.terminationStatus)
+        // Both pipes are drained concurrently — mandatory here, because
+        // `xcodebuild` writes megabytes to both and a caller blocked on stdout
+        // deadlocks the moment stderr's 64KB buffer fills. `Shell` owns that.
+        let result = Shell.runSync(launchPath, args)
+        return (result.out, result.err, result.code)
     }
 }
 
 /// Lock-guarded destination for the two concurrent pipe drains in `shell`.
-private final class DrainedOutput: Sendable {
-    private struct Streams {
-        var out = Data()
-        var err = Data()
-    }
-    private let streams = Mutex(Streams())
-
-    func store(_ data: Data, isOut: Bool) {
-        streams.withLock { streams in
-            if isOut { streams.out = data } else { streams.err = data }
-        }
-    }
-
-    func take() -> (Data, Data) {
-        streams.withLock { ($0.out, $0.err) }
-    }
-}

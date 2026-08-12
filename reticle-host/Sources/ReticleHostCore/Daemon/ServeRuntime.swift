@@ -359,17 +359,11 @@ public final class ServeRuntime {
     }
 
     private func runReadOnly(_ path: String, _ args: [String]) -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = Pipe()
-        guard (try? p.run()) != nil else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        // This used to pipe stderr and never read it, which deadlocks any child
+        // that writes more than the pipe buffer holds. `Shell` drains both.
+        let result = Shell.runSync(path, args)
+        guard result.code == 0 else { return nil }
+        return result.out
     }
 
     /// The default-route interface (e.g. `en0`), used by both the service-name and
