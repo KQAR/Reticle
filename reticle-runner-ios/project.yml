@@ -1,0 +1,76 @@
+name: ReticleRunner
+options:
+  bundleIdPrefix: dev.reticle
+  deploymentTarget:
+    iOS: "15.0"
+
+packages:
+  # The runner shares the protocol package with the host on purpose: both ends
+  # encode/decode the SAME `SystemObservation`, so the wire shape cannot drift
+  # into two hand-written copies.
+  ReticleSwift:
+    path: ../reticle-swift
+
+targets:
+  # A placeholder host, present for one measured reason: on iPhone 13 Pro Max /
+  # iOS 26 a UI-test bundle with NO target application never gets an automation
+  # session — it starts, prints `Running tests...`, is refused the
+  # `dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface` channel and exits,
+  # identically under devicectl launch, `test-without-building` and `xcodebuild
+  # test`. With a host attached it runs.
+  #
+  # It is NOT the app under test. The system channel reaches other processes by
+  # bundle id, so this host stays idle and the runner stays independent of whatever
+  # is being driven.
+  ReticleRunnerHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/ReticleRunnerHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.runner.host
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  # The runner itself. XCTest appends `.xctrunner` to this id, so the app that
+  # actually lands on the device is `dev.reticle.runner.xctrunner` — which is what
+  # `IosRunnerConfig.defaultBundleId` expects, and what the port is derived from.
+  ReticleRunner:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Sources/ReticleRunnerTests
+    dependencies:
+      - target: ReticleRunnerHost
+      - package: ReticleSwift
+        product: ReticleProtocol
+    settings:
+      base:
+        TEST_TARGET_NAME: ReticleRunnerHost
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.runner
+        # No DEVELOPMENT_TEAM here on purpose: a device build needs YOUR team, so
+        # it is passed on the command line (`reticle system prepare --team <id>`
+        # does this). A checked-in id would be someone else's.
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+schemes:
+  ReticleRunner:
+    build:
+      targets:
+        ReticleRunnerHost: all
+        ReticleRunner: [test]
+    test:
+      targets:
+        - ReticleRunner

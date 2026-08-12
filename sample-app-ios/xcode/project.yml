@@ -42,3 +42,31 @@ targets:
         # shim in BundleModuleShim.swift.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: RETICLE_XCODE_APP
         TARGETED_DEVICE_FAMILY: "1,2"
+  # Holds the automation BASELINE test — the known-good probe you run first when
+  # the system channel misbehaves, to tell "the code broke" from "the device
+  # broke". Not part of the shipping tool; see AutomationBaselineTests.swift for
+  # why it earns its place.
+  SampleAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../Tests/SampleAppUITests
+    dependencies:
+      - target: SampleApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.sampleios.uitests
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TEST_TARGET_NAME: SampleApp
+        TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  SampleAppUITests:
+    build:
+      targets:
+        SampleApp: all
+        SampleAppUITests: [test]
+    test:
+      targets:
+        - SampleAppUITests
