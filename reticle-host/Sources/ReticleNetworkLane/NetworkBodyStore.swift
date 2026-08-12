@@ -1,7 +1,8 @@
 import Foundation
+import Synchronization
 
 /// Stores captured network bodies as session artifacts instead of inline event JSON.
-final class NetworkBodyStore: @unchecked Sendable {
+final class NetworkBodyStore: Sendable {
     struct StoredBody {
         let refName: String
         let path: String
@@ -11,7 +12,8 @@ final class NetworkBodyStore: @unchecked Sendable {
 
     private let directory: URL
     let limitBytes: Int
-    private let lock = NSLock()
+    /// `Mutex<Void>`: the critical section is the artifact write, not a field.
+    private let writeLock = Mutex<Void>(())
 
     /// Creates a body store below the current session directory.
     init(sessionDirectory: URL, limitBytes: Int = 1024 * 1024) {
@@ -27,9 +29,7 @@ final class NetworkBodyStore: @unchecked Sendable {
         let refName = "\(safeRole).\(requestId)"
         let url = directory.appendingPathComponent("\(requestId)-\(safeRole).bin")
         let slice = data.prefix(limitBytes)
-        lock.lock()
-        defer { lock.unlock() }
-        try Data(slice).write(to: url, options: .atomic)
+        try writeLock.withLock { _ in try Data(slice).write(to: url, options: .atomic) }
         return StoredBody(
             refName: refName,
             path: url.path,
@@ -47,9 +47,7 @@ final class NetworkBodyStore: @unchecked Sendable {
         let refName = "wsFrame.\(requestId).\(index)"
         let url = directory.appendingPathComponent("\(requestId)-wsFrame-\(index).bin")
         let slice = data.prefix(limitBytes)
-        lock.lock()
-        defer { lock.unlock() }
-        try Data(slice).write(to: url, options: .atomic)
+        try writeLock.withLock { _ in try Data(slice).write(to: url, options: .atomic) }
         return StoredBody(
             refName: refName,
             path: url.path,
@@ -69,9 +67,7 @@ final class NetworkBodyStore: @unchecked Sendable {
         let refName = "\(safeRole).\(requestId)"
         let url = directory.appendingPathComponent("\(requestId)-\(safeRole).bin")
         let capped = prefix.prefix(limitBytes)
-        lock.lock()
-        defer { lock.unlock() }
-        try Data(capped).write(to: url, options: .atomic)
+        try writeLock.withLock { _ in try Data(capped).write(to: url, options: .atomic) }
         return StoredBody(
             refName: refName,
             path: url.path,

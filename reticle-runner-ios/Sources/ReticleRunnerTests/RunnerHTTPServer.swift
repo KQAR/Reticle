@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 /// A minimal HTTP/1.1 server for the runner to be driven through.
 ///
@@ -11,7 +12,10 @@ import Network
 ///
 /// WebDriverAgent solves the same problem with CocoaHTTPServer; this is the same
 /// idea at 1% of the size because Reticle's system channel is deliberately narrow.
-final class RunnerHTTPServer {
+/// Sendable: Network.framework hands the accept/receive callbacks to this object
+/// on its own queue, and everything they can reach — the route table, the
+/// listener, the shutdown flag — lives inside the `Mutex` below.
+final class RunnerHTTPServer: Sendable {
 
     struct Request {
         var method: String
@@ -44,28 +48,43 @@ final class RunnerHTTPServer {
         }
     }
 
-    typealias Handler = (Request) -> Response
+    /// `@MainActor` because every handler ends up in XCUITest, which is
+    /// main-actor API — and because a query issued off the test's own thread
+    /// kills the run (see `handle`). The annotation makes that a compile-time
+    /// fact instead of a comment.
+    typealias Handler = @MainActor (Request) -> Response
 
     private let port: NWEndpoint.Port
-    private var listener: NWListener?
-    private var routes: [String: Handler] = [:]
     private let queue = DispatchQueue(label: "dev.reticle.runner.http")
 
-    /// Set when a caller asks the runner to leave. The never-ending test method
-    /// watches this to return, which is the only clean way out of a run loop.
-    private(set) var shutdownRequested = false
+    /// Everything mutable. The writers are the test thread (route registration,
+    /// start/stop) and a handler running on the main thread (shutdown); the reader
+    /// is the network queue, so this is a genuine cross-thread hand-off rather
+    /// than a formality.
+    private struct State {
+        var listener: NWListener?
+        var routes: [String: Handler] = [:]
+        var shutdown = false
+    }
+    private let state = Mutex(State())
 
     init(port: Int) {
         self.port = NWEndpoint.Port(rawValue: UInt16(port))!
     }
 
+    /// Set when a caller asks the runner to leave. The never-ending test method
+    /// watches this to return, which is the only clean way out of a run loop.
+    var shutdownRequested: Bool {
+        state.withLock { $0.shutdown }
+    }
+
     /// Register a handler. Key is `"<METHOD> <path>"`, e.g. `"GET /health"`.
     func route(_ key: String, _ handler: @escaping Handler) {
-        routes[key] = handler
+        state.withLock { $0.routes[key] = handler }
     }
 
     func requestShutdown() {
-        shutdownRequested = true
+        state.withLock { $0.shutdown = true }
     }
 
     func start() throws {
@@ -81,12 +100,15 @@ final class RunnerHTTPServer {
             self?.accept(connection)
         }
         listener.start(queue: queue)
-        self.listener = listener
+        state.withLock { $0.listener = listener }
     }
 
     func stop() {
+        let listener = state.withLock { state -> NWListener? in
+            defer { state.listener = nil }
+            return state.listener
+        }
         listener?.cancel()
-        listener = nil
     }
 
     // MARK: - Connection handling
@@ -124,7 +146,8 @@ final class RunnerHTTPServer {
     }
 
     private func handle(_ request: Request) -> Response {
-        guard let handler = routes["\(request.method) \(request.path)"] else {
+        let handler = state.withLock { $0.routes["\(request.method) \(request.path)"] }
+        guard let handler else {
             return .failure(404, "no such route: \(request.method) \(request.path)")
         }
         // Handlers run on the MAIN thread, not on the network queue.
@@ -136,7 +159,12 @@ final class RunnerHTTPServer {
         //
         // This is safe because the never-ending test method is parked in a run loop
         // on the main thread, so it drains main-queue work while it waits.
-        return DispatchQueue.main.sync { handler(request) }
+        return DispatchQueue.main.sync {
+            // Provably on the main thread inside this closure, which is what
+            // `assumeIsolated` asserts — no hop, no await, so the network queue
+            // still blocks until the handler answers.
+            MainActor.assumeIsolated { handler(request) }
+        }
     }
 
     private func send(_ response: Response, on connection: NWConnection) {

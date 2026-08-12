@@ -74,25 +74,7 @@ enum WebActivation {
     }
 
     private static func evaluate(_ script: String, in webView: WKWebView) -> String? {
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = Box()
-        DispatchQueue.main.async {
-            guard webView.window != nil else {
-                semaphore.signal()
-                return
-            }
-            webView.evaluateJavaScript(script) { value, _ in
-                box.value = value as? String
-                semaphore.signal()
-            }
-        }
-        guard semaphore.wait(timeout: .now() + timeout) == .success else { return nil }
-        return box.value
-    }
-
-    /// Written on main while the server thread waits — race-free by construction.
-    private final class Box: @unchecked Sendable {
-        var value: String?
+        WebEvaluate.script(script, in: webView, timeout: timeout)
     }
 }
 #endif

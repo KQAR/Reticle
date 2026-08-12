@@ -1,37 +1,46 @@
 import Foundation
+import Synchronization
 import Hummingbird
 import NIOCore
 
 /// Localhost REST/SSE server backing `reticle serve`.
-public final class ReticleHttpServer: @unchecked Sendable {
+public final class ReticleHttpServer: Sendable {
     private let store: EventStore
     private let ruleStore: NetworkRuleStore?
     private let helper: HelperCalling?
     private let ready = DispatchSemaphore(value: 0)
     private let traceIngest = ActionTraceIngest()
-    private let lock = NSLock()
-    private var runTask: Task<Void, Error>?
-    private var serverChannel: (any Channel)?
-    private var startupError: Error?
-    private var _flowReplayer: FlowReplaying?
-    private var _flowQuerier: FlowQuerying?
+
+    /// Everything that changes after `init`. It is all touched from at least two
+    /// threads — the caller's, Hummingbird's `onServerRunning`, and the run task —
+    /// so it lives in one mutex instead of a lock plus five loose fields. `port`
+    /// is in here because a 0 (ephemeral) port is rewritten on bind.
+    private struct Live {
+        var runTask: Task<Void, Error>?
+        var serverChannel: (any Channel)?
+        var startupError: Error?
+        var flowReplayer: FlowReplaying?
+        var flowQuerier: FlowQuerying?
+        var port: Int
+    }
+    private let live: Mutex<Live>
 
     /// The capture lane that services flow replays, bound after the server starts
     /// (the lane is created once the proxy port is known). nil until then / when
     /// capture is disabled, in which case the replay route answers 404.
     public var flowReplayer: FlowReplaying? {
-        get { lock.withLock { _flowReplayer } }
-        set { lock.withLock { _flowReplayer = newValue } }
+        get { live.withLock { $0.flowReplayer } }
+        set { live.withLock { $0.flowReplayer = newValue } }
     }
 
     /// Bound alongside the replayer: listing exists to find something to replay, so
     /// the two are available together or not at all.
     public var flowQuerier: FlowQuerying? {
-        get { lock.withLock { _flowQuerier } }
-        set { lock.withLock { _flowQuerier = newValue } }
+        get { live.withLock { $0.flowQuerier } }
+        set { live.withLock { $0.flowQuerier = newValue } }
     }
 
-    public private(set) var port: Int
+    public var port: Int { live.withLock { $0.port } }
 
     /// Creates a daemon HTTP server on `port`; pass 0 for an ephemeral port.
     public init(
@@ -43,7 +52,7 @@ public final class ReticleHttpServer: @unchecked Sendable {
         self.store = store
         self.ruleStore = ruleStore
         self.helper = helper
-        self.port = port
+        self.live = Mutex(Live(port: port))
     }
 
     /// Starts listening and waits until Hummingbird reports the server channel.
@@ -57,27 +66,26 @@ public final class ReticleHttpServer: @unchecked Sendable {
             ),
             onServerRunning: { [weak self] channel in
                 guard let self else { return }
-                self.lock.withLock {
-                    self.serverChannel = channel
+                self.live.withLock { live in
+                    live.serverChannel = channel
                     if let boundPort = channel.localAddress?.port {
-                        self.port = boundPort
+                        live.port = boundPort
                     }
                 }
                 self.ready.signal()
             }
         )
-        runTask = Task { [weak self] in
+        let runTask = Task { [weak self] in
             do {
                 try await app.runService(gracefulShutdownSignals: [])
             } catch {
                 guard let self else { throw error }
-                self.lock.withLock {
-                    self.startupError = error
-                }
+                self.live.withLock { $0.startupError = error }
                 self.ready.signal()
                 throw error
             }
         }
+        live.withLock { $0.runTask = runTask }
         // Generous bind wait: onServerRunning signals the instant the socket is
         // bound (so the success path pays nothing), but Hummingbird runs on a
         // Task and a loaded/cold CI runner can take well over 5s just to
@@ -85,7 +93,7 @@ public final class ReticleHttpServer: @unchecked Sendable {
         // bind error still surfaces immediately via startupError.
         switch ready.wait(timeout: .now() + Self.startupTimeoutSeconds) {
         case .success:
-            if let error = lock.withLock({ startupError }) {
+            if let error = live.withLock({ $0.startupError }) {
                 throw error
             }
         case .timedOut:
@@ -97,16 +105,15 @@ public final class ReticleHttpServer: @unchecked Sendable {
 
     /// Stops accepting new connections.
     public func stop() {
-        lock.lock()
-        let channel = serverChannel
-        serverChannel = nil
-        lock.unlock()
+        let (channel, runTask) = live.withLock { live -> ((any Channel)?, Task<Void, Error>?) in
+            defer { live.serverChannel = nil; live.runTask = nil }
+            return (live.serverChannel, live.runTask)
+        }
         if let channel {
             _ = channel.close()
         } else {
             runTask?.cancel()
         }
-        runTask = nil
     }
 
     private func buildRouter() -> Router<BasicRequestContext> {

@@ -8,7 +8,7 @@ import ReticleProtocol
 /// none of these methods exists there — adding them would force the Android
 /// backend to implement a capability its platform does not have, just to throw.
 /// The two channels stay separate all the way up to the CLI.
-public final class IosSystemBackend: @unchecked Sendable {
+public final class IosSystemBackend: Sendable {
 
     public let lifecycle: IosRunnerLifecycle
     public let session: IosRunnerSession

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public struct RuntimeProcessAdvisory: Codable, Equatable {
     public let kind: String
@@ -21,9 +22,12 @@ public struct RuntimeProcessAdvisory: Codable, Equatable {
     }
 }
 
-public final class RuntimeProcessStateStore: @unchecked Sendable {
+public final class RuntimeProcessStateStore: Sendable {
     private let fileURL: URL
-    private let lock = NSLock()
+    /// `Mutex<Void>`: what needs serializing here is the read-modify-write of the
+    /// state FILE, not an in-memory field, so there is no value to put inside it —
+    /// only a critical section to hold.
+    private let fileLock = Mutex<Void>(())
 
     public init(fileURL: URL = RuntimeProcessStateStore.defaultFileURL()) {
         self.fileURL = fileURL
@@ -52,15 +56,15 @@ public final class RuntimeProcessStateStore: @unchecked Sendable {
     }
 
     private func update(with current: RuntimeProcessObservation, reportAdvisory: Bool) -> RuntimeProcessAdvisory? {
-        lock.lock()
-        defer { lock.unlock() }
-        var state = readState()
-        let key = current.key
-        let previous = state.entries[key]
-        state.entries[key] = current.record
-        writeState(state)
-        guard reportAdvisory, let previous else { return nil }
-        return advisory(previous: previous, current: current.record)
+        fileLock.withLock { _ in
+            var state = readState()
+            let key = current.key
+            let previous = state.entries[key]
+            state.entries[key] = current.record
+            writeState(state)
+            guard reportAdvisory, let previous else { return nil }
+            return advisory(previous: previous, current: current.record)
+        }
     }
 
     private func advisory(

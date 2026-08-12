@@ -2,7 +2,7 @@ name: SampleAppIOS
 options:
   bundleIdPrefix: dev.reticle
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "18.0"
 packages:
   ReticleAgentIOS:
     path: ../../reticle-agent/ios
@@ -36,7 +36,14 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        SWIFT_VERSION: "5.0"
+        # Must match sample-app-ios/Package.swift, which builds these same
+        # sources: Swift 6 language mode, the 6.2 approachable-concurrency
+        # features, and MainActor default isolation. If the two disagree, code
+        # that compiles under SwiftPM fails in the device project.
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         # SwiftPM synthesizes `Bundle.module`; an Xcode app target does not, and
         # its resources land in the app bundle itself. The flag switches on the
         # shim in BundleModuleShim.swift.
@@ -58,7 +65,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reticle.sampleios.uitests
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
-        SWIFT_VERSION: "5.0"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
         TEST_TARGET_NAME: SampleApp
         TARGETED_DEVICE_FAMILY: "1,2"
 schemes:

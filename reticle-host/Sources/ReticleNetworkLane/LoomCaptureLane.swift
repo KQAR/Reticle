@@ -34,27 +34,11 @@ public struct PhoneOnboarding: Sendable {
     public let qrPNG: Data
 }
 
-/// One-shot holder to carry an async result out of a bridging `Task` under the
-/// Swift 6 concurrency checker (a captured `var` isn't allowed).
-private final class OnboardingBox: @unchecked Sendable {
-    var value: Result<PhoneOnboardingInfo, Error>?
-}
-
-/// One-shot holders to carry an async flow/replay result out of a bridging `Task`.
-private final class FlowBox: @unchecked Sendable {
-    var flow: Flow?
-}
-private final class ReplayResultBox: @unchecked Sendable {
-    var result: Result<Flow, Error>?
-}
-private final class RuleReportBox: @unchecked Sendable {
-    var report: SetRulesReport?
-}
-
-private final class FlowsBox: @unchecked Sendable {
-    var flows: [Flow] = []
-}
-
+/// Keeps `NSLock` rather than `Mutex`, for the same reason as `NetworkRuleStore`:
+/// its locked sections call back into `self` (`markSeenLocked`, the drop-episode
+/// bookkeeping), and `Mutex.withLock` hands its state over as `inout sending`,
+/// which cannot be passed to a method on `self`. Every field the lock covers is
+/// private to this type.
 public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuerying {
     private let store: any NetworkEventSink
     private let configuration: NetworkProxyConfiguration
@@ -204,8 +188,7 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
     /// scanning. Bridges the engine's async call to the daemon's sync lifecycle.
     public func startPhoneOnboarding() throws -> PhoneOnboarding {
         let engine = self.engine
-        let box = OnboardingBox()
-        let done = DispatchSemaphore(value: 0)
+        let box = OneShot<Result<PhoneOnboardingInfo, Error>>()
         Task { [weak self] in
             do {
                 let info = try await engine.startPhoneOnboarding()
@@ -214,18 +197,19 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
                     guard let self, !self.onboardingAbandoned else { return false }
                     return true
                 } ?? false
-                if claimed { box.value = .success(info) }
+                if claimed { box.resolve(.success(info)) }
                 else { await engine.stopPhoneOnboarding() }
             } catch {
-                box.value = .failure(error)
+                box.resolve(.failure(error))
             }
-            done.signal()
         }
-        guard done.wait(timeout: .now() + 20) == .success else {
+        // A claim that lost the race resolves nothing, so this also covers the
+        // "engine answered but the sync side had already given up" case.
+        guard let outcome = box.wait(seconds: 20) else {
             lock.withLock { onboardingAbandoned = true }
             throw NetworkProxyError.startTimedOut
         }
-        switch box.value {
+        switch outcome {
         case .success(let info):
             // Map Loom's onboarding info to a Reticle-local value so the daemon
             // layer never has to import Loom's modules.
@@ -236,7 +220,6 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
                 qrPNG: info.qrPNGData
             )
         case .failure(let error): throw error
-        case .none: throw NetworkProxyError.startTimedOut
         }
     }
 
@@ -274,13 +257,11 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
                 return
             }
             let translated = LoomCaptureLane.translate(export)
-            let done = DispatchSemaphore(value: 0)
-            let reportBox = RuleReportBox()
+            let reportBox = OneShot<SetRulesReport>()
             Task {
-                reportBox.report = await engine.setRules(translated)
-                done.signal()
+                reportBox.resolve(await engine.setRules(translated))
             }
-            if done.wait(timeout: .now() + 30) == .timedOut {
+            guard let report = reportBox.wait(seconds: 30) else {
                 self?.warn("rule sync timed out after 30s; the engine may be stalled")
                 return
             }
@@ -288,7 +269,7 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
             // rule that validates and reports the rest. Silence here would mean an agent
             // adds a mock, gets no error, and sees live traffic anyway — so name each
             // rule that did not make it in.
-            for rejection in reportBox.report?.rejected ?? [] {
+            for rejection in report.rejected {
                 self?.warn("rule \(rejection.name) was rejected by the engine and is NOT active: \(rejection.reason)")
             }
         }
@@ -660,20 +641,17 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
     public func listFlows(matching filter: NetworkFlowFilter) throws -> NetworkFlowQueryResult {
         let engine = self.engine
         let query = Self.translateFilter(filter)
-        let box = FlowsBox()
-        let done = DispatchSemaphore(value: 0)
+        let box = OneShot<[Flow]>()
         Task {
             // Ask for one more than the limit purely to learn whether the list was
             // clipped, so `truncatedToLimit` is a fact rather than a guess from a
             // full page.
-            box.flows = await engine.recentFlows(matching: query, limit: filter.limit + 1)
-            done.signal()
+            box.resolve(await engine.recentFlows(matching: query, limit: filter.limit + 1))
         }
-        guard done.wait(timeout: .now() + 15) == .success else {
+        guard let matched = box.wait(seconds: 15) else {
             throw NetworkReplayError.failed("listing flows timed out")
         }
 
-        let matched = box.flows
         let clipped = matched.count > filter.limit
         let page = clipped ? Array(matched.prefix(filter.limit)) : matched
         return NetworkFlowQueryResult(
@@ -719,39 +697,33 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
         let engine = self.engine
 
         // The diff baseline: the original flow, still in the engine's in-memory store.
-        let sourceBox = FlowBox()
-        let sourceReady = DispatchSemaphore(value: 0)
+        let sourceBox = OneShot<Flow?>()
         Task {
-            sourceBox.flow = await engine.flow(id: sourceUUID)
-            sourceReady.signal()
+            sourceBox.resolve(await engine.flow(id: sourceUUID))
         }
-        guard sourceReady.wait(timeout: .now() + 10) == .success else {
+        guard let found = sourceBox.wait(seconds: 10) else {
             throw NetworkReplayError.failed("fetching the source flow timed out")
         }
-        guard let source = sourceBox.flow else {
+        guard let source = found else {
             throw NetworkReplayError.notFound(
                 "no captured flow with id \(requestId) (it may have aged out of the in-memory store)")
         }
 
-        let box = ReplayResultBox()
-        let done = DispatchSemaphore(value: 0)
+        let box = OneShot<Result<Flow, Error>>()
         Task {
-            do { box.result = .success(try await engine.replay(id: sourceUUID, overrides: overrides)) }
-            catch { box.result = .failure(error) }
-            done.signal()
+            do { box.resolve(.success(try await engine.replay(id: sourceUUID, overrides: overrides))) }
+            catch { box.resolve(.failure(error)) }
         }
-        guard done.wait(timeout: .now() + 35) == .success else {
+        guard let outcome = box.wait(seconds: 35) else {
             throw NetworkReplayError.failed("replay timed out")
         }
-        switch box.result {
+        switch outcome {
         case .success(let replayed):
             return emitReplay(source: source, replayed: replayed)
         case .failure(let error):
             // engine.replay upserts a failed flow but doesn't return it (and the stream
             // copy is skipped by `handle`), so emit a best-effort replay event here.
             return emitFailedReplay(source: source, error: error, request: request)
-        case .none:
-            throw NetworkReplayError.failed("replay produced no result")
         }
     }
 

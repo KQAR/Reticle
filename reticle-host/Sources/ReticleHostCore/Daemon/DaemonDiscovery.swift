@@ -10,7 +10,7 @@ public struct DaemonInfo: Codable, Equatable {
 }
 
 /// Reads and writes the local daemon discovery file under `~/.reticle`.
-public struct DaemonDiscovery {
+public struct DaemonDiscovery: Sendable {
     public let fileURL: URL
 
     /// Creates discovery for a custom file or the default `~/.reticle/daemon.json`.

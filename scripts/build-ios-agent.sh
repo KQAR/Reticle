@@ -7,7 +7,7 @@
 # Usage: scripts/build-ios-agent.sh [ios-deployment-target]
 set -euo pipefail
 
-DEPLOY="${1:-15.0}"
+DEPLOY="${1:-18.0}"
 ARCH="$(uname -m)" # arm64 on Apple Silicon
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TRIPLE="${ARCH}-apple-ios${DEPLOY}-simulator"

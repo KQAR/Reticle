@@ -31,6 +31,11 @@ final class RunnerServerTest: XCTestCase {
         continueAfterFailure = true
     }
 
+    // Main-actor: this method opens the automation session and then parks the
+    // MAIN run loop, which is what lets `RunnerHTTPServer.handle` hop to main.
+    // XCUIApplication is main-actor API in Xcode 26, so saying it here is honest
+    // rather than restrictive.
+    @MainActor
     func testRunsSystemChannelForever() throws {
         let port = PortMap.derivePort(RunnerServerTest.runnerBundleId)
         let server = RunnerHTTPServer(port: port)
