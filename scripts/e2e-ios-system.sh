@@ -18,7 +18,9 @@
 #     as `channel refused` / `Exiting due to IDE disconnection`, which looks like
 #     anything but a missing switch. If the switch IS on and it still fails that
 #     way, REBOOT the device: the automation service can wedge, and nothing short
-#     of a reboot clears it.
+#     of a reboot clears it. To tell the two apart in one run, use the baseline
+#     probe first:
+#       sample-app-ios/Tests/SampleAppUITests/AutomationBaselineTests.swift
 #   - A signing team with a provisioning profile that lists this device.
 #   - iproxy + idevice_id (brew install libimobiledevice).
 #

@@ -240,7 +240,9 @@
   - tests: N/A
   - covers: N/A
 
-- [ ] T026 处置 spike 产物：将 sample-app-ios 下未提交的三个探针文件与 project.yml 改动，按其价值归入正式测试或移除，不把临时探针留在仓库里
+- [x] T026 处置 spike 产物：将 sample-app-ios 下未提交的三个探针文件与 project.yml 改动，按其价值归入正式测试或移除，不把临时探针留在仓库里
+  - **处置（用户决定）**：删除 `OutOfProcessSpikeTests.swift` 与 `OutOfProcessObservationSpikeTests.swift`——两者的结论已分别落进 `reticle-runner-ios` 的正式实现与 `docs/boundaries.md` 的边界行，留着会变成两处需要同步维护的断言。
+    `NeverEndingProbeTests.swift` 正式化为 `AutomationBaselineTests.swift` 保留：它是唯一能一步区分「代码坏了」与「设备坏了」的东西，其价值在本次开发中被昂贵地验证过（三轮真机往返、两条作废结论，根因只是设备 automation 服务卡死）。`scripts/e2e-ios-system.sh` 的前置说明已指向它。
   - files: [修改] sample-app-ios/xcode/project.yml, [修改] sample-app-ios/Tests/SampleAppUITests/
   - symbols: N/A
   - tests: N/A
