@@ -234,7 +234,7 @@
   - tests: N/A
   - covers: N/A
 
-- [ ] T025 [P] 在架构与命令文档中登记 system 命令族及其与 app 内通道的分工
+- [x] T025 [P] 在架构与命令文档中登记 system 命令族及其与 app 内通道的分工
   - files: [修改] docs/architecture.md, [修改] README.md, [修改] README.zh-CN.md
   - symbols: N/A
   - tests: N/A
@@ -248,7 +248,7 @@
 
 ### Phase 6 门禁
 
-- [ ] [Gate] `python3 scripts/validate_architecture_map.py` 通过（若架构文档被改动）
+- [x] [Gate] `python3 scripts/validate_architecture_map.py` 通过（含 --fix 同步 index.html 内嵌副本）；`validate_translations.py` 亦通过
 - [ ] [Gate] 人工确认 boundaries 表新增行符合既有四列格式，且未与既有行冲突
 
 ---

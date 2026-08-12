@@ -468,6 +468,33 @@ list, so it needs no maintenance as kernels come and go; "suspected" is the hone
 word, which is why the class name travels with the claim. iOS has one web engine,
 so this cannot arise there.
 
+## Two channels on an iOS device, and why they stay apart
+
+On a real device Reticle has two ways to see and act, and they are **not** a fast
+path and a slow path — they are different kinds of source:
+
+| | in-app agent (`ui` / `act`) | system channel (`system`) |
+| --- | --- | --- |
+| Where it runs | inside the app under test | a separate XCUITest process |
+| Reach | this app's own windows only | another process's UI: system alerts, SpringBoard, Home |
+| Depth | view tree, Compose semantics, WebView DOM, styles, interaction regions | one accessibility layer |
+| Result type | `Node` | `SystemNode` — never `Node` |
+
+The type split is the load-bearing part. The system channel cannot fill most of
+`Node`, and an empty field there would read as "the app really has nothing there"
+— the opposite of the truth. `SystemNode.unreadable` names each blind spot with a
+reason instead, the same contract `Node.styleGaps` carries for styles.
+
+That is also why there is no automatic failover. When a coordinate lands outside
+every window of the app, `act tap` still refuses by name: the common cause is a
+mistyped coordinate, and quietly rerouting it to the system channel would dispatch
+it into some other process rather than failing. The refusal names both possibilities
+and points at `system status`; choosing between them is the caller's call.
+
+Actions on the system channel report `dispatched` and `changed` separately. An
+action that was delivered and moved nothing is a real outcome, and reporting it as
+success would be a verdict rather than evidence.
+
 ## Two trees, and which command uses which
 
 One capture, four sources, then several projections over it — and every
@@ -1008,6 +1035,7 @@ Which box in the [first diagram](#the-shape-of-the-system) each module is:
 | `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
 | `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector *diagnostics* (resolution itself is `reticle-core`, beside its Swift twin). Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
 | `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`) behind the typed `HostBackend` interface (one method per capability, typed requests/results): Android device commands go through `AndroidBackend`, the single place the helper's JSONL method names and parameter keys are spelled — as `HelperMethod` cases rather than literals, which also lets the daemon's `/helper/rpc` broker refuse any method the wire contract does not define instead of forwarding a caller's string; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. Internally four SwiftPM library targets stacked bottom-up — `ReticleHostShared` (dependency-free `JSONValue` / event models / `HelperError` / the `HelperCalling` call surface / the version constant), `ReticleNetworkLane` (the capture proxy + MITM + mock engine, behind the `NetworkEventSink` interface), `ReticleHostIos` (the iOS platform backend: `simctl`/`devicectl`, loopback HTTP, the wait/scroll-to/verify loops, CoreSimulator HID — depending on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI), and `ReticleHostCore` (daemon, CLI, panel, Android helper clients, grouped as `Daemon/` `CLI/` `Android/`) — plus the `ReticleHost` executable. `ReticleHostCore` `@_exported`s the lower three, so the split is an internal boundary, not an API change. |
+| `reticle-runner-ios` | iOS XCUITest bundle (xcodegen) | The **system channel**: a resident out-of-process runner, independent of the app under test. Reaches another process's UI — a system alert, SpringBoard, the Home gesture — because a test runner is granted a backboardd HID connection, which an in-process agent never gets. Sees far less of what it reaches (one accessibility layer: no view class, no DOM, no styles, no regions), so its results use `SystemObservation`/`SystemNode`, never `Node`. Driven by `reticle system …` through `IosSystemBackend`. Real devices only. |
 | `sample-app` | Android app | Demo linking the Android agent, proving the round trip |
 | `sample-app-ios` | iOS app | Demo with a `linked` target (links `ReticleKit`) and a `noagent` target (injection test), proving the iOS round trip |
 

@@ -202,7 +202,7 @@ tailwind.config = {
       "kind": "executable",
       "layer": "host",
       "sub": "the one user-facing binary",
-      "detail": "The Swift host CLI (ReticleHost, SwiftPM, macOS 14+ arm64). Owns no device code. Selects a platform with --target (default android) behind the typed HostBackend interface — one method per capability, typed requests and results, never stringly RPC. Command surface: doctor · devices · status · app launch|inject · act · mutate · debug · ui · trace · rule · replay · serve · version.",
+      "detail": "The Swift host CLI (ReticleHost, SwiftPM, macOS 14+ arm64). Owns no device code. Selects a platform with --target (default android) behind the typed HostBackend interface — one method per capability, typed requests and results, never stringly RPC. Command surface: doctor · devices · status · app launch|inject · act · mutate · debug · ui · trace · rule · replay · serve · system · version. The system subtree is iOS-real-device only and deliberately separate from ui/act: it reads and drives ANOTHER process.",
       "x": 470,
       "y": 58,
       "w": 300,
@@ -411,6 +411,18 @@ tailwind.config = {
       "y": 806,
       "w": 240,
       "h": 52
+    },
+    {
+      "id": "runner-ios",
+      "label": "ReticleRunner",
+      "kind": "xctest-runner",
+      "layer": "device",
+      "sub": "out-of-process, iOS device only",
+      "detail": "A resident XCUITest runner, independent of the app under test. Reaches what the in-process agent structurally cannot — a system alert, SpringBoard, the Home gesture — because a test runner is granted a backboardd HID connection. Sees far less of what it reaches: one accessibility layer, no view class, no DOM, no styles, no regions. Its results use SystemObservation, never Node, so the two channels can never be read as one. Residency is a never-ending test method started with xcodebuild test-without-building.",
+      "x": 1030,
+      "y": 614,
+      "w": 250,
+      "h": 56
     }
   ],
   "edges": [
@@ -602,6 +614,20 @@ tailwind.config = {
       "to": "net-lane",
       "kind": "proxies",
       "label": "HTTP(S) traffic"
+    },
+    {
+      "id": "e-ios-runner",
+      "from": "host-ios",
+      "to": "runner-ios",
+      "kind": "drives",
+      "label": "reticle system"
+    },
+    {
+      "id": "e-runner-app",
+      "from": "runner-ios",
+      "to": "app-ios",
+      "kind": "input",
+      "label": "cross-process"
     }
   ],
   "edgeKinds": {
