@@ -313,7 +313,31 @@ limit exists, what was measured, and which route was tried and rejected.
   keyboard's own window, SpringBoard, Home and app-switcher gestures. A coordinate
   no window of this process holds is refused by name (`no window of this process
   contains that point`) rather than reported as dispatched. Closing that would need
-  an XCUITest/WDA runner — a separate process, tracked in the roadmap.
+  an XCUITest/WDA runner — a separate process. **That runner now exists**
+  (`reticle-runner-ios`, driven by the `system` command family); the in-process limit
+  above is unchanged, the reach was added ALONGSIDE it rather than inside it.
+  Mechanism notes, all measured on an iPhone 13 Pro Max / iOS 26:
+
+  - The runner is granted a **backboardd HID connection**
+    (`HID connection … bundleID:dev.reticle.runner.xctrunner successful`) — the
+    authority an in-process `IOHIDEvent` never gets.
+  - **Residency is a never-ending test method** (WebDriverAgent's trick), started by
+    `xcodebuild test-without-building` against an xctestrun built once at prepare
+    time. `xcrun devicectl device process launch` does NOT work: the runner starts,
+    prints `Running tests...`, then exits without executing a test method.
+  - **Do not delete the runner's embedded `Frameworks/XC*`.** Appium's docs say to;
+    on iOS 26 that breaks the bundle with
+    `Library not loaded: @rpath/XCTestCore.framework/XCTestCore`.
+  - **Settings > Developer > Enable UI Automation must be ON.** When it is off the
+    failure disguises itself as `channel refused` / `Exiting due to IDE
+    disconnection`, naming no switch at all. If it is ON and that failure persists,
+    the device's automation service has wedged and only a reboot clears it.
+  - **XCUIElement queries must be issued from the test's own thread.** Serving them
+    from a network queue kills the test outright, and the host sees only
+    "The network connection was lost".
+  - The device has **exactly one automation session**: a leftover `xcodebuild`
+    child from an earlier command holds it and makes the next start fail for an
+    unrelated-looking reason.
 
   Everything the private surface rests on is capability-probed
   (`GET /touch`), and `DeviceTouchTests` is the canary that fails by NAME when a
