@@ -12,11 +12,14 @@ import ReticleProtocol
 /// 2. **This channel sees one accessibility layer.** Whatever it cannot see is
 ///    named in `unreadable` rather than left empty, because an empty field reads
 ///    as "the app has nothing there" — the opposite of the truth.
+@MainActor
 enum RunnerObservation {
 
     /// Ceilings. Deliberately low: a caller who needs more asks for a narrower
     /// target, which is cheaper than waiting minutes for a tree nobody reads.
-    static let nodeLimit = 200
+    // `nonisolated` so the walker can use it as a stored-property default; an
+    // immutable Int gains nothing from isolation.
+    nonisolated static let nodeLimit = 200
     static let depthLimit = 30
 
     static let springboardId = "com.apple.springboard"
@@ -84,6 +87,9 @@ enum RunnerObservation {
 
     // MARK: - Walk
 
+    // Explicitly main-actor: a nested type does not inherit the enum's global
+    // actor, and this one reads XCUIElement attributes on every node.
+    @MainActor
     private struct Walker {
         var nodes: [String: SystemNode] = [:]
         var budget = RunnerObservation.nodeLimit

@@ -133,7 +133,7 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
 
 ### CLI 如何获取
 
-`reticle` 是 **Swift host**——一个无 JDK 的原生 macOS 14+ arm64 二进制,它通过相邻的
+`reticle` 是 **Swift host**——一个无 JDK 的原生 macOS 15+ arm64 二进制,它通过相邻的
 **原生 helper**(`reticle-helper`,即由 GraalVM native-image 编译的 Kotlin Android
 层)驱动 Android。
 
@@ -174,7 +174,7 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
   `adb input` 动作后端、JDWP 注入。**不是面向用户的 CLI**——以无 JDK 的原生
   `reticle-helper`(GraalVM native-image)分发,其 `helper` 子命令是 Swift host 驱动的
   RPC server。它存在的唯一理由是 JDWP 注入天然属于 JVM;iOS 不需要 helper。
-- `reticle-host`——**Swift host CLI**(SwiftPM,macOS 14+ arm64),面向用户的 `reticle`。
+- `reticle-host`——**Swift host CLI**(SwiftPM,macOS 15+ arm64),面向用户的 `reticle`。
   Android 设备命令走 helper RPC;**iOS 在 host 内原生处理**(`simctl`/`devicectl`、
   loopback HTTP、CoreSimulator HID)。`reticle serve` 持有本机 daemon 的 session /
   event surface(Hummingbird 2.25.0),捕获代理在独立的 `ReticleNetworkLane` target 里,
@@ -523,14 +523,15 @@ reticle replay gif reticle-batch          # => reticle-batch/replay.gif
 
 ## 工具链
 
-*运行*预编译 release:Apple Silicon macOS 14+ + `adb`。无需 JDK。
+*运行*预编译 release:Apple Silicon macOS 15+ + `adb`。无需 JDK。
 
 *从源码构建*(开发者):
 
 - Android SDK(compileSdk 35)、build-tools、platform-tools(`adb`)
 - 用于 Gradle/AGP 的 JDK 17;用于原生 helper 的、带 `native-image` 的 **GraalVM**
-- 用于 host 的 **Swift** 工具链(Xcode);Hummingbird 2.25.0 使 host target 要求
-  macOS 14+
+- 用于 host 的 **Swift 6.2** 工具链(Xcode 26+)——各 package 已声明
+  `swift-tools-version:6.2`;并使用 `Mutex`(Synchronization),因此底线是 host
+  macOS 15、agent/runner iOS 18
 - Gradle 8.13(通过 wrapper)
 
 两个 JDK 可以用 [mise](https://mise.jdx.dev/) 一步装齐:在仓库根目录跑 `mise install`

@@ -154,7 +154,7 @@ acquisition below are identical.
 
 ### How the CLI is obtained
 
-`reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
+`reticle` is the **Swift host** — a no-JDK native macOS 15+ arm64 binary that drives
 Android through a sibling **native helper** (`reticle-helper`, the Kotlin Android
 layer compiled by GraalVM native-image).
 
@@ -208,7 +208,7 @@ arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
   CLI** — it ships as the no-JDK native `reticle-helper` (GraalVM native-image)
   whose `helper` subcommand is the RPC server the Swift host drives. It exists
   only because JDWP injection is irreducibly JVM-shaped; iOS needs no helper.
-- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS 14+ arm64), the
+- `reticle-host` — the **Swift host CLI** (SwiftPM, macOS 15+ arm64), the
   user-facing `reticle`. Android device commands are RPC calls to the helper;
   **iOS is handled natively in-host** (`simctl`/`devicectl`, loopback HTTP,
   CoreSimulator HID). `reticle serve` owns the local daemon session/event surface
@@ -598,14 +598,15 @@ See `reticle-protocol/events.md` for the REST/SSE surface and event envelope.
 
 ## Toolchain
 
-To *run* a prebuilt release: Apple Silicon macOS 14+ + `adb`. No JDK.
+To *run* a prebuilt release: Apple Silicon macOS 15+ + `adb`. No JDK.
 
 To *build from source* (developers):
 
 - Android SDK (compileSdk 35), build-tools, platform-tools (`adb`)
 - JDK 17 for Gradle/AGP; a **GraalVM** with `native-image` for the native helper
-- the **Swift** toolchain (Xcode) for the host; Hummingbird 2.25.0 makes the host
-  target macOS 14+
+- the **Swift 6.2** toolchain (Xcode 26+) for the host — the packages declare
+  `swift-tools-version:6.2`, and `Mutex` (Synchronization) puts the floor at
+  macOS 15 for the host and iOS 18 for the agent/runner
 - Gradle 8.13 (via the wrapper)
 
 Both JDKs can be provisioned in one step with [mise](https://mise.jdx.dev/):

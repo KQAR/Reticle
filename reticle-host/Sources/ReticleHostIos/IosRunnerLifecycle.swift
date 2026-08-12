@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import ReticleHostShared
 import ReticleProtocol
 
@@ -73,7 +74,11 @@ public struct IosRunnerConfig: Sendable, Equatable {
 /// (`devicectl`, `xcodebuild`, `iproxy`) are the same ones `scripts/e2e-ios-device.sh`
 /// and `scripts/inject-ios-device.sh` already use, and this is not the place to
 /// introduce a second way of talking to a device.
-public final class IosRunnerLifecycle: @unchecked Sendable {
+/// Sendable without an `@unchecked` promise: everything on it is immutable except
+/// the resident child process, which lives inside a `Mutex`. The daemon can reach
+/// one lifecycle from more than one request thread, so that field is a genuine
+/// hand-off rather than a formality.
+public final class IosRunnerLifecycle: Sendable {
 
     public let config: IosRunnerConfig
     /// The hardware UDID/ECID, and the only device identifier needed here.
@@ -88,8 +93,9 @@ public final class IosRunnerLifecycle: @unchecked Sendable {
     public let derivedDataPath: String
 
     /// The resident `test-without-building` child. Owning it is the only handle on
-    /// a never-ending test.
-    private var serveProcess: Process?
+    /// a never-ending test. Behind a mutex, because `serve` and `stop` can land on
+    /// different threads.
+    private let serveProcess: Mutex<Process?> = Mutex(nil)
 
     public init(
         config: IosRunnerConfig,
@@ -319,7 +325,7 @@ public final class IosRunnerLifecycle: @unchecked Sendable {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return ("", "\(error)", -1) }
-        serveProcess = p
+        serveProcess.withLock { $0 = p }
         return ("", "", 0)
     }
 
@@ -362,8 +368,11 @@ public final class IosRunnerLifecycle: @unchecked Sendable {
         // runs. Left alive it holds the device's single automation session hostage
         // and the next command fails as "launched but never answered" — a symptom
         // that points nowhere near the cause. Match it on the command line instead.
-        if let p = serveProcess, p.isRunning { p.terminate() }
-        serveProcess = nil
+        let child = serveProcess.withLock { child -> Process? in
+            defer { child = nil }
+            return child
+        }
+        if let child, child.isRunning { child.terminate() }
         _ = Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
         _ = Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
         return StopOutcome(hadLiveInstance: wasLive, state: isInstalled() ? .installed : .notInstalled)
@@ -396,23 +405,43 @@ public final class IosRunnerLifecycle: @unchecked Sendable {
         // while we are still blocked on stdout — and `xcodebuild` is exactly the
         // kind of child that writes megabytes to both.
         let group = DispatchGroup()
-        var outData = Data(), errData = Data()
-        let lock = NSLock()
+        // A reference box rather than two captured `var`s: the drain closures run
+        // on other threads, and a captured `var` mutated across threads is a data
+        // race the compiler diagnoses (the lock it is under is invisible to it).
+        let drained = DrainedOutput()
         for (handle, isOut) in [(outPipe.fileHandleForReading, true),
                                 (errPipe.fileHandleForReading, false)] {
             group.enter()
             DispatchQueue.global().async {
                 let data = handle.readDataToEndOfFile()
-                lock.lock()
-                if isOut { outData = data } else { errData = data }
-                lock.unlock()
+                drained.store(data, isOut: isOut)
                 group.leave()
             }
         }
         group.wait()
         p.waitUntilExit()
+        let (outData, errData) = drained.take()
         return (String(decoding: outData, as: UTF8.self),
                 String(decoding: errData, as: UTF8.self),
                 p.terminationStatus)
+    }
+}
+
+/// Lock-guarded destination for the two concurrent pipe drains in `shell`.
+private final class DrainedOutput: Sendable {
+    private struct Streams {
+        var out = Data()
+        var err = Data()
+    }
+    private let streams = Mutex(Streams())
+
+    func store(_ data: Data, isOut: Bool) {
+        streams.withLock { streams in
+            if isOut { streams.out = data } else { streams.err = data }
+        }
+    }
+
+    func take() -> (Data, Data) {
+        streams.withLock { ($0.out, $0.err) }
     }
 }

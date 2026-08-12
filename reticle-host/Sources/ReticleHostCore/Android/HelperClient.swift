@@ -1,6 +1,11 @@
 import Foundation
 
 /// A long-lived client over the Kotlin helper's JSONL stdio RPC.
+///
+/// Keeps `NSLock` rather than `Mutex`: the critical section returns the RPC reply,
+/// a `[String: Any]`, and `Mutex.withLock` hands its state back as `inout sending`
+/// — a non-Sendable dictionary cannot leave it. The wire shape is the helper
+/// protocol's, not something to bend for a lock.
 final class HelperClient: HelperCalling, @unchecked Sendable {
     private let process = Process()
     private let stdinPipe = Pipe()

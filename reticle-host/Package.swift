@@ -1,4 +1,4 @@
-// swift-tools-version:6.1
+// swift-tools-version:6.2
 import PackageDescription
 
 // reticle-host — the Swift host CLI. It drives Android through the Kotlin
@@ -7,10 +7,20 @@ import PackageDescription
 // "Swift host + per-platform helpers" decision (docs/roadmap.md). The
 // Hummingbird-backed serve event-bus skeleton and read-only Web panel live here;
 // the capture proxy remains a later phase.
+
+// Swift 6.2 strict concurrency — see reticle-swift/Package.swift for why these
+// three and not more. The host is nonisolated by default on purpose: it is a CLI
+// and a Hummingbird server, so its work belongs off the main actor.
+let strictConcurrency: [SwiftSetting] = [
+    .swiftLanguageMode(.v6),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+]
+
 let package = Package(
     name: "reticle-host",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v15),
     ],
     products: [
         .executable(name: "ReticleHost", targets: ["ReticleHost"]),
@@ -39,7 +49,8 @@ let package = Package(
         // into the daemon for a primitive.
         .target(
             name: "ReticleHostShared",
-            path: "Sources/ReticleHostShared"
+            path: "Sources/ReticleHostShared",
+            swiftSettings: strictConcurrency
         ),
         // The host-side capture proxy + MITM + mock store, isolated behind the
         // `NetworkEventSink` protocol so it builds and tests without the daemon
@@ -56,7 +67,8 @@ let package = Package(
                 .product(name: "LoomProxyCore", package: "loom"),
                 .product(name: "LoomSharedModels", package: "loom"),
             ],
-            path: "Sources/ReticleNetworkLane"
+            path: "Sources/ReticleNetworkLane",
+            swiftSettings: strictConcurrency
         ),
         // The iOS platform backend: simctl/devicectl device control, direct loopback
         // HTTP to the in-process agent, the wait/scroll-to/verify loops, and private
@@ -71,7 +83,8 @@ let package = Package(
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
                 "CReticleSimHID",
             ],
-            path: "Sources/ReticleHostIos"
+            path: "Sources/ReticleHostIos",
+            swiftSettings: strictConcurrency
         ),
         .target(
             name: "ReticleHostCore",
@@ -89,7 +102,8 @@ let package = Package(
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
             ],
-            path: "Sources/ReticleHostCore"
+            path: "Sources/ReticleHostCore",
+            swiftSettings: strictConcurrency
         ),
         // Private CoreSimulator HID input synthesis for the iOS simulator. Isolated
         // in a C target that dlopens the Xcode private frameworks at runtime, so a
@@ -101,7 +115,8 @@ let package = Package(
         .executableTarget(
             name: "ReticleHost",
             dependencies: ["ReticleHostCore"],
-            path: "Sources/ReticleHost"
+            path: "Sources/ReticleHost",
+            swiftSettings: strictConcurrency
         ),
         .testTarget(
             name: "ReticleHostCoreTests",
@@ -122,7 +137,8 @@ let package = Package(
                 // e2e can otherwise only reach by accident.
                 .product(name: "LoomSharedModels", package: "loom"),
             ],
-            path: "Tests/ReticleHostCoreTests"
+            path: "Tests/ReticleHostCoreTests",
+            swiftSettings: strictConcurrency
         )
     ]
 )

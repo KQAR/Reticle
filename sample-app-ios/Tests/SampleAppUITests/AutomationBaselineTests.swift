@@ -39,6 +39,10 @@ final class AutomationBaselineTests: XCTestCase {
     /// never be mistaken for this probe answering.
     static let probePort: UInt16 = 9500
 
+    // XCUIApplication is main-actor API under Xcode 26; the test method carries
+    // the annotation rather than the whole class, because XCTestCase's own
+    // initializers are nonisolated and a MainActor class cannot override them.
+    @MainActor
     func testAutomationStackIsHealthy() throws {
         // Launch an app the same way the real paths do: a baseline that skipped
         // this would not exercise the session setup that actually breaks.

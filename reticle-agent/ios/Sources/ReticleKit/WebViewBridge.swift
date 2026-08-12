@@ -71,27 +71,7 @@ enum WebViewBridge {
     }
 
     private static func evaluate(_ webView: WKWebView) -> String? {
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = ResultBox()
-        DispatchQueue.main.async {
-            guard webView.window != nil else {
-                semaphore.signal()
-                return
-            }
-            webView.evaluateJavaScript(WebViewDomScript.script) { value, _ in
-                box.value = value as? String
-                semaphore.signal()
-            }
-        }
-        guard semaphore.wait(timeout: .now() + timeout) == .success else { return nil }
-        return box.value
-    }
-
-    /// The completion writes on main while the server thread waits, so plain
-    /// mutable capture is race-free by construction; the class is only shared
-    /// between those two points.
-    private final class ResultBox: @unchecked Sendable {
-        var value: String?
+        WebEvaluate.script(WebViewDomScript.script, in: webView, timeout: timeout)
     }
 
     // MARK: - Frames the page may not read

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Common event envelope persisted by `reticle serve`.
-public struct ReticleEventEnvelope: Codable, Equatable {
+public struct ReticleEventEnvelope: Codable, Equatable, Sendable {
     /// Current envelope generation. Bumped only on a breaking envelope-shape
     /// change (a field renamed/removed/retyped) — per-payload versions like
     /// `traceVersion` are independent. See reticle-protocol/schema/event.schema.json.

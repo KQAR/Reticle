@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 /// A tiny loopback HTTP/1.1 server built on Network.framework — the iOS analogue
 /// of the Android `ReticleServer` (a hand-rolled `ServerSocket`). It binds
@@ -120,11 +121,10 @@ final class HttpServer: @unchecked Sendable {
 
     /// Thread-safe holder so the `@Sendable` state-update closure can report a
     /// startup failure back to `start()` without capturing a mutable var.
-    private final class ErrorBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var error: Error?
-        func set(_ e: Error) { lock.lock(); error = e; lock.unlock() }
-        func get() -> Error? { lock.lock(); defer { lock.unlock() }; return error }
+    private final class ErrorBox: Sendable {
+        private let error: Mutex<Error?> = Mutex(nil)
+        func set(_ e: Error) { error.withLock { $0 = e } }
+        func get() -> Error? { error.withLock { $0 } }
     }
 
     enum ServerError: Error, CustomStringConvertible {
