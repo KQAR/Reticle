@@ -13,7 +13,7 @@ import ReticleProtocol
 /// switch over method-name strings and unpacking `[String: Any]` for parameters
 /// this process had in hand all along. A backend with no wire should not have to
 /// speak one to be callable.
-public final class IosHelperClient: HostBackend, @unchecked Sendable {
+public final class IosHelperClient: HostBackend {
     let serial: String?
 
     public init(serial: String?) {
@@ -168,7 +168,10 @@ public final class IosHelperClient: HostBackend, @unchecked Sendable {
         return snapshot.nodes.values.filter { $0.pixelsUnavailable() }.map { node in
             let id = node.testId ?? node.ref
             let where_ = node.frame.map { " [\($0.intDescription)]" } ?? ""
-            return "\(id)\(where_) is not in this picture: \(node.typeName ?? "this window") "
+            // `typeName` is non-optional, so the old `?? "this window"` never fired;
+            // an unnamed node still needs the fallback, which is the empty check.
+            let kind = node.typeName.isEmpty ? "this window" : node.typeName
+            return "\(id)\(where_) is not in this picture: \(kind) "
                 + "does not render into an in-process context. A device-level capture "
                 + "(`xcrun simctl io <udid> screenshot`) shows it."
         }

@@ -13,7 +13,7 @@ set -euo pipefail
 
 PRODUCT="${1:?product name required (SampleApp or SampleAppNoAgent)}"
 BUNDLE_ID="${2:?bundle id required}"
-DEPLOY="15.0"
+DEPLOY="18.0"
 ARCH="$(uname -m)"
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TRIPLE="${ARCH}-apple-ios${DEPLOY}-simulator"

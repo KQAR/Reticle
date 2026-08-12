@@ -1,16 +1,21 @@
 import Foundation
+import Synchronization
 
 /// Encodes Reticle events as WHATWG server-sent event frames.
-public struct SseEncoder {
+// A class rather than a struct: it owns a `Mutex`, which is non-Copyable and so
+// cannot be stored in a copyable value type.
+public final class SseEncoder: Sendable {
     // One encoder per SseEncoder instance (one per SSE connection), reused
     // across every event on that stream, instead of allocating one per frame.
-    private let encoder = JSONEncoder()
+    // Behind a mutex because the SSE subscriber closure runs on whichever thread
+    // appended the event, and `JSONEncoder` is not Sendable.
+    private let encoder = Mutex(JSONEncoder())
 
     public init() {}
 
     /// Creates an SSE frame with `id`, named `event`, and one JSON `data` line.
     public func encode(_ event: ReticleEventEnvelope) throws -> Data {
-        let json = try encoder.encode(event)
+        let json = try encoder.withLock { try $0.encode(event) }
         let data = String(data: json, encoding: .utf8) ?? "{}"
         return Data("id: \(event.id)\nevent: \(event.type)\ndata: \(data)\n\n".utf8)
     }

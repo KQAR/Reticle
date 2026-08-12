@@ -16,7 +16,9 @@ struct TabBarScenarioView: View {
             tabPage(name: "Messages", icon: "envelope", tag: "messages")
             tabPage(name: "Profile", icon: "person", tag: "profile")
         }
-        .onChange(of: selection) { newValue in
+        // Two-parameter form: the one-parameter `onChange(of:perform:)` is
+        // deprecated as of the iOS 18 floor this app now builds against.
+        .onChange(of: selection) { _, newValue in
             Reticle.log("tab_selected", metadata: ["tab": .text(newValue)])
         }
     }

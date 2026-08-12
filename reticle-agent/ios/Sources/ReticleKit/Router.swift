@@ -121,7 +121,7 @@ struct Router {
 
     private func mutate(_ body: Data) throws -> HttpResponse {
         let req = try ReticleJSON.decode(MutationRequest.self, from: body)
-        let result = try MainThread.sync { MutationEngine().apply(req) }
+        let result = MainThread.sync { MutationEngine().apply(req) }
         return try json(result)
     }
 
@@ -137,7 +137,7 @@ struct Router {
             return try json(result)
         }
         #endif
-        let result = try MainThread.sync { ActivationEngine().activate(req) }
+        let result = MainThread.sync { ActivationEngine().activate(req) }
         return try json(result)
     }
 

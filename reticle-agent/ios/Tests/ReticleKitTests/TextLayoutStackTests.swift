@@ -165,7 +165,9 @@ final class TextLayoutStackTests: XCTestCase {
     }
 
     func testAScreenAnchoredStackNeedsNoViewToPlaceItsRects() throws {
-        let window = makeWindow()
+        // Kept for its side effect: the window has to exist for UIKit text
+        // metrics to be real, but this path converts through no view.
+        _ = makeWindow()
         // The SwiftUI path: there is no view to convert through, so the frame the
         // accessibility element reports IS the origin.
         let attributed = NSAttributedString(string: "Terms and Privacy", attributes: [.font: UIFont.systemFont(ofSize: 16)])

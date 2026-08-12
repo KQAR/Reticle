@@ -139,16 +139,19 @@ jobs:
     # `scope` job, which fails open when it cannot classify the diff.
     needs: scope
     if: needs.scope.outputs.code == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
 
-      # Hummingbird 2.25.0 requires Swift tools 6.1; macOS 15 includes Xcode 16.4.
-      - name: Select Xcode 16.4 (Swift 6.1)
+      # The packages declare swift-tools-version:6.2, so the runner needs an
+      # Xcode 26 toolchain. Picked by glob rather than pinned to a point release:
+      # the runner image bumps 26.x on its own schedule and a hard-coded path
+      # breaks the build every time it does.
+      - name: Select Xcode 26 (Swift 6.2)
         run: |
           set -euo pipefail
-          xc="/Applications/Xcode_16.4.app"
-          [ -d "$xc" ] || { echo "Xcode 16.4 not found on runner"; ls -d /Applications/Xcode*.app; exit 1; }
+          xc="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          [ -n "$xc" ] || { echo "no Xcode 26 on runner"; ls -d /Applications/Xcode*.app; exit 1; }
           echo "selecting $xc"; sudo xcode-select -s "$xc"; swift --version
 
       - name: Set up GraalVM (JDK 21, native-image)

@@ -86,7 +86,7 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   via `--target` (default `android`). Adding a platform = a new `platform/<os>`
   implementation, no dispatcher changes. RPC contract:
   `reticle-protocol/helper-rpc.md`.
-- `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS 14+
+- `reticle-host`: the **Swift host CLI** (`reticle-host/`, SwiftPM, macOS 15+
   arm64,
   outside the Gradle build). The user-facing `reticle`; owns no device code —
   device commands are RPC calls to the native helper it spawns. It also contains
@@ -124,7 +124,7 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   are documented once, in README.md -> **How the CLI is obtained** — edit there,
   not here. What is AGENTS' job is the packaging end of it:
   `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
-  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 14+
+  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 15+
   arm64 only.
 - `skills/reticle/SKILL.md` — model-invoked skill describing the workflow. It is
   the read-and-drive path only; the heavier machinery sits in

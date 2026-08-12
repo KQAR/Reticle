@@ -1,26 +1,34 @@
 import Foundation
+import Synchronization
 
 /// Append-only session event store backed by `events.jsonl` and a bounded buffer.
-public final class EventStore: @unchecked Sendable {
-    public typealias Subscriber = (ReticleEventEnvelope) -> Void
+public final class EventStore: Sendable {
+    /// `@Sendable`: a subscriber is registered by one thread (an SSE route) and
+    /// invoked by whichever thread appends, so it always crosses threads.
+    public typealias Subscriber = @Sendable (ReticleEventEnvelope) -> Void
 
-    private let lock = NSLock()
-    /// Serializes file appends only, so encoding + disk I/O never hold `lock`
-    /// (which every reader — GET /events, SSE replay — contends on).
-    private let writeLock = NSLock()
+    /// Everything the readers contend on, in one mutex — so "which lock covers
+    /// this field" is not a question the code can get wrong.
+    private struct Live {
+        var buffer: [ReticleEventEnvelope] = []
+        var subscribers: [UUID: Subscriber] = [:]
+        var nextSequence: UInt64 = 1
+        /// Canonical directory paths artifacts may be served from. Seeded with the
+        /// sessions root (where in-process producers — network bodies, screenshots —
+        /// write). Trusted ingest paths widen it via `registerArtifactRoot`.
+        var allowedArtifactRoots: Set<String> = []
+    }
+    private let live = Mutex(Live())
+
+    /// The append handle, separate on purpose: encoding + disk I/O must never
+    /// hold `live` (which every reader — GET /events, SSE replay — contends on).
+    /// Opened once and kept at end-of-file, so each append is one write instead
+    /// of open+seek+write+close.
+    private let writeHandle: Mutex<FileHandle?> = Mutex(nil)
+
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let limit: Int
-    private var buffer: [ReticleEventEnvelope] = []
-    private var subscribers: [UUID: Subscriber] = [:]
-    private var nextSequence: UInt64 = 1
-    /// Long-lived append handle, opened once and kept at end-of-file, so each
-    /// append is one write instead of open+seek+write+close.
-    private var writeHandle: FileHandle?
-    /// Canonical directory paths artifacts may be served from. Seeded with the
-    /// sessions root (where in-process producers — network bodies, screenshots —
-    /// write). Trusted ingest paths widen it via `registerArtifactRoot`.
-    private var allowedArtifactRoots: Set<String> = []
 
     public let session: String
     public let rootDirectory: URL
@@ -38,7 +46,7 @@ public final class EventStore: @unchecked Sendable {
         if !FileManager.default.fileExists(atPath: eventsFile.path) {
             _ = FileManager.default.createFile(atPath: eventsFile.path, contents: nil)
         }
-        allowedArtifactRoots = [Self.canonicalPath(rootDirectory)]
+        live.withLock { $0.allowedArtifactRoots = [Self.canonicalPath(rootDirectory)] }
         try loadExistingEvents()
     }
 
@@ -47,9 +55,7 @@ public final class EventStore: @unchecked Sendable {
     /// root (e.g. a user-chosen `--trace-output`).
     public func registerArtifactRoot(_ directory: URL) {
         let canonical = Self.canonicalPath(directory)
-        lock.lock()
-        allowedArtifactRoots.insert(canonical)
-        lock.unlock()
+        live.withLock { _ = $0.allowedArtifactRoots.insert(canonical) }
     }
 
     /// Whether [fileURL] resolves to a file inside one of the allowed artifact
@@ -58,9 +64,7 @@ public final class EventStore: @unchecked Sendable {
     /// process pointing at `/etc/passwd`).
     public func isArtifactPathAllowed(_ fileURL: URL) -> Bool {
         let target = Self.canonicalComponents(fileURL)
-        lock.lock()
-        let roots = allowedArtifactRoots
-        lock.unlock()
+        let roots = live.withLock { $0.allowedArtifactRoots }
         for root in roots {
             let rootComponents = root.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
             guard target.count > rootComponents.count else { continue }
@@ -86,21 +90,23 @@ public final class EventStore: @unchecked Sendable {
     /// Appends and persists an incoming event, assigning daemon-owned id and time.
     @discardableResult
     public func append(_ request: EventPostRequest) throws -> ReticleEventEnvelope {
-        lock.lock()
-        let event = ReticleEventEnvelope(
-            id: allocateIdLocked(),
-            ts: currentMillis(),
-            session: session,
-            target: request.target,
-            source: request.source,
-            type: request.type,
-            payload: request.payload,
-            refs: request.refs
-        )
-        buffer.append(event)
-        trimBuffer()
-        let callbacks = Array(subscribers.values)
-        lock.unlock()
+        let (event, callbacks) = live.withLock { live -> (ReticleEventEnvelope, [Subscriber]) in
+            let event = ReticleEventEnvelope(
+                id: Self.allocateId(&live.nextSequence),
+                ts: currentMillis(),
+                session: session,
+                target: request.target,
+                source: request.source,
+                type: request.type,
+                payload: request.payload,
+                refs: request.refs
+            )
+            live.buffer.append(event)
+            if live.buffer.count > limit {
+                live.buffer.removeFirst(live.buffer.count - limit)
+            }
+            return (event, Array(live.subscribers.values))
+        }
 
         // Encode + write OUTSIDE `lock`: serializing a large network payload
         // under the buffer lock stalled every concurrent reader. Two racing
@@ -108,13 +114,15 @@ public final class EventStore: @unchecked Sendable {
         // a failed write leaves the event visible in memory — persistence was
         // always best-effort (appends are not fsync'd).
         let line = try encoder.encode(event) + Data("\n".utf8)
-        writeLock.lock()
-        do {
-            try writeHandleLocked().write(contentsOf: line)
-            writeLock.unlock()
-        } catch {
-            writeLock.unlock()
-            throw error
+        try writeHandle.withLock { handle in
+            let open: FileHandle
+            if let handle { open = handle }
+            else {
+                open = try FileHandle(forWritingTo: eventsFile)
+                try open.seekToEnd()
+                handle = open
+            }
+            try open.write(contentsOf: line)
         }
 
         callbacks.forEach { $0(event) }
@@ -123,24 +131,20 @@ public final class EventStore: @unchecked Sendable {
 
     /// Returns buffered events after `since`; nil returns the whole buffer.
     public func events(since: String? = nil) -> [ReticleEventEnvelope] {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let since else { return buffer }
-        return buffer.filter { $0.id > since }
+        live.withLock { live in
+            guard let since else { return live.buffer }
+            return live.buffer.filter { $0.id > since }
+        }
     }
 
     /// Returns one buffered event by daemon-assigned id.
     public func event(id: String) -> ReticleEventEnvelope? {
-        lock.lock()
-        defer { lock.unlock() }
-        return buffer.first { $0.id == id }
+        live.withLock { $0.buffer.first { $0.id == id } }
     }
 
     /// Number of events currently retained in memory.
     public var eventCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return buffer.count
+        live.withLock { $0.buffer.count }
     }
 
     /// Lists all persisted sessions under the same sessions root.
@@ -180,28 +184,13 @@ public final class EventStore: @unchecked Sendable {
     @discardableResult
     public func subscribe(_ subscriber: @escaping Subscriber) -> UUID {
         let token = UUID()
-        lock.lock()
-        subscribers[token] = subscriber
-        lock.unlock()
+        live.withLock { $0.subscribers[token] = subscriber }
         return token
     }
 
     /// Removes a live event subscriber.
     public func unsubscribe(_ token: UUID) {
-        lock.lock()
-        subscribers.removeValue(forKey: token)
-        lock.unlock()
-    }
-
-    /// The append handle, opened and positioned at end on first use and then
-    /// reused. Called only under `writeLock` (appends are serialized), and only
-    /// this store writes the file, so the position stays at end between writes.
-    private func writeHandleLocked() throws -> FileHandle {
-        if let writeHandle { return writeHandle }
-        let handle = try FileHandle(forWritingTo: eventsFile)
-        try handle.seekToEnd()
-        writeHandle = handle
-        return handle
+        live.withLock { _ = $0.subscribers.removeValue(forKey: token) }
     }
 
     private func loadExistingEvents() throws {
@@ -226,22 +215,16 @@ public final class EventStore: @unchecked Sendable {
         // the allocation lock); ids are fixed-width so a string sort restores
         // the true order.
         loaded.sort { $0.id < $1.id }
-        lock.lock()
-        buffer = Array(loaded.suffix(limit))
-        nextSequence = highest + 1
-        lock.unlock()
+        live.withLock { live in
+            live.buffer = Array(loaded.suffix(limit))
+            live.nextSequence = highest + 1
+        }
     }
 
-    private func allocateIdLocked() -> String {
+    private static func allocateId(_ nextSequence: inout UInt64) -> String {
         let id = String(format: "evt_%016llu", nextSequence)
         nextSequence += 1
         return id
-    }
-
-    private func trimBuffer() {
-        if buffer.count > limit {
-            buffer.removeFirst(buffer.count - limit)
-        }
     }
 
     private func sequence(from id: String) -> UInt64? {

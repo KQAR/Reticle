@@ -55,9 +55,15 @@ struct ReticleHelperRoutes: Sendable {
                     status: .badRequest
                 )
             }
-            let params = body.params?.mapValues(\.anyValue) ?? [:]
             let response = await withCheckedContinuation { continuation in
                 callQueue.async {
+                    // The `[String: JSONValue] -> [String: Any]` lowering happens
+                    // HERE, not at the call site: `JSONValue` is Sendable and
+                    // `Any` is not, so building the untyped dictionary inside the
+                    // closure means nothing non-Sendable ever crosses the queue
+                    // boundary. Lowering outside and capturing the result would
+                    // need an unsafe escape hatch to say the same thing.
+                    let params = body.params?.mapValues(\.anyValue) ?? [:]
                     do {
                         continuation.resume(returning: HelperRpcResponse.success(try helper.call(body.method, params)))
                     } catch {

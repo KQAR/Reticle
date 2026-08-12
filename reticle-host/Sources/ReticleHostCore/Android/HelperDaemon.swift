@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// Resident per-device helper daemon: owns one long-lived helper backend and
 /// serves its JSONL RPC over a Unix-domain socket, so one-shot CLI commands
@@ -20,11 +21,15 @@ final class HelperDaemonServer: @unchecked Sendable {
     /// daemon exits so the next command spawns a fresh daemon + helper.
     private let backendAlive: @Sendable () -> Bool
 
-    private var listenFd: Int32 = -1
-    private let state = NSLock() // guards the three fields below
-    private var activeConnections = 0
-    private var lastActivity = Date()
-    private var stopped = false
+    private let listenFd: Mutex<Int32> = Mutex(-1)
+    /// The three fields the accept loop, the idle loop and every connection
+    /// thread share, in one mutex instead of a lock next to three loose vars.
+    private struct State {
+        var activeConnections = 0
+        var lastActivity = Date()
+        var stopped = false
+    }
+    private let state = Mutex(State())
     private let stopSem = DispatchSemaphore(value: 0)
 
     init(
@@ -87,7 +92,7 @@ final class HelperDaemonServer: @unchecked Sendable {
             try? FileManager.default.removeItem(atPath: socketPath)
             throw HelperError("listen(\(socketPath)) failed: errno \(err)")
         }
-        listenFd = fd
+        listenFd.withLock { $0 = fd }
         Thread { [weak self] in self?.acceptLoop() }.start()
         Thread { [weak self] in self?.idleLoop() }.start()
     }
@@ -100,45 +105,44 @@ final class HelperDaemonServer: @unchecked Sendable {
     /// Idempotent shutdown: close the listener, unlink the socket, release
     /// `run()`. In-flight connections finish on their own threads.
     func stop() {
-        state.lock()
-        if stopped {
-            state.unlock()
-            return
+        let alreadyStopped = state.withLock { state -> Bool in
+            defer { state.stopped = true }
+            return state.stopped
         }
-        stopped = true
-        state.unlock()
-        if listenFd >= 0 {
-            close(listenFd)
-            listenFd = -1
+        if alreadyStopped { return }
+        listenFd.withLock { fd in
+            if fd >= 0 {
+                close(fd)
+                fd = -1
+            }
         }
         try? FileManager.default.removeItem(atPath: socketPath)
         stopSem.signal()
     }
 
     var isStopped: Bool {
-        state.lock()
-        defer { state.unlock() }
-        return stopped
+        state.withLock { $0.stopped }
     }
 
     // MARK: - Loops
 
     private func acceptLoop() {
         while true {
-            let clientFd = accept(listenFd, nil, nil)
+            let clientFd = accept(listenFd.withLock { $0 }, nil, nil)
             guard clientFd >= 0 else {
                 if errno == EINTR { continue }
                 return // listener closed by stop()
             }
-            state.lock()
-            if stopped {
-                state.unlock()
+            let accepted = state.withLock { state -> Bool in
+                guard !state.stopped else { return false }
+                state.activeConnections += 1
+                state.lastActivity = Date()
+                return true
+            }
+            guard accepted else {
                 close(clientFd)
                 return
             }
-            activeConnections += 1
-            lastActivity = Date()
-            state.unlock()
             Thread { [weak self] in self?.serve(clientFd: clientFd) }.start()
         }
     }
@@ -147,9 +151,10 @@ final class HelperDaemonServer: @unchecked Sendable {
         let tick = max(0.05, min(idleTimeout / 4, 15))
         while !isStopped {
             Thread.sleep(forTimeInterval: tick)
-            state.lock()
-            let idle = activeConnections == 0 && Date().timeIntervalSince(lastActivity) >= idleTimeout
-            state.unlock()
+            let idle = state.withLock { state in
+                state.activeConnections == 0
+                    && Date().timeIntervalSince(state.lastActivity) >= idleTimeout
+            }
             if idle {
                 FileHandle.standardError.write(
                     Data("reticle helper-daemon: idle for \(Int(idleTimeout))s, exiting\n".utf8))
@@ -162,24 +167,20 @@ final class HelperDaemonServer: @unchecked Sendable {
     private func serve(clientFd: Int32) {
         defer {
             close(clientFd)
-            state.lock()
-            activeConnections -= 1
-            lastActivity = Date()
-            state.unlock()
+            state.withLock { state in
+                state.activeConnections -= 1
+                state.lastActivity = Date()
+            }
         }
         let reader = FdLineReader(fd: clientFd)
         while case .line(let line) = reader.nextLine() {
-            state.lock()
-            lastActivity = Date()
-            state.unlock()
+            state.withLock { $0.lastActivity = Date() }
             guard !line.isEmpty else { continue }
             let (response, exitAfterReply) = respond(to: line)
             if let data = try? JSONSerialization.data(withJSONObject: response) {
                 UnixSocket.writeAll(clientFd, data + Data("\n".utf8))
             }
-            state.lock()
-            lastActivity = Date()
-            state.unlock()
+            state.withLock { $0.lastActivity = Date() }
             if exitAfterReply {
                 stop()
                 return

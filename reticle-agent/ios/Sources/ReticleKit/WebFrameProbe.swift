@@ -85,6 +85,9 @@ enum WebFrameProbe {
     /// table keyed by object identity: the table would outlive the view and an
     /// identity can be reused by a later allocation, which is a stale `WKFrameInfo`
     /// handed to the wrong page. This dies with the view it describes.
+    /// Keeps `NSLock` rather than `Mutex`: the values are `WKFrameInfo` handles,
+    /// which are not Sendable, and `Mutex.withLock` cannot hand a non-Sendable
+    /// value back out.
     final class FrameTable: @unchecked Sendable {
         private let lock = NSLock()
         private var map: [String: Frame] = [:]
@@ -221,26 +224,13 @@ enum WebFrameProbe {
     /// than passing off as an empty frame.
     static func evaluate(_ script: String, in frame: WKFrameInfo, webView: WKWebView) -> String? {
         guard !Thread.isMainThread else { return nil }
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = Box()
-        DispatchQueue.main.async {
-            guard webView.window != nil else {
-                semaphore.signal()
-                return
-            }
+        return WebEvaluate.onMain(in: webView, timeout: frameTimeout) { finish in
             unsafeBitCast(webView, to: FrameEvaluating.self).evaluateJavaScript(
                 script, inFrame: frame, inContentWorld: world()
             ) { value, _ in
-                box.value = value as? String
-                semaphore.signal()
+                finish(value as? String)
             }
         }
-        guard semaphore.wait(timeout: .now() + frameTimeout) == .success else { return nil }
-        return box.value
-    }
-
-    private final class Box: @unchecked Sendable {
-        var value: String?
     }
 
     /// Receives one probe answer. The payload is almost beside the point — the

@@ -97,6 +97,11 @@ enum UnixSocket {
 
 /// Buffered newline-delimited reader over a raw fd (the socket analogue of
 /// `LineReader` over a `FileHandle`).
+///
+/// `@unchecked Sendable` on the same terms as `LineReader`: `SocketHelperClient`
+/// owns the only instance and touches it exclusively under `callLock`, so the
+/// buffer below is never read by two threads at once. The lock lives on the
+/// owner, which is what the compiler cannot see from here.
 final class FdLineReader: @unchecked Sendable {
     enum Outcome {
         case line(String)
@@ -142,6 +147,8 @@ final class FdLineReader: @unchecked Sendable {
 /// helper's own JSONL envelope — the daemon forwards frames to its long-lived
 /// helper child verbatim, plus the `helperd/*` control methods it answers
 /// itself.
+/// Same `NSLock`-not-`Mutex` reason as `HelperClient`: the guarded call returns
+/// a non-Sendable `[String: Any]` reply.
 final class SocketHelperClient: HelperCalling, @unchecked Sendable {
     private let socketPath: String
     private let serial: String?

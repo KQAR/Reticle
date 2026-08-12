@@ -24,7 +24,7 @@ reading any of the prose: **Android device work goes out through a separate
 native helper; iOS device work happens inside the host itself.**
 
 ```
-┌─ host (macOS 14+ arm64) ─────────────────────────────────────────────────┐
+┌─ host (macOS 15+ arm64) ─────────────────────────────────────────────────┐
 │                                                                          │
 │  reticle — the one user-facing binary        --target android | ios      │
 │     │                                                                    │

@@ -9,6 +9,7 @@ import ReticleProtocol
 /// because this is a UI test. A digitizer `IOHIDEvent` built inside the app under
 /// test is accepted and routed nowhere — measured across every sender-id and
 /// coordinate-space combination — which is why this lives here and not there.
+@MainActor
 enum RunnerInput {
 
     static let springboardId = RunnerObservation.springboardId

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Helper RPC client that forwards one-shot command calls through a live daemon.
-final class DaemonHelperClient: HelperCalling, @unchecked Sendable {
+final class DaemonHelperClient: HelperCalling {
     private let discovery: DaemonDiscovery
     private let timeout: TimeInterval
     private let serial: String?

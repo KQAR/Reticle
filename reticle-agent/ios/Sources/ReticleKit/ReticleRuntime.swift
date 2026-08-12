@@ -1,31 +1,36 @@
 import Foundation
 import ReticleProtocol
+import Synchronization
 #if canImport(UIKit)
 import UIKit
 #endif
 
 /// Process-wide singleton owning the server, the app-authored log ring, and the
 /// metadata/probe registries. The iOS analogue of the Android `ReticleRuntime`.
-final class ReticleRuntime: @unchecked Sendable {
+final class ReticleRuntime: Sendable {
     static let shared = ReticleRuntime()
 
-    private let lock = NSLock()
+    /// Everything mutable, in one mutex. Held only for short reads/writes —
+    /// never across the bind, which is what `startLock` is for.
+    private struct State {
+        var server: HttpServer?
+        var boundPort: Int = -1
+        var logs: [LogEntry] = []
+        var metadataByTestId: [String: [String: MetadataValue]] = [:]
+        var probes: [ProbeSpec] = []
+    }
+    private let state = Mutex(State())
+
     /// Serializes `start()` itself, so concurrent starts stay idempotent (one
-    /// bind, everyone else observes it) WITHOUT holding `lock` across the
+    /// bind, everyone else observes it) WITHOUT holding `state` across the
     /// blocking bind: `HttpServer.start` waits up to 3s for the listener to
-    /// become ready, and holding `lock` for that window stalled every thread
-    /// calling `Reticle.log()` / `attachMetadata()` behind a wedged bind.
-    /// `lock` now only guards short reads/writes of the state below.
-    private let startLock = NSLock()
-    private var server: HttpServer?
-    private var boundPort: Int = -1
+    /// become ready, and holding the state lock for that window stalled every
+    /// thread calling `Reticle.log()` / `attachMetadata()` behind a wedged bind.
+    private let startLock = Mutex<Void>(())
 
-    private var logs: [LogEntry] = []
     private let maxLogs = 1000
-    private var metadataByTestId: [String: [String: MetadataValue]] = [:]
-    private var probes: [ProbeSpec] = []
 
-    struct ProbeSpec {
+    struct ProbeSpec: Sendable {
         let testId: String
         let label: String?
         let frame: Rect?
@@ -44,11 +49,13 @@ final class ReticleRuntime: @unchecked Sendable {
     func start(port: Int?, bindHost: String, viaInjection: Bool) -> Int {
         if ProcessInfo.processInfo.environment["RETICLE_DISABLED"] == "1" { return -1 }
         // startLock (not `lock`) is held across the bind — see its declaration.
-        startLock.lock()
-        defer { startLock.unlock() }
-        lock.lock()
-        let runningPort = (server?.isRunning == true) ? boundPort : nil
-        lock.unlock()
+        return startLock.withLock { _ in startLocked(port: port, bindHost: bindHost, viaInjection: viaInjection) }
+    }
+
+    private func startLocked(port: Int?, bindHost: String, viaInjection: Bool) -> Int {
+        let runningPort = state.withLock { state in
+            (state.server?.isRunning == true) ? state.boundPort : nil
+        }
         if let runningPort { return runningPort }
         if viaInjection && !autoStartAllowed() {
             return -1
@@ -57,10 +64,10 @@ final class ReticleRuntime: @unchecked Sendable {
         let srv = HttpServer(router: Router())
         do {
             let bound = try srv.start(host: bindHost, port: chosen)
-            lock.lock()
-            server = srv
-            boundPort = bound
-            lock.unlock()
+            state.withLock { state in
+                state.server = srv
+                state.boundPort = bound
+            }
             engageAccessibilityRuntime()
             #if canImport(UIKit)
             // Install the keyboard observer as early as possible: it can only
@@ -118,52 +125,49 @@ final class ReticleRuntime: @unchecked Sendable {
     // MARK: - Logs
 
     func appendLog(level: String, message: String, metadata: [String: MetadataValue]) {
-        lock.lock(); defer { lock.unlock() }
-        logs.append(LogEntry(timestampMillis: nowMillis(), level: level, message: message, metadata: metadata))
-        if logs.count > maxLogs { logs.removeFirst(logs.count - maxLogs) }
+        let maxLogs = maxLogs
+        state.withLock { state in
+            state.logs.append(
+                LogEntry(timestampMillis: nowMillis(), level: level, message: message, metadata: metadata))
+            if state.logs.count > maxLogs { state.logs.removeFirst(state.logs.count - maxLogs) }
+        }
     }
 
     func collectedLogs() -> [LogEntry] {
-        lock.lock(); defer { lock.unlock() }
-        return logs
+        state.withLock { $0.logs }
     }
 
     // MARK: - Metadata & probes
 
     func attachMetadata(testId: String, _ metadata: [String: MetadataValue]) {
-        lock.lock(); defer { lock.unlock() }
-        metadataByTestId[testId, default: [:]].merge(metadata) { _, new in new }
+        state.withLock { $0.metadataByTestId[testId, default: [:]].merge(metadata) { _, new in new } }
     }
 
     func metadata(for testId: String) -> [String: MetadataValue] {
-        lock.lock(); defer { lock.unlock() }
-        return metadataByTestId[testId] ?? [:]
+        state.withLock { $0.metadataByTestId[testId] ?? [:] }
     }
 
     func registerProbe(testId: String, label: String?, frame: Rect?, metadata: [String: MetadataValue]) {
-        lock.lock(); defer { lock.unlock() }
-        probes.removeAll { $0.testId == testId }
-        probes.append(ProbeSpec(testId: testId, label: label, frame: frame, metadata: metadata))
+        state.withLock { state in
+            state.probes.removeAll { $0.testId == testId }
+            state.probes.append(ProbeSpec(testId: testId, label: label, frame: frame, metadata: metadata))
+        }
     }
 
     func registeredProbes() -> [ProbeSpec] {
-        lock.lock(); defer { lock.unlock() }
-        return probes
+        state.withLock { $0.probes }
     }
 
     func clearProbes() {
-        lock.lock(); defer { lock.unlock() }
-        probes.removeAll()
+        state.withLock { $0.probes.removeAll() }
     }
 
     // MARK: - Runtime info
 
     func runtimeInfo() -> RuntimeInfo {
-        // boundPort is written under `lock` in start(); read it under the same
-        // lock — an unsynchronized read is a data race under the Swift memory model.
-        lock.lock()
-        let port = boundPort
-        lock.unlock()
+        // boundPort is written under the mutex in start(); read it under the same
+        // mutex — an unsynchronized read is a data race under the Swift memory model.
+        let port = state.withLock { $0.boundPort }
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return RuntimeInfo(
             packageName: bundleId,

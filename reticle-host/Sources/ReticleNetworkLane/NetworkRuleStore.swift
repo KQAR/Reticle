@@ -418,6 +418,13 @@ public struct NetworkRuleResult {
 
 // MARK: - Store
 
+/// Keeps `NSLock` rather than `Mutex`. Its critical sections are "mutate the rule
+/// set, persist it, notify" — one indivisible step, and the persist half calls back
+/// into `self`. `Mutex.withLock` hands its state over as `inout sending`, which
+/// cannot then be passed to a method on `self`, so the same atomicity under a mutex
+/// would mean either splitting the write out of the locked section (two writers could
+/// then persist out of order) or inlining the whole persistence layer into every
+/// mutation. The lock is correct and every field it covers is private to this type.
 public final class NetworkRuleStore: @unchecked Sendable {
     private let lock = NSLock()
     private let encoder = JSONEncoder()

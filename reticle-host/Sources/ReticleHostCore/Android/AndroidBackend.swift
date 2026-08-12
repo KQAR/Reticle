@@ -11,7 +11,7 @@ import Foundation
 /// Before this existed, the dictionary went all the way up into the commands, so
 /// every call site could misspell a key and every backend (including iOS, which
 /// has no wire at all) had to speak JSONL to be callable.
-final class AndroidBackend: HostBackend, @unchecked Sendable {
+final class AndroidBackend: HostBackend {
     private let transport: HelperCalling
 
     init(_ transport: HelperCalling) {

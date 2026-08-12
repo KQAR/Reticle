@@ -7,7 +7,7 @@ import ReticleProtocol
 /// Shaped after `IosAgentHTTP` on purpose — same transport, same port-derivation
 /// rule, same "the device's loopback reaches us through a USB tunnel" assumption.
 /// The only difference is which bundle id feeds the port.
-public struct IosRunnerClient {
+public struct IosRunnerClient: Sendable {
     public let config: IosRunnerConfig
     public let timeout: TimeInterval
 
@@ -155,7 +155,7 @@ public struct IosRunnerClient {
 /// foreground away from whatever was there, which is observable interference with
 /// the flow under test — a caller who is not told will blame the app for it. That
 /// is the difference between evidence and a lie of omission.
-public struct IosRunnerSession {
+public struct IosRunnerSession: Sendable {
     public let lifecycle: IosRunnerLifecycle
     public let client: IosRunnerClient
 
