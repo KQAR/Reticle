@@ -320,6 +320,8 @@ enum HelperDaemonLauncher {
         let log = FileHandle(forWritingAtPath: logPath)
         log?.seekToEndOfFile()
 
+        // `Process`, not `Shell`: this child is deliberately never waited on (see
+        // below), and `Subprocess.run` would hold the call open until it exits.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: selfExecutablePath())
         process.arguments = ["helper-daemon", "--socket", socketPath, "--helper", helper]

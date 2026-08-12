@@ -43,6 +43,17 @@ public final class OneShot<Value>: @unchecked Sendable {
         ready.signal()
     }
 
+    /// Block until `resolve` lands, however long that takes. For the callers that
+    /// have no deadline of their own to impose — `Shell.runSync` waiting on a
+    /// child exactly as `waitUntilExit()` used to.
+    public func wait() -> Value {
+        ready.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        // `resolve` signals only after storing, so the value is present here.
+        return value!
+    }
+
     /// Block until `resolve` lands, or `seconds` passes. `nil` means the value
     /// never arrived — callers turn that into their own timeout error, since only
     /// they know what timed out.

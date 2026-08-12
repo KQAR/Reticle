@@ -237,16 +237,11 @@ enum ReticleSystemCommands {
     /// The single attached device, when there is exactly one. Ambiguity is refused
     /// rather than guessed: driving the wrong phone is worse than being asked.
     static func soleAttachedDevice() -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["idevice_id", "-l"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        p.waitUntilExit()
-        let ids = out.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        // `idevice_id` is not always installed; a missing binary comes back as a
+        // launch failure (code -1), which falls out of the count check below as
+        // "not exactly one device" — the same answer it always gave.
+        let result = Shell.runSync("/usr/bin/env", ["idevice_id", "-l"])
+        let ids = result.out.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return ids.count == 1 ? ids[0] : nil
     }

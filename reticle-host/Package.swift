@@ -41,6 +41,11 @@ let package = Package(
         // Loom's capture engine, consumed as an SPM library so the host network
         // lane doesn't maintain its own SwiftNIO proxy/MITM.
         .package(url: "https://github.com/KQAR/Loom.git", exact: "0.0.12"),
+        // The standard-library-adjacent process runner. The host shells out on
+        // every iOS path (simctl, devicectl, xcodebuild, iproxy), and each site
+        // used to hand-roll the spawn + concurrent two-pipe drain that avoids the
+        // 64KB stderr deadlock. This owns that once.
+        .package(url: "https://github.com/swiftlang/swift-subprocess.git", exact: "1.0.0"),
     ],
     targets: [
         // Dependency-free foundation shared by the host and the network lane:
@@ -49,6 +54,9 @@ let package = Package(
         // into the daemon for a primitive.
         .target(
             name: "ReticleHostShared",
+            dependencies: [
+                .product(name: "Subprocess", package: "swift-subprocess"),
+            ],
             path: "Sources/ReticleHostShared",
             swiftSettings: strictConcurrency
         ),
