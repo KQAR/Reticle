@@ -170,10 +170,23 @@ object ReticleReflect {
         var radius: Float? = null
         var radiusGap: String? = null
         if (drawable is android.graphics.drawable.GradientDrawable) {
-            // API 24+. A per-corner radii array reports -1 here; that is a real
-            // shape with four different radii, not an absent one.
-            radius = runCatching { drawable.cornerRadius }.getOrNull()?.takeIf { it >= 0f }
-            if (radius == null) radiusGap = "gradient-drawable-per-corner-radii"
+            // A per-corner radii array is a REAL shape with four different radii, and
+            // one number cannot carry it — so it is a named gap, not an absence.
+            //
+            // Detected via `getCornerRadii()` (API 24+, non-null exactly when the
+            // radii were set per corner) rather than by a negative `getCornerRadius()`:
+            // that sentinel does not exist. `GradientDrawableState.setCornerRadii`
+            // leaves `mRadius` at whatever it was — 0 for a drawable that never set a
+            // uniform radius — so a per-corner shape used to report `cornerRadius = 0`,
+            // i.e. "square corners", which is a confidently wrong reading of an 8px
+            // rounded button. Measured under Robolectric in `ReticleReflectTest`.
+            val perCorner = runCatching { drawable.cornerRadii }.getOrNull()
+            if (perCorner != null) {
+                radiusGap = "gradient-drawable-per-corner-radii"
+            } else {
+                radius = runCatching { drawable.cornerRadius }.getOrNull()?.takeIf { it >= 0f }
+                if (radius == null) radiusGap = "gradient-drawable-per-corner-radii"
+            }
         } else {
             val model = invokeNoArg(drawable, "getShapeAppearanceModel")
             val corner = model?.let { invokeNoArg(it, "getTopLeftCornerSize") }
