@@ -775,7 +775,13 @@ object SampleWebFixtures {
               A tri-state "select all", the case a plain boolean cannot carry.
             -->
             <div class="row">
-              <span role="checkbox" aria-checked="mixed" tabindex="0"
+              <!--
+                The class is what makes this row reachable: `scroll-to` takes a
+                selector, not a label, and Reticle's css matcher has no attribute
+                selectors — so without it there is no supported way to bring a
+                below-the-fold tri-state row into the viewport.
+              -->
+              <span class="select-all" role="checkbox" aria-checked="mixed" tabindex="0"
                 aria-label="Select all consents">Select all</span>
             </div>
 
