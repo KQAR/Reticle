@@ -462,8 +462,14 @@ data class Node(
      * measuring the row pitch in that image, and calibrating a swipe by trial. All of
      * it is public API on `android.widget.NumberPicker`, so these carry it instead.
      *
-     * Null everywhere for a self-drawn wheel, which publishes none of it — that stays
-     * `wheel:opaque` rather than being guessed at.
+     * The same turned out to be true of the third-party wheel families the report was
+     * actually about: the column publishes nothing to the TREE and still publishes its
+     * position, count and item text through public accessors on its own class, so
+     * those are read too (`WheelReflect`, with [wheelSource] naming the getters that
+     * answered).
+     *
+     * Null everywhere for a column that answers none of them, which then really does
+     * publish nothing — that stays `wheel:opaque` rather than being guessed at.
      */
     fun wheelValue(): String? = (custom["wheelValue"] as? MetadataValue.Text)?.value
 
@@ -492,9 +498,19 @@ data class Node(
     fun wheelRowHeightPx(): Int? =
         (custom["wheelRowHeightPx"] as? MetadataValue.Integer)?.value?.toInt()
 
-    /** True when [wheelRowHeightPx] is `height / 3`, not a reading. */
+    /** True when [wheelRowHeightPx] is derived from the visible-row count, not read. */
     fun wheelRowHeightEstimated(): Boolean =
         (custom["wheelRowHeightEstimated"] as? MetadataValue.Bool)?.value == true
+
+    /**
+     * Which accessors produced the readings above, for a wheel read reflectively —
+     * e.g. `reflect:WheelView.getCurrentItem/getViewAdapter.getItemText/getItemHeight`.
+     *
+     * Absent for `NumberPicker`, whose values come from platform API and need no
+     * audit trail. Present exactly when a name-matched reading is what a caller would
+     * otherwise have to take on faith.
+     */
+    fun wheelSource(): String? = (custom["wheelSource"] as? MetadataValue.Text)?.value
 
     /**
      * The message this field declares itself invalid with: `""` when it sets

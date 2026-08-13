@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+- **A third-party wheel column is READ, not guessed at.** `wheel:opaque` was written on
+  the belief that a self-drawn wheel exposes nothing — no child view, no adapter, no
+  accessibility node, byte-for-byte a plain empty `View`. That is true of the TREE and it
+  turned out not to be true of the WIDGET: the wheel families most Android date/region
+  pickers are built on publish their position, their item count and their item text
+  through ordinary public accessors on their own class (`getCurrentItem()`,
+  `getViewAdapter()`/`getAdapter()` + `getItemsCount()`, `getItemText(int)`). The caller
+  who read numbers off a screenshot, measured a row pitch in that image and calibrated a
+  swipe by trial was reverse-engineering what the control had a getter for (#143) — the
+  same finding that closed the `NumberPicker` half, one library over.
+  - `WheelReflect` fills the same `wheel*` facts the platform path does, so `ui compact`
+    reports `wheel:value="…" 18/60 pitch=120px items` and `act wheel --to "<value>"`
+    drives such a column with no new surface at all.
+  - It stays a reading rather than a guess, because a name match is the part that can go
+    wrong: only nodes already in the wheel family are probed; every result is
+    type-checked and a position outside `0..count-1` is discarded; a `getItem(int)`
+    declared to answer with a `View` is a row RECYCLER and is refused by return type
+    (that is exactly what one family's adapter does, and calling it would build views
+    during a read-only capture); an object label is only accepted through a contract
+    (`CharSequence`, a number, `getPickerViewText()`, an overridden `toString()`); a
+    column whose VALUE cannot be read publishes nothing and keeps saying `wheel:opaque`,
+    which is then the truth about it; and `wheelSource` names the accessors that
+    answered, so any reading here can be audited from `ui node`.
+  - The item cap moved 40 → 240. At 40 it refused the report's own example: a 120-value
+    year wheel published its first 40 labels, so `--to "1995"` could not turn the value
+    into a position and fell back to `--to-index` — the caller counting rows again.
+  - The sample's wheel screen gains a self-drawn column that publishes its family's
+    accessors, next to the one that publishes nothing, because which of the two a column
+    is cannot be told from outside and the marker has to be right for both. The Android
+    e2e drives it and takes the app's own committed state as the verdict.
+
 ## 0.21.0 - 2026-08-09
 
 One theme: **a real iOS device stopped being a read-only target.** At 0.20.0 a phone

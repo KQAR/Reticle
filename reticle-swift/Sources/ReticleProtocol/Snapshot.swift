@@ -483,7 +483,9 @@ public struct Node: Codable, Sendable {
     }
 
     /// What a wheel column publishes about itself — see the Kotlin twin for the
-    /// measurement. Nil for a self-drawn wheel, which publishes none of it.
+    /// measurement. Nil for a column that answers none of the accessors, which then
+    /// really does publish nothing; a third-party wheel that answers them is read
+    /// reflectively, with `wheelSource()` naming the getters.
     public func wheelValue() -> String? {
         if case .text(let v)? = custom["wheelValue"] { return v }
         return nil
@@ -526,10 +528,18 @@ public struct Node: Codable, Sendable {
         return nil
     }
 
-    /// True when `wheelRowHeightPx()` is `height / 3`, not a reading.
+    /// True when `wheelRowHeightPx()` was derived rather than read.
     public func wheelRowHeightEstimated() -> Bool {
         if case .bool(true)? = custom["wheelRowHeightEstimated"] { return true }
         return false
+    }
+
+    /// Which accessors produced a reflectively-read wheel's values, e.g.
+    /// `reflect:WheelView.getCurrentItem/getViewAdapter.getItemText/getItemHeight`.
+    /// Absent for a `NumberPicker`, whose values are platform API.
+    public func wheelSource() -> String? {
+        if case .text(let v)? = custom["wheelSource"] { return v }
+        return nil
     }
 
     /// The message this field declares itself invalid with: `""` when it sets

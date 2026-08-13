@@ -78,9 +78,23 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
             }
         }
 
+        // A FOURTH column, self-drawn like the one above and — unlike it — publishing
+        // its own state through public accessors, which is what the wheel families
+        // real date/region pickers are built on actually do. The two sit side by side
+        // so both halves of the boundary stay pinned: nothing to read really does read
+        // `wheel:opaque`, and a column that answers its family's getters is read.
+        val regionWheel = AdapterWheelView(this).apply {
+            tag = "wheel.region"
+            setItems(REGIONS)
+            onValueChanged = { value ->
+                Reticle.log("wheel_region_changed", mapOf("value" to value))
+            }
+        }
+
         val wheels = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            addView(regionWheel)
             addView(yearWheel)
             addView(hourPicker)
             addView(TextView(this@WheelPickerScenarioActivity).apply {
@@ -97,8 +111,9 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
             tag = "wheel.confirm"
             setOnClickListener {
                 val picked = "${HOURS[hourPicker.value]}:${MINUTES[minutePicker.value]}"
-                status.text = "Time: $picked"
-                Reticle.log("wheel_confirmed", mapOf("time" to picked))
+                val region = regionWheel.selected.orEmpty()
+                status.text = "Time: $picked Region: $region"
+                Reticle.log("wheel_confirmed", mapOf("time" to picked, "region" to region))
             }
         }
 
@@ -123,6 +138,9 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
         val HOURS = Array(24) { "%02d".format(it) }
         val MINUTES = arrayOf("00", "15", "30", "45")
         val YEARS = List(40) { (1980 + it).toString() }
+
+        /** Enough of them that the item list is truncated on the node, like a real one. */
+        val REGIONS = List(60) { "Region-%02d".format(it + 1) }
     }
 }
 
@@ -136,6 +154,102 @@ class WheelPickerScenarioActivity : AppCompatActivity() {
  * "screenshots and swipes are the only way in", rather than the silence that used
  * to read as a decorative rectangle.
  */
+/**
+ * A self-drawn wheel that PUBLISHES its own state — the shape the third-party wheel
+ * families actually have, and the fixture for reading one.
+ *
+ * It is as opaque to the tree as [SelfDrawnWheelView]: it paints every value onto its
+ * own canvas, owns no child view, and exposes no accessibility node. What it does have
+ * is what its real counterparts have — `getCurrentItem()`, an adapter with
+ * `getItemsCount()` / `getItemText(int)`, and a row pitch behind a private method — so
+ * `WheelReflect` can read the column that `ui compact` alone would call empty.
+ *
+ * Deliberately paired with the fully-opaque one on the same screen: which of the two a
+ * wheel is cannot be told from outside, and the marker has to be right for both.
+ */
+class AdapterWheelView(context: android.content.Context) : android.view.View(context) {
+
+    /** The item source, named as the wheel families name theirs. */
+    interface WheelAdapter {
+        fun getItemsCount(): Int
+        fun getItemText(index: Int): CharSequence
+    }
+
+    var onValueChanged: ((String) -> Unit)? = null
+
+    /** The value at the centre — readable by the app, and now by an observer too. */
+    val selected: String? get() = adapter?.takeIf { index < it.getItemsCount() }?.getItemText(index)?.toString()
+
+    private var adapter: WheelAdapter? = null
+    private var index = 0
+    private var dragStartY = 0f
+    private var dragStartIndex = 0
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 36f
+    }
+    private val rowHeight = 120f
+
+    fun setItems(items: List<String>) {
+        adapter = object : WheelAdapter {
+            override fun getItemsCount(): Int = items.size
+            override fun getItemText(index: Int): CharSequence = items[index]
+        }
+        invalidate()
+    }
+
+    /** The public position accessor the families expose; the whole reading hangs off it. */
+    fun getCurrentItem(): Int = index
+
+    /** As does the item source. */
+    fun getViewAdapter(): WheelAdapter? = adapter
+
+    /** Private, exactly as in the real widgets: a pitch has no public getter anywhere. */
+    private fun getItemHeight(): Int = rowHeight.toInt()
+
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        setMeasuredDimension(resolveSize(240, widthSpec), resolveSize((rowHeight * 5).toInt(), heightSpec))
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        val source = adapter ?: return
+        val centre = height / 2f
+        for (offset in -2..2) {
+            val at = index + offset
+            if (at < 0 || at >= source.getItemsCount()) continue
+            paint.alpha = if (offset == 0) 255 else 90
+            canvas.drawText(
+                source.getItemText(at).toString(),
+                width / 2f,
+                centre + offset * rowHeight + paint.textSize / 3f,
+                paint,
+            )
+        }
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        val count = adapter?.getItemsCount() ?: return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                dragStartY = event.y
+                dragStartIndex = index
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_UP -> {
+                val steps = ((dragStartY - event.y) / rowHeight).toInt()
+                val next = (dragStartIndex + steps).coerceIn(0, (count - 1).coerceAtLeast(0))
+                if (next != index) {
+                    index = next
+                    invalidate()
+                    selected?.let { onValueChanged?.invoke(it) }
+                }
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+}
+
 class SelfDrawnWheelView(context: android.content.Context) : android.view.View(context) {
 
     var values: List<String> = emptyList()

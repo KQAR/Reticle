@@ -436,11 +436,13 @@ class SnapshotCapture(
      * reflectively and falls back to `height / 3` (a spinner shows three rows), and
      * the fallback is labelled rather than passed off as a reading.
      *
-     * Only a genuine `android.widget.NumberPicker`. A self-drawn wheel publishes
-     * none of this and keeps saying `wheel:opaque` — see [suspectedWheel].
+     * A third-party wheel is read one step further out, by [WheelReflect], through
+     * the public accessors its own class publishes; a column that answers none of
+     * them keeps saying `wheel:opaque`, which is then the truth about it.
      */
     private fun wheelFacts(view: View): Map<String, MetadataValue> {
-        val picker = view as? android.widget.NumberPicker ?: return emptyMap()
+        val picker = view as? android.widget.NumberPicker
+            ?: return if (suspectedWheel(view)) WheelReflect.facts(view, WHEEL_ITEMS_CAP) else emptyMap()
         val out = LinkedHashMap<String, MetadataValue>()
         val index = picker.value
         val min = picker.minValue
@@ -679,8 +681,21 @@ class SnapshotCapture(
     }
 
     private companion object {
-        /** Item labels carried on one wheel node before the list is truncated. */
-        const val WHEEL_ITEMS_CAP = 40
+        /**
+         * Item labels carried on one wheel node before the list is truncated.
+         *
+         * Sized by the case the whole wheel path exists for. At 40 it refused the
+         * report's own example: a 120-value year wheel published its first 40 labels,
+         * so `act wheel --to "1995"` could not turn the value into a position and fell
+         * back to `--to-index` — the caller counting rows again, which is what the
+         * labels were published to stop. A cap has to stay (a city wheel has
+         * thousands), and it stays honest either way: `wheelItemsTruncated` carries
+         * the exact remainder and the refusal names it.
+         *
+         * The cost is a per-wheel array of short strings in the snapshot on disk;
+         * `ui compact` prints `items`, never the list.
+         */
+        const val WHEEL_ITEMS_CAP = 240
 
         /** Third-party wheel families, which share no supertype with each other. */
         val WHEEL_CLASS_NAME = Regex("(?i)(wheelview|wheelpicker|loopview|pickerview|numberpicker)")
