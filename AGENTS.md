@@ -99,9 +99,23 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   targets are enumerated in `docs/architecture.md` (module layout). Put new
   capture/rule code in the `ReticleNetworkLane` target, not Core; its end-to-end
   path is guarded by `scripts/e2e-proxy.sh`.
+- `reticle-runner-ios`: an XCUITest bundle (xcodegen, outside both builds) — the
+  **system channel**, and the one module here that is not part of the app under
+  test. A resident out-of-process runner reaches ANOTHER process's UI (a system
+  permission alert, SpringBoard, the Home gesture) because a test runner is granted
+  a backboardd HID connection an in-process agent never gets. It sees far less of
+  what it reaches (one accessibility layer: no view class, no Compose semantics, no
+  DOM, no styles, no regions), so its results are `SystemObservation`/`SystemNode`
+  and **never** `Node` — the type split is what keeps them from being read as the
+  app's own tree. Driven by `reticle system …` through `IosSystemBackend`. Real
+  devices only; `scripts/e2e-ios-system.sh` is its round trip.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
   classes, declares `INTERNET`) — the honest test target for `app inject`.
+- `sample-app-ios`: the iOS twin of the above (SwiftPM + an xcodegen project),
+  carrying the same scenario screens so a boundary can be measured on both
+  platforms rather than argued about. `SampleAppNoAgent` is the unlinked flavor,
+  the target for the DYLD-injection path.
 
 ## Claude Code plugin packaging
 
@@ -175,14 +189,22 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   `ComposeTextRegions` from the semantics config (`Text`'s link annotations +
   the `GetTextLayoutResult` action's geometry) — reflectively, like the rest of
   the Compose path.
-- The CLI exposes `tap`, `swipe`, `drag`, `scroll-to`, and `type`. `scroll-to`
-  drags a scrollable container until a selector resolves inside it and confirms
-  the position settled before reporting it — the only way to reach a row a
-  recycling list has not bound. `tap --settle` opts into that same stabilize step
-  for a tap, for a target still sliding in (a popup row's rect goes stale between
-  resolve and dispatch); it watches the resolved POSITION only, so a view animating
-  in place with a transform reports settled while not yet hit-testable. `pinch`
-  keeps the API shape but is not implemented (needs `sendevent` multi-touch).
+- `act` exposes `tap`, `swipe`, `drag`, `scroll-to`, `type`, `wheel`, `wait`,
+  `batch`, `activate` and `hide-keyboard` — do not re-list them here when one is
+  added: `ReticleCLI.help` is the surface a user reads and `CommandSurfaceTests`
+  pins it against the dispatch switches and the flag-suggestion table, so the
+  three cannot drift. What belongs here is the *reasoning* behind the unobvious
+  ones. `scroll-to` drags a scrollable container until a selector resolves inside
+  it and confirms the position settled before reporting it — the only way to reach
+  a row a recycling list has not bound. `tap --settle` opts into that same
+  stabilize step for a tap, for a target still sliding in (a popup row's rect goes
+  stale between resolve and dispatch); it watches the resolved POSITION only, so a
+  view animating in place with a transform reports settled while not yet
+  hit-testable. `wheel` converges a picker column on a value using the wheel's own
+  reading rather than a pixel pitch, and is Android-only (refused by name on iOS,
+  where a `UIPickerView`'s visible rows are real nodes instead). `pinch` is NOT a
+  CLI gesture: it is a reserved `InputBackend` seam that throws (multi-touch needs
+  `sendevent`), so nothing dispatches it.
 - `act wait` is the only `act` gesture that dispatches no input — it polls until a
   stated predicate holds. It exists because nothing else can express "act, then a
   NEW screen appears": `--verify` can only watch a node that ALREADY resolves, and
