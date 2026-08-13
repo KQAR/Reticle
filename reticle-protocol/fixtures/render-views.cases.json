@@ -1,0 +1,31 @@
+{
+  "$comment": [
+    "The `ui <view>` roster, shared by both ports of reticle-protocol.",
+    "",
+    "A view name the CLI accepts must, on BOTH platforms, either render or be refused",
+    "by a reason that names the platform boundary. What this fixture exists to forbid",
+    "is the third outcome: falling through to a generic 'unknown render view', which",
+    "is an internal error wearing a user-facing message — it names no boundary and",
+    "suggests no path, and it is exactly what `ui outline --target ios` did before",
+    "this file existed. The rule is docs/boundaries.md's: an unreachable thing must",
+    "produce evidence naming itself, never silence and never an internal error.",
+    "",
+    "`platforms` is where the view RENDERS. A view missing a platform must carry a",
+    "`refusalMentions` list, and that platform's port is asserted to throw a message",
+    "containing every one of those substrings."
+  ],
+  "views": [
+    { "name": "tree", "platforms": ["android", "ios"] },
+    { "name": "semantics", "platforms": ["android", "ios"] },
+    { "name": "compact", "platforms": ["android", "ios"] },
+    {
+      "name": "outline",
+      "platforms": ["android"],
+      "refusalMentions": ["Android-only", "alias", "ui compact"]
+    },
+    { "name": "node", "platforms": ["android", "ios"] },
+    { "name": "regions", "platforms": ["android", "ios"] },
+    { "name": "style", "platforms": ["android", "ios"] },
+    { "name": "coverage", "platforms": ["android", "ios"] }
+  ]
+}
