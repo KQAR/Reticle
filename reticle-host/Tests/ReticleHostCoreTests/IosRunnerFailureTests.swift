@@ -8,7 +8,7 @@ import Testing
 struct IosRunnerFailureTests {
 
     // The honest message, when iOS bothers to emit it.
-    @Test func explicitAutomationModeMessageIsRecognized() {
+    @Test func explicitAutomationModeMessageIsRecognized() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "Failed to initialize for UI testing: Error Domain=com.apple.dt.XCTest.XCTFuture Code=1000 \"Timed out while enabling automation mode.\""
         )
@@ -20,7 +20,7 @@ struct IosRunnerFailureTests {
     // The disguised form, exactly as measured on iPhone 13 Pro Max / iOS 26 with
     // the device-side switch off. None of these lines mentions the switch, which
     // is precisely why the classifier has to.
-    @Test func disguisedEarlyExitIsRecognizedAndStillPointsAtTheSwitch() {
+    @Test func disguisedEarlyExitIsRecognizedAndStillPointsAtTheSwitch() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "SampleAppUITests-Runner (18579) encountered an error (Early unexpected exit, operation never finished bootstrapping - no restart will be attempted. (Underlying Error: The test runner exited with code 74 before establishing connection.))",
             deviceLog: "Connection peer refused channel request for \"dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface\"; channel canceled\nExiting due to IDE disconnection."
@@ -31,7 +31,7 @@ struct IosRunnerFailureTests {
     }
 
     // A caller should not need all three signals to be pointed at the right screen.
-    @Test func anySingleDisguiseSignalIsEnough() {
+    @Test func anySingleDisguiseSignalIsEnough() async {
         #expect(IosRunnerFailureClassifier.classify(exitCode: 74) == .earlyExitBeforeConnection)
         #expect(IosRunnerFailureClassifier.classify(
             deviceLog: "Exiting due to IDE disconnection."
@@ -43,7 +43,7 @@ struct IosRunnerFailureTests {
 
     // The other half of TC-031: unrelated failures must not be misread as the
     // automation switch, or the advice sends the caller to the wrong place.
-    @Test func lockedDeviceIsNotMisreadAsTheAutomationSwitch() {
+    @Test func lockedDeviceIsNotMisreadAsTheAutomationSwitch() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "The device was not, or could not be, unlocked."
         )
@@ -52,7 +52,7 @@ struct IosRunnerFailureTests {
         #expect(f.advice.lowercased().contains("unlock"))
     }
 
-    @Test func signingFailureIsNotMisreadAsTheAutomationSwitch() {
+    @Test func signingFailureIsNotMisreadAsTheAutomationSwitch() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "error: No profiles for 'dev.reticle.runner' were found: Xcode couldn't find any iOS App Development provisioning profiles."
         )
@@ -60,7 +60,7 @@ struct IosRunnerFailureTests {
         #expect(!f.pointsAtAutomationSwitch)
     }
 
-    @Test func missingAccountIsAlsoASigningFailure() {
+    @Test func missingAccountIsAlsoASigningFailure() async {
         // Measured on this machine: Xcode had no account signed in at all.
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "error: No Accounts: Add a new account in Accounts settings."
@@ -68,7 +68,7 @@ struct IosRunnerFailureTests {
         #expect(f == .signingUnavailable)
     }
 
-    @Test func notInstalledIsRecognizedFromEitherTheFlagOrTheLaunchError() {
+    @Test func notInstalledIsRecognizedFromEitherTheFlagOrTheLaunchError() async {
         #expect(IosRunnerFailureClassifier.classify(installed: false) == .runnerNotInstalled)
         // The real launch error for a missing bundle, measured via devicectl.
         let f = IosRunnerFailureClassifier.classify(
@@ -78,7 +78,7 @@ struct IosRunnerFailureTests {
         #expect(f.advice.contains("system prepare"))
     }
 
-    @Test func notInstalledOutranksEveryOtherReading() {
+    @Test func notInstalledOutranksEveryOtherReading() async {
         // With nothing installed, an automation-mode line is noise from a previous
         // run; the actionable answer is still "prepare first".
         let f = IosRunnerFailureClassifier.classify(
@@ -88,12 +88,12 @@ struct IosRunnerFailureTests {
         #expect(f == .runnerNotInstalled)
     }
 
-    @Test func silenceBecomesAHealthTimeoutRatherThanAnUnrecognizedFailure() {
+    @Test func silenceBecomesAHealthTimeoutRatherThanAnUnrecognizedFailure() async {
         #expect(IosRunnerFailureClassifier.classify() == .healthTimedOut)
         #expect(IosRunnerFailureClassifier.classify(launchOutput: "   \n  ") == .healthTimedOut)
     }
 
-    @Test func unrecognizedFailureStillCarriesADiagnosableExcerpt() {
+    @Test func unrecognizedFailureStillCarriesADiagnosableExcerpt() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "\n\nsomething nobody has seen before happened\nsecond line"
         )
@@ -102,7 +102,7 @@ struct IosRunnerFailureTests {
         #expect(f.advice.contains("something nobody has seen before happened"))
     }
 
-    @Test func longExcerptsAreClipped() {
+    @Test func longExcerptsAreClipped() async {
         let long = String(repeating: "x", count: 500)
         let f = IosRunnerFailureClassifier.classify(launchOutput: long)
         guard case .unrecognized(let excerpt) = f else {
@@ -114,7 +114,7 @@ struct IosRunnerFailureTests {
     }
 
     // NFR-006: raw tool output must not reach the caller's error.
-    @Test func theUserFacingErrorCarriesNoRawToolOutput() {
+    @Test func theUserFacingErrorCarriesNoRawToolOutput() async {
         let f = IosRunnerFailureClassifier.classify(
             launchOutput: "exit code 74",
             deviceLog: "Connection peer refused channel request for \"dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface\""

@@ -6,7 +6,7 @@ import Testing
 /// → diff loop, so its comparison logic is pinned here without a live proxy.
 @Suite("Network replay diff")
 struct NetworkReplayDiffTests {
-    @Test func identicalResponsesReportNoChange() {
+    @Test func identicalResponsesReportNoChange() async {
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: ["Content-Type": "application/json"], sourceBody: Data("{}".utf8),
             replayStatus: 200, replayHeaders: ["content-type": "application/json"], replayBody: Data("{}".utf8)
@@ -17,7 +17,7 @@ struct NetworkReplayDiffTests {
         #expect(diff.headersChanged.isEmpty)
     }
 
-    @Test func statusAndBodyChangesAreDetected() {
+    @Test func statusAndBodyChangesAreDetected() async {
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: [:], sourceBody: Data("old".utf8),
             replayStatus: 500, replayHeaders: [:], replayBody: Data("new-longer".utf8)
@@ -31,7 +31,7 @@ struct NetworkReplayDiffTests {
         #expect(diff.isIdentical == false)
     }
 
-    @Test func headerDeltasAreNameOnlyAndCaseInsensitive() {
+    @Test func headerDeltasAreNameOnlyAndCaseInsensitive() async {
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: ["Authorization": "secret-a", "X-Old": "1"], sourceBody: nil,
             replayStatus: 200, replayHeaders: ["authorization": "secret-b", "X-New": "2"], replayBody: nil
@@ -46,7 +46,7 @@ struct NetworkReplayDiffTests {
         #expect(!encoded.contains("secret-b"))
     }
 
-    @Test func wholeBodyComparisonIsNotMarkedPartial() {
+    @Test func wholeBodyComparisonIsNotMarkedPartial() async {
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: [:], sourceBody: Data("{}".utf8),
             replayStatus: 200, replayHeaders: [:], replayBody: Data("{}".utf8)
@@ -59,7 +59,7 @@ struct NetworkReplayDiffTests {
     /// Loom's capture cap can clip a body before Reticle ever sees it. Two clipped
     /// bodies that agree on their recorded prefix are NOT known to be equal, and this
     /// lane must not launder that into an "identical" verdict.
-    @Test func cappedBodiesWithMatchingPrefixesRefuseToClaimIdentical() {
+    @Test func cappedBodiesWithMatchingPrefixesRefuseToClaimIdentical() async {
         let prefix = Data(repeating: 0x41, count: 1024)
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: [:], sourceBody: prefix, sourceWireBytes: 5_000_000,
@@ -76,7 +76,7 @@ struct NetworkReplayDiffTests {
     }
 
     /// Differing wire sizes are still a difference we can assert, even from prefixes.
-    @Test func cappedBodiesWithDifferingWireSizesReportAChange() {
+    @Test func cappedBodiesWithDifferingWireSizesReportAChange() async {
         let prefix = Data(repeating: 0x41, count: 1024)
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: [:], sourceBody: prefix, sourceWireBytes: 5_000_000,
@@ -89,7 +89,7 @@ struct NetworkReplayDiffTests {
 
     /// Only one side clipped: the comparison is still partial, and the uncapped side
     /// keeps reporting its real recorded size.
-    @Test func oneSidedCapMarksTheComparisonPartial() {
+    @Test func oneSidedCapMarksTheComparisonPartial() async {
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: [:], sourceBody: Data(repeating: 0x41, count: 1024),
             sourceWireBytes: 5_000_000,
@@ -101,7 +101,7 @@ struct NetworkReplayDiffTests {
         #expect(diff.bodyChanged)
     }
 
-    @Test func replayRequestBodyInputsAreMutuallyExclusive() throws {
+    @Test func replayRequestBodyInputsAreMutuallyExclusive() async throws {
         #expect(throws: NetworkReplayError.self) {
             _ = try NetworkReplayRequest(body: "x", clearBody: true).resolvedBody()
         }

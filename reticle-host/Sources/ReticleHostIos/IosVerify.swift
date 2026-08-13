@@ -76,8 +76,8 @@ extension IosHelperClient {
     /// Captures the watched node's current state, or a not-found state when the
     /// selector resolves nothing. A snapshot fetch failure reads as not-found —
     /// verify never fails the action it wraps.
-    func captureVerifyState(_ pkg: String, _ selector: TargetSelector) -> VerifyState {
-        guard let snapshot = try? fetchSnapshot(pkg), let node = try? Render.findNode(snapshot, selector) else {
+    func captureVerifyState(_ pkg: String, _ selector: TargetSelector) async -> VerifyState {
+        guard let snapshot = try? await fetchSnapshot(pkg), let node = try? Render.findNode(snapshot, selector) else {
             return VerifyState(
                 found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil,
                 checked: nil, expanded: nil, custom: [:]
@@ -99,16 +99,16 @@ extension IosHelperClient {
 
     /// Polls the watched node until it differs from `before` or the budget expires,
     /// returning the `{selector, changed, note?, changes[]}` shape `printVerify` reads.
-    func pollVerify(_ pkg: String, _ selector: TargetSelector, before: VerifyState, params: [String: Any]) -> [String: Any] {
+    func pollVerify(_ pkg: String, _ selector: TargetSelector, before: VerifyState, params: [String: Any]) async -> [String: Any] {
         let budgetMs = (params["verifyTimeoutMs"] as? Int)
             ?? (params["verifyTimeoutMs"] as? Double).map(Int.init)
             ?? 2000
         let deadline = Date().addingTimeInterval(Double(budgetMs) / 1000.0)
-        var after = captureVerifyState(pkg, selector)
+        var after = await captureVerifyState(pkg, selector)
         var changes = diffVerify(before, after)
         while changes.isEmpty && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.15)
-            after = captureVerifyState(pkg, selector)
+            try? await Task.sleep(for: .seconds(0.15))
+            after = await captureVerifyState(pkg, selector)
             changes = diffVerify(before, after)
         }
         let selStr: String

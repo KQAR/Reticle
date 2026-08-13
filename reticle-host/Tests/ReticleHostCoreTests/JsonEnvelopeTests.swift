@@ -4,12 +4,12 @@ import Testing
 
 @Suite("JSON envelope")
 struct JsonEnvelopeTests {
-    @Test func argsEnableJsonForBareFlag() {
+    @Test func argsEnableJsonForBareFlag() async {
         let args = Args(["doctor", "--json"])
         #expect(JsonEnvelope.enabled(args))
     }
 
-    @Test func successEnvelopeUsesStableShape() throws {
+    @Test func successEnvelopeUsesStableShape() async throws {
         let data = try JsonEnvelope.encodeSuccess(["version": "1", "ready": true])
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["ok"] as? Bool == true)
@@ -18,14 +18,14 @@ struct JsonEnvelopeTests {
         #expect(payload?["ready"] as? Bool == true)
     }
 
-    @Test func errorEnvelopeUsesHelperMessage() throws {
+    @Test func errorEnvelopeUsesHelperMessage() async throws {
         let data = try JsonEnvelope.encodeError(HelperError("missing required --package"))
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["ok"] as? Bool == false)
         #expect(object?["error"] as? String == "missing required --package")
     }
 
-    @Test func integerValuesFromHelperRepliesStayNumeric() throws {
+    @Test func integerValuesFromHelperRepliesStayNumeric() async throws {
         // Helper replies are parsed with JSONSerialization, so their values are
         // NSNumber. Integer 0/1 bridge to Bool, so a naive `as? Bool` would turn
         // counts into true/false. Verify they round-trip as numbers.

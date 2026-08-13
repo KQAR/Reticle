@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Action batch")
 struct ActionBatchTests {
-    @Test func parsesBatchStepArray() throws {
+    @Test func parsesBatchStepArray() async throws {
         let data = Data("""
         [
           { "gesture": "tap", "testId": "checkout.payButton" },
@@ -20,7 +20,7 @@ struct ActionBatchTests {
         #expect((steps[1]["delayMs"] as? NSNumber)?.intValue == 50)
     }
 
-    @Test func rejectsNonArrayBatchFile() {
+    @Test func rejectsNonArrayBatchFile() async {
         let data = Data(#"{ "gesture": "tap" }"#.utf8)
 
         #expect(throws: HelperError.self) {

@@ -1,8 +1,8 @@
 import Foundation
 
-func cmdMutate(_ backend: HostBackend, _ args: Args) throws {
+func cmdMutate(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
-    let result = try backend.mutate(MutateRequest(
+    let result = try await backend.mutate(MutateRequest(
         package: pkg,
         property: try args.require("property"),
         value: try args.require("value"),
@@ -15,10 +15,10 @@ func cmdMutate(_ backend: HostBackend, _ args: Args) throws {
     print("mutated \(result.ref ?? "?") (was \(result.previousValue ?? "?"))")
 }
 
-func cmdDebug(_ backend: HostBackend, _ args: Args) throws {
+func cmdDebug(_ backend: HostBackend, _ args: Args) async throws {
     switch args.positional(1) {
     case "logs":
-        let entries = try backend.logs(PackageRequest(package: try args.require("package")))
+        let entries = try await backend.logs(PackageRequest(package: try args.require("package")))
         if JsonEnvelope.enabled(args) {
             try JsonEnvelope.success(["entries": entries.map(\.jsonObject)])
             return
@@ -29,7 +29,7 @@ func cmdDebug(_ backend: HostBackend, _ args: Args) throws {
             for e in entries { print("[\(e.level)] \(e.message)") }
         }
     case "logcat":
-        let lines = try backend.logcat()
+        let lines = try await backend.logcat()
         if JsonEnvelope.enabled(args) {
             try JsonEnvelope.success(["lines": lines])
             return
@@ -44,9 +44,9 @@ func cmdDebug(_ backend: HostBackend, _ args: Args) throws {
     }
 }
 
-func cmdScreenshot(_ backend: HostBackend, _ args: Args) throws {
+func cmdScreenshot(_ backend: HostBackend, _ args: Args) async throws {
     let out = args.option("output") ?? "screenshot.png"
-    let result = try backend.screenshot(ScreenshotRequest(package: args.option("package")))
+    let result = try await backend.screenshot(ScreenshotRequest(package: args.option("package")))
     guard let data = Data(base64Encoded: result.pngBase64) else {
         throw HelperError("screenshot returned no image data")
     }
@@ -66,7 +66,7 @@ func cmdScreenshot(_ backend: HostBackend, _ args: Args) throws {
     for line in result.degraded { print("degraded: \(line)") }
 }
 
-func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
+func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) async throws {
     var view = view
     var snapshotPath: String
     var package = args.option("package")
@@ -84,7 +84,7 @@ func cmdUiRender(_ backend: HostBackend, _ args: Args, view: String) throws {
         throw HelperError("ui \(view) needs a snapshot.json path (or --package <pkg> for the live tree)")
     }
     if view == "tree", args.option("semantics") != nil { view = "semantics" }
-    let result = try backend.render(RenderRequest(
+    let result = try await backend.render(RenderRequest(
         view: view,
         snapshotPath: snapshotPath,
         depth: try args.intOption("depth"),

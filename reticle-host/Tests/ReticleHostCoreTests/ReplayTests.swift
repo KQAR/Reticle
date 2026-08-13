@@ -6,7 +6,7 @@ import Testing
 
 @Suite("Replay trace discovery and GIF rendering")
 struct ReplayTests {
-    @Test func discoversStepsInRecordingOrder() throws {
+    @Test func discoversStepsInRecordingOrder() async throws {
         let root = try temporaryDirectory()
         try writeTrace(in: root, dir: "20-swipe", manifest: swipeManifest(recordedAt: 20))
         try writeTrace(in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10))
@@ -17,7 +17,7 @@ struct ReplayTests {
         #expect(steps.map(\.recordedAtMillis) == [10, 20, 30])
     }
 
-    @Test func acceptsASingleTraceDirectory() throws {
+    @Test func acceptsASingleTraceDirectory() async throws {
         let root = try temporaryDirectory()
         let dir = try writeTrace(in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10))
         let steps = try ReplayTraceDiscovery.steps(at: dir)
@@ -25,7 +25,7 @@ struct ReplayTests {
         #expect(steps[0].gesture == "tap")
     }
 
-    @Test func missingTracesThrow() throws {
+    @Test func missingTracesThrow() async throws {
         let root = try temporaryDirectory()
         #expect(throws: HelperError.self) {
             _ = try ReplayTraceDiscovery.steps(at: root)
@@ -35,7 +35,7 @@ struct ReplayTests {
         }
     }
 
-    @Test func parsesGestureGeometryAndArtifacts() throws {
+    @Test func parsesGestureGeometryAndArtifacts() async throws {
         let root = try temporaryDirectory()
         let dir = try writeTrace(
             in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10),
@@ -57,7 +57,7 @@ struct ReplayTests {
         #expect(!swipe.hasScreenshot)
     }
 
-    @Test func ignoresArtifactNamesThatEscapeTheTraceDirectory() throws {
+    @Test func ignoresArtifactNamesThatEscapeTheTraceDirectory() async throws {
         let root = try temporaryDirectory()
         var manifest = tapManifest(recordedAt: 10)
         manifest["artifacts"] = [
@@ -70,7 +70,7 @@ struct ReplayTests {
         #expect(step.afterScreenshot == nil)
     }
 
-    @Test func captionsDescribeTheGesture() throws {
+    @Test func captionsDescribeTheGesture() async throws {
         let root = try temporaryDirectory()
         let tap = try ReplayTraceDiscovery.step(
             at: try writeTrace(in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10)))
@@ -85,7 +85,7 @@ struct ReplayTests {
         #expect(type.caption(index: 3, count: 3) == "3/3 type testId=search.input 5 chars")
     }
 
-    @Test func rendersAnAnimatedGifFromScreenshots() throws {
+    @Test func rendersAnAnimatedGifFromScreenshots() async throws {
         let root = try temporaryDirectory()
         try writeTrace(
             in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10),
@@ -116,7 +116,7 @@ struct ReplayTests {
         #expect(frame.height == result.canvasHeight)
     }
 
-    @Test func readsTheGestureCoordinateSpaceFromTheSnapshot() throws {
+    @Test func readsTheGestureCoordinateSpaceFromTheSnapshot() async throws {
         let root = try temporaryDirectory()
         let dir = try writeTrace(in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10))
         // Without a snapshot file the width is unknown.
@@ -126,7 +126,7 @@ struct ReplayTests {
         #expect(try ReplayTraceDiscovery.step(at: dir).coordinateSpaceWidth == 402)
     }
 
-    @Test func drawsTheTapMarkerInSnapshotSpaceNotPixelSpace() throws {
+    @Test func drawsTheTapMarkerInSnapshotSpaceNotPixelSpace() async throws {
         let root = try temporaryDirectory()
         // Screenshot is 108×240 "pixels"; the snapshot says the screen is
         // 54×120 (points at 2× density). A tap at (27,60) is dead center.
@@ -156,7 +156,7 @@ struct ReplayTests {
         #expect(!(wrong.r > 200 && wrong.g < 120))
     }
 
-    @Test func refusesATraceWithNoScreenshotsAtAll() throws {
+    @Test func refusesATraceWithNoScreenshotsAtAll() async throws {
         let root = try temporaryDirectory()
         try writeTrace(in: root, dir: "10-tap", manifest: tapManifest(recordedAt: 10))
         let steps = try ReplayTraceDiscovery.steps(at: root)

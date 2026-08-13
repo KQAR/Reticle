@@ -32,12 +32,12 @@ struct IosTypeRoutingTests {
 
     private let client = IosHelperClient(serial: nil)
 
-    @Test func aDomNodeRefRoutesToItsSelectorChain() {
+    @Test func aDomNodeRefRoutesToItsSelectorChain() async {
         let snap = snapshot([domNode("r5", selector: chain)])
         #expect(client.webChain(forRef: "r5", in: snap) == chain)
     }
 
-    @Test func aNativeRefDoesNot() {
+    @Test func aNativeRefDoesNot() async {
         // The UIKit path is still the right one for a real field, and sending it
         // down the page path would fail on an app with no web view at all.
         let native = Node(ref: "r5", kind: .view, typeName: "UITextField",
@@ -45,14 +45,14 @@ struct IosTypeRoutingTests {
         #expect(client.webChain(forRef: "r5", in: snapshot([native])) == nil)
     }
 
-    @Test func aDomNodeWithNoChainFallsBackRatherThanSendingNothing() {
+    @Test func aDomNodeWithNoChainFallsBackRatherThanSendingNothing() async {
         // Absent is absent: without a chain there is nothing for the page path to
         // resolve, so the UIKit path (which at least reports why it cannot type)
         // must still run.
         #expect(client.webChain(forRef: "r5", in: snapshot([domNode("r5", selector: nil)])) == nil)
     }
 
-    @Test func anUnknownRefIsNotRouted() {
+    @Test func anUnknownRefIsNotRouted() async {
         #expect(client.webChain(forRef: "r99", in: snapshot([domNode("r5", selector: chain)])) == nil)
     }
 }

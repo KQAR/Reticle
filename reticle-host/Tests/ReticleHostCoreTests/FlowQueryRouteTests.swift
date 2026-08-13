@@ -89,7 +89,7 @@ struct FlowQueryRouteTests {
 
     /// An unbounded limit would let one request pull the whole ring into an agent's
     /// context — the exact cost this endpoint exists to avoid.
-    @Test func limitIsClampedRatherThanTrusted() {
+    @Test func limitIsClampedRatherThanTrusted() async {
         #expect(NetworkFlowFilter(limit: 100_000).limit == 500)
         #expect(NetworkFlowFilter(limit: 0).limit == 1)
         #expect(NetworkFlowFilter(limit: -3).limit == 1)

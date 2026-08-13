@@ -30,13 +30,13 @@ struct IosScrollToContainerMatchTests {
 
     private let client = IosHelperClient(serial: nil)
 
-    @Test func theContainerItselfIsNotATarget() {
+    @Test func theContainerItselfIsNotATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let snap = snapshot([node("r0"), container])
         #expect(client.matchedTheContainer("r10", container: container, snapshot: snap))
     }
 
-    @Test func anAncestorOfTheContainerIsNotATarget() {
+    @Test func anAncestorOfTheContainerIsNotATarget() async {
         // A wrapper whose text is the aggregate of everything beneath it matches
         // just as readily as the list does.
         let outer = node("r5")
@@ -45,21 +45,21 @@ struct IosScrollToContainerMatchTests {
         #expect(client.matchedTheContainer("r5", container: container, snapshot: snap))
     }
 
-    @Test func anotherScrollableNodeIsNotATarget() {
+    @Test func anotherScrollableNodeIsNotATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let sibling = node("r20", scroll: ScrollInfo(canScrollUp: true))
         let snap = snapshot([node("r0"), container, sibling])
         #expect(client.matchedTheContainer("r20", container: container, snapshot: snap))
     }
 
-    @Test func arowInsideTheContainerIsATarget() {
+    @Test func arowInsideTheContainerIsATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let row = node("r11", parent: "r10")
         let snap = snapshot([node("r0"), container, row])
         #expect(!client.matchedTheContainer("r11", container: container, snapshot: snap))
     }
 
-    @Test func anUnknownRefIsNotTreatedAsTheContainer() {
+    @Test func anUnknownRefIsNotTreatedAsTheContainer() async {
         // Absent is not "it was the list": an unresolvable ref must not silently
         // become a refusal that hides a real miss.
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))

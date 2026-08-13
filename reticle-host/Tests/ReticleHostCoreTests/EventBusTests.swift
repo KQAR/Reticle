@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Reticle event bus", .serialized)
 struct EventBusTests {
-    @Test func eventStoreAppendsQueriesAndReplaysJsonl() throws {
+    @Test func eventStoreAppendsQueriesAndReplaysJsonl() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 2)
 
@@ -20,7 +20,7 @@ struct EventBusTests {
         #expect(replayed.events().map(\.type) == ["ui.snapshot", "action.trace", "log"])
     }
 
-    @Test func eventStoreSkipsCorruptOrPartialTrailingLine() throws {
+    @Test func eventStoreSkipsCorruptOrPartialTrailingLine() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
         _ = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
@@ -42,7 +42,7 @@ struct EventBusTests {
         #expect(next.id == "evt_0000000000000003")
     }
 
-    @Test func daemonDiscoveryResolvesAutomaticTraceDirectory() throws {
+    @Test func daemonDiscoveryResolvesAutomaticTraceDirectory() async throws {
         let root = try temporaryDirectory()
         let discovery = DaemonDiscovery(fileURL: root.appendingPathComponent("daemon.json"))
         let info = DaemonInfo(pid: getpid(), port: 9876, session: "demo", startedAt: 1)
@@ -59,7 +59,7 @@ struct EventBusTests {
         #expect(automaticSessionTraceOutput(discovery: discovery) == expected)
     }
 
-    @Test func sseEncoderProducesEventStreamFrame() throws {
+    @Test func sseEncoderProducesEventStreamFrame() async throws {
         let event = ReticleEventEnvelope(
             id: "evt_0000000000000001",
             ts: 1,
@@ -77,7 +77,7 @@ struct EventBusTests {
         #expect(frame?.hasSuffix("\n\n") == true)
     }
 
-    @Test func actionTraceIngestReadsTraceFileAndRefsArtifacts() throws {
+    @Test func actionTraceIngestReadsTraceFileAndRefsArtifacts() async throws {
         let dir = try temporaryDirectory().appendingPathComponent("trace", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let trace = """
@@ -153,7 +153,7 @@ struct EventBusTests {
         #expect(helper.calls == ["listDevices"])
     }
 
-    @Test func daemonHelperClientUsesLiveDiscoveryAndForwardsSerial() throws {
+    @Test func daemonHelperClientUsesLiveDiscoveryAndForwardsSerial() async throws {
         let root = try temporaryDirectory()
         let discovery = DaemonDiscovery(fileURL: root.appendingPathComponent("daemon.json"))
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
@@ -423,7 +423,7 @@ struct EventBusTests {
         #expect((response as? HTTPURLResponse)?.statusCode == 400)
     }
 
-    @Test func httpServerSseReplaysExistingEvents() throws {
+    @Test func httpServerSseReplaysExistingEvents() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
         _ = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
@@ -439,7 +439,7 @@ struct EventBusTests {
         #expect(text.contains("event: ui.snapshot"))
     }
 
-    @Test func evictedCurrentSessionEventStillResolvesFromDisk() throws {
+    @Test func evictedCurrentSessionEventStillResolvesFromDisk() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 1)
 
@@ -452,7 +452,7 @@ struct EventBusTests {
         #expect(try store.historicalEvent(session: "test", eventId: first.id)?.id == first.id)
     }
 
-    @Test func currentSessionHistoryIncludesEventsEvictedFromMemory() throws {
+    @Test func currentSessionHistoryIncludesEventsEvictedFromMemory() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 1)
 
@@ -467,7 +467,7 @@ struct EventBusTests {
         #expect(try store.historicalEvents(session: "test", since: first.id).map(\.id) == [second.id])
     }
 
-    @Test func historicalEventLookupIgnoresIdEmbeddedInAnotherEventsPayload() throws {
+    @Test func historicalEventLookupIgnoresIdEmbeddedInAnotherEventsPayload() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "old", rootDirectory: root, limit: 10)
         let target = try store.append(EventPostRequest(source: "ui", type: "ui.snapshot"))
@@ -486,7 +486,7 @@ struct EventBusTests {
         #expect(try current.historicalEvent(session: "old", eventId: "evt_9999999999999999") == nil)
     }
 
-    @Test func artifactPathsAreConfinedToAllowedRoots() throws {
+    @Test func artifactPathsAreConfinedToAllowedRoots() async throws {
         let root = try temporaryDirectory()
         let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
 

@@ -48,12 +48,12 @@ struct ActionTraceDiffContractTests {
     /// (`ActionTraceParams.RECORDED`). A key added to one side only would make
     /// the same gesture record differently on iOS and Android, and nothing in the
     /// diff cases would notice.
-    @Test func recordedParamAllowListMatchesTheFixture() throws {
+    @Test func recordedParamAllowListMatchesTheFixture() async throws {
         let decoded = try ReticleJSON.decode(Cases.self, from: Data(contentsOf: fixtureURL()))
         #expect(ActionTraceParamNames.recorded == decoded.recordedParams)
     }
 
-    @Test func everyFixtureCaseDiffsAsSpecified() throws {
+    @Test func everyFixtureCaseDiffsAsSpecified() async throws {
         let data = try Data(contentsOf: fixtureURL())
         let decoded = try ReticleJSON.decode(Cases.self, from: data)
 
@@ -99,7 +99,7 @@ struct ActionTraceDiffContractTests {
     /// astral-plane case proves the boundary but not the unit: Swift's `prefix`
     /// counts grapheme clusters and would pass a BMP-only case while diverging
     /// from Kotlin the moment a combining sequence or emoji appears.
-    @Test func identityTextIsClippedByUnicodeScalarNotGraphemeCluster() throws {
+    @Test func identityTextIsClippedByUnicodeScalarNotGraphemeCluster() async throws {
         let emoji = "🧾" // U+1F9FE — one scalar, one grapheme, two UTF-16 units
         let body = emoji + String(repeating: "x", count: 80)
         let visible = node(ref: "r1", text: body, isVisible: true)
