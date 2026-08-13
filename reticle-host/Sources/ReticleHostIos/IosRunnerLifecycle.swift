@@ -157,7 +157,14 @@ public final class IosRunnerLifecycle: Sendable {
                                               "--device", udid, config.bundleId])
         }
 
-        let build = Self.shell("/usr/bin/xcodebuild", [
+        // Streamed, not collected. A cold device build takes minutes and prints
+        // its progress as it goes; buffering that until the end made the command
+        // look hung, and made a build that failed 20 seconds in indistinguishable
+        // from one still working. Only the lines that mean something to someone
+        // waiting are echoed — a full xcodebuild log is thousands of compile
+        // lines, and all of it is still in `build.out`/`build.err` for the
+        // failure classifier.
+        let build = Self.shellStreaming("/usr/bin/xcodebuild", [
             "-project", runnerProjectPath,
             "-scheme", "ReticleRunner",
             "-destination", "platform=iOS,id=\(udid)",
@@ -165,7 +172,10 @@ public final class IosRunnerLifecycle: Sendable {
             "CODE_SIGN_STYLE=Automatic",
             "DEVELOPMENT_TEAM=\(team)",
             "build-for-testing",
-        ])
+        ]) { line in
+            guard Self.isProgressWorthPrinting(line) else { return }
+            FileHandle.standardError.write(Data("  \(line)\n".utf8))
+        }
         guard build.code == 0 else {
             throw IosRunnerFailureClassifier.classify(launchOutput: build.err + build.out).asError
         }
@@ -397,11 +407,40 @@ public final class IosRunnerLifecycle: Sendable {
     // MARK: - Shell
 
     @discardableResult
+    /// Phases and diagnostics — the lines a person waiting on a build wants, out
+    /// of the thousands `xcodebuild` prints. Deliberately a small allowlist: a
+    /// filter that let everything through would be the same as no streaming.
+    static func isProgressWorthPrinting(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.hasPrefix("error:") || trimmed.contains(": error:") { return true }
+        if trimmed.hasPrefix("warning: ") && trimmed.contains("signing") { return true }
+        for phase in ["Prepare packages", "Resolve Package Graph", "CodeSign",
+                      "** BUILD", "** TEST", "Signing Identity", "Build description",
+                      "Testing started", "Provisioning profile"] where trimmed.hasPrefix(phase) {
+            return true
+        }
+        return false
+    }
+
+    /// `shell`, but the child's output is echoed line by line as it arrives.
+    static func shellStreaming(
+        _ launchPath: String,
+        _ args: [String],
+        onLine: @escaping @Sendable (String) -> Void
+    ) -> (out: String, err: String, code: Int32) {
+        let result = Shell.runStreamingSync(launchPath, args, onLine: onLine)
+        return (result.out, result.err, result.code)
+    }
+
     static func shell(_ launchPath: String, _ args: [String]) -> (out: String, err: String, code: Int32) {
         // Both pipes are drained concurrently — mandatory here, because
         // `xcodebuild` writes megabytes to both and a caller blocked on stdout
         // deadlocks the moment stderr's 64KB buffer fills. `Shell` owns that.
-        let result = Shell.runSync(launchPath, args)
+        // Five minutes: the slowest thing that comes through here is
+        // `devicectl device install app` pushing the runner over USB. The build
+        // itself does NOT — it streams, and is deliberately unbounded.
+        let result = Shell.runSync(launchPath, args, timeout: .seconds(300))
         return (result.out, result.err, result.code)
     }
 }

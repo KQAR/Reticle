@@ -361,7 +361,10 @@ public final class ServeRuntime {
     private func runReadOnly(_ path: String, _ args: [String]) -> String? {
         // This used to pipe stderr and never read it, which deadlocks any child
         // that writes more than the pipe buffer holds. `Shell` drains both.
-        let result = Shell.runSync(path, args)
+        // These are local interface lookups (`route`, `ipconfig`); one that takes
+        // longer than ten seconds is broken, and the caller treats nil as "could
+        // not determine", which is the right answer either way.
+        let result = Shell.runSync(path, args, timeout: .seconds(10))
         guard result.code == 0 else { return nil }
         return result.out
     }
