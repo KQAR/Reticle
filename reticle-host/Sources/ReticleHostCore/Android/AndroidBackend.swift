@@ -105,7 +105,6 @@ final class AndroidBackend: HostBackend {
         if let depth = request.depth { params["depth"] = depth }
         if let package = request.package { params["package"] = package }
         if let window = request.window { params["window"] = window }
-        if let window = request.window { params["window"] = window }
         for (key, value) in request.selector.wireParams { params[key] = value }
         let r = try transport.call(.render, params)
         return RenderResult(text: r["text"] as? String ?? "")

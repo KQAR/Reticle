@@ -71,8 +71,15 @@ internal object HelperRenderCommands {
      * Android helper and the iOS host cannot format one snapshot two ways.
      * `outline` is the Android-only `@N` alias cache, and `node` needs the
      * selector diagnostics that only the helper has.
+     *
+     * The view NAMES are [dev.reticle.core.Render.ROSTER], shared with the Swift
+     * port and pinned by reticle-protocol/fixtures/render-views.cases.json —
+     * because the CLI advertises one list of views for every target, so a name this
+     * side adds must be either implemented or refused-by-name on the other.
+     * `internal` rather than private so `RenderViewRosterTest` can prove no roster
+     * name reaches the `else` branch.
      */
-    private fun renderView(view: String, snapshot: Snapshot, params: JsonObject): String = when (view) {
+    internal fun renderView(view: String, snapshot: Snapshot, params: JsonObject): String = when (view) {
         "tree" -> Render.tree(snapshot, params.intOrNull("depth") ?: Int.MAX_VALUE)
         "semantics" -> Render.semantics(SemanticTree.build(snapshot), params.intOrNull("depth") ?: Int.MAX_VALUE)
         "compact" -> Render.compact(snapshot)

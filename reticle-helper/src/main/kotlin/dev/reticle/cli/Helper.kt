@@ -91,6 +91,19 @@ object Helper {
         }
     }
 
+    /**
+     * The implementation half of the wire contract in `reticle-protocol/helper-rpc.md`.
+     *
+     * That contract exists in three places: the markdown (the authority), the Swift
+     * host's `HelperMethod` enum (the caller's view), and this `when` (what actually
+     * answers). The first two check each other in `HelperMethodContractTests`; this
+     * one was checked by nothing, so a method documented and declared but never
+     * implemented here surfaced as `unknown method '<name>'` at runtime, on a device
+     * — which CI does not have. `HelperRpcContractTest` reads the branches of this
+     * `when` straight out of the source and compares them to the markdown, so the
+     * gap now fails a build. Keep the branches one-per-line string literals; that is
+     * what the test parses.
+     */
     private fun dispatch(method: String, params: JsonObject): JsonElement = when (method) {
         "ping" -> buildJsonObject { put("pong", true); put("version", RETICLE_VERSION) }
         "listDevices" -> HelperDeviceCommands.listDevices()

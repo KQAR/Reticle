@@ -5,11 +5,24 @@ import Foundation
 /// they are platform-neutral: the Swift host uses them to render an iOS snapshot
 /// exactly as the Kotlin helper renders an Android one.
 ///
-/// `outline` (the `@N` alias cache) is intentionally not yet ported; it is a
-/// convenience layer tracked as a follow-up.
+/// `outline` (the `@N` alias cache) is Android-only and refused BY NAME here — see
+/// `RenderError.androidOnly`. It used to fall through to `unknownView`, which is the
+/// failure this whole file exists to prevent: a projection the CLI advertises for
+/// every target answering with an internal-sounding error that names no boundary and
+/// suggests no path. The boundary itself is stated once, in `docs/boundaries.md`.
 public enum Render {
-    /// Render one of: tree / semantics / compact / node / regions / style.
-    /// `node` requires `selector`. Returns rendered text.
+    /// Every `ui <view>` name the CLI accepts. A view is in this roster whether or
+    /// not THIS port renders it: the roster is what both ports are measured against,
+    /// so a name added on one platform cannot quietly become an "unknown view" on the
+    /// other. Pinned against the Kotlin twin by
+    /// `reticle-protocol/fixtures/render-views.cases.json`.
+    public static let roster = [
+        "tree", "semantics", "compact", "outline", "node", "regions", "style", "coverage",
+    ]
+
+    /// Render one of: tree / semantics / compact / node / regions / style / coverage.
+    /// `node` requires `selector`. Returns rendered text. A roster name this port does
+    /// not implement throws a reason naming the platform, never `unknownView`.
     public static func view(
         _ view: String,
         snapshot: Snapshot,
@@ -24,18 +37,26 @@ public enum Render {
         case "regions": return regions(snapshot)
         case "style": return try style(snapshot, selector: selector)
         case "coverage": return coverage(snapshot)
+        case "outline": throw RenderError.androidOnly(view)
         default: throw RenderError.unknownView(view)
         }
     }
 
     public enum RenderError: Error, CustomStringConvertible {
         case unknownView(String)
+        case androidOnly(String)
         case noSelector
         case nodeNotFound(String)
 
         public var description: String {
             switch self {
             case .unknownView(let v): return "unknown render view '\(v)'"
+            case .androidOnly(let v):
+                return "ui \(v) is Android-only: it numbers the screen's nodes into a `@N` alias "
+                    + "cache kept host-side by the Kotlin helper, and the Swift host keeps no such "
+                    + "cache — so an alias it printed could never be resolved back. Use `ui compact` "
+                    + "for the same screen: every item there already carries the selector an alias "
+                    + "stands in for (#testId / @resourceId / a css handle / ref)."
             case .noSelector: return "node render needs a selector (testId/resourceId/ref)"
             case .nodeNotFound(let s): return "no node matched selector \(s)"
             }
