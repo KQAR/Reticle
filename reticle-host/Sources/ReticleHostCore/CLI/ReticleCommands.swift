@@ -1,7 +1,7 @@
 import Foundation
 
-func cmdDevices(_ backend: HostBackend, _ args: Args) throws {
-    let devices = try backend.listDevices()
+func cmdDevices(_ backend: HostBackend, _ args: Args) async throws {
+    let devices = try await backend.listDevices()
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(["devices": devices.map(\.jsonObject)])
         return
@@ -10,9 +10,9 @@ func cmdDevices(_ backend: HostBackend, _ args: Args) throws {
     for d in devices { print("  \(d.serial)  [\(d.state)]") }
 }
 
-func cmdDoctor(_ backend: HostBackend, _ args: Args) throws {
-    let ping = try backend.ping()
-    let devices = try backend.listDevices()
+func cmdDoctor(_ backend: HostBackend, _ args: Args) async throws {
+    let ping = try await backend.ping()
+    let devices = try await backend.listDevices()
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success([
             "helper": ["pong": true, "version": ping.version],
@@ -25,9 +25,9 @@ func cmdDoctor(_ backend: HostBackend, _ args: Args) throws {
     for d in devices { print("  \(d.serial)  [\(d.state)]") }
 }
 
-func cmdStatus(_ backend: HostBackend, _ args: Args) throws {
+func cmdStatus(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
-    let status = try backend.status(StatusRequest(package: pkg))
+    let status = try await backend.status(StatusRequest(package: pkg))
     let advisory = RuntimeProcessStateStore().observe(
         package: pkg,
         serial: serialOption(args),
@@ -53,7 +53,7 @@ func cmdStatus(_ backend: HostBackend, _ args: Args) throws {
     }
 }
 
-func cmdInject(_ backend: HostBackend, _ args: Args) throws {
+func cmdInject(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
     let isIos = (args.option("target") ?? "android") == "ios"
     var payload: String?
@@ -71,7 +71,7 @@ func cmdInject(_ backend: HostBackend, _ args: Args) throws {
     // while JDWP holds its main thread suspended. Opt-in, and the name says the
     // price: marking the debug app force-stops the target, so the app comes back on
     // its launch screen rather than the one you were driving.
-    let started = try backend.inject(AppStartRequest(
+    let started = try await backend.inject(AppStartRequest(
         package: pkg, payload: payload, restartUnderDebugger: args.flag("restart-under-debugger")
     ))
     RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
@@ -87,10 +87,10 @@ func cmdInject(_ backend: HostBackend, _ args: Args) throws {
     }
 }
 
-func cmdUiReport(_ backend: HostBackend, _ args: Args) throws {
+func cmdUiReport(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
     let outDir = args.option("output") ?? "reticle-report"
-    let report = try backend.uiReport(PackageRequest(package: pkg))
+    let report = try await backend.uiReport(PackageRequest(package: pkg))
     let fm = FileManager.default
     try fm.createDirectory(atPath: outDir, withIntermediateDirectories: true)
     let pruned = pruneStaleReportArtifacts(in: outDir, fm: fm)
@@ -136,9 +136,9 @@ func pruneStaleReportArtifacts(in dir: String, fm: FileManager) -> Int {
     return removed
 }
 
-func cmdLaunch(_ backend: HostBackend, _ args: Args) throws {
+func cmdLaunch(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
-    let started = try backend.launch(AppStartRequest(package: pkg))
+    let started = try await backend.launch(AppStartRequest(package: pkg))
     RuntimeProcessStateStore().record(package: pkg, serial: serialOption(args), result: started.jsonObject)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(started.jsonObject)
@@ -148,14 +148,14 @@ func cmdLaunch(_ backend: HostBackend, _ args: Args) throws {
 }
 
 @discardableResult
-func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
+func cmdAct(_ backend: HostBackend, _ args: Args) async throws -> Int32 {
     guard let gesture = args.positional(1) else { throw HelperError("act needs a gesture (tap/swipe/drag/scroll-to/wheel/type/hide-keyboard/wait)") }
     if gesture == "batch" {
-        try cmdActBatch(backend, args)
+        try await cmdActBatch(backend, args)
         return 0
     }
     if gesture == "wait" {
-        return try cmdActWait(backend, args)
+        return try await cmdActWait(backend, args)
     }
     var request = ActRequest(
         gesture: gesture,
@@ -202,7 +202,7 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     }
     request.traceDelayMs = try args.intOption("trace-delay")
 
-    let outcome = try backend.act(request)
+    let outcome = try await backend.act(request)
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(outcome.raw)
         return 0
@@ -255,7 +255,7 @@ func cmdAct(_ backend: HostBackend, _ args: Args) throws -> Int32 {
 /// projection of that field for shell/CI callers (`--strict`), never the primary
 /// channel: a non-zero exit reads as "the command broke" to an agent driving this
 /// through a shell, which is worse than a clear line on stdout.
-private func cmdActWait(_ backend: HostBackend, _ args: Args) throws -> Int32 {
+private func cmdActWait(_ backend: HostBackend, _ args: Args) async throws -> Int32 {
     var request = ActRequest(
         gesture: "wait",
         package: try args.require("package"),
@@ -274,7 +274,7 @@ private func cmdActWait(_ backend: HostBackend, _ args: Args) throws -> Int32 {
     request.timeoutMs = try args.intOption("timeout")
     request.quietMs = try args.intOption("quiet-for")
 
-    let result = try backend.act(request)
+    let result = try await backend.act(request)
     let outcome = result.outcome ?? "unknown"
     if JsonEnvelope.enabled(args) {
         try JsonEnvelope.success(result.raw)
@@ -323,7 +323,7 @@ private func intOf(_ value: Any?) -> Int? {
     }
 }
 
-func cmdActBatch(_ backend: HostBackend, _ args: Args) throws {
+func cmdActBatch(_ backend: HostBackend, _ args: Args) async throws {
     let pkg = try args.require("package")
     let file = try args.require("file")
     let data = try Data(contentsOf: URL(fileURLWithPath: file))
@@ -347,7 +347,7 @@ func cmdActBatch(_ backend: HostBackend, _ args: Args) throws {
         if let delay = try args.intOption("trace-delay"), request.traceDelayMs == nil {
             request.traceDelayMs = delay
         }
-        let result = try backend.act(request).raw
+        let result = try await backend.act(request).raw
         // A `wait` step is the only step that can report a non-fatal
         // disappointment: it never throws, because a predicate that did not come
         // true is an observation. But inside a BATCH the usual intent is a gate —
@@ -376,7 +376,10 @@ func cmdActBatch(_ backend: HostBackend, _ args: Args) throws {
             }
         }
         if let delayMs = batchInt(rawStep["delayMs"]), delayMs > 0 {
-            Thread.sleep(forTimeInterval: Double(delayMs) / 1000.0)
+            // `Task.sleep`, not `Thread.sleep`: inside an async command this is a
+            // cancellation point, so a Ctrl-C between batch steps stops the run
+            // instead of sitting out the delay first.
+            try? await Task.sleep(for: .milliseconds(delayMs))
         }
     }
     if JsonEnvelope.enabled(args) {

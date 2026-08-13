@@ -16,44 +16,44 @@ struct IosVerifyTokenTests {
         try IosHelperClient.parseVerifyToken(token, actSelector: act ?? empty)
     }
 
-    @Test func sigilForms() throws {
+    @Test func sigilForms() async throws {
         #expect(try parse("#login.status")?.testId == "login.status")
         #expect(try parse("@btn_ok")?.resourceId == "btn_ok")
         #expect(try parse("css=.status")?.cssSelector == ".status")
     }
 
-    @Test func keyEqualsForms() throws {
+    @Test func keyEqualsForms() async throws {
         #expect(try parse("testId=login.status")?.testId == "login.status")
         #expect(try parse("resourceId=btn_ok")?.resourceId == "btn_ok")
         #expect(try parse("ref=n12")?.ref == "n12")
     }
 
-    @Test func bareTokenIsARef() throws {
+    @Test func bareTokenIsARef() async throws {
         #expect(try parse("n12")?.ref == "n12")
     }
 
-    @Test func falseDisablesVerify() throws {
+    @Test func falseDisablesVerify() async throws {
         #expect(try parse("false") == nil)
     }
 
-    @Test func trueWatchesTheActedSelector() throws {
+    @Test func trueWatchesTheActedSelector() async throws {
         let watched = try parse("true", act: ReticleProtocol.Selector(testId: "login.status"))
         #expect(watched?.testId == "login.status")
     }
 
-    @Test func trueWithoutASelectorFailsLoudly() {
+    @Test func trueWithoutASelectorFailsLoudly() async {
         #expect(throws: HelperError.self) {
             _ = try IosHelperClient.parseVerifyToken("true", actSelector: ReticleProtocol.Selector())
         }
     }
 
-    @Test func unknownKeyFailsLoudly() {
+    @Test func unknownKeyFailsLoudly() async {
         #expect(throws: HelperError.self) {
             _ = try IosHelperClient.parseVerifyToken("bogus=x", actSelector: ReticleProtocol.Selector())
         }
     }
 
-    @Test func bareVerifyAcceptsALabelAsTheActedOnSelector() throws {
+    @Test func bareVerifyAcceptsALabelAsTheActedOnSelector() async throws {
         // The Android twin's case: a label is a node selector, and bare `--verify`
         // used to refuse it while the caller was acting by selector.
         let sel = try IosHelperClient.parseVerifyToken(
@@ -62,7 +62,7 @@ struct IosVerifyTokenTests {
         #expect(sel?.label == "Potwierdź")
     }
 
-    @Test func labelEqualsTokenIsALabel() throws {
+    @Test func labelEqualsTokenIsALabel() async throws {
         let sel = try IosHelperClient.parseVerifyToken(
             "label=Potwierdź", actSelector: ReticleProtocol.Selector()
         )

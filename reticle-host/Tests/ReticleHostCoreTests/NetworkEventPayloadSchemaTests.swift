@@ -39,7 +39,7 @@ struct NetworkEventPayloadSchemaTests {
         return Set((diff["properties"] as? [String: Any])?.keys ?? [:].keys)
     }
 
-    @Test func emittedPayloadKeysAreAllDeclaredInTheSchema() throws {
+    @Test func emittedPayloadKeysAreAllDeclaredInTheSchema() async throws {
         let (declared, _) = try schemaProperties()
         var payload = NetworkEventPayload(
             requestId: "r", scheme: "https", method: "GET", url: "u",
@@ -80,7 +80,7 @@ struct NetworkEventPayloadSchemaTests {
 
     /// The nested diff drifts just as easily as the payload, and `additionalProperties:
     /// false` applies there too.
-    @Test func emittedDiffKeysAreAllDeclaredInTheSchema() throws {
+    @Test func emittedDiffKeysAreAllDeclaredInTheSchema() async throws {
         let declared = try diffSchemaProperties()
         let diff = NetworkReplayDiff.between(
             sourceStatus: 200, sourceHeaders: ["a": "1"], sourceBody: Data("x".utf8), sourceWireBytes: 4096,
@@ -103,7 +103,7 @@ struct NetworkEventPayloadSchemaTests {
     /// Same pinning for the advisory payload, with both edges exercised: `overflow`
     /// deliberately omits `droppedFlows`, so only checking `recovered` would leave
     /// the required-field claim untested for the shape that actually ships first.
-    @Test func emittedAdvisoryPayloadKeysAreAllDeclaredInTheSchema() throws {
+    @Test func emittedAdvisoryPayloadKeysAreAllDeclaredInTheSchema() async throws {
         let (declared, required) = try schemaProperties("network-advisory-payload.schema.json")
 
         let overflow = NetworkAdvisoryPayload(
@@ -126,7 +126,7 @@ struct NetworkEventPayloadSchemaTests {
 
     /// The frame payload is its own shape with its own schema; pin the emitter to it
     /// the same way, with every optional field populated so nothing escapes unnoticed.
-    @Test func emittedWebSocketPayloadKeysAreAllDeclaredInTheSchema() throws {
+    @Test func emittedWebSocketPayloadKeysAreAllDeclaredInTheSchema() async throws {
         let (declared, required) = try schemaProperties("network-websocket-payload.schema.json")
         var payload = NetworkWebSocketPayload(
             requestId: "r", url: "wss://h/live", host: "h", frameIndex: 0,
@@ -146,7 +146,7 @@ struct NetworkEventPayloadSchemaTests {
                 "websocket emitter omitted schema-required fields: \(required.subtracting(emitted).sorted())")
     }
 
-    @Test func minimalPayloadCarriesEveryRequiredField() throws {
+    @Test func minimalPayloadCarriesEveryRequiredField() async throws {
         let (_, required) = try schemaProperties()
         let payload = NetworkEventPayload(
             requestId: "r", scheme: "http", method: "GET", url: "u",

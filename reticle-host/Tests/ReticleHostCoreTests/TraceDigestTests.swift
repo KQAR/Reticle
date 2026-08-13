@@ -52,7 +52,7 @@ struct TraceDigestTests {
         return root
     }
 
-    @Test func namesTheNodeThatAppearedInsteadOfABareRef() throws {
+    @Test func namesTheNodeThatAppearedInsteadOfABareRef() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeTrace(in: root, name: "1-tap", diff: [
@@ -69,7 +69,7 @@ struct TraceDigestTests {
         #expect(!text.contains("present"))
     }
 
-    @Test func distinguishesNothingHappenedFromNothingShown() throws {
+    @Test func distinguishesNothingHappenedFromNothingShown() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeTrace(in: root, name: "1-tap", recordedAtMillis: 1_782_875_000_000, diff: [])
@@ -90,7 +90,7 @@ struct TraceDigestTests {
         #expect(text.contains("…6 more (frame 6)"))
     }
 
-    @Test func aToastIsTheAnswerWhenTheDiffIsEmpty() throws {
+    @Test func aToastIsTheAnswerWhenTheDiffIsEmpty() async throws {
         // The measured blind spot: a submit answered by a Toast. On Android 11+
         // the toast is a SYSTEM window, so it is in neither snapshot and in
         // neither in-process screenshot — the pair is byte-identical and the step
@@ -112,7 +112,7 @@ struct TraceDigestTests {
         #expect(!text.contains("usually the gesture hit nothing"))
     }
 
-    @Test func aCustomViewToastSaysWhereItsTextActuallyIs() throws {
+    @Test func aCustomViewToastSaysWhereItsTextActuallyIs() async throws {
         // The complementary half: a `Toast.setView` toast is drawn by the APP, so
         // its text is a node in the tree and the queue record carries none. The
         // digest must not print an empty message as if the toast were silent.
@@ -136,7 +136,7 @@ struct TraceDigestTests {
         #expect(!text.contains("transient message shown"))
     }
 
-    @Test func surfacesThatTheManifestItselfWasAlreadyCapped() throws {
+    @Test func surfacesThatTheManifestItselfWasAlreadyCapped() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeTrace(in: root, name: "1-tap", diff: [
@@ -157,7 +157,7 @@ struct TraceDigestTests {
         #expect(!text.contains("~ truncated"))
     }
 
-    @Test func recordsWhatWasTyped() throws {
+    @Test func recordsWhatWasTyped() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeTrace(
@@ -172,7 +172,7 @@ struct TraceDigestTests {
         #expect(text.contains("type  testId=login.codeField  text=\"123456\"  submit"))
     }
 
-    @Test func aScreenLevelChangeRendersWithoutARefPlaceholder() throws {
+    @Test func aScreenLevelChangeRendersWithoutARefPlaceholder() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeTrace(in: root, name: "1-tap", diff: [
@@ -187,7 +187,7 @@ struct TraceDigestTests {
         #expect(!text.contains("~ - nodeCount"))
     }
 
-    @Test func readingAnEmptyDirectoryIsAnErrorThatSaysHowToRecord() throws {
+    @Test func readingAnEmptyDirectoryIsAnErrorThatSaysHowToRecord() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 

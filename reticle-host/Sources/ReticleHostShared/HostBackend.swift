@@ -22,19 +22,25 @@ import Foundation
 /// Implementations: `AndroidBackend` (adapting the Kotlin helper's JSONL RPC) and
 /// `IosHelperClient` (natively in-host — `simctl`/`devicectl`, loopback HTTP,
 /// CoreSimulator HID). A method a platform cannot serve throws, naming itself.
+/// Every method is `async`. Not because the work is concurrent — most of it is a
+/// device round trip the caller has nothing else to do during — but because that
+/// is what lets the work be CANCELLED, and what lets the two backends decide for
+/// themselves where they run: the iOS one awaits real async I/O, while the Android
+/// one hops its blocking JSONL RPC off the cooperative pool. With a synchronous
+/// protocol both of those had to be faked at the call site, once per site.
 public protocol HostBackend: AnyObject, Sendable {
-    func ping() throws -> PingResult
-    func listDevices() throws -> [DeviceSummary]
-    func status(_ request: StatusRequest) throws -> StatusResult
-    func launch(_ request: AppStartRequest) throws -> RuntimeStartResult
-    func inject(_ request: AppStartRequest) throws -> RuntimeStartResult
-    func uiReport(_ request: PackageRequest) throws -> UiReportResult
-    func screenshot(_ request: ScreenshotRequest) throws -> ScreenshotResult
-    func render(_ request: RenderRequest) throws -> RenderResult
-    func mutate(_ request: MutateRequest) throws -> MutationOutcome
-    func logs(_ request: PackageRequest) throws -> [AppLogEntry]
-    func logcat() throws -> [String]
-    func act(_ request: ActRequest) throws -> ActOutcome
+    func ping() async throws -> PingResult
+    func listDevices() async throws -> [DeviceSummary]
+    func status(_ request: StatusRequest) async throws -> StatusResult
+    func launch(_ request: AppStartRequest) async throws -> RuntimeStartResult
+    func inject(_ request: AppStartRequest) async throws -> RuntimeStartResult
+    func uiReport(_ request: PackageRequest) async throws -> UiReportResult
+    func screenshot(_ request: ScreenshotRequest) async throws -> ScreenshotResult
+    func render(_ request: RenderRequest) async throws -> RenderResult
+    func mutate(_ request: MutateRequest) async throws -> MutationOutcome
+    func logs(_ request: PackageRequest) async throws -> [AppLogEntry]
+    func logcat() async throws -> [String]
+    func act(_ request: ActRequest) async throws -> ActOutcome
 
     /// Releases whatever transport this backend holds. Default no-op: an in-host
     /// backend owns nothing. Lets command dispatch `defer` one teardown.

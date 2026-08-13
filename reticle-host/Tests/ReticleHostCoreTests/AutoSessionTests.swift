@@ -39,7 +39,7 @@ struct AutoSessionTests {
         return names.sorted()
     }
 
-    @Test func consecutiveActionsJoinOneSessionUntilItGoesIdle() throws {
+    @Test func consecutiveActionsJoinOneSessionUntilItGoesIdle() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         var clock: Int64 = 1_782_875_000_000
@@ -60,7 +60,7 @@ struct AutoSessionTests {
         #expect(nextRun != first, "past the idle gap this is a new run")
     }
 
-    @Test func readingTheLastSessionNeverStartsOne() throws {
+    @Test func readingTheLastSessionNeverStartsOne() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let clock: Int64 = 1_782_875_000_000
@@ -75,7 +75,7 @@ struct AutoSessionTests {
         #expect(sessionNames(home).count == 1, "reading must not have created a second session")
     }
 
-    @Test func pruningNeverTouchesANamedSession() throws {
+    @Test func pruningNeverTouchesANamedSession() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         try makeSession(home, "checkout-bug", auto: false)
@@ -100,7 +100,7 @@ struct AutoSessionTests {
     /// one of its own. Eligibility is the marker file this code writes, so a
     /// session Reticle did not create is invisible to pruning no matter what it
     /// is called.
-    @Test func pruningIgnoresAnUnmarkedSessionEvenWhenItIsNamedLikeAnAutoOne() throws {
+    @Test func pruningIgnoresAnUnmarkedSessionEvenWhenItIsNamedLikeAnAutoOne() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         try makeSession(home, "auto-trace-e2e", auto: false)
@@ -113,7 +113,7 @@ struct AutoSessionTests {
         #expect(removed.count == 4, "the four it did create are still fair game")
     }
 
-    @Test func pruningNeverTouchesTheSessionBeingWritten() throws {
+    @Test func pruningNeverTouchesTheSessionBeingWritten() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         for i in 0..<4 { try makeSession(home, "auto-2026072\(i)-000000") }
@@ -125,7 +125,7 @@ struct AutoSessionTests {
         #expect(sessionNames(home).contains(current))
     }
 
-    @Test func pruningDropsOldestFirstUntilTheByteBudgetIsMet() throws {
+    @Test func pruningDropsOldestFirstUntilTheByteBudgetIsMet() async throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         // Names sort chronologically, so lexical order is age order.
@@ -139,7 +139,7 @@ struct AutoSessionTests {
         #expect(sessionNames(home).contains("auto-20260723-000000"))
     }
 
-    @Test func sessionNamesSortChronologically() {
+    @Test func sessionNamesSortChronologically() async {
         let earlier = AutoSession.stampName(1_782_875_000_000)
         let later = AutoSession.stampName(1_782_875_000_000 + 86_400_000)
         // Pruning relies on this: it takes the lexically smallest names as oldest.

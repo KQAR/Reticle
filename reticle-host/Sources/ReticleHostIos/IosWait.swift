@@ -29,19 +29,25 @@ private func waitFlag(_ value: Any?) -> Bool {
 /// Needs no HID surface: it only observes. So it works on real devices, like
 /// `hide-keyboard` and unlike `tap`.
 struct IosWaitRunner {
-    let fetch: () throws -> Snapshot
+    /// `async` because the snapshot comes over loopback HTTP, which is a real
+    /// await now — and because that makes every poll in `run` a cancellation point.
+    let fetch: () async throws -> Snapshot
     /// Injectable clock, in milliseconds since an arbitrary origin.
     var now: () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
-    var sleep: (Int) -> Void = { ms in Thread.sleep(forTimeInterval: Double(ms) / 1000.0) }
+    /// Injectable so the tests can drive the schedule without real time; `async`
+    /// so the real one is `Task.sleep`, which a cancelled command stops at.
+    var sleep: (Int) async -> Void = { ms in
+        try? await Task.sleep(for: .milliseconds(ms))
+    }
 
-    func run(predicate: WaitPredicate, timeoutMs: Int, quietMs: Int) throws -> [String: Any] {
+    func run(predicate: WaitPredicate, timeoutMs: Int, quietMs: Int) async throws -> [String: Any] {
         let started = now()
         let deadline = started + timeoutMs
         var polls = 0
         var treeChanges = 0
         var lastDigest: String?
         var lastChangeAt = started
-        var probe = try probeOnce(predicate)
+        var probe = try await probeOnce(predicate)
 
         while true {
             polls += 1
@@ -72,14 +78,14 @@ struct IosWaitRunner {
             let delay = WaitSchedule.delayMs(elapsedMs: now() - started)
             // Never sleep past the deadline: a 500ms backoff with 80ms of budget
             // left would report a timeout later than the caller asked for.
-            sleep(min(delay, max(1, deadline - now())))
-            probe = try probeOnce(predicate)
+            await sleep(min(delay, max(1, deadline - now())))
+            probe = try await probeOnce(predicate)
         }
     }
 
     /// One poll: capture, resolve the way `act` resolves on iOS, read the markers.
-    private func probeOnce(_ predicate: WaitPredicate) throws -> WaitProbe {
-        let snapshot = try fetch()
+    private func probeOnce(_ predicate: WaitPredicate) async throws -> WaitProbe {
+        let snapshot = try await fetch()
         // UNCAPPED: the digest decides quiescence, and a change past the render
         // cap (item #201 of a long list appearing) must still count as a change —
         // a capped digest reports "quiet" while the screen is visibly moving.

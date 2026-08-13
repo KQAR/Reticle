@@ -54,7 +54,7 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
 struct LoomCaptureLaneTests {
     // MARK: - Response timing
 
-    @Test func responseCarriesTtfbAndReceiveSpans() {
+    @Test func responseCarriesTtfbAndReceiveSpans() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -77,7 +77,7 @@ struct LoomCaptureLaneTests {
 
     /// A flow that failed before any response head has no TTFB to report, and
     /// inventing one from the completion stamp would be a guess.
-    @Test func aFlowWithNoResponseHeadReportsNoTtfb() {
+    @Test func aFlowWithNoResponseHeadReportsNoTtfb() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -100,7 +100,7 @@ struct LoomCaptureLaneTests {
     /// A HAR loaded into the engine arrives on the same live stream as real captures.
     /// It stays in the evidence — it is replayable and diffable like any other flow —
     /// but it must never read as something this session observed on the wire.
-    @Test func animportedFlowSaysWhereItCameFrom() {
+    @Test func animportedFlowSaysWhereItCameFrom() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -119,7 +119,7 @@ struct LoomCaptureLaneTests {
     }
 
     /// The label's absence is what makes its presence mean anything.
-    @Test func aLiveCaptureCarriesNoImportLabel() {
+    @Test func aLiveCaptureCarriesNoImportLabel() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -135,7 +135,7 @@ struct LoomCaptureLaneTests {
 
     // MARK: - WebSocket frames
 
-    @Test func openSocketEmitsFramesWithoutWaitingForClose() {
+    @Test func openSocketEmitsFramesWithoutWaitingForClose() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -161,7 +161,7 @@ struct LoomCaptureLaneTests {
 
     /// Loom re-sends the whole cumulative frame array on every update. Without a
     /// per-socket cursor every frame would be re-emitted on every subsequent frame.
-    @Test func cumulativeUpdatesEmitOnlyTheNewFrames() {
+    @Test func cumulativeUpdatesEmitOnlyTheNewFrames() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -183,7 +183,7 @@ struct LoomCaptureLaneTests {
     /// Loom's own cap (10k frames / 5 MB) can bite on a few large frames, long before
     /// Reticle's. The socket is still open and still talking, so that has to be said
     /// out loud rather than left as a gap in the frame sequence.
-    @Test func loomsDroppedFramesAreAnnouncedOnce() {
+    @Test func loomsDroppedFramesAreAnnouncedOnce() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -201,7 +201,7 @@ struct LoomCaptureLaneTests {
 
     /// Reticle's own cap exists so one chatty socket can't bury the session. Hitting
     /// it must produce evidence naming itself — silence would read as a quiet socket.
-    @Test func reticlesOwnFrameCapAnnouncesItselfAndStopsEmitting() {
+    @Test func reticlesOwnFrameCapAnnouncesItselfAndStopsEmitting() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -225,7 +225,7 @@ struct LoomCaptureLaneTests {
     /// A frame too big to sit inline keeps its bytes as an artifact, and says the
     /// preview is a prefix — the same "a clipped thing must name itself" rule the
     /// body path follows.
-    @Test func oversizeTextFrameStoresAnArtifactAndMarksThePreviewTruncated() throws {
+    @Test func oversizeTextFrameStoresAnArtifactAndMarksThePreviewTruncated() async throws {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -244,7 +244,7 @@ struct LoomCaptureLaneTests {
 
     /// A small frame is wholly inside its event, so a chatty socket doesn't strew
     /// thousands of artifact files across the session directory.
-    @Test func smallFrameCarriesNoArtifact() {
+    @Test func smallFrameCarriesNoArtifact() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -256,7 +256,7 @@ struct LoomCaptureLaneTests {
 
     /// A binary frame has no text reading; reporting one would be a guess dressed as
     /// an observation. Its size and its bytes are still evidence.
-    @Test func binaryFrameReportsSizeButNoTextPreview() {
+    @Test func binaryFrameReportsSizeButNoTextPreview() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -278,7 +278,7 @@ struct LoomCaptureLaneTests {
     /// The stream loop must not do the work. Artifact writes happen on the worker,
     /// so the engine's bounded `AsyncStream` is drained immediately and never gets
     /// the chance to drop flows the subscriber can't detect.
-    @Test func enqueuedFlowsAreProcessedOffTheStream() {
+    @Test func enqueuedFlowsAreProcessedOffTheStream() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)
@@ -298,7 +298,7 @@ struct LoomCaptureLaneTests {
     /// A full backlog drops flows — a bounded queue is a deliberate memory choice.
     /// What it must never do is drop them quietly: a gap in the evidence would
     /// otherwise be indistinguishable from traffic that never happened.
-    @Test func aFullBacklogAnnouncesItselfInTheEvidence() {
+    @Test func aFullBacklogAnnouncesItselfInTheEvidence() async {
         let sink = RecordingSink()
         defer { sink.cleanUp() }
         let lane = makeLane(sink)

@@ -10,7 +10,7 @@ import ReticleProtocol
 @Suite("Unknown CLI flags")
 struct CliFlagsTests {
 
-    @Test func aFlagThatBelongsToAnotherGestureIsReportedByName() {
+    @Test func aFlagThatBelongsToAnotherGestureIsReportedByName() async {
         // `act tap --text "Tak"` answered "could not resolve selector '<empty>'",
         // which reads as an empty selector rather than a misplaced flag.
         let args = Args(["act", "tap", "--package", "com.x", "--text", "Tak"])
@@ -26,7 +26,7 @@ struct CliFlagsTests {
         }
     }
 
-    @Test func everyFlagAGestureReallyReadsIsAccepted() throws {
+    @Test func everyFlagAGestureReallyReadsIsAccepted() async throws {
         // The guard against the fix being worse than the gap: a false "unknown
         // option" REJECTS a call that used to work.
         try CliFlags.validate(
@@ -52,7 +52,7 @@ struct CliFlagsTests {
         )
     }
 
-    @Test func aTypoIsReportedEvenThoughNoCommandTakesIt() {
+    @Test func aTypoIsReportedEvenThoughNoCommandTakesIt() async {
         let args = Args(["ui", "compact", "--live", "--package", "com.x", "--windwo", "top"])
         #expect {
             try CliFlags.validate(args, command: "ui", subcommand: "compact")
@@ -61,7 +61,7 @@ struct CliFlagsTests {
         }
     }
 
-    @Test func anUnvalidatedCommandFamilyIsLeftAlone() throws {
+    @Test func anUnvalidatedCommandFamilyIsLeftAlone() async throws {
         // `rule` / `replay` / `trace` have no table: guessing one would reject calls
         // that work today, which is worse than the papercut this fixes.
         #expect(CliFlags.accepted(command: "rule", subcommand: "set") == nil)
@@ -76,7 +76,7 @@ struct CliFlagsTests {
         )
     }
 
-    @Test func globalFlagsAreAcceptedEverywhere() throws {
+    @Test func globalFlagsAreAcceptedEverywhere() async throws {
         try CliFlags.validate(
             Args(["status", "--package", "com.x", "--serial", "abc", "--json", "--target", "ios"]),
             command: "status", subcommand: nil
@@ -114,7 +114,7 @@ struct IosRefindTests {
         )
     }
 
-    @Test func theSameRefPointingAtAnotherNodeIsNotTheField() {
+    @Test func theSameRefPointingAtAnotherNodeIsNotTheField() async {
         let before = field("r14", "login.codeField", 240, text: "0123456", focused: true)
         // The renumbered tree: r14 is now the status label, and the field is r22.
         let after = snapshot([
@@ -125,7 +125,7 @@ struct IosRefindTests {
         #expect(IosHelperClient.refind(before, in: after)?.ref == "r22")
     }
 
-    @Test func withNoIdTheFocusedFieldWins() {
+    @Test func withNoIdTheFocusedFieldWins() async {
         let before = field("r14", nil, 240, text: "abc", focused: true)
         let after = snapshot([
             field("r9", nil, 600, text: "other"),
@@ -134,7 +134,7 @@ struct IosRefindTests {
         #expect(IosHelperClient.refind(before, in: after)?.ref == "r30")
     }
 
-    @Test func withNoIdAndNoFocusThePositionIsTheLastResort() {
+    @Test func withNoIdAndNoFocusThePositionIsTheLastResort() async {
         let before = field("r14", nil, 240, text: "abc")
         let after = snapshot([
             field("r9", nil, 600, text: "other"),

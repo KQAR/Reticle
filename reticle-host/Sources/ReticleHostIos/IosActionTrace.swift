@@ -26,11 +26,11 @@ struct IosActionTrace {
 
     /// Capture a snapshot (+ best-effort screenshot) from the running agent. A
     /// missing screenshot is not fatal — the trace still records the snapshots.
-    func capture() -> Capture? {
-        guard let (snapData, _) = try? http.get(Endpoints.snapshot),
+    func capture() async -> Capture? {
+        guard let (snapData, _) = try? await http.get(Endpoints.snapshot),
               let snapshot = try? ReticleJSON.decode(Snapshot.self, from: snapData)
                   .requireSupportedSchema() else { return nil }
-        let png = (try? http.get(Endpoints.screenshot))?.data
+        let png = (try? await http.get(Endpoints.screenshot))?.data
         return Capture(snapshotJSON: snapData, snapshot: snapshot, screenshotPNG: png)
     }
 
@@ -45,9 +45,9 @@ struct IosActionTrace {
         result: [String: String],
         before: Capture,
         settleMs: Int
-    ) throws -> [String: Any] {
-        if settleMs > 0 { Thread.sleep(forTimeInterval: Double(settleMs) / 1000.0) }
-        guard let after = capture() else {
+    ) async throws -> [String: Any] {
+        if settleMs > 0 { try? await Task.sleep(for: .seconds(Double(settleMs)) / 1000.0) }
+        guard let after = await capture() else {
             throw HelperError("action trace: could not capture the after-state snapshot")
         }
         let recordedAt = Int64(Date().timeIntervalSince1970 * 1000)

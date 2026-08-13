@@ -166,24 +166,24 @@ public struct IosRunnerSession: Sendable {
 
     /// Run `body`; if it fails because the runner is gone, restart once and retry
     /// once. Returns the value plus whether a restart happened.
-    public func withRetry<T>(_ body: (IosRunnerClient) throws -> T) throws -> (value: T, restarted: Bool) {
+    public func withRetry<T>(_ body: (IosRunnerClient) async throws -> T) async throws -> (value: T, restarted: Bool) {
         do {
-            return (try body(client), false)
+            return (try await body(client), false)
         } catch {
             // Only a vanished process earns a retry. Any other error is the
             // runner's considered answer and must not be papered over by a restart.
-            guard !lifecycle.isRunning() else { throw error }
-            try lifecycle.ensureConnected()
+            guard await !lifecycle.isRunning() else { throw error }
+            await try lifecycle.ensureConnected()
             // A second failure is final: retrying forever would turn a real problem
             // into a process that looks busy while repeatedly disrupting the device.
-            return (try body(client), true)
+            return (try await body(client), true)
         }
     }
 
     /// The same rule for an observation, stamping the restart onto the result so it
     /// travels with the evidence rather than only appearing in a log line.
-    public func observe(_ body: (IosRunnerClient) throws -> SystemObservation) throws -> SystemObservation {
-        let (value, restarted) = try withRetry(body)
+    public func observe(_ body: @escaping (IosRunnerClient) async throws -> SystemObservation) async throws -> SystemObservation {
+        let (value, restarted) = try await withRetry(body)
         guard restarted else { return value }
         var stamped = value
         stamped.runnerRestarted = true

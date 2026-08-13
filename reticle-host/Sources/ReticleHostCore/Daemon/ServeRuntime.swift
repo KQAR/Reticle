@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Dispatch
 import Darwin
 // Only for the two capabilities `serve` genuinely needs from a simulator:
@@ -77,7 +78,14 @@ public final class ServeRuntime {
     private var loomLane: LoomCaptureLane?
     private var proxyRestore: DeviceProxyRestore?
     private var helperBroker: HelperClient?
-    private let stopSemaphore = DispatchSemaphore(value: 0)
+    /// The daemon's park, as a resumable continuation. `stopped` covers the race
+    /// where `stop()` runs before `run()` reaches the park — without it, a
+    /// fast-failing daemon would block forever on a signal that already fired.
+    private struct StopPark {
+        var waiter: CheckedContinuation<Void, Never>?
+        var stopped = false
+    }
+    private let stopParked = Mutex(StopPark())
     private var signalSources: [DispatchSourceSignal] = []
 
     /// Creates a runtime for the supplied options.
@@ -86,7 +94,7 @@ public final class ServeRuntime {
     }
 
     /// Starts the daemon and blocks until interrupted.
-    public func run() throws {
+    public func run() async throws {
         let store = try EventStore(
             session: options.session,
             rootDirectory: options.rootDirectory,
@@ -107,8 +115,10 @@ public final class ServeRuntime {
         if let proxyPort = effectiveProxyPort {
             // Attribute captured traffic to the platform target. iOS shares the
             // host network, so the serial is the booted simulator's udid.
-            let attributedSerial = options.serial
-                ?? (options.target == "ios" ? try? Simctl.resolveUdid(nil) : nil)
+            var attributedSerial = options.serial
+            if attributedSerial == nil, options.target == "ios" {
+                attributedSerial = try? await Simctl.resolveUdid(nil)
+            }
             let configuration = NetworkProxyConfiguration(
                 port: proxyPort,
                 bindHost: options.proxyBind,
@@ -131,7 +141,7 @@ public final class ServeRuntime {
             loomLane = lane
             let boundPort = lane.port
             if options.proxyInstallCa, let caDirectory = options.proxyCaDirectory {
-                try installCA(derPath: caDirectory.appendingPathComponent("reticle-ca.cer").path)
+                try await installCA(derPath: caDirectory.appendingPathComponent("reticle-ca.cer").path)
             }
             if options.proxyPhoneOnboard {
                 let info = try lane.startPhoneOnboarding()
@@ -178,8 +188,24 @@ public final class ServeRuntime {
         }
         print("reticle serve: events \(store.eventsFile.path)")
         fflush(stdout)
-        stopSemaphore.wait()
+        // The daemon's park. `run()` is async now, so this is a continuation the
+        // signal handler resumes rather than a semaphore wait — the same block,
+        // without holding a thread hostage for the life of the process.
+        await withCheckedContinuation { continuation in
+            stopParked.withLock { parked in
+                if parked.stopped { continuation.resume() } else { parked.waiter = continuation }
+            }
+        }
         stop()
+    }
+
+    /// Releases the park in `run()`. Safe before it is reached, and safe twice.
+    private func signalStop() {
+        stopParked.withLock { parked in
+            parked.stopped = true
+            parked.waiter?.resume()
+            parked.waiter = nil
+        }
     }
 
     /// Stops the server and removes owned discovery metadata.
@@ -257,7 +283,7 @@ public final class ServeRuntime {
         DeviceProxyState.clear(serial: options.serial)
     }
 
-    private func installCA(derPath: String) throws {
+    private func installCA(derPath: String) async throws {
         // iOS: trust the MITM CA in the booted simulator's keychain — a host-side,
         // simulator-scoped action (no adb helper, no hook). The real-device
         // analogue is installing the CA as a trusted configuration profile.
@@ -272,8 +298,8 @@ public final class ServeRuntime {
                 print("  the CA as a trusted profile (see the routing steps above)")
                 return
             }
-            let udid = try Simctl.resolveUdid(options.serial)
-            try Simctl.trustRootCertificate(derPath: derPath, udid: udid)
+            let udid = try await Simctl.resolveUdid(options.serial)
+            try await Simctl.trustRootCertificate(derPath: derPath, udid: udid)
             print("reticle serve: trusted MITM CA in simulator \(udid)")
             return
         }
@@ -409,7 +435,7 @@ public final class ServeRuntime {
         for sig in signals {
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .global())
             source.setEventHandler { [weak self] in
-                self?.stopSemaphore.signal()
+                self?.signalStop()
             }
             source.resume()
             signalSources.append(source)

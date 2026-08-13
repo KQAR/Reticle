@@ -112,13 +112,13 @@ public final class IosRunnerLifecycle: Sendable {
 
     // MARK: - State
 
-    public func state() -> SystemChannelState {
-        guard isInstalled() else { return .notInstalled }
+    public func state() async -> SystemChannelState {
+        guard await isInstalled() else { return .notInstalled }
         return isAnswering() ? .connected : .installed
     }
 
-    func isInstalled() -> Bool {
-        let r = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "apps",
+    func isInstalled() async -> Bool {
+        let r = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "apps",
                                               "--device", udid])
         return r.out.contains(config.bundleId)
     }
@@ -127,8 +127,8 @@ public final class IosRunnerLifecycle: Sendable {
         (try? IosRunnerClient(config: config).health()) != nil
     }
 
-    func isRunning() -> Bool {
-        let r = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "processes",
+    func isRunning() async -> Bool {
+        let r = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "processes",
                                               "--device", udid])
         return r.out.contains(config.processName)
     }
@@ -144,16 +144,16 @@ public final class IosRunnerLifecycle: Sendable {
         public var state: SystemChannelState
     }
 
-    public func prepare(team: String, runnerProjectPath: String, derivedDataPath: String) throws -> PrepareOutcome {
+    public func prepare(team: String, runnerProjectPath: String, derivedDataPath: String) async throws -> PrepareOutcome {
         try config.assertNoPortCollision()
-        try assertDeviceReady()
-        try assertSigningUsable(team: team)
+        await try assertDeviceReady()
+        await try assertSigningUsable(team: team)
 
-        let hadExisting = isInstalled()
+        let hadExisting = await isInstalled()
         if hadExisting {
             // Replace rather than coexist: two installs of the same runner would
             // make "which one answered?" unanswerable.
-            _ = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "uninstall", "app",
+            _ = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "uninstall", "app",
                                               "--device", udid, config.bundleId])
         }
 
@@ -164,7 +164,7 @@ public final class IosRunnerLifecycle: Sendable {
         // waiting are echoed — a full xcodebuild log is thousands of compile
         // lines, and all of it is still in `build.out`/`build.err` for the
         // failure classifier.
-        let build = Self.shellStreaming("/usr/bin/xcodebuild", [
+        let build = await Self.shellStreaming("/usr/bin/xcodebuild", [
             "-project", runnerProjectPath,
             "-scheme", "ReticleRunner",
             "-destination", "platform=iOS,id=\(udid)",
@@ -186,7 +186,7 @@ public final class IosRunnerLifecycle: Sendable {
         // `Library not loaded: @rpath/XCTestCore.framework/XCTestCore`, and with
         // them present devicectl launches it fine.
         let appPath = "\(derivedDataPath)/Build/Products/Debug-iphoneos/ReticleRunner-Runner.app"
-        let install = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "install", "app",
+        let install = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "install", "app",
                                                     "--device", udid, appPath])
         guard install.code == 0 else {
             throw IosRunnerFailureClassifier.classify(launchOutput: install.err + install.out).asError
@@ -195,23 +195,23 @@ public final class IosRunnerLifecycle: Sendable {
         return PrepareOutcome(replacedExisting: hadExisting, deviceId: udid, state: .installed)
     }
 
-    func assertDeviceReady() throws {
-        let lock = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "lockState",
+    func assertDeviceReady() async throws {
+        let lock = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "lockState",
                                                  "--device", udid])
         guard lock.code == 0 else {
             throw IosRunnerFailureClassifier.classify(launchOutput: lock.err + lock.out).asError
         }
         // A dark screen is not a lock in the passcode sense, but a runner still
         // cannot take the foreground there, so both are refused with the same advice.
-        let display = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "displays",
+        let display = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "displays",
                                                     "--device", udid])
         if display.out.lowercased().contains("backlight is off") {
             throw IosRunnerStartFailure.deviceLocked.asError
         }
     }
 
-    func assertSigningUsable(team: String) throws {
-        let usable = Self.usableTeams()
+    func assertSigningUsable(team: String) async throws {
+        let usable = await Self.usableTeams()
         guard usable.contains(team) else {
             throw HelperError(
                 "no usable signing material for team \(team) on this machine. "
@@ -229,13 +229,13 @@ public final class IosRunnerLifecycle: Sendable {
     /// because automatic signing works off the cached profile: measured on this
     /// machine, Xcode had NO account signed in and signing still succeeded through
     /// a cached wildcard profile.
-    public static func usableTeams() -> Set<String> {
+    public static func usableTeams() async -> Set<String> {
         let dir = ("~/Library/Developer/Xcode/UserData/Provisioning Profiles" as NSString)
             .expandingTildeInPath
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return [] }
         var teams: Set<String> = []
         for name in names where name.hasSuffix(".mobileprovision") {
-            let r = shell("/usr/bin/security", ["cms", "-D", "-i", "\(dir)/\(name)"])
+            let r = await shell("/usr/bin/security", ["cms", "-D", "-i", "\(dir)/\(name)"])
             guard r.code == 0 else { continue }
             guard let appId = Self.value(of: "application-identifier", in: r.out),
                   appId.hasSuffix(".*") else { continue }
@@ -264,8 +264,8 @@ public final class IosRunnerLifecycle: Sendable {
     /// foreground away from whatever was there, so a caller who is not told will
     /// attribute that interference to the app under test.
     @discardableResult
-    public func ensureConnected(timeout: TimeInterval = 30) throws -> (state: SystemChannelState, didStart: Bool) {
-        switch state() {
+    public func ensureConnected(timeout: TimeInterval = 30) async throws -> (state: SystemChannelState, didStart: Bool) {
+        switch await state() {
         case .connected:
             return (.connected, false)
         case .notInstalled:
@@ -288,14 +288,14 @@ public final class IosRunnerLifecycle: Sendable {
         // Clear any orphaned run first, for the same reason `stop` does: the device
         // has exactly one automation session, and an earlier command's child may
         // still be holding it.
-        _ = Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
+        _ = await Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
         let launch = startServing()
-        startTunnel()
+        await startTunnel()
 
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if isAnswering() { return (.connected, true) }
-            Thread.sleep(forTimeInterval: 0.5)
+            try? await Task.sleep(for: .seconds(0.5))
         }
 
         // Classify rather than surface the raw output — see IosRunnerFailure.
@@ -343,10 +343,10 @@ public final class IosRunnerLifecycle: Sendable {
         return ("", "", 0)
     }
 
-    func startTunnel() {
+    func startTunnel() async {
         // A device's loopback is not the host's, so the port is forwarded over USB.
         // Same mechanism scripts/inject-ios-device.sh uses; ECID is the id here.
-        _ = Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
+        _ = await Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
         // `Process` for the same reason as `startServing`: the tunnel must outlive
         // this call. The `pkill` above is one-shot, so it goes through `Shell`.
         let p = Process()
@@ -365,14 +365,14 @@ public final class IosRunnerLifecycle: Sendable {
     }
 
     @discardableResult
-    public func stop() -> StopOutcome {
-        let wasLive = isRunning()
+    public func stop() async -> StopOutcome {
+        let wasLive = await isRunning()
         if wasLive {
             // Ask it to leave on its own first — a clean server shutdown beats a
             // signal, which can strand the port.
             _ = try? IosRunnerClient(config: config).shutdown()
-            if isRunning() {
-                _ = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "process", "signal",
+            if await isRunning() {
+                _ = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "process", "signal",
                                                   "--device", udid,
                                                   "--signal", "SIGTERM",
                                                   "--pid", pidOfRunner() ?? "0"])
@@ -389,13 +389,13 @@ public final class IosRunnerLifecycle: Sendable {
             return child
         }
         if let child, child.isRunning { child.terminate() }
-        _ = Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
-        _ = Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
-        return StopOutcome(hadLiveInstance: wasLive, state: isInstalled() ? .installed : .notInstalled)
+        _ = await Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
+        _ = await Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
+        return await StopOutcome(hadLiveInstance: wasLive, state: isInstalled() ? .installed : .notInstalled)
     }
 
-    func pidOfRunner() -> String? {
-        let r = Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "processes",
+    func pidOfRunner() async -> String? {
+        let r = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "info", "processes",
                                               "--device", udid])
         for line in r.out.split(separator: "\n") where line.contains(config.processName) {
             let fields = line.split(separator: " ", omittingEmptySubsequences: true)
@@ -428,19 +428,19 @@ public final class IosRunnerLifecycle: Sendable {
         _ launchPath: String,
         _ args: [String],
         onLine: @escaping @Sendable (String) -> Void
-    ) -> (out: String, err: String, code: Int32) {
-        let result = Shell.runStreamingSync(launchPath, args, onLine: onLine)
+    ) async -> (out: String, err: String, code: Int32) {
+        let result = await Shell.runStreaming(launchPath, args, onLine: onLine)
         return (result.out, result.err, result.code)
     }
 
-    static func shell(_ launchPath: String, _ args: [String]) -> (out: String, err: String, code: Int32) {
+    static func shell(_ launchPath: String, _ args: [String]) async -> (out: String, err: String, code: Int32) {
         // Both pipes are drained concurrently — mandatory here, because
         // `xcodebuild` writes megabytes to both and a caller blocked on stdout
         // deadlocks the moment stderr's 64KB buffer fills. `Shell` owns that.
         // Five minutes: the slowest thing that comes through here is
         // `devicectl device install app` pushing the runner over USB. The build
         // itself does NOT — it streams, and is deliberately unbounded.
-        let result = Shell.runSync(launchPath, args, timeout: .seconds(300))
+        let result = await Shell.run(launchPath, args, timeout: .seconds(300))
         return (result.out, result.err, result.code)
     }
 }

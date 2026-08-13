@@ -39,8 +39,8 @@ enum IosTouchSurface {
     /// Which surface this run has. A simulator udid means HID (probed, because the
     /// private SimulatorKit layout can be missing); anything else is a real device,
     /// whose surface is the agent's — also probed, since it is private API too.
-    static func resolve(simUdid: String?, bundleId: String, gesture: String) throws -> IosTouchSurface {
-        if let simUdid, Simctl.isSimulator(simUdid) {
+    static func resolve(simUdid: String?, bundleId: String, gesture: String) async throws -> IosTouchSurface {
+        if let simUdid, await Simctl.isSimulator(simUdid) {
             guard IosInputBackend(udid: simUdid).isAvailable() else {
                 throw HelperError(
                     "HID input is unavailable on this simulator: the private SimulatorKit HID path could "
@@ -49,7 +49,7 @@ enum IosTouchSurface {
             }
             return .hid(udid: simUdid)
         }
-        let probe = try agentProbe(bundleId)
+        let probe = try await agentProbe(bundleId)
         guard probe.available else {
             throw HelperError(
                 "\(gesture) needs a touch surface and this device has none: the agent reports "
@@ -63,35 +63,35 @@ enum IosTouchSurface {
 
     /// Whether a device could carry a coordinate gesture, without committing to one.
     /// Used where a fallback exists (a selector tap can still be activated).
-    static func agentTouchAvailable(_ bundleId: String) -> Bool {
-        (try? agentProbe(bundleId).available) ?? false
+    static func agentTouchAvailable(_ bundleId: String) async -> Bool {
+        (try? await agentProbe(bundleId).available) ?? false
     }
 
-    private static func agentProbe(_ bundleId: String) throws -> (available: Bool, paths: String) {
+    private static func agentProbe(_ bundleId: String) async throws -> (available: Bool, paths: String) {
         let object: [String: Any]
         do {
-            object = try IosAgentHTTP(bundleId: bundleId).getJSONObject(Endpoints.touch)
+            object = try await IosAgentHTTP(bundleId: bundleId).getJSONObject(Endpoints.touch)
         } catch {
             throw HelperError("could not ask the agent for a touch surface (is the runtime up?): \(error)")
         }
         return ((object["available"] as? Bool) ?? false, (object["paths"] as? String) ?? "none")
     }
 
-    func tap(x: Double, y: Double, screen: (Double, Double), holdMs: Int? = nil) throws {
+    func tap(x: Double, y: Double, screen: (Double, Double), holdMs: Int? = nil) async throws {
         switch self {
         case .hid(let udid):
             try IosInputBackend(udid: udid).tap(x: x, y: y, screen: screen)
         case .agent(let bundleId):
-            try post(bundleId, TouchRequest(kind: .tap, from: Point(x: x, y: y), durationMs: holdMs))
+            try await post(bundleId, TouchRequest(kind: .tap, from: Point(x: x, y: y), durationMs: holdMs))
         }
     }
 
-    func swipe(from: (Double, Double), to: (Double, Double), screen: (Double, Double), durationMs: Double) throws {
+    func swipe(from: (Double, Double), to: (Double, Double), screen: (Double, Double), durationMs: Double) async throws {
         switch self {
         case .hid(let udid):
             try IosInputBackend(udid: udid).swipe(from: from, to: to, screen: screen, durationMs: durationMs)
         case .agent(let bundleId):
-            try post(bundleId, TouchRequest(kind: .drag, from: Point(x: from.0, y: from.1),
+            try await post(bundleId, TouchRequest(kind: .drag, from: Point(x: from.0, y: from.1),
                                             to: Point(x: to.0, y: to.1), durationMs: Int(durationMs)))
         }
     }
@@ -100,14 +100,14 @@ enum IosTouchSurface {
     /// channel actually is. "Not installed" and "installed but not connected" need
     /// different commands, so a single generic hint would send half of callers to
     /// the wrong one.
-    static func systemChannelHint(_ bundleId: String, udid: String?) -> String {
+    static func systemChannelHint(_ bundleId: String, udid: String?) async -> String {
         let config = IosRunnerConfig(appBundleId: bundleId)
         let next: String
         if let udid {
             // Worth one device round-trip on an error path: the two states need
             // DIFFERENT commands, and a generic hint sends half of callers to the
             // wrong one.
-            switch IosRunnerLifecycle(config: config, udid: udid).state() {
+            switch await IosRunnerLifecycle(config: config, udid: udid).state() {
             case .notInstalled:
                 next = "it is NOT installed yet — run `reticle system prepare --team <id>` first"
             case .installed:
@@ -130,9 +130,9 @@ enum IosTouchSurface {
             + "`system tap --label <text>` to act on it"
     }
 
-    private func post(_ bundleId: String, _ request: TouchRequest) throws {
+    private func post(_ bundleId: String, _ request: TouchRequest) async throws {
         let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try IosAgentHTTP(bundleId: bundleId).post(Endpoints.touch, body: body)
+        let (data, _) = try await IosAgentHTTP(bundleId: bundleId).post(Endpoints.touch, body: body)
         let result = try ReticleJSON.decode(TouchResult.self, from: data)
         guard result.dispatched else {
             // Never a silent no-op: the agent names the surface that was missing, or
@@ -153,7 +153,7 @@ enum IosTouchSurface {
                 + "Either that coordinate is not where you think it is, or the target "
                 + "belongs to another process (a system alert, the IME, SpringBoard) — "
                 + "this path only reaches THIS app's windows. For the second case use "
-                + "the system channel: \(IosTouchSurface.systemChannelHint(bundleId, udid: nil))"
+                + "the system channel: \(await IosTouchSurface.systemChannelHint(bundleId, udid: nil))"
             )
         }
     }

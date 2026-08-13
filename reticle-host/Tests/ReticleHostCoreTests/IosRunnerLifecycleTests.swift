@@ -10,14 +10,14 @@ struct IosRunnerLifecycleTests {
     // TC-029. Two channels on one port would fight over a single USB tunnel, and
     // the symptom would look like anything but a port clash — so it is refused at
     // prepare time rather than left to chance.
-    @Test func collidingPortsAreRefusedRatherThanSilentlyShared() throws {
+    @Test func collidingPortsAreRefusedRatherThanSilentlyShared() async throws {
         // Same id on both ends is the degenerate collision: identical hash input.
         let colliding = IosRunnerConfig(bundleId: "dev.reticle.same", appBundleId: "dev.reticle.same")
         #expect(colliding.port == colliding.appPort)
         #expect(throws: HelperError.self) { try colliding.assertNoPortCollision() }
     }
 
-    @Test func theRefusalNamesBothSidesAndThePortSoItIsActionable() {
+    @Test func theRefusalNamesBothSidesAndThePortSoItIsActionable() async {
         let colliding = IosRunnerConfig(bundleId: "dev.reticle.same", appBundleId: "dev.reticle.same")
         do {
             try colliding.assertNoPortCollision()
@@ -33,7 +33,7 @@ struct IosRunnerLifecycleTests {
         }
     }
 
-    @Test func distinctBundleIdsNormallyLandOnDistinctPorts() throws {
+    @Test func distinctBundleIdsNormallyLandOnDistinctPorts() async throws {
         let config = IosRunnerConfig(
             bundleId: IosRunnerConfig.defaultBundleId,
             appBundleId: "dev.reticle.sampleios"
@@ -44,7 +44,7 @@ struct IosRunnerLifecycleTests {
 
     // The port must come from the shared rule, not from a new allocator: one place
     // where ports are decided is the invariant worth pinning.
-    @Test func portsComeFromTheSharedDerivationRule() {
+    @Test func portsComeFromTheSharedDerivationRule() async {
         let config = IosRunnerConfig(appBundleId: "dev.reticle.sampleios")
         #expect(config.port == PortMap.derivePort(IosRunnerConfig.defaultBundleId))
         #expect(config.appPort == PortMap.derivePort("dev.reticle.sampleios"))
@@ -54,7 +54,7 @@ struct IosRunnerLifecycleTests {
         #expect(config.port < PortMap.basePort + PortMap.range)
     }
 
-    @Test func theRunnerBundleIdCarriesTheXctrunnerSuffix() {
+    @Test func theRunnerBundleIdCarriesTheXctrunnerSuffix() async {
         // XCTest appends it to the test target's id; a config without it would point
         // at an app that does not exist on the device.
         #expect(IosRunnerConfig.defaultBundleId.hasSuffix(".xctrunner"))
@@ -64,7 +64,7 @@ struct IosRunnerLifecycleTests {
     // devicectl, iproxy and xcodebuild alike, so carrying a second id (the
     // coredevice UUID, which only devicectl accepts) would add a way to be wrong
     // without adding any reach.
-    @Test func lifecycleTakesASingleDeviceIdentifier() {
+    @Test func lifecycleTakesASingleDeviceIdentifier() async {
         let lc = IosRunnerLifecycle(
             config: IosRunnerConfig(appBundleId: "dev.reticle.sampleios"),
             udid: "00008110-000A05D03683801E"
@@ -75,7 +75,7 @@ struct IosRunnerLifecycleTests {
         #expect(!lc.derivedDataPath.isEmpty)
     }
 
-    @Test func channelStatesAreThreeWayNotBoolean() {
+    @Test func channelStatesAreThreeWayNotBoolean() async {
         // notInstalled and installed need opposite repairs, so they must stay
         // distinguishable all the way out to the caller.
         #expect(SystemChannelState.notInstalled != SystemChannelState.installed)
@@ -83,7 +83,7 @@ struct IosRunnerLifecycleTests {
         #expect(SystemChannelState.notInstalled.rawValue == "notInstalled")
     }
 
-    @Test func profileValueExtractionPullsTheApplicationIdentifier() {
+    @Test func profileValueExtractionPullsTheApplicationIdentifier() async {
         // Wildcard profiles are how signing works on a machine with no Xcode
         // account signed in, so parsing them is load-bearing.
         let xml = """

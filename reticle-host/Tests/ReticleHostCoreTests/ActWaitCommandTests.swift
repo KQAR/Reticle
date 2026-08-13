@@ -33,10 +33,10 @@ private final class RecordingBackend: HelperCalling, @unchecked Sendable {
 @Suite(.serialized)
 struct ActWaitCommandTests {
 
-    private func run(_ argv: [String], reply: [String: Any]) throws -> (Int32, RecordingBackend) {
+    private func run(_ argv: [String], reply: [String: Any]) async throws -> (Int32, RecordingBackend) {
         let backend = RecordingBackend()
         backend.reply = reply
-        let code = try cmdAct(AndroidBackend(backend), Args(argv))
+        let code = try await cmdAct(AndroidBackend(backend), Args(argv))
         return (code, backend)
     }
 
@@ -48,17 +48,17 @@ struct ActWaitCommandTests {
         ]
     }
 
-    @Test func forwardsEverySelectorTheHelperMustBeAbleToRefuse() throws {
+    @Test func forwardsEverySelectorTheHelperMustBeAbleToRefuse() async throws {
         // point and alias are unusable for a wait, but the helper is the thing that
         // says so by name. They MUST reach it.
-        let (_, backend) = try run(
+        let (_, backend) = try await run(
             ["act", "wait", "--package", "p", "--point", "10,20"],
             reply: resolvedReply()
         )
         #expect(backend.calls.count == 1)
         #expect(backend.calls[0].params["point"] as? String == "10,20")
 
-        let (_, aliased) = try run(
+        let (_, aliased) = try await run(
             ["act", "wait", "--package", "p", "--test-id", "x", "--alias", "@1"],
             reply: resolvedReply()
         )
@@ -66,8 +66,8 @@ struct ActWaitCommandTests {
         #expect(aliased.calls[0].params["testId"] as? String == "x")
     }
 
-    @Test func mapsPredicateFlagsOntoTheWireNames() throws {
-        let (_, backend) = try run(
+    @Test func mapsPredicateFlagsOntoTheWireNames() async throws {
+        let (_, backend) = try await run(
             [
                 "act", "wait", "--package", "p", "--for", "#cart.total",
                 "--text", "Paid", "--timeout", "4000", "--quiet-for", "250",
@@ -85,36 +85,36 @@ struct ActWaitCommandTests {
         #expect(params["quietMs"] as? Int == 250)
     }
 
-    @Test func goneAndIdleAreSentAsBooleans() throws {
-        let (_, gone) = try run(
+    @Test func goneAndIdleAreSentAsBooleans() async throws {
+        let (_, gone) = try await run(
             ["act", "wait", "--package", "p", "--test-id", "t", "--gone"],
             reply: resolvedReply()
         )
         #expect(gone.calls[0].params["gone"] as? Bool == true)
-        let (_, idle) = try run(["act", "wait", "--package", "p", "--idle"], reply: resolvedReply())
+        let (_, idle) = try await run(["act", "wait", "--package", "p", "--idle"], reply: resolvedReply())
         #expect(idle.calls[0].params["idle"] as? Bool == true)
     }
 
-    @Test func exitIsZeroWithoutStrictWhateverTheOutcome() throws {
+    @Test func exitIsZeroWithoutStrictWhateverTheOutcome() async throws {
         // A predicate that did not come true is an observation, not a tool failure,
         // and a non-zero exit reads as "the command broke" to an agent driving this
         // through a shell.
         for outcome in ["resolved", "absent", "unknowable"] {
             var reply = resolvedReply()
             reply["outcome"] = outcome
-            let (code, _) = try run(["act", "wait", "--package", "p", "--test-id", "t"], reply: reply)
+            let (code, _) = try await run(["act", "wait", "--package", "p", "--test-id", "t"], reply: reply)
             #expect(code == 0, "outcome \(outcome) must exit 0 without --strict")
         }
     }
 
-    @Test func strictProjectsTheOutcomeOntoDistinctExitCodes() throws {
+    @Test func strictProjectsTheOutcomeOntoDistinctExitCodes() async throws {
         // 3 and 4 must never collapse: an agent may act on `absent` ("not there")
         // but must only switch tactics on `unknowable` ("I could not see").
         let expected: [String: Int32] = ["resolved": 0, "absent": 3, "unknowable": 4]
         for (outcome, want) in expected {
             var reply = resolvedReply()
             reply["outcome"] = outcome
-            let (code, _) = try run(
+            let (code, _) = try await run(
                 ["act", "wait", "--package", "p", "--test-id", "t", "--strict"],
                 reply: reply
             )
@@ -122,11 +122,11 @@ struct ActWaitCommandTests {
         }
     }
 
-    @Test func anUnrecognizedOutcomeIsAnErrorUnderStrict() throws {
+    @Test func anUnrecognizedOutcomeIsAnErrorUnderStrict() async throws {
         // A helper that grew a fourth outcome must not be reported as success.
         var reply = resolvedReply()
         reply["outcome"] = "something-new"
-        let (code, _) = try run(
+        let (code, _) = try await run(
             ["act", "wait", "--package", "p", "--test-id", "t", "--strict"],
             reply: reply
         )
@@ -173,7 +173,7 @@ struct ActWaitBatchTests {
         return r
     }
 
-    @Test func aStrictWaitStepStopsTheBatch() throws {
+    @Test func aStrictWaitStepStopsTheBatch() async throws {
         let file = try stepsFile("""
         [
           { "gesture": "tap", "testId": "pay" },
@@ -187,15 +187,15 @@ struct ActWaitBatchTests {
             waitReply("unknowable", reasons: ["window-unfocused"]),
             ["gesture": "tap"],
         ]
-        #expect(throws: (any Error).self) {
-            try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
+        await #expect(throws: (any Error).self) {
+            try await cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         }
         // The third step must never have been dispatched.
         #expect(backend.calls.count == 2)
         try? FileManager.default.removeItem(atPath: file)
     }
 
-    @Test func aNonStrictWaitStepRecordsAndCarriesOn() throws {
+    @Test func aNonStrictWaitStepRecordsAndCarriesOn() async throws {
         let file = try stepsFile("""
         [
           { "gesture": "wait", "testId": "s", "textContains": "Paid" },
@@ -204,13 +204,13 @@ struct ActWaitBatchTests {
         """)
         let backend = ScriptedBackend()
         backend.replies = [waitReply("absent"), ["gesture": "tap"]]
-        let code = try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
+        let code = try await cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         #expect(code == 0)
         #expect(backend.calls.count == 2, "a non-strict wait must not gate the batch")
         try? FileManager.default.removeItem(atPath: file)
     }
 
-    @Test func aStrictWaitThatResolvesDoesNotStopTheBatch() throws {
+    @Test func aStrictWaitThatResolvesDoesNotStopTheBatch() async throws {
         let file = try stepsFile("""
         [
           { "gesture": "wait", "testId": "s", "textContains": "Paid", "strict": true },
@@ -219,7 +219,7 @@ struct ActWaitBatchTests {
         """)
         let backend = ScriptedBackend()
         backend.replies = [waitReply("resolved"), ["gesture": "tap"]]
-        _ = try cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
+        _ = try await cmdAct(AndroidBackend(backend), Args(["act", "batch", "--package", "p", "--file", file]))
         #expect(backend.calls.count == 2)
         try? FileManager.default.removeItem(atPath: file)
     }

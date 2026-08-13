@@ -65,9 +65,9 @@ struct IosWaitTests {
         var millis = 0
     }
 
-    @Test func resolvesOnTheFirstPollWhenAlreadyThere() throws {
+    @Test func resolvesOnTheFirstPollWhenAlreadyThere() async throws {
         let r = runner([snapshot(testId: "cart.total")])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(kind: .appear, selector: ReticleProtocol.Selector(testId: "cart.total")),
             timeoutMs: 10_000,
             quietMs: 400
@@ -80,14 +80,14 @@ struct IosWaitTests {
         #expect(out["ref"] as? String == "r1")
     }
 
-    @Test func resolvesWhenTheNodeArrivesLater() throws {
+    @Test func resolvesWhenTheNodeArrivesLater() async throws {
         // Missing for the first two polls, then present.
         let r = runner([
             snapshot(testId: nil),
             snapshot(testId: nil),
             snapshot(testId: "cart.total"),
         ])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(kind: .appear, selector: ReticleProtocol.Selector(testId: "cart.total")),
             timeoutMs: 10_000,
             quietMs: 400
@@ -98,9 +98,9 @@ struct IosWaitTests {
         #expect(out["elapsedMs"] as? Int == 200)
     }
 
-    @Test func aMissOnASettledScreenIsAnHonestAbsent() throws {
+    @Test func aMissOnASettledScreenIsAnHonestAbsent() async throws {
         let r = runner([snapshot(testId: nil)])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(kind: .appear, selector: ReticleProtocol.Selector(testId: "cart.total")),
             timeoutMs: 1_000,
             quietMs: 400
@@ -110,9 +110,9 @@ struct IosWaitTests {
         #expect((out["next"] as? [String])?.contains("ui compact --live to see what IS on screen") == true)
     }
 
-    @Test func neverOverrunsTheBudget() throws {
+    @Test func neverOverrunsTheBudget() async throws {
         let r = runner([snapshot(testId: nil)])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(kind: .appear, selector: ReticleProtocol.Selector(testId: "nope")),
             timeoutMs: 1_050,
             quietMs: 400
@@ -124,9 +124,9 @@ struct IosWaitTests {
         #expect(elapsed <= 1_050, "elapsed \(elapsed) overran the 1050ms budget")
     }
 
-    @Test func idleReturnsAsSoonAsTheScreenIsQuiet() throws {
+    @Test func idleReturnsAsSoonAsTheScreenIsQuiet() async throws {
         let r = runner([snapshot(testId: "a")])
-        let out = try r.run(predicate: WaitPredicate(kind: .idle), timeoutMs: 30_000, quietMs: 400)
+        let out = await try r.run(predicate: WaitPredicate(kind: .idle), timeoutMs: 30_000, quietMs: 400)
         #expect(out["outcome"] as? String == "resolved")
         #expect(out["predicate"] as? String == "idle")
         // Needs two polls to have a digest to compare, then the quiet window.
@@ -135,18 +135,18 @@ struct IosWaitTests {
         #expect(out["treeChanges"] as? Int == 0)
     }
 
-    @Test func idleOnANeverSettlingScreenIsUnknowable() throws {
+    @Test func idleOnANeverSettlingScreenIsUnknowable() async throws {
         // Every poll differs, so the digest never repeats.
         let r = runner((0..<400).map { snapshot(testId: "a", text: "tick \($0)") })
-        let out = try r.run(predicate: WaitPredicate(kind: .idle), timeoutMs: 2_000, quietMs: 400)
+        let out = await try r.run(predicate: WaitPredicate(kind: .idle), timeoutMs: 2_000, quietMs: 400)
         #expect(out["outcome"] as? String == "unknowable")
         #expect((out["reasons"] as? [String]) == ["tree-still-changing"])
         #expect((out["treeChanges"] as? Int ?? 0) > 1)
     }
 
-    @Test func textPredicateReportsWhatWasActuallyThere() throws {
+    @Test func textPredicateReportsWhatWasActuallyThere() async throws {
         let r = runner([snapshot(testId: "status", text: "Cart: 3 items")])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(
                 kind: .text,
                 selector: ReticleProtocol.Selector(testId: "status"),
@@ -159,10 +159,10 @@ struct IosWaitTests {
         #expect(out["observedText"] as? String == "Cart: 3 items")
     }
 
-    @Test func aResolvableButInvisibleNodeStillCountsAsAppeared() throws {
+    @Test func aResolvableButInvisibleNodeStillCountsAsAppeared() async throws {
         // The case the dropped isVisible-based proposal got wrong.
         let r = runner([snapshot(testId: "status", text: "hi", visible: false)])
-        let out = try r.run(
+        let out = await try r.run(
             predicate: WaitPredicate(kind: .appear, selector: ReticleProtocol.Selector(testId: "status")),
             timeoutMs: 800,
             quietMs: 400
@@ -171,7 +171,7 @@ struct IosWaitTests {
         #expect((out["caveats"] as? [String]) == ["resolved-but-not-visible"])
     }
 
-    @Test func predicateParsingMatchesTheVerifyTokenGrammar() throws {
+    @Test func predicateParsingMatchesTheVerifyTokenGrammar() async throws {
         #expect(try IosWaitRunner.predicate(from: ["for": "#cart.total"]).describe() == "appear testId=cart.total")
         #expect(try IosWaitRunner.predicate(from: ["for": "@status"]).describe() == "appear resourceId=status")
         #expect(try IosWaitRunner.predicate(from: ["for": "css=#pay"]).describe() == "appear css=#pay")
@@ -185,7 +185,7 @@ struct IosWaitTests {
         #expect(try IosWaitRunner.predicate(from: ["for": "idle"]).describe() == "idle")
     }
 
-    @Test func refusesPredicatesItCannotAnswer() {
+    @Test func refusesPredicatesItCannotAnswer() async {
         // Each refusal exists because the alternative is a wait that always
         // "succeeds" and therefore means nothing.
         #expect(throws: (any Error).self) { try IosWaitRunner.predicate(from: [:]) }

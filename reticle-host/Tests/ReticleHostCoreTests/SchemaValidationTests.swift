@@ -51,13 +51,13 @@ struct SchemaValidationTests {
         )
     }
 
-    @Test func swiftEmittedSnapshotSatisfiesSnapshotSchema() throws {
+    @Test func swiftEmittedSnapshotSatisfiesSnapshotSchema() async throws {
         let data = try ReticleJSON.encodeWire(sampleSnapshot())
         let errors = try JSONSchemaValidator.validate(instanceData: data, schemaURL: schema("snapshot.schema.json"))
         #expect(errors.isEmpty, "snapshot schema violations: \(errors)")
     }
 
-    @Test func snapshotWithKeyboardAndRegionsSatisfiesSchema() throws {
+    @Test func snapshotWithKeyboardAndRegionsSatisfiesSchema() async throws {
         var snap = sampleSnapshot()
         snap.screen.keyboard = KeyboardInfo(visible: true, frame: Rect(x: 0, y: 700, width: 393, height: 152))
         let data = try ReticleJSON.encodeWire(snap)
@@ -65,7 +65,7 @@ struct SchemaValidationTests {
         #expect(errors.isEmpty, "snapshot schema violations: \(errors)")
     }
 
-    @Test func iosGoldenSnapshotSatisfiesSchemaOnTheSwiftSide() throws {
+    @Test func iosGoldenSnapshotSatisfiesSchemaOnTheSwiftSide() async throws {
         // The Kotlin test validates this golden too; do it on the Swift side so a
         // Swift-only reshape of the shared fixture cannot slip past CI.
         let data = try Data(contentsOf: fixture("ios-snapshot.golden.json"))
@@ -75,7 +75,7 @@ struct SchemaValidationTests {
 
     // MARK: - network-event-payload.schema.json
 
-    @Test func emittedNetworkPayloadSatisfiesPayloadSchema() throws {
+    @Test func emittedNetworkPayloadSatisfiesPayloadSchema() async throws {
         var payload = NetworkEventPayload(
             requestId: "r", scheme: "https", method: "POST", url: "https://h/x",
             host: "h", port: 443, path: "/x", startMillis: 1, tunnel: false, mitm: true
@@ -104,7 +104,7 @@ struct SchemaValidationTests {
         #expect(errors.isEmpty, "network payload schema violations: \(errors)")
     }
 
-    @Test func networkPayloadGoldenFixturesSatisfySchema() throws {
+    @Test func networkPayloadGoldenFixturesSatisfySchema() async throws {
         for name in ["network-request-event", "network-response-event", "network-error-event"] {
             let event = try JSONSerialization.jsonObject(with: Data(contentsOf: fixture("\(name).golden.json"))) as? [String: Any] ?? [:]
             let payload = try JSONSerialization.data(withJSONObject: event["payload"] ?? [:])
@@ -115,7 +115,7 @@ struct SchemaValidationTests {
 
     // MARK: - event.schema.json
 
-    @Test func eventEnvelopeGoldenFixturesSatisfySchema() throws {
+    @Test func eventEnvelopeGoldenFixturesSatisfySchema() async throws {
         for name in ["network-request-event", "network-response-event", "network-error-event", "action-trace-event"] {
             let data = try Data(contentsOf: fixture("\(name).golden.json"))
             let errors = try JSONSchemaValidator.validate(instanceData: data, schemaURL: schema("event.schema.json"))
@@ -136,7 +136,7 @@ struct JSONSchemaValidatorSelfTests {
             .appendingPathComponent("reticle-protocol/schema/snapshot.schema.json")
     }
 
-    @Test func rejectsWrongMetadataValueType() throws {
+    @Test func rejectsWrongMetadataValueType() async throws {
         // _type says "int" but value is a string — the exact allOf/if/then drift
         // the field-name comparison could never catch.
         let bad = """
@@ -150,7 +150,7 @@ struct JSONSchemaValidatorSelfTests {
         #expect(!errors.isEmpty)
     }
 
-    @Test func rejectsUnknownNodeKindEnum() throws {
+    @Test func rejectsUnknownNodeKindEnum() async throws {
         let bad = """
         {"schemaVersion":1,"capturedAtMillis":1,"platform":"ios",
          "screen":{"size":{"width":1,"height":1},"density":1},
@@ -161,7 +161,7 @@ struct JSONSchemaValidatorSelfTests {
         #expect(errors.contains { $0.contains("enum") })
     }
 
-    @Test func rejectsMissingRequiredAndAdditionalProperty() throws {
+    @Test func rejectsMissingRequiredAndAdditionalProperty() async throws {
         // rootRef missing; an undeclared top-level property present.
         let bad = """
         {"schemaVersion":1,"capturedAtMillis":1,"platform":"ios",
@@ -173,7 +173,7 @@ struct JSONSchemaValidatorSelfTests {
         #expect(errors.contains { $0.contains("surpriseField") })
     }
 
-    @Test func rejectsWrongSchemaVersionConst() throws {
+    @Test func rejectsWrongSchemaVersionConst() async throws {
         let bad = """
         {"schemaVersion":2,"capturedAtMillis":1,"platform":"ios",
          "screen":{"size":{"width":1,"height":1},"density":1},
@@ -183,7 +183,7 @@ struct JSONSchemaValidatorSelfTests {
         #expect(errors.contains { $0.contains("const") })
     }
 
-    @Test func acceptsAValidMinimalSnapshot() throws {
+    @Test func acceptsAValidMinimalSnapshot() async throws {
         let good = """
         {"schemaVersion":1,"capturedAtMillis":1,"platform":"ios",
          "screen":{"size":{"width":1,"height":1},"density":1},
