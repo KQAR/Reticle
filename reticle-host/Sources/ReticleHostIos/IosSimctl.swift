@@ -32,7 +32,12 @@ public struct Simctl {
         // The concurrent two-pipe drain this used to hand-roll (stderr off-thread
         // so a chatty subcommand filling its ~64KB buffer cannot deadlock a
         // caller blocked on stdout) now lives once, in `Shell`.
-        let result = Shell.runSync("/usr/bin/xcrun", ["simctl"] + args, extraEnvironment: extraEnv)
+        // Bounded: every `simctl` call here answers in seconds, except `boot` /
+        // `bootstatus`, which the two-minute ceiling still clears on a cold
+        // runtime. A `simctl` that has not answered by then is wedged — a state
+        // that used to hang the CLI forever and now fails with which command did it.
+        let result = Shell.runSync("/usr/bin/xcrun", ["simctl"] + args,
+                                   extraEnvironment: extraEnv, timeout: .seconds(120))
         return (result.out, result.err, result.code)
     }
 

@@ -240,7 +240,7 @@ enum ReticleSystemCommands {
         // `idevice_id` is not always installed; a missing binary comes back as a
         // launch failure (code -1), which falls out of the count check below as
         // "not exactly one device" — the same answer it always gave.
-        let result = Shell.runSync("/usr/bin/env", ["idevice_id", "-l"])
+        let result = Shell.runSync("/usr/bin/env", ["idevice_id", "-l"], timeout: .seconds(10))
         let ids = result.out.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return ids.count == 1 ? ids[0] : nil
