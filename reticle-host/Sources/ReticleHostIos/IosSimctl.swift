@@ -28,7 +28,7 @@ public struct Simctl {
     /// rather than throwing: every caller here already branches on the code, and
     /// changing the signature would churn 28 call sites for nothing.
     @discardableResult
-    static func run(_ args: [String], env extraEnv: [String: String] = [:]) throws -> (out: String, err: String, code: Int32) {
+    static func run(_ args: [String], env extraEnv: [String: String] = [:]) async throws -> (out: String, err: String, code: Int32) {
         // The concurrent two-pipe drain this used to hand-roll (stderr off-thread
         // so a chatty subcommand filling its ~64KB buffer cannot deadlock a
         // caller blocked on stdout) now lives once, in `Shell`.
@@ -36,8 +36,8 @@ public struct Simctl {
         // `bootstatus`, which the two-minute ceiling still clears on a cold
         // runtime. A `simctl` that has not answered by then is wedged — a state
         // that used to hang the CLI forever and now fails with which command did it.
-        let result = Shell.runSync("/usr/bin/xcrun", ["simctl"] + args,
-                                   extraEnvironment: extraEnv, timeout: .seconds(120))
+        let result = await Shell.run("/usr/bin/xcrun", ["simctl"] + args,
+                                     extraEnvironment: extraEnv, timeout: .seconds(120))
         return (result.out, result.err, result.code)
     }
 
@@ -45,8 +45,8 @@ public struct Simctl {
     /// Throws on a real failure (non-zero `simctl`, unparseable JSON) so the true
     /// cause (Xcode not selected, `xcrun` broken, …) surfaces instead of being
     /// masked as "no booted simulator". Returns [] only for a valid, empty list.
-    static func listDevices() throws -> [Device] {
-        let r = try run(["list", "-j", "devices"])
+    static func listDevices() async throws -> [Device] {
+        let r = await try run(["list", "-j", "devices"])
         guard r.code == 0 else {
             throw SimctlError.failed("simctl list failed: \(r.err.isEmpty ? r.out : r.err)")
         }
@@ -76,8 +76,8 @@ public struct Simctl {
     /// the two must not be confused: a simulator has a HID surface, a device has
     /// none. Unparseable/failed `simctl` answers false — a udid we cannot place in
     /// the simulator list is not one we may assume HID for.
-    static func isSimulator(_ udid: String) -> Bool {
-        ((try? listDevices()) ?? []).contains { $0.udid == udid }
+    static func isSimulator(_ udid: String) async -> Bool {
+        await ((try? listDevices()) ?? []).contains { $0.udid == udid }
     }
 
     /// Whether `bundleId` is installed on this simulator (`simctl listapps`).
@@ -85,17 +85,17 @@ public struct Simctl {
     /// is on THAT screen, so an app that is not even installed there means the
     /// input would land somewhere else entirely while the agent — reached over
     /// loopback, which a device shares through a USB tunnel — answers healthy.
-    static func isAppInstalled(udid: String, bundleId: String) -> Bool {
-        guard let r = try? run(["listapps", udid]), r.code == 0 else { return true }
+    static func isAppInstalled(udid: String, bundleId: String) async -> Bool {
+        guard let r = await try? run(["listapps", udid]), r.code == 0 else { return true }
         return r.out.contains("\"\(bundleId)\"") || r.out.contains(bundleId)
     }
 
     /// Resolve a device: an explicit udid, else the (single) booted simulator.
     /// Public because the daemon needs to attribute captured traffic to a booted
     /// simulator. One of exactly two entry points this target exposes upward.
-    public static func resolveUdid(_ serial: String?) throws -> String {
+    public static func resolveUdid(_ serial: String?) async throws -> String {
         if let serial, !serial.isEmpty { return serial }
-        let booted = try listDevices().filter { $0.state == "Booted" }
+        let booted = await try listDevices().filter { $0.state == "Booted" }
         guard let first = booted.first else { throw SimctlError.noBootedDevice }
         return first.udid
     }
@@ -107,21 +107,21 @@ public struct Simctl {
     /// --proxy-install-ca` used to assemble `["keychain", udid, "add-root-cert", …]`
     /// itself, which put simulator command syntax inside the daemon. The daemon now
     /// states the intent and this target owns the how.
-    public static func trustRootCertificate(derPath: String, udid: String) throws {
-        let r = try run(["keychain", udid, "add-root-cert", derPath])
+    public static func trustRootCertificate(derPath: String, udid: String) async throws {
+        let r = await try run(["keychain", udid, "add-root-cert", derPath])
         if r.code != 0 {
             throw HelperError("could not trust the MITM CA in simulator \(udid): "
                 + (r.err.isEmpty ? r.out : r.err))
         }
     }
 
-    static func terminate(udid: String, bundleId: String) {
-        _ = try? run(["terminate", udid, bundleId])
+    static func terminate(udid: String, bundleId: String) async {
+        _ = await try? run(["terminate", udid, bundleId])
     }
 
     /// Launch an app, optionally injecting a dylib via SIMCTL_CHILD_* env. Returns pid.
-    static func launch(udid: String, bundleId: String, childEnv: [String: String]) throws -> Int {
-        let r = try run(["launch", udid, bundleId], env: childEnv)
+    static func launch(udid: String, bundleId: String, childEnv: [String: String]) async throws -> Int {
+        let r = await try run(["launch", udid, bundleId], env: childEnv)
         guard r.code == 0 else {
             throw SimctlError.failed("simctl launch failed: \(r.err.isEmpty ? r.out : r.err)")
         }
@@ -132,10 +132,10 @@ public struct Simctl {
     }
 
     /// Capture a PNG screenshot to a temp file and return its bytes.
-    static func screenshotPng(udid: String) throws -> Data {
+    static func screenshotPng(udid: String) async throws -> Data {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("reticle-shot-\(UUID().uuidString).png")
-        let r = try run(["io", udid, "screenshot", "--type=png", tmp.path])
+        let r = await try run(["io", udid, "screenshot", "--type=png", tmp.path])
         guard r.code == 0 else {
             throw SimctlError.failed("simctl io screenshot failed: \(r.err.isEmpty ? r.out : r.err)")
         }

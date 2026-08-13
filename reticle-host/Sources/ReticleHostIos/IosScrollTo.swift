@@ -23,7 +23,7 @@ extension IosHelperClient {
     /// Slow drags on purpose: a flick leaves the list decelerating after the
     /// gesture returns, so the point reported would already be stale for the next
     /// command. `settled` says whether the position was confirmed to have stopped.
-    func scrollTo(_ pkg: String, _ params: [String: Any], surface: IosTouchSurface) throws -> [String: Any] {
+    func scrollTo(_ pkg: String, _ params: [String: Any], surface: IosTouchSurface) async throws -> [String: Any] {
         let selector = selectorFromParams(params)
         let maxSwipes = Int((params["maxSwipes"] as? String) ?? "") ?? 12
         let requested = (params["direction"] as? String)?.lowercased()
@@ -35,10 +35,10 @@ extension IosHelperClient {
         var lockedDirection: String?
 
         while true {
-            let snapshot = try fetchSnapshot(pkg)
+            let snapshot = try await fetchSnapshot(pkg)
             let container = try scrollContainer(snapshot, params)
             if let point = resolvedInside(snapshot, params, container: container) {
-                let settled = confirmSettled(pkg, params, container: container, first: point)
+                let settled = await confirmSettled(pkg, params, container: container, first: point)
                 var out: [String: Any] = [
                     "gesture": "scroll-to", "via": surface.describe, "found": true, "swipes": swipes,
                     "x": settled.point.x, "y": settled.point.y, "settled": settled.stable,
@@ -73,10 +73,10 @@ extension IosHelperClient {
                     + "The container can still scroll \(direction) — raise --max-swipes.")
             }
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            try drag(frame, direction, surface: surface, screen: screen)
+            try await drag(frame, direction, surface: surface, screen: screen)
             lastDirection = direction
             swipes += 1
-            Thread.sleep(forTimeInterval: 0.35)
+            try? await Task.sleep(for: .seconds(0.35))
         }
     }
 
@@ -126,12 +126,12 @@ extension IosHelperClient {
     /// or the budget runs out. Reports the freshest point either way.
     func confirmSettled(
         _ pkg: String, _ params: [String: Any], container: Node?, first: Point
-    ) -> SettledPoint {
+    ) async -> SettledPoint {
         let deadline = Date().addingTimeInterval(2.0)
         var previous = first
         while Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.2)
-            guard let snapshot = try? fetchSnapshot(pkg) else { return SettledPoint(point: previous, stable: false) }
+            try? await Task.sleep(for: .seconds(0.2))
+            guard let snapshot = try? await fetchSnapshot(pkg) else { return SettledPoint(point: previous, stable: false) }
             let fresh = (try? scrollContainer(snapshot, params)).flatMap { $0 }
             guard let point = resolvedInside(snapshot, params, container: fresh) else {
                 return SettledPoint(point: previous, stable: false)
@@ -201,7 +201,7 @@ extension IosHelperClient {
 
     func drag(
         _ frame: Rect, _ direction: String, surface: IosTouchSurface, screen: (Double, Double)
-    ) throws {
+    ) async throws {
         let cx = frame.x + frame.width / 2
         let cy = frame.y + frame.height / 2
         let dx = frame.width * 0.3
@@ -209,10 +209,10 @@ extension IosHelperClient {
         let backend = surface
         // Content moves with the finger: dragging up scrolls DOWN.
         switch direction {
-        case "down": try backend.swipe(from: (cx, cy + dy), to: (cx, cy - dy), screen: screen, durationMs: 700)
-        case "up": try backend.swipe(from: (cx, cy - dy), to: (cx, cy + dy), screen: screen, durationMs: 700)
-        case "right": try backend.swipe(from: (cx + dx, cy), to: (cx - dx, cy), screen: screen, durationMs: 700)
-        case "left": try backend.swipe(from: (cx - dx, cy), to: (cx + dx, cy), screen: screen, durationMs: 700)
+        case "down": try await backend.swipe(from: (cx, cy + dy), to: (cx, cy - dy), screen: screen, durationMs: 700)
+        case "up": try await backend.swipe(from: (cx, cy - dy), to: (cx, cy + dy), screen: screen, durationMs: 700)
+        case "right": try await backend.swipe(from: (cx + dx, cy), to: (cx - dx, cy), screen: screen, durationMs: 700)
+        case "left": try await backend.swipe(from: (cx - dx, cy), to: (cx + dx, cy), screen: screen, durationMs: 700)
         default: throw HelperError("scroll-to: unknown --direction '\(direction)'")
         }
     }

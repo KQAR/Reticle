@@ -31,12 +31,12 @@ struct PointCoverageOutcomeTests {
         ])
     }
 
-    @Test func theVerdictIsReadableAsAWarningSentence() {
+    @Test func theVerdictIsReadableAsAWarningSentence() async {
         #expect(outcome.coverage?["reason"] as? String == "iframe:cross-origin")
         #expect((outcome.coverage?["warning"] as? String)?.hasPrefix("no semantic selector covers") == true)
     }
 
-    @Test func theVerdictStaysOutOfTheFlatFieldsLine() {
+    @Test func theVerdictStaysOutOfTheFlatFieldsLine() async {
         let fields = outcome.displayFields
         #expect(fields["coverage"] == nil)
         // …and the gesture's own facts are untouched by the exclusion.
@@ -44,7 +44,7 @@ struct PointCoverageOutcomeTests {
         #expect(fields["source"] as? String == "point")
     }
 
-    @Test func theVerdictSurvivesIntoTheJsonEnvelope() throws {
+    @Test func theVerdictSurvivesIntoTheJsonEnvelope() async throws {
         let data = try JsonEnvelope.encodeSuccess(outcome.raw)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let payload = object?["data"] as? [String: Any]
@@ -52,7 +52,7 @@ struct PointCoverageOutcomeTests {
         #expect(coverage?["reason"] as? String == "iframe:cross-origin")
     }
 
-    @Test func aSelectorTapCarriesNoVerdictAtAll() {
+    @Test func aSelectorTapCarriesNoVerdictAtAll() async {
         // Only a coordinate needs justifying; a selector tap already resolved
         // through the tree, so a verdict there would be noise on every action.
         let selectorTap = ActOutcome(raw: ["gesture": "tap", "source": "semantic:testId", "ref": "r42"])

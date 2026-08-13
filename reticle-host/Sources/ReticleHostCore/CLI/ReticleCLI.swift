@@ -40,7 +40,7 @@ public enum ReticleCLI {
     """
 
     /// Runs the Reticle CLI and returns a process exit code.
-    public static func run(_ argv: [String]) -> Int32 {
+    public static func run(_ argv: [String]) async -> Int32 {
         // A write to a dead helper's stdin pipe (or a closed client socket)
         // must surface as an error at the call site, not deliver SIGPIPE and
         // kill the whole process — fatal for the long-lived serve daemon.
@@ -59,26 +59,26 @@ public enum ReticleCLI {
             print(help)
             return 0
         case "serve":
-            return runServe(args)
+            return await runServe(args)
         case "helper-daemon":
             // The resident hot-path process; auto-spawned by helper-backed
             // commands, so it stays out of the usage line.
-            return runHelperDaemon(args)
+            return await runHelperDaemon(args)
         case "rule":
-            return runRule(args)
+            return await runRule(args)
         case "replay":
-            return runReplay(args)
+            return await runReplay(args)
         case "trace":
-            return runTrace(args)
+            return await runTrace(args)
         default:
-            return runHelperBacked(command: command, args: args)
+            return await runHelperBacked(command: command, args: args)
         }
     }
 
-    private static func runServe(_ args: Args) -> Int32 {
+    private static func runServe(_ args: Args) async -> Int32 {
         do {
             let runtime = ServeRuntime(options: try ServeOptions(args: args))
-            try runtime.run()
+            try await runtime.run()
             return 0
         } catch {
             writeError("error: \(error)\n")
@@ -86,9 +86,9 @@ public enum ReticleCLI {
         }
     }
 
-    private static func runRule(_ args: Args) -> Int32 {
+    private static func runRule(_ args: Args) async -> Int32 {
         do {
-            try cmdRule(args)
+            try await cmdRule(args)
             return 0
         } catch {
             writeError("error: \(error)\n")
@@ -96,9 +96,9 @@ public enum ReticleCLI {
         }
     }
 
-    private static func runTrace(_ args: Args) -> Int32 {
+    private static func runTrace(_ args: Args) async -> Int32 {
         do {
-            try cmdTrace(args)
+            try await cmdTrace(args)
             return 0
         } catch {
             writeError("error: \(error)\n")
@@ -106,9 +106,9 @@ public enum ReticleCLI {
         }
     }
 
-    private static func runReplay(_ args: Args) -> Int32 {
+    private static func runReplay(_ args: Args) async -> Int32 {
         do {
-            try cmdReplay(args)
+            try await cmdReplay(args)
             return 0
         } catch {
             writeError("error: \(error)\n")
@@ -116,7 +116,7 @@ public enum ReticleCLI {
         }
     }
 
-    private static func runHelperBacked(command: String, args: Args) -> Int32 {
+    private static func runHelperBacked(command: String, args: Args) async -> Int32 {
         let serialArg = args.option("serial").flatMap { $0 == "true" ? nil : $0 }
         do {
             // A flag this command does not read used to be dropped, so the command
@@ -126,7 +126,7 @@ public enum ReticleCLI {
             try CliFlags.validate(args, command: command, subcommand: args.positional(1))
             let backend = try makeBackend(args: args, serial: serialArg)
             defer { backend.close() }
-            return try dispatch(command: command, args: args, backend: backend)
+            return try await dispatch(command: command, args: args, backend: backend)
         } catch let unavailable as HelperUnavailable {
             // A setup problem, not a failed call: no helper binary means no
             // command could have run. Exits 2 (like a usage error), and stays
@@ -187,15 +187,15 @@ public enum ReticleCLI {
     /// it projects its three-state outcome onto an exit code for shell/CI
     /// consumers. That projection is opt-in, and never the primary channel — the
     /// outcome is always a field in the result (see `cmdAct`).
-    private static func dispatch(command: String, args: Args, backend: HostBackend) throws -> Int32 {
+    private static func dispatch(command: String, args: Args, backend: HostBackend) async throws -> Int32 {
         switch command {
-        case "doctor": try cmdDoctor(backend, args)
-        case "devices": try cmdDevices(backend, args)
-        case "status": try cmdStatus(backend, args)
+        case "doctor": try await cmdDoctor(backend, args)
+        case "devices": try await cmdDevices(backend, args)
+        case "status": try await cmdStatus(backend, args)
         case "app":
             switch args.positional(1) {
-            case "launch": try cmdLaunch(backend, args)
-            case "inject": try cmdInject(backend, args)
+            case "launch": try await cmdLaunch(backend, args)
+            case "inject": try await cmdInject(backend, args)
             default:
                 // Name what IS available. A missing subcommand answered with
                 // "unknown app subcommand: <none>" is an error about what the
@@ -205,26 +205,26 @@ public enum ReticleCLI {
                         + (args.positional(1).map { "\n  (got '\($0)')" } ?? "")
                 )
             }
-        case "inject": try cmdInject(backend, args)
-        case "launch": try cmdLaunch(backend, args)
+        case "inject": try await cmdInject(backend, args)
+        case "launch": try await cmdLaunch(backend, args)
         // The out-of-process channel. It does NOT go through `backend`: a
         // `HostBackend` is the in-app channel, shared with Android, and the system
         // channel has neither an Android twin nor any method in common with it.
-        case "system": try ReticleSystemCommands.dispatch(args)
-        case "act": return try cmdAct(backend, args)
-        case "mutate": try cmdMutate(backend, args)
-        case "debug": try cmdDebug(backend, args)
+        case "system": try await ReticleSystemCommands.dispatch(args)
+        case "act": return try await cmdAct(backend, args)
+        case "mutate": try await cmdMutate(backend, args)
+        case "debug": try await cmdDebug(backend, args)
         case "ui":
             switch args.positional(1) {
-            case "report": try cmdUiReport(backend, args)
-            case "screenshot": try cmdScreenshot(backend, args)
-            case "tree": try cmdUiRender(backend, args, view: "tree")
-            case "compact": try cmdUiRender(backend, args, view: "compact")
-            case "outline": try cmdUiRender(backend, args, view: "outline")
-            case "node": try cmdUiRender(backend, args, view: "node")
-            case "regions": try cmdUiRender(backend, args, view: "regions")
-            case "style": try cmdUiRender(backend, args, view: "style")
-            case "coverage": try cmdUiRender(backend, args, view: "coverage")
+            case "report": try await cmdUiReport(backend, args)
+            case "screenshot": try await cmdScreenshot(backend, args)
+            case "tree": try await cmdUiRender(backend, args, view: "tree")
+            case "compact": try await cmdUiRender(backend, args, view: "compact")
+            case "outline": try await cmdUiRender(backend, args, view: "outline")
+            case "node": try await cmdUiRender(backend, args, view: "node")
+            case "regions": try await cmdUiRender(backend, args, view: "regions")
+            case "style": try await cmdUiRender(backend, args, view: "style")
+            case "coverage": try await cmdUiRender(backend, args, view: "coverage")
             default: throw HelperError("unknown ui subcommand: \(args.positional(1) ?? "<none>")")
             }
         default:

@@ -26,54 +26,49 @@ struct IosAgentHTTP {
 
     /// GET the endpoint and return the raw body bytes (plus content type).
     @discardableResult
-    func get(_ path: String) throws -> (data: Data, contentType: String) {
-        try send(path: path, method: "GET", body: nil)
+    func get(_ path: String) async throws -> (data: Data, contentType: String) {
+        try await send(path: path, method: "GET", body: nil)
     }
 
     @discardableResult
-    func post(_ path: String, body: Data) throws -> (data: Data, contentType: String) {
-        try send(path: path, method: "POST", body: body)
+    func post(_ path: String, body: Data) async throws -> (data: Data, contentType: String) {
+        try await send(path: path, method: "POST", body: body)
     }
 
-    private func send(path: String, method: String, body: Data?) throws -> (Data, String) {
+    /// `URLSession`'s async form. This used to be the callback form bridged back to
+    /// a blocking caller with a semaphore, a `ResultBox` and a second timeout on top
+    /// of `URLRequest`'s own — three moving parts to express one round trip, and a
+    /// call that could not be cancelled once started.
+    private func send(path: String, method: String, body: Data?) async throws -> (Data, String) {
         var request = URLRequest(url: try url(path))
         request.httpMethod = method
         request.timeoutInterval = timeout
         request.httpBody = body
 
-        let sema = DispatchSemaphore(value: 0)
-        let box = ResultBox<(Data, String)>(fallback: .failure(HelperError("no response from agent")))
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { sema.signal() }
-            if let error {
-                box.set(.failure(HelperError("agent \(method) \(path) failed: \(error.localizedDescription)")))
-                return
-            }
-            let http = response as? HTTPURLResponse
-            let status = http?.statusCode ?? 0
-            let ctype = http?.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
-            guard let data else {
-                box.set(.failure(HelperError("agent \(method) \(path) returned no body")))
-                return
-            }
-            guard (200..<300).contains(status) else {
-                let text = String(decoding: data, as: UTF8.self)
-                box.set(.failure(HelperError("agent \(method) \(path) -> HTTP \(status): \(text)")))
-                return
-            }
-            box.set(.success((data, ctype)))
-        }
-        task.resume()
-        if sema.wait(timeout: .now() + timeout + 1) == .timedOut {
-            task.cancel()
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .timedOut {
             throw HelperError("agent \(method) \(path) timed out (is the runtime up on port \(port)?)")
+        } catch {
+            throw HelperError("agent \(method) \(path) failed: \(error.localizedDescription)")
         }
-        return try box.value.get()
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        let ctype = http?.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+        guard (200..<300).contains(status) else {
+            let text = String(decoding: data, as: UTF8.self)
+            throw HelperError("agent \(method) \(path) -> HTTP \(status): \(text)")
+        }
+        return (data, ctype)
     }
 
     /// GET and decode JSON into a top-level `[String: Any]`.
-    func getJSONObject(_ path: String) throws -> [String: Any] {
-        let (data, _) = try get(path)
+    func getJSONObject(_ path: String) async throws -> [String: Any] {
+        let (data, _) = try await get(path)
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw HelperError("agent \(path) did not return a JSON object")
         }
@@ -81,18 +76,22 @@ struct IosAgentHTTP {
     }
 
     /// Probe `/runtime`; returns the parsed RuntimeInfo or nil if unreachable.
-    func probeRuntime() -> RuntimeInfo? {
-        guard let (data, _) = try? get(Endpoints.runtime) else { return nil }
+    func probeRuntime() async -> RuntimeInfo? {
+        guard let (data, _) = try? await get(Endpoints.runtime) else { return nil }
         return try? ReticleJSON.decode(RuntimeInfo.self, from: data)
     }
 
     /// Poll `/runtime` until healthy or timeout.
+    ///
+    /// `Task.sleep` rather than `Thread.sleep`: this is the longest wait in a cold
+    /// launch, and it is now a cancellation point — a Ctrl-C during it stops the
+    /// command instead of finishing the poll first.
     @discardableResult
-    func waitForRuntime(deadline: TimeInterval = 10.0) -> RuntimeInfo? {
+    func waitForRuntime(deadline: TimeInterval = 10.0) async -> RuntimeInfo? {
         let end = Date().addingTimeInterval(deadline)
         while Date() < end {
-            if let info = probeRuntime() { return info }
-            Thread.sleep(forTimeInterval: 0.25)
+            if let info = await probeRuntime() { return info }
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return nil }
         }
         return nil
     }

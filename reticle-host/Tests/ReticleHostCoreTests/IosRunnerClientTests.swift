@@ -19,7 +19,7 @@ struct IosRunnerClientTests {
         ))
     }
 
-    @Test func theClientAddressesTheRunnersOwnDerivedPort() {
+    @Test func theClientAddressesTheRunnersOwnDerivedPort() async {
         let config = IosRunnerConfig(appBundleId: "dev.reticle.sampleios")
         let client = IosRunnerClient(config: config)
         #expect(client.port == config.port)
@@ -27,16 +27,16 @@ struct IosRunnerClientTests {
         #expect(client.port != config.appPort)
     }
 
-    @Test func aSuccessfulCallReportsNoRestart() throws {
-        let (value, restarted) = try session().withRetry { _ in 42 }
+    @Test func aSuccessfulCallReportsNoRestart() async throws {
+        let (value, restarted) = await try session().withRetry { _ in 42 }
         #expect(value == 42)
         #expect(!restarted)
     }
 
     // NFR-011: when nothing was restarted, nothing may be claimed. A spurious
     // restart flag would send someone hunting for interference that never happened.
-    @Test func anUninterruptedObservationIsNotStampedAsRestarted() throws {
-        let observed = try session().observe { _ in
+    @Test func anUninterruptedObservationIsNotStampedAsRestarted() async throws {
+        let observed = await try session().observe { _ in
             SystemObservation(overlayPresent: true, targetProcess: "com.apple.springboard")
         }
         #expect(!observed.runnerRestarted)
@@ -45,18 +45,18 @@ struct IosRunnerClientTests {
 
     // A refusal the runner deliberately returned must propagate untouched: a
     // restart would paper over the runner's own considered answer.
-    @Test func anErrorFromALiveRunnerIsNotRetriedIntoSilence() {
+    @Test func anErrorFromALiveRunnerIsNotRetriedIntoSilence() async {
         // With no device attached the liveness probe reads "not running", so this
         // exercises the path where a retry IS attempted and then fails for real —
         // the point being that the original failure surfaces rather than a success.
-        #expect(throws: (any Error).self) {
-            _ = try session().withRetry { _ -> Int in
+        await #expect(throws: (any Error).self) {
+            _ = try await session().withRetry { _ -> Int in
                 throw HelperError("runner said no")
             }
         }
     }
 
-    @Test func observationsDecodeFromTheRunnersWireShape() throws {
+    @Test func observationsDecodeFromTheRunnersWireShape() async throws {
         // The shape the runner is expected to emit for a system alert, trimmed to
         // one node. Pinning it here keeps host and runner from drifting silently.
         let json = """

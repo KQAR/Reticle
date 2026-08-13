@@ -24,34 +24,34 @@ public final class IosHelperClient: HostBackend {
         PingResult(version: ReticleVersion.current)
     }
 
-    public func listDevices() throws -> [DeviceSummary] {
-        try Simctl.listDevices().map {
+    public func listDevices() async throws -> [DeviceSummary] {
+        await try Simctl.listDevices().map {
             DeviceSummary(serial: $0.udid, state: $0.state.lowercased(), name: $0.name, runtime: $0.runtime)
         }
     }
 
-    public func status(_ request: StatusRequest) throws -> StatusResult {
+    public func status(_ request: StatusRequest) async throws -> StatusResult {
         // Runtime health comes over loopback and doesn't need simctl, so a simctl
         // failure shouldn't fail the whole status — but it must be reported, not
         // swallowed into an empty device list that reads like "no simulators".
         var devices: [DeviceSummary] = []
         do {
-            devices = try listDevices()
+            devices = await try listDevices()
         } catch {
             FileHandle.standardError.write(Data("warning: could not list simulators: \(error)\n".utf8))
         }
-        if let info = IosAgentHTTP(bundleId: request.package).probeRuntime() {
+        if let info = await IosAgentHTTP(bundleId: request.package).probeRuntime() {
             return StatusResult(devices: devices, running: true, pid: info.pid, runtime: "healthy",
                                 port: info.port, agentVersion: info.agentVersion)
         }
         return StatusResult(devices: devices, running: false, pid: nil, runtime: "unreachable")
     }
 
-    public func launch(_ request: AppStartRequest) throws -> RuntimeStartResult {
-        try start(request, inject: false)
+    public func launch(_ request: AppStartRequest) async throws -> RuntimeStartResult {
+        try await start(request, inject: false)
     }
 
-    public func inject(_ request: AppStartRequest) throws -> RuntimeStartResult {
+    public func inject(_ request: AppStartRequest) async throws -> RuntimeStartResult {
         // `--restart-under-debugger` relaxes Android's input-dispatch ANR during a
         // JDWP suspension. iOS injection is a DYLD insert with no suspended main
         // thread and no AMS, so there is nothing here for the flag to do. Refuse it
@@ -60,7 +60,7 @@ public final class IosHelperClient: HostBackend {
             throw HelperError("--restart-under-debugger is Android-only: it relaxes the ANR that "
                 + "Android's JDWP suspension can trip. iOS injection is a DYLD insert and suspends nothing.")
         }
-        return try start(request, inject: true)
+        return try await start(request, inject: true)
     }
 
     public func logcat() throws -> [String] {
@@ -79,9 +79,9 @@ public final class IosHelperClient: HostBackend {
 
     // MARK: - Launch / inject
 
-    private func start(_ request: AppStartRequest, inject: Bool) throws -> RuntimeStartResult {
+    private func start(_ request: AppStartRequest, inject: Bool) async throws -> RuntimeStartResult {
         let pkg = request.package
-        let udid = try Simctl.resolveUdid(serial)
+        let udid = await try Simctl.resolveUdid(serial)
         let port = PortMap.derivePort(pkg)
 
         var childEnv: [String: String] = ["SIMCTL_CHILD_RETICLE_PORT": String(port)]
@@ -89,11 +89,11 @@ public final class IosHelperClient: HostBackend {
             childEnv["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = try resolveInjectionDylib(request.payload)
         }
         // Restart so the injected env / a fresh runtime takes effect.
-        Simctl.terminate(udid: udid, bundleId: pkg)
-        let pid = try Simctl.launch(udid: udid, bundleId: pkg, childEnv: childEnv)
+        await Simctl.terminate(udid: udid, bundleId: pkg)
+        let pid = await try Simctl.launch(udid: udid, bundleId: pkg, childEnv: childEnv)
 
         // Success means the runtime is actually answering, not that launch returned.
-        guard let info = IosAgentHTTP(bundleId: pkg).waitForRuntime(deadline: 12.0) else {
+        guard let info = await IosAgentHTTP(bundleId: pkg).waitForRuntime(deadline: 12.0) else {
             throw HelperError("launched \(pkg) (pid \(pid)) but its Reticle runtime never answered on port \(port); "
                 + (inject ? "check the injection dylib is a simulator build and the app holds no injection block"
                           : "is ReticleKit linked and Reticle.start() called?"))
@@ -122,8 +122,8 @@ public final class IosHelperClient: HostBackend {
 
     // MARK: - Observation
 
-    public func uiReport(_ request: PackageRequest) throws -> UiReportResult {
-        let obj = try IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.report)
+    public func uiReport(_ request: PackageRequest) async throws -> UiReportResult {
+        let obj = try await IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.report)
         let snapshot = obj["snapshot"] as? [String: Any] ?? [:]
         let semantics = obj["semantics"] as? [String: Any] ?? [:]
         let compact = obj["compact"] as? [String: Any] ?? [:]
@@ -135,7 +135,7 @@ public final class IosHelperClient: HostBackend {
         )
     }
 
-    public func screenshot(_ request: ScreenshotRequest) throws -> ScreenshotResult {
+    public func screenshot(_ request: ScreenshotRequest) async throws -> ScreenshotResult {
         // The agent's in-process render always targets the app we're actually
         // talking to (device or simulator), so it is the source of truth. Only
         // fall back to `simctl io` when the agent can't render AND an explicit
@@ -145,13 +145,13 @@ public final class IosHelperClient: HostBackend {
             throw HelperError("iOS commands need --package <bundle-id>")
         }
         do {
-            let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.screenshot)
+            let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.screenshot)
             return ScreenshotResult(pngBase64: data.base64EncodedString(), via: "agent",
-                                    degraded: screenshotDegrades(pkg))
+                                    degraded: await screenshotDegrades(pkg))
         } catch {
             if let serial, !serial.isEmpty,
-               (try? Simctl.listDevices().contains { $0.udid == serial && $0.state == "Booted" }) == true {
-                let png = try Simctl.screenshotPng(udid: serial)
+               await (try? Simctl.listDevices().contains { $0.udid == serial && $0.state == "Booted" }) == true {
+                let png = await try Simctl.screenshotPng(udid: serial)
                 return ScreenshotResult(pngBase64: png.base64EncodedString(), via: "simctl")
             }
             throw error
@@ -163,8 +163,8 @@ public final class IosHelperClient: HostBackend {
     /// keyboard's host window, which refuses to render into a borrowed context, so
     /// the keys are simply absent from the image (measured against
     /// `simctl io screenshot`). Best-effort: no snapshot, no note.
-    private func screenshotDegrades(_ pkg: String) -> [String] {
-        guard let snapshot = try? fetchSnapshot(pkg) else { return [] }
+    private func screenshotDegrades(_ pkg: String) async -> [String] {
+        guard let snapshot = try? await fetchSnapshot(pkg) else { return [] }
         return snapshot.nodes.values.filter { $0.pixelsUnavailable() }.map { node in
             let id = node.testId ?? node.ref
             let where_ = node.frame.map { " [\($0.intDescription)]" } ?? ""
@@ -177,8 +177,8 @@ public final class IosHelperClient: HostBackend {
         }
     }
 
-    public func render(_ request: RenderRequest) throws -> RenderResult {
-        var snapshot = try loadSnapshotForRender(request)
+    public func render(_ request: RenderRequest) async throws -> RenderResult {
+        var snapshot = try await loadSnapshotForRender(request)
         if let window = request.window {
             guard let scoped = snapshot.scopedToWindow(window) else {
                 let refs = snapshot.windowRefs()
@@ -197,27 +197,27 @@ public final class IosHelperClient: HostBackend {
         return RenderResult(text: text)
     }
 
-    private func loadSnapshotForRender(_ request: RenderRequest) throws -> Snapshot {
+    private func loadSnapshotForRender(_ request: RenderRequest) async throws -> Snapshot {
         // `--live` arrives as the sentinel path the CLI uses for "capture now".
         if request.snapshotPath == RenderRequest.liveSnapshotPath {
             guard let pkg = request.package else {
                 throw HelperError("render --live needs --package")
             }
-            let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
+            let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
             return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: request.snapshotPath))
         return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
     }
 
-    public func mutate(_ request: MutateRequest) throws -> MutationOutcome {
+    public func mutate(_ request: MutateRequest) async throws -> MutationOutcome {
         let mutation = MutationRequest(
             selector: request.selector.protocolSelector,
             property: request.property,
             value: MetadataValue.parsed(from: request.value)
         )
         let body = try ReticleJSON.encodeWire(mutation)
-        let (data, _) = try IosAgentHTTP(bundleId: request.package).post(Endpoints.mutate, body: body)
+        let (data, _) = try await IosAgentHTTP(bundleId: request.package).post(Endpoints.mutate, body: body)
         let result = try ReticleJSON.decode(MutationResult.self, from: data)
         return MutationOutcome(
             applied: result.applied,
@@ -226,8 +226,8 @@ public final class IosHelperClient: HostBackend {
         )
     }
 
-    public func logs(_ request: PackageRequest) throws -> [AppLogEntry] {
-        let obj = try IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.logs)
+    public func logs(_ request: PackageRequest) async throws -> [AppLogEntry] {
+        let obj = try await IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.logs)
         return ((obj["entries"] as? [[String: Any]]) ?? []).map {
             AppLogEntry(level: $0["level"] as? String ?? "?", message: $0["message"] as? String ?? "")
         }
@@ -240,8 +240,8 @@ public final class IosHelperClient: HostBackend {
     /// producing the same `verify` result shape the host's `printVerify` renders.
     /// Previously iOS silently accepted and dropped `--verify`, so an agent believed
     /// it had checked a post-condition it never checked.
-    public func act(_ request: ActRequest) throws -> ActOutcome {
-        ActOutcome(raw: try act(request.wireParams))
+    public func act(_ request: ActRequest) async throws -> ActOutcome {
+        ActOutcome(raw: try await act(request.wireParams))
     }
 
     /// The gesture handler still reads a parameter dictionary, and `act` is the one
@@ -249,18 +249,18 @@ public final class IosHelperClient: HostBackend {
     /// JSON, and the modifiers are shared across gestures. The typed entry point
     /// above is what callers see; converting this body is tracked separately so the
     /// interface change and the internal one are reviewable apart.
-    private func act(_ params: [String: Any]) throws -> [String: Any] {
+    private func act(_ params: [String: Any]) async throws -> [String: Any] {
         guard let watch = try verifyWatchSelector(params) else {
-            return try performAct(params)
+            return try await performAct(params)
         }
         let pkg = try bundleId(params)
-        let before = captureVerifyState(pkg, watch)
-        var result = try performAct(params)
-        result["verify"] = pollVerify(pkg, watch, before: before, params: params)
+        let before = await captureVerifyState(pkg, watch)
+        var result = try await performAct(params)
+        result["verify"] = await pollVerify(pkg, watch, before: before, params: params)
         return result
     }
 
-    func performAct(_ params: [String: Any]) throws -> [String: Any] {
+    func performAct(_ params: [String: Any]) async throws -> [String: Any] {
         let pkg = try bundleId(params)
         let gesture = (params["gesture"] as? String) ?? "tap"
 
@@ -285,9 +285,9 @@ public final class IosHelperClient: HostBackend {
         // Explicit in-process activation (the on-device "tap"): works everywhere,
         // no HID surface needed.
         if gesture == "activate" {
-            let before = tracer?.capture()
-            let result = try activate(pkg, params)
-            return try finishTrace(tracer, before, settleMs, gesture: "activate", selector: selector,
+            let before = await tracer?.capture()
+            let result = try await activate(pkg, params)
+            return try await finishTrace(tracer, before, settleMs, gesture: "activate", selector: selector,
                                    point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
                                    result: result)
         }
@@ -296,16 +296,16 @@ public final class IosHelperClient: HostBackend {
         // devices and simulators alike, and reports the settled before/after
         // state straight from the agent.
         if gesture == "hideKeyboard" || gesture == "hide-keyboard" {
-            let before = tracer?.capture()
+            let before = await tracer?.capture()
             let obj: [String: Any]
             do {
-                let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.keyboardHide, body: Data())
+                let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.keyboardHide, body: Data())
                 obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
             } catch {
                 throw HelperError("hide-keyboard needs the in-process agent (is the runtime up?): \(error)")
             }
             let keyboard = obj["keyboard"] as? [String: Any]
-            return try finishTrace(tracer, before, settleMs, gesture: "hideKeyboard", selector: nil,
+            return try await finishTrace(tracer, before, settleMs, gesture: "hideKeyboard", selector: nil,
                                    point: nil, source: "agent", ref: nil,
                                    result: ["gesture": "hideKeyboard", "via": "agent resignFirstResponder",
                                             "wasVisible": obj["wasVisible"] ?? false,
@@ -316,8 +316,8 @@ public final class IosHelperClient: HostBackend {
         // `hide-keyboard` it needs no HID surface and works on real devices too.
         if gesture == "wait" {
             let predicate = try IosWaitRunner.predicate(from: params)
-            let runner = IosWaitRunner(fetch: { try self.fetchSnapshot(pkg) })
-            return try runner.run(
+            let runner = IosWaitRunner(fetch: { try await self.fetchSnapshot(pkg) })
+            return await try runner.run(
                 predicate: predicate,
                 timeoutMs: (params["timeoutMs"] as? Int) ?? WaitSchedule.defaultTimeoutMs,
                 quietMs: (params["quietMs"] as? Int) ?? WaitSchedule.defaultQuietMs
@@ -326,7 +326,7 @@ public final class IosHelperClient: HostBackend {
 
         // HID (real touch/keyboard) needs a booted simulator; a real device has no
         // host-reachable HID input surface.
-        let simUdid = try? Simctl.resolveUdid(serial)
+        let simUdid = await try? Simctl.resolveUdid(serial)
 
         switch gesture {
         case "tap":
@@ -337,14 +337,16 @@ public final class IosHelperClient: HostBackend {
             // that surface is absent (an older agent, or the private UIKit surface
             // gone) does a SELECTOR tap fall back to in-process activation, which
             // fires an action instead of delivering a touch.
-            let deviceIsSim = simUdid.map { Simctl.isSimulator($0) } ?? false
-            if !deviceIsSim, !IosTouchSurface.agentTouchAvailable(pkg) {
+            // `map` cannot carry an await, so the optional is unwrapped first.
+            let deviceIsSim: Bool
+            if let simUdid { deviceIsSim = await Simctl.isSimulator(simUdid) } else { deviceIsSim = false }
+            if !deviceIsSim, await !IosTouchSurface.agentTouchAvailable(pkg) {
                 if params["point"] != nil {
                     throw HelperError("point taps need a touch surface; this device has none "
                         + "(no agent `POST /touch`), so name the target and use `act activate`")
                 }
-                let before = tracer?.capture()
-                var result = try activate(pkg, params)
+                let before = await tracer?.capture()
+                var result = try await activate(pkg, params)
                 // `--settle` is about a coordinate going stale between resolve and
                 // dispatch; in-process activation does both in one step, so there is
                 // nothing to wait out. Say so rather than reporting a settle that
@@ -352,12 +354,12 @@ public final class IosHelperClient: HostBackend {
                 if settleRequested(params) {
                     result["settleSkipped"] = "activation resolves and dispatches in-process"
                 }
-                return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
+                return try await finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                        point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
                                        result: result)
             }
-            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "tap")
-            let snapshot = try fetchSnapshot(pkg)
+            let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "tap")
+            let snapshot = try await fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let target = try resolveTarget(params, snapshot: snapshot)
             let firstPoint = target.point
@@ -375,7 +377,7 @@ public final class IosHelperClient: HostBackend {
             // command reports an unqualified success. `--settle` raises the budget for
             // a target that is genuinely animating in; `--no-settle` opts out.
             if !rawPoint, !isTruthy(params["noSettle"]) {
-                let settled = settleTapPoint(pkg, params, first: point)
+                let settled = await settleTapPoint(pkg, params, first: point)
                 point = settled.point
                 stable = settled.stable
             }
@@ -388,8 +390,8 @@ public final class IosHelperClient: HostBackend {
             // SELECTOR tap needs too: it resolves correctly, confirms the rect, and
             // is then eaten by the IME or by a window above the one it aimed at.
             let obstruction = ScreenCoverage.obstruction(snapshot, x: point.x, y: point.y, targetRef: target.ref)
-            let before = tracer?.capture()
-            try surface.tap(x: point.x, y: point.y, screen: screen)
+            let before = await tracer?.capture()
+            try await surface.tap(x: point.x, y: point.y, screen: screen)
             var result: [String: Any] = [
                 "gesture": "tap", "via": surface.describe, "x": point.x, "y": point.y,
                 // How it resolved, in the shared vocabulary (`semantic:testId`,
@@ -428,20 +430,20 @@ public final class IosHelperClient: HostBackend {
                let complaint = DomRectCheck.outsideHost(snapshot, ref: ref) {
                 result["rectSuspect"] = complaint
             }
-            return try finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
+            return try await finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
                                    point: point, source: target.source, ref: target.ref,
                                    result: result)
         case "swipe", "drag":
-            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: gesture)
+            let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: gesture)
             guard let from = parsePoint(params["from"]), let to = parsePoint(params["to"]) else {
                 throw HelperError("\(gesture) needs --from x,y and --to x,y")
             }
-            let snapshot = try fetchSnapshot(pkg)
+            let snapshot = try await fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let duration = Double((params["duration"] as? String) ?? "") ?? (gesture == "drag" ? 600 : 250)
-            let before = tracer?.capture()
-            try surface.swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
-            return try finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
+            let before = await tracer?.capture()
+            try await surface.swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
+            return try await finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
                                    point: from, source: "point", ref: nil,
                                    result: ["gesture": gesture, "via": surface.describe,
                                             "from": "\(from.x),\(from.y)", "to": "\(to.x),\(to.y)"])
@@ -463,8 +465,8 @@ public final class IosHelperClient: HostBackend {
         case "scroll-to", "scrollTo":
             // The gesture a device needed most: a lazy list's unrealized row has no
             // node until something scrolls it into view, and activation cannot scroll.
-            let surface = try IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "scroll-to")
-            return try scrollTo(pkg, params, surface: surface)
+            let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "scroll-to")
+            return try await scrollTo(pkg, params, surface: surface)
         case "type":
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             // No HID surface — a real device (whose `--serial` is a hardware ECID,
@@ -480,13 +482,14 @@ public final class IosHelperClient: HostBackend {
             // `resolveUdid` falls back to the BOOTED SIMULATOR, so a device run
             // dispatched its keystrokes at the simulator's screen and reported
             // `via=hid` while the phone's field stayed empty.
-            let isSim = simUdid.map { Simctl.isSimulator($0) } ?? false
+            let isSim: Bool
+            if let simUdid { isSim = await Simctl.isSimulator(simUdid) } else { isSim = false }
             let hidUnavailable = isSim ? !IosInputBackend(udid: simUdid!).isAvailable() : true
             guard let udid = simUdid, isSim, !hidUnavailable else {
-                let before = tracer?.capture()
-                var result = try typeInProcess(pkg, params, text: text)
+                let before = await tracer?.capture()
+                var result = try await typeInProcess(pkg, params, text: text)
                 if isSim, hidUnavailable { result["hid"] = "unavailable — typed in-process instead" }
-                return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
+                return try await finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
                                        point: nil, source: result["focusedVia"] as? String,
                                        ref: result["ref"] as? String, result: result)
             }
@@ -494,14 +497,14 @@ public final class IosHelperClient: HostBackend {
             // screen, not to the process Reticle is talking to — and the agent is
             // reached over loopback, which a real device shares through a USB
             // tunnel, so "healthy" says nothing about where the keys will land.
-            guard Simctl.isAppInstalled(udid: udid, bundleId: pkg) else {
+            guard await Simctl.isAppInstalled(udid: udid, bundleId: pkg) else {
                 throw HelperError(
                     "\(pkg) is not installed on simulator \(udid), so HID keystrokes would go to "
                     + "whatever IS on that screen. If you meant a real device, pass its hardware "
                     + "ECID as --serial (`idevice_id -l`) — typing then goes through the agent."
                 )
             }
-            let before = tracer?.capture()
+            let before = await tracer?.capture()
             // If the caller named a target field, tap it first so the text lands
             // in THAT field — HID typing and clipboard paste both go to whatever
             // currently holds focus, so `type --test-id foo` otherwise silently
@@ -510,14 +513,14 @@ public final class IosHelperClient: HostBackend {
             var focusedVia: String? = nil
             var focusPoint: Point? = nil
             if selector != nil {
-                let snapshot = try fetchSnapshot(pkg)
+                let snapshot = try await fetchSnapshot(pkg)
                 let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
                 let point = try resolveTapPoint(params, snapshot: snapshot)
                 try IosInputBackend(udid: udid).tap(x: point.x, y: point.y, screen: screen)
                 focusPoint = point
                 // Give the tapped field a beat to take focus before dispatching
                 // text (the Android helper settles 200ms for the same reason).
-                Thread.sleep(forTimeInterval: 0.2)
+                try? await Task.sleep(for: .seconds(0.2))
                 focusedVia = params["point"] != nil ? "point" : "selector"
             }
             // `--clear`: empty the field BEFORE typing, and prove it is empty.
@@ -528,7 +531,7 @@ public final class IosHelperClient: HostBackend {
             var cleared: [String: Any]? = nil
             var clearedSummary: String? = nil
             if isTruthy(params["clear"]) {
-                let outcome = try clearFocusedField(pkg, udid: udid, params: params)
+                let outcome = try await clearFocusedField(pkg, udid: udid, params: params)
                 cleared = outcome.wire
                 clearedSummary = outcome.summary
                 if !outcome.emptied {
@@ -548,7 +551,7 @@ public final class IosHelperClient: HostBackend {
                 if let gap = typeDelayMs(params), gap > 0 {
                     for character in text {
                         try IosInputBackend(udid: udid).type(String(character))
-                        Thread.sleep(forTimeInterval: Double(gap) / 1000.0)
+                        try? await Task.sleep(for: .seconds(Double(gap)) / 1000.0)
                     }
                     via = "hid (paced \(gap)ms)"
                 } else {
@@ -562,13 +565,13 @@ public final class IosHelperClient: HostBackend {
                 // Pastes into the current focus — the focus-tap above (or the
                 // caller) must have put the caret in the right field.
                 do {
-                    try IosAgentHTTP(bundleId: pkg).post(Endpoints.clipboard, body: Data(text.utf8))
+                    try await IosAgentHTTP(bundleId: pkg).post(Endpoints.clipboard, body: Data(text.utf8))
                 } catch {
                     throw HelperError("could not stage non-ASCII text on the clipboard (is the agent running?): \(error)")
                 }
                 // The agent sets UIPasteboard on the main thread asynchronously;
                 // give it a beat to land before pasting.
-                Thread.sleep(forTimeInterval: 0.12)
+                try? await Task.sleep(for: .seconds(0.12))
                 try IosInputBackend(udid: udid).paste()
                 via = "clipboard paste"
             }
@@ -586,17 +589,17 @@ public final class IosHelperClient: HostBackend {
             // bridge maps '\n' to the Return usage, which triggers the focused
             // field's return-key action (textFieldShouldReturn / onSubmitEditing).
             if isTruthy(params["submit"]) {
-                Thread.sleep(forTimeInterval: 0.15)
+                try? await Task.sleep(for: .seconds(0.15))
                 try IosInputBackend(udid: udid).type("\n")
                 result["submit"] = ["via": "hid return"]
             }
             // Opportunistic post-type keyboard state (typing almost always
             // leaves the keyboard covering the bottom of the screen); omitted
             // when the agent can't answer — typing must not fail over it.
-            if let visible = (try? IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+            if let visible = (try? await IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
                 result["keyboardVisible"] = visible
             }
-            return try finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
+            return try await finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
                                    point: focusPoint, source: focusedVia, ref: nil,
                                    result: result)
         default:
@@ -611,10 +614,10 @@ public final class IosHelperClient: HostBackend {
         gesture: String, selector: TargetSelector?,
         point: Point?, source: String?, ref: String?,
         result: [String: Any]
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
         guard let tracer, let before else { return result }
         var out = result
-        out["trace"] = try tracer.write(
+        out["trace"] = try await tracer.write(
             gesture: gesture, selector: selector, targetPoint: point, targetSource: source, targetRef: ref,
             result: result.mapValues { "\($0)" }, before: before, settleMs: settleMs
         )
@@ -658,10 +661,10 @@ public final class IosHelperClient: HostBackend {
     /// `--verify` recorded nothing and `--trace-output` wrote no package. The
     /// outcome is a FIELD instead (the rule `act wait` already follows), and the
     /// warning names the flag that answers the question.
-    func activate(_ pkg: String, _ params: [String: Any]) throws -> [String: Any] {
+    func activate(_ pkg: String, _ params: [String: Any]) async throws -> [String: Any] {
         let request = ActivationRequest(selector: selectorFromParams(params))
         let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.activate, body: body)
+        let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.activate, body: body)
         let r = try ReticleJSON.decode(ActivationResult.self, from: data)
         if r.resolvedOutcome == .refused {
             throw HelperError("activation failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
@@ -716,7 +719,7 @@ public final class IosHelperClient: HostBackend {
     /// / region / semantic-first precedence as everything else, instead of the
     /// agent growing a second, weaker resolver. With no selector the agent types
     /// into whatever holds focus, exactly as the HID path does.
-    func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) throws -> [String: Any] {
+    func typeInProcess(_ pkg: String, _ params: [String: Any], text: String) async throws -> [String: Any] {
         var selector: ReticleProtocol.Selector? = nil
         var focusedVia: String? = nil
         var resolvedAgainst: Snapshot? = nil
@@ -737,7 +740,7 @@ public final class IosHelperClient: HostBackend {
                 selector = requested
                 focusedVia = "point"
             } else {
-                let snapshot = try fetchSnapshot(pkg)
+                let snapshot = try await fetchSnapshot(pkg)
                 resolvedAgainst = snapshot
                 let resolved = try resolveTarget(params, snapshot: snapshot)
                 guard let ref = resolved.ref else {
@@ -771,7 +774,7 @@ public final class IosHelperClient: HostBackend {
             perCharDelayMs: typeDelayMs(params)
         )
         let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try IosAgentHTTP(bundleId: pkg).post(Endpoints.typeText, body: body)
+        let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.typeText, body: body)
         let r = try ReticleJSON.decode(TypeTextResult.self, from: data)
         guard r.typed else {
             throw HelperError("in-process type failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
@@ -794,7 +797,7 @@ public final class IosHelperClient: HostBackend {
                                   "before": cleared.before ?? "", "after": cleared.after ?? ""]
         }
         if let submitted = r.submitted { out["submit"] = ["via": submitted] }
-        if let visible = (try? IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+        if let visible = (try? await IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
             out["keyboardVisible"] = visible
         }
         return out
@@ -891,8 +894,8 @@ public final class IosHelperClient: HostBackend {
     /// then read it back. Deleting what is there rather than a fixed count is the
     /// difference between clearing the field and eating the line above it; the
     /// read-back is what stops `--clear` claiming work it did not do.
-    func clearFocusedField(_ pkg: String, udid: String, params: [String: Any]) throws -> ClearOutcome {
-        let snapshot = try fetchSnapshot(pkg)
+    func clearFocusedField(_ pkg: String, udid: String, params: [String: Any]) async throws -> ClearOutcome {
+        let snapshot = try await fetchSnapshot(pkg)
         guard let field = focusedField(snapshot, params: params) else {
             return ClearOutcome(emptied: false, before: nil, after: nil, deletes: 0,
                                 unavailable: "no-text-field-node")
@@ -911,8 +914,8 @@ public final class IosHelperClient: HostBackend {
             )
         }
         try IosInputBackend(udid: udid).delete(times: before.count)
-        Thread.sleep(forTimeInterval: 0.25)
-        let after = (try? fetchSnapshot(pkg))
+        try? await Task.sleep(for: .seconds(0.25))
+        let after = (try? await fetchSnapshot(pkg))
             .flatMap { Self.refind(field, in: $0) }
             .flatMap { Self.editableText($0) }
         return ClearOutcome(
@@ -925,8 +928,8 @@ public final class IosHelperClient: HostBackend {
     /// reported as not cleared and the caller decides. Matches the Android limit.
     static let maxClearDeletes = 64
 
-    func fetchSnapshot(_ pkg: String) throws -> Snapshot {
-        let (data, _) = try IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
+    func fetchSnapshot(_ pkg: String) async throws -> Snapshot {
+        let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
         return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
     }
 
@@ -1036,7 +1039,7 @@ public final class IosHelperClient: HostBackend {
     /// `stable = false`, which the caller reports as evidence.
     func settleTapPoint(
         _ pkg: String, _ params: [String: Any], first: Point
-    ) -> SettledPoint {
+    ) async -> SettledPoint {
         // Short default budget: on a settled screen the loop returns as soon as one
         // re-resolve agrees, so this bounds the animating case, not the common one.
         // An explicit `--settle` means "this IS animating" and gets the full 2s.
@@ -1045,11 +1048,11 @@ public final class IosHelperClient: HostBackend {
         let deadline = Date().addingTimeInterval(budget)
         var previous = first
         while Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.15)
+            try? await Task.sleep(for: .seconds(0.15))
             // A target that vanishes mid-settle (a menu dismissed under us) is not a
             // failure of the tap yet: report the freshest point and let the dispatch,
             // or the caller's own verification, be the judge.
-            guard let snapshot = try? fetchSnapshot(pkg),
+            guard let snapshot = try? await fetchSnapshot(pkg),
                   let current = try? resolveTapPoint(params, snapshot: snapshot) else {
                 return SettledPoint(point: previous, stable: false)
             }

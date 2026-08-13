@@ -25,8 +25,8 @@ public final class IosSystemBackend: Sendable {
     /// tap reaches a permission alert and `simctl io … screenshot` shows it. The
     /// whole system channel exists for the device gap. Saying so — and naming the
     /// command to use instead — is more useful than a capability error.
-    public static func make(udid: String, appBundleId: String) throws -> IosSystemBackend {
-        if Simctl.isSimulator(udid) {
+    public static func make(udid: String, appBundleId: String) async throws -> IosSystemBackend {
+        if await Simctl.isSimulator(udid) {
             throw HelperError(
                 "the system channel is a REAL-DEVICE capability and \(udid) is a simulator. "
                 + "On a simulator the gap it fills does not exist: input already goes through "
@@ -69,8 +69,8 @@ public final class IosSystemBackend: Sendable {
         }
     }
 
-    public func status() -> Status {
-        Status(
+    public func status() async -> Status {
+        await Status(
             state: lifecycle.state(),
             udid: lifecycle.udid,
             port: lifecycle.config.port,
@@ -81,16 +81,16 @@ public final class IosSystemBackend: Sendable {
 
     // MARK: - Prepare / stop
 
-    public func prepare(team: String, runnerProjectPath: String) throws -> IosRunnerLifecycle.PrepareOutcome {
-        try lifecycle.prepare(
+    public func prepare(team: String, runnerProjectPath: String) async throws -> IosRunnerLifecycle.PrepareOutcome {
+        await try lifecycle.prepare(
             team: team,
             runnerProjectPath: runnerProjectPath,
             derivedDataPath: lifecycle.derivedDataPath
         )
     }
 
-    public func stop() -> IosRunnerLifecycle.StopOutcome {
-        lifecycle.stop()
+    public func stop() async -> IosRunnerLifecycle.StopOutcome {
+        await lifecycle.stop()
     }
 
     // MARK: - Observation (Phase 2 fills these in)
@@ -99,14 +99,14 @@ public final class IosSystemBackend: Sendable {
     /// process it is about, and every property this channel cannot read is named
     /// in `unreadable` rather than left empty — an empty field would read as "the
     /// app really has nothing there", which is the opposite of the truth.
-    public func overlay() throws -> SystemObservation {
-        let started = try lifecycle.ensureConnected().didStart
-        return stamp(try session.observe { try $0.overlay() }, started: started)
+    public func overlay() async throws -> SystemObservation {
+        let started = try await lifecycle.ensureConnected().didStart
+        return await stamp(try session.observe { try $0.overlay() }, started: started)
     }
 
-    public func tree(target: SystemReadTarget) throws -> SystemObservation {
-        let started = try lifecycle.ensureConnected().didStart
-        return stamp(try session.observe { try $0.tree(target: target) }, started: started)
+    public func tree(target: SystemReadTarget) async throws -> SystemObservation {
+        let started = try await lifecycle.ensureConnected().didStart
+        return await stamp(try session.observe { try $0.tree(target: target) }, started: started)
     }
 
     /// Carry "the runner had to be started for this command" onto the evidence.
@@ -130,9 +130,9 @@ public final class IosSystemBackend: Sendable {
     /// whether anything observably `changed`. A tap that landed and moved nothing
     /// is a real outcome, and calling it "success" would be a verdict rather than
     /// evidence.
-    public func act(_ body: (IosRunnerClient) throws -> SystemActionResult) throws -> SystemActionResult {
-        let started = try lifecycle.ensureConnected().didStart
-        let (result, restartedMidRequest) = try session.withRetry(body)
+    public func act(_ body: @escaping (IosRunnerClient) async throws -> SystemActionResult) async throws -> SystemActionResult {
+        let started = try await lifecycle.ensureConnected().didStart
+        let (result, restartedMidRequest) = try await session.withRetry(body)
         guard started || restartedMidRequest else { return result }
         var out = result
         out.runnerRestarted = true
@@ -142,9 +142,9 @@ public final class IosSystemBackend: Sendable {
     /// A display-level screenshot, tagged so it can never be confused with the
     /// in-process one. `degraded` carries what THIS picture cannot show, matching
     /// how `ui screenshot` already reports its own blind spots.
-    public func screenshot() throws -> ScreenshotResult {
-        let started = try lifecycle.ensureConnected().didStart
-        let (png, restartedMidRequest) = try session.withRetry { try $0.screenshotPng() }
+    public func screenshot() async throws -> ScreenshotResult {
+        let started = try await lifecycle.ensureConnected().didStart
+        let (png, restartedMidRequest) = try await session.withRetry { try $0.screenshotPng() }
         let restarted = started || restartedMidRequest
         var degraded: [String] = []
         if restarted {

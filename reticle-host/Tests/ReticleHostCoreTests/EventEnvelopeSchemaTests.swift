@@ -24,7 +24,7 @@ struct EventEnvelopeSchemaTests {
         return try JSONDecoder().decode(ReticleEventEnvelope.self, from: Data(contentsOf: url))
     }
 
-    @Test func goldenEventFixturesDecodeThroughTheProducerModel() throws {
+    @Test func goldenEventFixturesDecodeThroughTheProducerModel() async throws {
         for name in [
             "action-trace-event.golden.json",
             "network-request-event.golden.json",
@@ -40,7 +40,7 @@ struct EventEnvelopeSchemaTests {
         }
     }
 
-    @Test func emittedEnvelopeCarriesTheSchemaVersion() throws {
+    @Test func emittedEnvelopeCarriesTheSchemaVersion() async throws {
         let event = ReticleEventEnvelope(
             id: "evt_0000000000000001",
             ts: 1,
@@ -56,7 +56,7 @@ struct EventEnvelopeSchemaTests {
         #expect(object?["schemaVersion"] as? Int == 1)
     }
 
-    @Test func appendedEventsArePersistedWithTheSchemaVersion() throws {
+    @Test func appendedEventsArePersistedWithTheSchemaVersion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let store = try EventStore(session: "v", rootDirectory: root, limit: 10)
@@ -71,7 +71,7 @@ struct EventEnvelopeSchemaTests {
         #expect(line.contains("\"schemaVersion\":1"))
     }
 
-    @Test func legacyLinesWithoutSchemaVersionDecodeAsV1() throws {
+    @Test func legacyLinesWithoutSchemaVersionDecodeAsV1() async throws {
         // A pre-marker events.jsonl line must still load (default to v1) rather
         // than being skipped as corrupt by the tolerant loader.
         let legacy = #"{"id":"evt_0000000000000009","ts":5,"session":"s","source":"action","type":"action.trace","payload":{},"refs":{}}"#

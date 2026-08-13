@@ -10,17 +10,17 @@ struct IosSystemCommandTests {
     // TC-028. A simulator is not a degraded device here — it is the wrong tool.
     // The gap this channel fills does not exist there, so the refusal must point at
     // the commands that DO work rather than report a missing capability.
-    @Test func simulatorsAreRefusedWithAPointerToTheWorkingCommands() {
+    @Test func simulatorsAreRefusedWithAPointerToTheWorkingCommands() async {
         // A simulator udid resolves through Simctl; a device udid does not. Using a
         // known-simulator id keeps this off the device.
-        let simulators = (try? Simctl.listDevices()) ?? []
+        let simulators = await (try? Simctl.listDevices()) ?? []
         guard let sim = simulators.first else {
             // No simulators on this machine: the branch is still covered by the
             // e2e script, and inventing a fake id here would test nothing.
             return
         }
         do {
-            _ = try IosSystemBackend.make(udid: sim.udid, appBundleId: "dev.reticle.sampleios")
+            _ = await try IosSystemBackend.make(udid: sim.udid, appBundleId: "dev.reticle.sampleios")
             Issue.record("expected a simulator to be refused")
         } catch let e as HelperError {
             #expect(e.message.contains("REAL-DEVICE"))
@@ -32,16 +32,16 @@ struct IosSystemCommandTests {
         }
     }
 
-    @Test func theCommandFamilyIsIosOnlyAndSaysSo() {
+    @Test func theCommandFamilyIsIosOnlyAndSaysSo() async {
         // Default target is android; the system channel has no Android twin.
         let args = Args(["system", "status"])
-        #expect(throws: HelperError.self) { try ReticleSystemCommands.dispatch(args) }
+        await #expect(throws: HelperError.self) { try await ReticleSystemCommands.dispatch(args) }
     }
 
-    @Test func anUnknownSubcommandListsWhatIsAvailable() {
+    @Test func anUnknownSubcommandListsWhatIsAvailable() async {
         let args = Args(["system", "frobnicate", "--target", "ios"])
         do {
-            try ReticleSystemCommands.dispatch(args)
+            await try ReticleSystemCommands.dispatch(args)
             Issue.record("expected a usage error")
         } catch let e as HelperError {
             #expect(e.message.contains("prepare"))
@@ -56,7 +56,7 @@ struct IosSystemCommandTests {
 
     // Each state implies a DIFFERENT repair, which is the reason the channel has
     // three states instead of a usable/not-usable flag.
-    @Test func statusAdviceDiffersPerStateAndIsAbsentWhenNothingIsNeeded() {
+    @Test func statusAdviceDiffersPerStateAndIsAbsentWhenNothingIsNeeded() async {
         func status(_ state: SystemChannelState) -> IosSystemBackend.Status {
             IosSystemBackend.Status(
                 state: state, udid: "00008110-x", port: 9346,
@@ -71,7 +71,7 @@ struct IosSystemCommandTests {
         #expect(status(.connected).advice == nil)
     }
 
-    @Test func statusLineCarriesTheAddressingFactsWorthSeeing() {
+    @Test func statusLineCarriesTheAddressingFactsWorthSeeing() async {
         let s = IosSystemBackend.Status(
             state: .connected, udid: "00008110-x", port: 9346,
             runnerBundleId: IosRunnerConfig.defaultBundleId, usableTeams: []

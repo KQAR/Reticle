@@ -36,7 +36,7 @@ struct HelperMethodContractTests {
         return found
     }
 
-    @Test func theEnumMatchesTheDocumentedWireContract() throws {
+    @Test func theEnumMatchesTheDocumentedWireContract() async throws {
         let documented = try documentedMethods()
         let declared = Set(HelperMethod.allCases.map(\.rawValue))
         #expect(!documented.isEmpty, "no method rows parsed out of helper-rpc.md")
@@ -47,7 +47,7 @@ struct HelperMethodContractTests {
         #expect(declared == documented)
     }
 
-    @Test func anUnknownMethodIsNotKnown() {
+    @Test func anUnknownMethodIsNotKnown() async {
         #expect(HelperMethod.isKnown("status"))
         #expect(HelperMethod.isKnown("proxyInstallCa"))
         // The shape that matters: the broker used to forward any string at all.

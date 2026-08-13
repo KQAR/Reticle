@@ -17,7 +17,7 @@ struct NetworkRuleStoreTests {
         NetworkRuleRequest(id: id, enabled: true, priority: 0, method: "GET", url: url, match: match, actions: actions)
     }
 
-    @Test func blockRuleResolvesWithoutAValue() throws {
+    @Test func blockRuleResolvesWithoutAValue() async throws {
         let store = try makeStore()
         try store.upsertRule(request(id: "b", url: "/api", actions: NetworkRuleActions(route: .block)))
         let result = try store.resolve(NetworkRuleRequestContext(method: "GET", url: "http://h/api/x", path: "/api/x"))
@@ -26,7 +26,7 @@ struct NetworkRuleStoreTests {
         #expect(result?.rule.actions.route.label == "block")
     }
 
-    @Test func mapRemoteRequiresAnAbsoluteOrigin() throws {
+    @Test func mapRemoteRequiresAnAbsoluteOrigin() async throws {
         let store = try makeStore()
         #expect(throws: NetworkRuleError.self) {
             try store.upsertRule(self.request(id: "m", url: "/api", actions: NetworkRuleActions(route: .mapRemote(NetworkMapRemote(destination: "not-a-url")))))
@@ -40,7 +40,7 @@ struct NetworkRuleStoreTests {
         #expect(action.keepHostHeader == true)
     }
 
-    @Test func mockRouteRefusesDeletingAReferencedValue() throws {
+    @Test func mockRouteRefusesDeletingAReferencedValue() async throws {
         let store = try makeStore()
         try store.upsertValue(NetworkMockValueRequest(id: "v", status: 200, headers: [:], body: "{}", contentType: "application/json"))
         try store.upsertRule(request(id: "r", url: "/api", actions: NetworkRuleActions(route: .mock(valueId: "v"))))
@@ -51,14 +51,14 @@ struct NetworkRuleStoreTests {
         #expect(store.listValues().isEmpty)
     }
 
-    @Test func negativeDelayIsRejected() throws {
+    @Test func negativeDelayIsRejected() async throws {
         let store = try makeStore()
         #expect(throws: NetworkRuleError.self) {
             try store.upsertRule(self.request(id: "d", url: "/api", actions: NetworkRuleActions(route: .passthrough, delayMs: -1)))
         }
     }
 
-    @Test func actionsSurviveAtaggedUnionRoundTrip() throws {
+    @Test func actionsSurviveAtaggedUnionRoundTrip() async throws {
         let actions = NetworkRuleActions(
             route: .mapRemote(NetworkMapRemote(destination: "http://127.0.0.1:3001")),
             delayMs: 250,
@@ -72,7 +72,7 @@ struct NetworkRuleStoreTests {
         #expect(NetworkRuleActions().isNoOp == true)
     }
 
-    @Test func rulesPersistAndReloadAcrossStoreInstances() throws {
+    @Test func rulesPersistAndReloadAcrossStoreInstances() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = try NetworkRuleStore(sessionDirectory: dir)
@@ -82,7 +82,7 @@ struct NetworkRuleStoreTests {
         #expect(reloaded.listRules().first?.actions.delayMs == 100)
     }
 
-    @Test func importAppliesTheWholePackageWithOneSyncPerFile() throws {
+    @Test func importAppliesTheWholePackageWithOneSyncPerFile() async throws {
         let store = try makeStore()
         var syncs = 0
         store.onChange = { syncs += 1 }
@@ -110,7 +110,7 @@ struct NetworkRuleStoreTests {
         #expect(resolved.flatMap { $0.body.map { String(decoding: $0, as: UTF8.self) } } == "{\"i\":3}")
     }
 
-    @Test func aRejectedEntryLeavesTheIndexUntouched() throws {
+    @Test func aRejectedEntryLeavesTheIndexUntouched() async throws {
         let store = try makeStore()
         try store.upsertRule(request(id: "keep", url: "/api", actions: NetworkRuleActions(route: .block)))
         let bad = NetworkRuleExport(

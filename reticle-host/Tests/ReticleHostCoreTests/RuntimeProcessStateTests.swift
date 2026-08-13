@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Runtime process state")
 struct RuntimeProcessStateTests {
-    @Test func firstObservationRecordsWithoutAdvisory() throws {
+    @Test func firstObservationRecordsWithoutAdvisory() async throws {
         let store = RuntimeProcessStateStore(fileURL: try stateFile())
 
         let advisory = store.observe(
@@ -16,7 +16,7 @@ struct RuntimeProcessStateTests {
         #expect(advisory == nil)
     }
 
-    @Test func pidChangeProducesRestartAdvisory() throws {
+    @Test func pidChangeProducesRestartAdvisory() async throws {
         let store = RuntimeProcessStateStore(fileURL: try stateFile())
         _ = store.observe(package: "pkg", serial: "device", result: ["running": true, "pid": 10, "runtime": "healthy"])
 
@@ -32,7 +32,7 @@ struct RuntimeProcessStateTests {
         #expect(advisory?.jsonObject["kind"] as? String == "process-restarted")
     }
 
-    @Test func healthyRuntimeRegressionProducesAdvisory() throws {
+    @Test func healthyRuntimeRegressionProducesAdvisory() async throws {
         let store = RuntimeProcessStateStore(fileURL: try stateFile())
         _ = store.observe(package: "pkg", serial: nil, result: ["running": true, "pid": 10, "runtime": "healthy"])
 
@@ -47,7 +47,7 @@ struct RuntimeProcessStateTests {
         #expect(advisory?.currentRuntime == "unreachable")
     }
 
-    @Test func explicitRecordRefreshesBaselineWithoutAdvisory() throws {
+    @Test func explicitRecordRefreshesBaselineWithoutAdvisory() async throws {
         let store = RuntimeProcessStateStore(fileURL: try stateFile())
         _ = store.observe(package: "pkg", serial: nil, result: ["running": true, "pid": 10, "runtime": "healthy"])
 
