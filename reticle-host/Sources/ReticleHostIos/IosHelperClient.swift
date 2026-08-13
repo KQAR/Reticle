@@ -177,7 +177,27 @@ public final class IosHelperClient: HostBackend {
         }
     }
 
+    /// `--alias` is Android-only: the `@N` numbers are handed out by `ui outline`, which
+    /// is the Kotlin helper's own host-side cache (`OutlineRenderer`). This host keeps no
+    /// such cache, so an alias here can resolve to nothing.
+    ///
+    /// It is refused BY NAME at every iOS entry point that takes a selector, rather than
+    /// narrowed away in `HostSelector.protocolSelector` — where it used to vanish
+    /// silently, leaving the command to run with NO selector at all. That is the failure
+    /// this repo has already paid for once (see the `act tap --text` note in
+    /// `ReticleCLI`): a flag accepted and ignored reads as a flag that worked.
+    static func rejectAlias(_ alias: String?, command: String) throws {
+        guard alias != nil else { return }
+        throw HelperError(
+            "\(command) cannot take --alias on iOS: `@N` aliases are handed out by "
+                + "`ui outline`, which is Android-only (the alias cache lives in the Kotlin "
+                + "helper). Use --test-id / --resource-id / --css / --ref / --label — "
+                + "`ui compact` prints one for every item on the screen."
+        )
+    }
+
     public func render(_ request: RenderRequest) async throws -> RenderResult {
+        try Self.rejectAlias(request.selector.alias, command: "ui \(request.view)")
         var snapshot = try await loadSnapshotForRender(request)
         if let window = request.window {
             guard let scoped = snapshot.scopedToWindow(window) else {
@@ -211,6 +231,7 @@ public final class IosHelperClient: HostBackend {
     }
 
     public func mutate(_ request: MutateRequest) async throws -> MutationOutcome {
+        try Self.rejectAlias(request.selector.alias, command: "mutate")
         let mutation = MutationRequest(
             selector: request.selector.protocolSelector,
             property: request.property,
@@ -250,6 +271,12 @@ public final class IosHelperClient: HostBackend {
     /// above is what callers see; converting this body is tracked separately so the
     /// interface change and the internal one are reviewable apart.
     private func act(_ params: [String: Any]) async throws -> [String: Any] {
+        // `wait` refuses an alias for its own reason (an alias describes the screen a
+        // wait exists to watch change) and gets there first; this catches every other
+        // gesture, for which the alias simply has nothing to resolve against.
+        if (params["gesture"] as? String) != "wait" {
+            try Self.rejectAlias(params["alias"] as? String, command: "act \((params["gesture"] as? String) ?? "tap")")
+        }
         guard let watch = try verifyWatchSelector(params) else {
             return try await performAct(params)
         }

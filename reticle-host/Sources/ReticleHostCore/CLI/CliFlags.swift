@@ -154,11 +154,18 @@ enum CliFlags {
     /// The command/subcommand pairs `commandsAccepting` walks. Listed rather than
     /// derived because `accepted` is a switch, not a dictionary — and a switch is
     /// what keeps each command's flags readable next to the code that reads them.
-    private static let tableForSuggestions: [String: [String]] = [
+    ///
+    /// A third hand-written copy of the command surface, so it is pinned against the
+    /// other two (`ReticleCLI.help` and the dispatch switch) by
+    /// `CommandSurfaceTests`. It covers only the commands whose flags `accepted`
+    /// validates — a command absent here degrades the "`--flag` is accepted by …"
+    /// hint rather than breaking anything, which is exactly why the drift was silent:
+    /// `debug` claimed to have no subcommands while shipping `logs` and `logcat`.
+    static let tableForSuggestions: [String: [String]] = [
         "status": [""],
         "app": ["launch", "inject"],
         "mutate": [""],
-        "debug": [""],
+        "debug": ["logs", "logcat"],
         "ui": ["report", "screenshot", "tree", "compact", "outline", "node", "regions", "style", "coverage"],
         "act": ["tap", "type", "swipe", "drag", "scroll-to", "wheel", "wait", "batch", "activate", "hide-keyboard"],
     ]

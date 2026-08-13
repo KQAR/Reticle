@@ -4,7 +4,7 @@ import Foundation
 public enum ReticleCLI {
     /// The shared release constant; `ReticleVersion.current` is the source.
     public static let version = ReticleVersion.current
-    public static let usage = "usage: reticle <doctor|devices|status|app|act|mutate|debug|ui|trace|rule|replay|serve|version> [--serial <id>] [options]"
+    public static let usage = "usage: reticle <doctor|devices|status|app|act|system|mutate|debug|ui|trace|rule|replay|serve|version> [--serial <id>] [options]"
 
     /// What each command is for, and the subcommands that are otherwise only
     /// discoverable by guessing one and reading the error.
@@ -24,14 +24,21 @@ public enum ReticleCLI {
       ui report|compact|tree|outline|node|style|regions|coverage|screenshot
                               capture and project the running UI (`coverage`
                               reports how much of the screen has no selector
-                              over it, and why)
+                              over it, and why; `outline` and the `--alias`
+                              it hands out are Android-only)
       act tap|swipe|drag|type|scroll-to|wheel|wait|batch|activate|hide-keyboard
                               drive real input (`wheel` converges a picker column
-                              on a value using the wheel's own reading)
+                              on a value using the wheel's own reading; it is
+                              Android-only)
+      system prepare|status|stop|overlay|tree|tap|home|activate|screenshot
+                              the out-of-process channel: another process's UI
+                              (a permission alert, SpringBoard). iOS real
+                              devices only, and it sees one accessibility layer
       mutate                  live-patch an allowlisted view property
       debug logs|logcat       app-authored runtime logs, and the agent's own
-      trace log|replay        read back what a recorded run did
+      trace log               read back what a recorded run did
       rule / replay           network mocking and request replay
+                              (`replay gif|flow`)
       serve                   session daemon + read-only web panel
       version                 print the release
 

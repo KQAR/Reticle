@@ -21,6 +21,19 @@ package dev.reticle.core
 object Render {
 
     /**
+     * Every `ui <view>` name the CLI accepts, whether or not THIS port renders it.
+     *
+     * The roster is what both ports are measured against. `outline` is Android-only
+     * (it is this host's `@N` alias cache) and the Swift twin refuses it by name
+     * rather than as an "unknown view" — which is the shape that has to be enforced,
+     * because the CLI advertises one list of views for every target. Pinned across
+     * the two by reticle-protocol/fixtures/render-views.cases.json.
+     */
+    val ROSTER = listOf(
+        "tree", "semantics", "compact", "outline", "node", "regions", "style", "coverage",
+    )
+
+    /**
      * The compact observation as text: the two screen-level facts that no node
      * carries, the item lines grouped by window, and a footer naming what the
      * projection folded.
