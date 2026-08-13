@@ -7,8 +7,10 @@ import dev.reticle.cli.platform.android.Injector
 import dev.reticle.cli.platform.android.InputBackend
 import dev.reticle.core.CompactObservation
 import dev.reticle.core.DomRectCheck
+import dev.reticle.core.DomTapWitness
 import dev.reticle.core.MutationRequest
 import dev.reticle.core.Node
+import dev.reticle.core.NodeKind
 import dev.reticle.core.ReticleJson
 import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
@@ -206,6 +208,10 @@ internal object HelperDeviceCommands {
                     target!!.point.x, target!!.point.y, target!!.ref,
                 )
                 input.tap(x, y)
+                // Asked AFTER the touch, because the answer only exists once the page has
+                // received one. The one fact about a tap that comes from the page rather
+                // than from Reticle's own arithmetic.
+                val landing = domTapLanding(device, pkg, params, traceBefore?.snapshot, target!!)
                 buildJsonObject {
                     put("gesture", "tap")
                     put("x", x)
@@ -234,6 +240,10 @@ internal object HelperDeviceCommands {
                     domRectComplaint(traceBefore?.snapshot, target!!.ref)?.let {
                         put("rectSuspect", it)
                     }
+                    // Where the touch ACTUALLY landed, according to the page. Quiet when
+                    // it landed on the element aimed at (or inside it), which is every
+                    // ordinary tap — a warning that fires everywhere is one nobody reads.
+                    landing?.let { put("landed", it) }
                     // The node this selector resolved publishes NO control of its
                     // own: it is a caption, a wrapper, a plain row. The touch was
                     // still dispatched — a framework-built field binds its handler in
@@ -562,6 +572,44 @@ internal object HelperDeviceCommands {
         val snapshot = before ?: return null
         val target = ref ?: return null
         return DomRectCheck.outsideHost(snapshot, target)
+    }
+
+    /**
+     * Ask the PAGE where the touch went, for a tap that resolved to a DOM node.
+     *
+     * The one check on a tap that is not Reticle's own arithmetic. Every other answer a
+     * tap gives is about its intent: the selector resolved, the rect was re-read and had
+     * stopped moving, the coordinate was dispatched. If the page-to-device fold is wrong,
+     * all of that stays true while the touch lands somewhere else and the result still
+     * reads `settled=1` — measured at roughly 130px on a real hybrid page (#234).
+     *
+     * Costs one snapshot, and only on a DOM tap: the witness's record lives in the page,
+     * so it has to be read after the gesture. Silent whenever it cannot judge — a
+     * selector that no longer resolves (the tap navigated), an unreadable page, a sealed
+     * frame — because a check that could not run is not evidence. See [DomTapWitness].
+     */
+    private fun domTapLanding(
+        device: DeviceController,
+        pkg: String,
+        params: JsonObject,
+        before: Snapshot?,
+        target: ResolvedInputTarget,
+    ): String? {
+        if (!target.source.startsWith("dom")) {
+            // A `--css` selector always resolves through the DOM; anything else is only
+            // a DOM tap if the node it hit is one, which the pre-action capture knows.
+            val ref = target.ref ?: return null
+            val node = before?.nodes?.get(ref) ?: return null
+            if (node.kind != NodeKind.domNode) return null
+        }
+        val selector = selectorOrNull(params) ?: return null
+        // Let the page's own handler run before asking it what it received.
+        Thread.sleep(DOM_LANDING_SETTLE_MS)
+        val after = runCatching { liveSnapshot(device, pkg, params) }.getOrNull() ?: return null
+        val resolved = runCatching {
+            SelectorResolver(after, SemanticTree.build(after)).resolve(selector)?.ref
+        }.getOrNull() ?: return null
+        return runCatching { DomTapWitness.describe(after, resolved) }.getOrNull()
     }
 
     /**
@@ -1092,6 +1140,13 @@ internal object HelperDeviceCommands {
 
     /** Time for a tapped field to take focus before we dispatch text. */
     private const val FOCUS_SETTLE_MS = 200L
+
+    /**
+     * Time for the page to receive the touch before asking it what it received. The
+     * dispatch returns as soon as the event is injected; the page's own listener runs
+     * after that, and reading too early would report an absence as a miss.
+     */
+    private const val DOM_LANDING_SETTLE_MS = 200L
 
     /**
      * Time for the typed text to reach the field before reading it back. The

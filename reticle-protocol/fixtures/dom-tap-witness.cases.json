@@ -1,0 +1,2049 @@
+{
+ "$comment": "Authoritative cases for the page's own account of where a tap landed - read by BOTH the Kotlin (reticle-core DomTapWitnessContractTest) and Swift (ReticleProtocol DomTapWitnessContractTests) suites, so the Android helper and the iOS host cannot judge a missed tap two different ways. Everything else a tap reports is what it INTENDED; this is the one fact that comes from the page. Measured on a real hybrid page whose DOM rects were offset by roughly 130px, where a --css tap missed twice, reported settled=1 both times, and only a screenshot revealed it (#234). What the cases pin: the two shapes that must stay QUIET (the element aimed at, and anything inside it - a button's caption span is that button), the three that must be reported (another element, the containing element, a pointer that matched nothing captured), the difference between a touch that went elsewhere and NO touch at all, and the four cases that are refused rather than guessed: an unreadable page, a native target, a target inside a frame the witness cannot be installed in, and a record too old to belong to this gesture.",
+ "cases": [
+  {
+   "name": "a touch on the element aimed at says nothing",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 180
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": null
+    }
+   ]
+  },
+  {
+   "name": "a touch INSIDE the element aimed at is that element being tapped",
+   "$comment": "A tap on a button lands on the span drawing its caption. Reporting that as a miss would fire on every ordinary control.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 180
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": null
+    }
+   ]
+  },
+  {
+   "name": "a touch that landed on a different element is named, with where it arrived",
+   "$comment": "The silent failure this whole mechanism exists for: the selector resolved, the rect had settled, the tap dispatched, and the page was hit somewhere else.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 270
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 200
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": {
+      "token": "dom-tap-landed-elsewhere",
+      "landedOn": "other",
+      "at": "120,270",
+      "relation": "other"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a touch that landed on the CONTAINING element says which relation it was",
+   "$comment": "The app's own handler may well have fired, but the element aimed at did not receive the touch, and those are different claims.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 150
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "caption",
+     "verdict": {
+      "token": "dom-tap-landed-elsewhere",
+      "landedOn": "button",
+      "at": "120,170",
+      "relation": "ancestor"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a pointer that matched no captured element is still reported, unnamed",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 300
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 640
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 210
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": false
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": {
+      "token": "dom-tap-landed-elsewhere",
+      "landedOn": null,
+      "at": "300,640",
+      "relation": "unknown"
+     }
+    }
+   ]
+  },
+  {
+   "name": "no pointer at all is a different fact from one that landed elsewhere",
+   "$comment": "What a coordinate swallowed by a native view drawn over the web view looks like from inside the page.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {}
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": {
+      "token": "dom-tap-not-received"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a record older than the gesture is not presented as its landing",
+   "$comment": "The witness holds ONE record; a previous tap's must not be attributed to this one.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 9000
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": {
+      "token": "dom-tap-not-received"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a page whose DOM could not be read is not judged at all",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domStatus": {
+        "_type": "text",
+        "value": "unavailable"
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": null
+    }
+   ]
+  },
+  {
+   "name": "a native target is not judged: there is no page to ask",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 180
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       },
+       "domPointerHit": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "native",
+     "verdict": null
+    }
+   ]
+  },
+  {
+   "name": "a target inside a frame the witness cannot live in is not judged",
+   "$comment": "Events do not cross a sealed frame boundary either, so an absent record there says nothing about where the touch went.",
+   "snapshot": {
+    "schemaVersion": 1,
+    "capturedAtMillis": 1719400000000,
+    "platform": "android",
+    "screen": {
+     "size": {
+      "width": 400,
+      "height": 800
+     },
+     "density": 3.0,
+     "fontScale": 1.0
+    },
+    "rootRef": "r0",
+    "nodes": {
+     "r0": {
+      "ref": "r0",
+      "kind": "application",
+      "typeName": "android.app.Application",
+      "role": "application",
+      "children": [
+       "w1"
+      ]
+     },
+     "w1": {
+      "ref": "w1",
+      "kind": "window",
+      "typeName": "DecorView",
+      "role": "window",
+      "frame": {
+       "x": 0,
+       "y": 0,
+       "width": 400,
+       "height": 800
+      },
+      "children": [
+       "web",
+       "native"
+      ],
+      "parentRef": "r0"
+     },
+     "web": {
+      "ref": "web",
+      "kind": "view",
+      "typeName": "android.webkit.WebView",
+      "role": "view",
+      "testId": "page.host",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "page"
+      ],
+      "parentRef": "w1",
+      "custom": {
+       "domPointerX": {
+        "_type": "int",
+        "value": 120
+       },
+       "domPointerY": {
+        "_type": "int",
+        "value": 170
+       },
+       "domPointerAgeMs": {
+        "_type": "int",
+        "value": 180
+       },
+       "domPointerMatched": {
+        "_type": "bool",
+        "value": true
+       }
+      }
+     },
+     "page": {
+      "ref": "page",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 0,
+       "y": 100,
+       "width": 400,
+       "height": 600
+      },
+      "children": [
+       "button",
+       "other"
+      ],
+      "parentRef": "web",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#page"
+       },
+       "domFrameOpaque": {
+        "_type": "text",
+        "value": "cross-origin"
+       }
+      }
+     },
+     "button": {
+      "ref": "button",
+      "kind": "domNode",
+      "typeName": "button",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 140,
+       "width": 200,
+       "height": 60
+      },
+      "children": [
+       "caption"
+      ],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "button"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit"
+       }
+      }
+     },
+     "caption": {
+      "ref": "caption",
+      "kind": "domNode",
+      "typeName": "span",
+      "role": "view",
+      "frame": {
+       "x": 30,
+       "y": 150,
+       "width": 180,
+       "height": 40
+      },
+      "children": [],
+      "parentRef": "button",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "span"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#submit-caption"
+       }
+      }
+     },
+     "other": {
+      "ref": "other",
+      "kind": "domNode",
+      "typeName": "div",
+      "role": "view",
+      "frame": {
+       "x": 20,
+       "y": 240,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "page",
+      "custom": {
+       "domTag": {
+        "_type": "text",
+        "value": "div"
+       },
+       "domCssSelector": {
+        "_type": "text",
+        "value": "#other"
+       }
+      }
+     },
+     "native": {
+      "ref": "native",
+      "kind": "view",
+      "typeName": "android.widget.Button",
+      "role": "button",
+      "testId": "native.button",
+      "frame": {
+       "x": 20,
+       "y": 720,
+       "width": 200,
+       "height": 60
+      },
+      "children": [],
+      "parentRef": "w1"
+     }
+    }
+   },
+   "probes": [
+    {
+     "ref": "button",
+     "verdict": null
+    }
+   ]
+  }
+ ]
+}

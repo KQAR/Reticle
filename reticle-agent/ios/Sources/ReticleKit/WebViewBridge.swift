@@ -57,6 +57,11 @@ enum WebViewBridge {
             }
             snapshot.nodes.merge(domNodes) { existing, _ in existing }
             snapshot.nodes[p.parentRef]?.children.append(rootRef)
+            // The page's own account of the last touch it received — the one fact
+            // about a tap that is not Reticle's own arithmetic. See `DomTapWitness`.
+            for (key, value) in pointerFacts(json) {
+                snapshot.nodes[p.parentRef]?.custom[key] = value
+            }
         }
     }
 
@@ -70,8 +75,33 @@ enum WebViewBridge {
         snapshot.nodes[ref]?.custom[domStatusKey] = .text(domStatusUnavailable)
     }
 
+    /// The page's record of the last pointer that arrived, as host-node metadata.
+    ///
+    /// Empty when the page has witnessed no touch at all — a different fact from a
+    /// touch that landed off-tree (`domPointerMatched=false`), and the pair is what
+    /// makes a missed selector tap visible instead of silent.
+    private static func pointerFacts(_ json: [String: Any]) -> [String: MetadataValue] {
+        guard let ts = (json["pointerTs"] as? NSNumber)?.int64Value, ts > 0 else { return [:] }
+        return [
+            "domPointerX": .integer((json["pointerX"] as? NSNumber)?.int64Value ?? 0),
+            "domPointerY": .integer((json["pointerY"] as? NSNumber)?.int64Value ?? 0),
+            "domPointerAgeMs": .integer((json["pointerAgeMs"] as? NSNumber)?.int64Value ?? 0),
+            "domPointerMatched": .bool((json["pointerMatched"] as? Bool) ?? false),
+        ]
+    }
+
     private static func evaluate(_ webView: WKWebView) -> String? {
-        WebEvaluate.script(WebViewDomScript.script, in: webView, timeout: timeout)
+        WebEvaluate.onMain(in: webView, timeout: timeout) { finish in
+            // Installed on every capture, idempotently, so the listener is in the page
+            // before the NEXT gesture: a capture cannot witness a touch that has not
+            // happened, and a page that navigated dropped the listener it had. Fire and
+            // forget — the traversal reads whatever record already exists, and both run
+            // in order on the page's JS thread.
+            webView.evaluateJavaScript(WebPointerWitnessScript.script) { _, _ in }
+            webView.evaluateJavaScript(WebViewDomScript.script) { value, _ in
+                finish(value as? String)
+            }
+        }
     }
 
     // MARK: - Frames the page may not read
@@ -306,6 +336,8 @@ enum WebViewBridge {
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
         if bool(element["clipped"]) { map["domClipped"] = .bool(true) }
+        // Where the page's last touch actually landed. At most one element per capture.
+        if bool(element["pointerHit"]) { map["domPointerHit"] = .bool(true) }
         if bool(element["crossOriginFrame"]) { map["domCrossOriginFrame"] = .bool(true) }
         // A frame's identity and the reason its subtree is empty, if it is. All of
         // these are readable across origins — policy withholds the document, not the

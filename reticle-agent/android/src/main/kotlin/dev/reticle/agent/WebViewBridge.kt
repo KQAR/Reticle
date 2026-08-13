@@ -10,6 +10,7 @@ import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
 import dev.reticle.core.StyleChannel
+import dev.reticle.core.WebPointerWitnessScript
 import dev.reticle.core.WebViewDomScript
 import org.json.JSONArray
 import org.json.JSONObject
@@ -75,7 +76,7 @@ object WebViewBridge {
             }
             nodes[capture.parentRef] = parent.copy(
                 children = parent.children + refs,
-                custom = parent.custom + extra,
+                custom = parent.custom + extra + walk.pointer,
             )
         }
     }
@@ -91,7 +92,27 @@ object WebViewBridge {
         val refs: List<String>,
         val capped: Boolean = false,
         val captured: Long = 0L,
+        /** The page's own account of the last touch it received, for the host node. */
+        val pointer: Map<String, MetadataValue> = emptyMap(),
     )
+
+    /**
+     * The page's record of the last pointer that arrived, as host-node metadata.
+     *
+     * Empty when the page has witnessed no touch at all — which is a different fact
+     * from a touch that landed off-tree (`domPointerMatched=false`), and the pair is
+     * what makes a missed selector tap visible instead of silent. See [DomTapWitness].
+     */
+    private fun pointerFacts(json: JSONObject): Map<String, MetadataValue> {
+        val ts = json.optLong("pointerTs", 0L)
+        if (ts <= 0L) return emptyMap()
+        return mapOf(
+            "domPointerX" to MetadataValue.Integer(json.optLong("pointerX")),
+            "domPointerY" to MetadataValue.Integer(json.optLong("pointerY")),
+            "domPointerAgeMs" to MetadataValue.Integer(json.optLong("pointerAgeMs")),
+            "domPointerMatched" to MetadataValue.Bool(json.optBoolean("pointerMatched", false)),
+        )
+    }
 
     private fun captureOne(
         pending: Pending,
@@ -114,6 +135,7 @@ object WebViewBridge {
             refs = ref?.let { listOf(it) } ?: emptyList(),
             capped = json.optBoolean("capped", false),
             captured = json.optLong("captured"),
+            pointer = pointerFacts(json),
         )
     }
 
@@ -126,6 +148,12 @@ object WebViewBridge {
                     latch.countDown()
                     return@post
                 }
+                // Installed on every capture, idempotently, so the listener is in the
+                // page before the NEXT gesture — a capture cannot witness the touch
+                // that has not happened yet, and a page that navigated dropped the
+                // one it had. Fire and forget: the traversal below reads whatever
+                // record already exists, and these run in order on the JS thread.
+                webView.evaluateJavascript(WebPointerWitnessScript.SCRIPT) { _ -> }
                 webView.evaluateJavascript(WebViewDomScript.SCRIPT) { value ->
                     result = value
                     latch.countDown()
@@ -429,6 +457,10 @@ object WebViewBridge {
         // `textField` lines without these; the placeholder is usually the only
         // thing that says which one is the email field.
         if (element.optBoolean("clipped", false)) map["domClipped"] = MetadataValue.Bool(true)
+        // Where the page's last touch actually landed. Set on ONE element per capture
+        // at most, and the only fact about a tap that does not come from Reticle's own
+        // arithmetic — see [WebPointerWitnessScript].
+        if (element.optBoolean("pointerHit", false)) map["domPointerHit"] = MetadataValue.Bool(true)
         if (element.optBoolean("crossOriginFrame", false)) {
             map["domCrossOriginFrame"] = MetadataValue.Bool(true)
         }
