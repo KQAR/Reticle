@@ -63,6 +63,22 @@ echo "== device: $SERIAL =="
 "$ADB" -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
 "$ADB" -s "$SERIAL" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
 
+# The keyboard sections assert that a soft keyboard actually APPEARS, so refuse a
+# device whose active IME never shows one — a headless automation IME (Appium's
+# UnicodeIME is the common one; it exists precisely to type without a keyboard)
+# satisfies every other step and then fails 30 sections in with a message about a
+# setting that is already correct. Say it here instead, and name the fix.
+IME="$("$ADB" -s "$SERIAL" shell settings get secure default_input_method | tr -d '\r')"
+case "$IME" in
+  *UnicodeIME*|*appium*|*Appium*)
+    echo "FAIL: the active IME on $SERIAL is '$IME', which never shows an input view,"
+    echo "      so no keyboard assertion in this suite can pass. Pick a real one:"
+    "$ADB" -s "$SERIAL" shell ime list -s | sed 's/^/        /'
+    echo "      then: adb -s $SERIAL shell ime set <id>"
+    exit 1
+    ;;
+esac
+
 # Cold-start the app and wait for the in-process runtime to answer, polling
 # `status` rather than blocking a single `app launch` call on its internal
 # await. A cold start on a software-GPU emulator can take 20-40s for the agent
@@ -123,6 +139,12 @@ boot_app() { # package
   sleep 1
   "$ADB" -s "$SERIAL" shell monkey -p "$1" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   wait_runtime "$1"
+  # A soft keyboard left up by an earlier section shrinks every window below it and
+  # eats gestures aimed at what it covers — which is invisible in the failure ("12
+  # swipes and the container can still scroll"). With a headless automation IME this
+  # never happened, which is why the suite could go without it; with a real IME, the
+  # one the keyboard sections require, it must start each section from the same state.
+  R act hide-keyboard --package "$1" >/dev/null 2>&1 || true
   # The home list is where every scenario starts; wait until it is on screen.
   wait_compact "$1" "home.title"
 }
@@ -1182,18 +1204,9 @@ boot_app "$PKG"
   --es reticle.webScenario form >/dev/null 2>&1
 wait_compact "$PKG" "First name"
 
-# A class-only selector, on a page whose inputs carry no id at all.
-R ui node --live --package "$PKG" --css '.fake-select' >/dev/null \
-  || { echo "FAIL: a class-only css selector must resolve structurally"; exit 1; }
 # A descendant combinator, walking the captured parent chain.
 R ui node --live --package "$PKG" --css 'div.row input' >/dev/null \
   || { echo "FAIL: a descendant css combinator must resolve"; exit 1; }
-# And it drives input, not just lookup.
-R act tap --package "$PKG" --css 'div.fake-select' >/dev/null \
-  || { echo "FAIL: act must accept a structural css selector"; exit 1; }
-sleep 1
-R ui compact --live --package "$PKG" --window top | grep -q 'combobox .*expanded' \
-  || { echo "FAIL: the css-resolved tap did not land on the trigger"; exit 1; }
 
 # `:nth-of-type(n)` — the one pseudo-class family the captured paths are BUILT out
 # of, and until now the matcher refused it. That made the only selector the tool
@@ -1202,10 +1215,13 @@ R ui compact --live --package "$PKG" --window top | grep -q 'combobox .*expanded
 # a ~400-char path per interaction. The index is the position the PAGE reported, not
 # a count of captured siblings — the walk drops hidden elements, so counting would
 # answer `(2)` with the second VISIBLE sibling and tap the wrong control.
-NTH_FIRST="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(1) input' 2>&1)"
+# `|| true` so a miss reaches the guard below: without it `set -e` kills the run
+# on the assignment itself, and the whole section dies with no message at all —
+# which is exactly how this failure hid on a phone-sized viewport.
+NTH_FIRST="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(1) input' 2>&1 || true)"
 echo "$NTH_FIRST" | grep -A2 '"domPlaceholder"' | grep -q "First name" \
   || { echo "FAIL: :nth-of-type(1) must resolve the first row's input; got: $NTH_FIRST"; exit 1; }
-NTH_SECOND="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(2) input' 2>&1)"
+NTH_SECOND="$(R ui node --live --package "$PKG" --css 'div:nth-of-type(2) input' 2>&1 || true)"
 echo "$NTH_SECOND" | grep -A2 '"domPlaceholder"' | grep -q "Last name" \
   || { echo "FAIL: the index must actually select — (2) is the second row; got: $NTH_SECOND"; exit 1; }
 # The position is the PAGE's, carried per node, not a count of captured siblings.
@@ -1215,6 +1231,30 @@ echo "$NTH_SECOND" | grep -q '"domNthOfType"' \
 R act type --package "$PKG" --css 'div:nth-of-type(2) input' --text "Nth" >/dev/null
 R ui compact --live --package "$PKG" | grep -q '"Nth" .*placeholder:"Last name"' \
   || { echo "FAIL: an nth-of-type selector must drive `act`, not only `ui node`"; exit 1; }
+# The class-only selector comes last in this section, because reaching it SCROLLS.
+# The DOM capture prunes what is outside the WebView's viewport (by design — see
+# `inViewport` in WebViewDomScript), this form is longer than a phone screen, and
+# where `.fake-select` sits therefore depends on the device: below the fold on a
+# 1080x2412 phone, above it on a taller emulator. Scrolling to it first is what
+# makes the assertion device-independent — but it also pushes row 1 out of the
+# viewport, which is why every `:nth-of-type` assertion above runs before it.
+# The `act type` above focused a field, so a real IME has a keyboard up covering
+# the bottom half of the WebView — and a swipe aimed into that half lands on the
+# keyboard, which is why scroll-to burned 12 swipes and reported the container as
+# still scrollable. Put it away before scrolling.
+R act hide-keyboard --package "$PKG" >/dev/null 2>&1 || true
+R act scroll-to --package "$PKG" --css '.fake-select' >/dev/null \
+  || { echo "FAIL: scroll-to must resolve a class-only css selector"; exit 1; }
+# A class-only selector, on a page whose inputs carry no id at all.
+R ui node --live --package "$PKG" --css '.fake-select' >/dev/null \
+  || { echo "FAIL: a class-only css selector must resolve structurally"; exit 1; }
+# And it drives input, not just lookup.
+R act tap --package "$PKG" --css 'div.fake-select' >/dev/null \
+  || { echo "FAIL: act must accept a structural css selector"; exit 1; }
+sleep 1
+R ui compact --live --package "$PKG" --window top | grep -q 'combobox .*expanded' \
+  || { echo "FAIL: the css-resolved tap did not land on the trigger"; exit 1; }
+
 # A pseudo-class that is NOT positional is still refused, by its own name.
 HOVER="$(R ui node --live --package "$PKG" --css 'input:hover' 2>&1 || true)"
 echo "$HOVER" | grep -q "':hover'" \
@@ -1475,15 +1515,25 @@ R ui compact --package "$PKG" "$TMP/webview/snapshot.json" | grep -q "web.payBut
 
 # A coordinate INSIDE the cross-origin frame: the fallback is justified, and the
 # warning names the boundary rather than leaving the coordinate unexplained.
-FRAME_POINT="$(R ui compact --live --package "$PKG" | /usr/bin/python3 -c '
-import re, sys
+# The centre of the frame's RECT is not necessarily on the screen: on a phone the
+# frame hangs off the bottom (measured: rect [48,2366 912x462] on a 2412px-tall
+# device, so its centre is at y=2597). Tapping there lands nowhere and the warning
+# has nothing to say about a frame. Intersect the rect with the screen first and
+# take the centre of what is actually visible.
+SCREEN_H="$("$ADB" -s "$SERIAL" shell wm size | sed -n 's/.*: *[0-9]*x\([0-9]*\).*/\1/p' | tr -d '\r')"
+FRAME_POINT="$(R ui compact --live --package "$PKG" | SCREEN_H="$SCREEN_H" /usr/bin/python3 -c '
+import os, re, sys
+screen_h = int(os.environ.get("SCREEN_H") or 0)
 for line in sys.stdin:
     if "complex.foreignFrame" not in line:
         continue
     m = re.search(r"\[(-?\d+),(-?\d+) (\d+)x(\d+)\]", line)
     if m:
         x, y, w, h = (int(g) for g in m.groups())
-        print(f"{x + w // 2},{y + h // 2}")
+        bottom = min(y + h, screen_h) if screen_h else y + h
+        if bottom <= y:
+            break
+        print(f"{x + w // 2},{(y + bottom) // 2}")
         break
 ')"
 [ -n "$FRAME_POINT" ] || { echo "FAIL: could not read the cross-origin frame rect"; exit 1; }
@@ -1537,7 +1587,22 @@ boot_app "$PKG"
 "$ADB" -s "$SERIAL" shell am start -n "$PKG/.WebViewScenarioActivity" \
   --es reticle.webScenario form >/dev/null 2>&1
 wait_compact "$PKG" "First name"
-FORM_COMPACT="$(R ui compact --live --package "$PKG")"
+# This form is taller than a phone screen, and the DOM walk prunes what is outside
+# the WebView's viewport (by design — `inViewport` in WebViewDomScript), so ONE
+# capture can never contain every row on every device: on a 1080x2412 phone the
+# tri-state consent row, the div-built dropdown and the pointer-cursor pair are all
+# below the fold; on a taller emulator they were not, which is why these assertions
+# only ever passed there. Read the page in two halves and assert against both,
+# instead of encoding a viewport height.
+FORM_TOP="$(R ui compact --live --package "$PKG")"
+R act scroll-to --package "$PKG" --css '.select-all' >/dev/null \
+  || { echo "FAIL: scroll-to must reach the bottom half of the form"; exit 1; }
+FORM_BOTTOM="$(R ui compact --live --package "$PKG")"
+# Back to the top, so every tap below sees the layout the assertions describe.
+R act scroll-to --package "$PKG" --css 'div:nth-of-type(1) input' >/dev/null \
+  || { echo "FAIL: scroll-to must be able to go back up"; exit 1; }
+FORM_COMPACT="$FORM_TOP
+$FORM_BOTTOM"
 echo "$FORM_COMPACT"
 
 # 1. An input's TYPE is its role. `domInputType` was already captured and then
@@ -1553,18 +1618,21 @@ echo "$FORM_COMPACT" | grep -Eq 'button .*(Confirm|submit-form)' \
 
 # 2. Toggle state is readable, and its THIRD state is the absent one. `unchecked`
 # and "no checkbox here" lead to opposite next actions.
-echo "$FORM_COMPACT" | grep -q 'Accept the terms.* unchecked' \
+# The flags precede `name:` on the line, and since 12df0c8 an accessible name is
+# NOT in the quoted slot (that slot means what a field HOLDS). Match the order the
+# renderer actually emits rather than the pre-12df0c8 one.
+echo "$FORM_COMPACT" | grep -q 'unchecked name:"Accept the terms"' \
   || { echo "FAIL: an unticked checkbox must render ' unchecked'"; exit 1; }
-echo "$FORM_COMPACT" | grep -q 'Plan A.* checked' \
+echo "$FORM_COMPACT" | grep -q ' checked name:"Plan A"' \
   || { echo "FAIL: a checked radio must render ' checked'"; exit 1; }
-echo "$FORM_COMPACT" | grep -q 'Select all consents.* checked:mixed' \
+echo "$FORM_COMPACT" | grep -q 'checked:mixed name:"Select all consents"' \
   || { echo "FAIL: aria-checked=mixed must render ' checked:mixed'"; exit 1; }
 # The value-shadows-label case, asserted directly rather than only through the tap
 # above: this radio's `value` is "b" and its only human-readable name is its label.
 R act tap --package "$PKG" --label "Plan B" >/dev/null \
   || { echo "FAIL: --label must reach a control whose value shadows its aria-label"; exit 1; }
 sleep 1
-R ui compact --live --package "$PKG" | grep -q 'Plan B.* checked' \
+R ui compact --live --package "$PKG" | grep -q ' checked name:"Plan B"' \
   || { echo "FAIL: the radio --label selected did not become checked"; exit 1; }
 # The state must FOLLOW the app, not be captured once: tick it and read it back.
 # This tap is also the assertion for `--label` reaching an aria-labelled control:
@@ -1572,7 +1640,7 @@ R ui compact --live --package "$PKG" | grep -q 'Plan B.* checked' \
 # skill documents for them — and it used to match `text ?? contentDescription`,
 # a fallback, so the input's `value` shadowed its label and none of them resolved.
 R act tap --package "$PKG" --label "Accept the terms" >/dev/null
-R ui compact --live --package "$PKG" | grep -q 'Accept the terms.* checked' \
+R ui compact --live --package "$PKG" | grep -q ' checked name:"Accept the terms"' \
   || { echo "FAIL: checked state must track the live control after a tap"; exit 1; }
 
 # 3. Placeholder is its own field, never folded into the value. Folding them made
@@ -1620,6 +1688,12 @@ echo "$FORM_COMPACT" | grep -q '#pointer-leaf .*tappable' \
 # Open it. A caption and the control it names share one string here (the control
 # takes its name from the caption via aria-labelledby); resolving that to the
 # ACTIONABLE one is what keeps `--label` usable for the control it exists to reach.
+# The trigger has to be ON SCREEN for the pair to be resolvable at all: the caption
+# and the control are one row, but a capture taken with the row below the fold holds
+# only the caption (the walk prunes the rest), and then `--label` can do nothing but
+# tap the caption. Bring the row into view first.
+R act scroll-to --package "$PKG" --css '.fake-select' >/dev/null \
+  || { echo "FAIL: scroll-to must reach the div-built dropdown"; exit 1; }
 R act tap --package "$PKG" --label "Education" >/dev/null \
   || { echo "FAIL: --label must resolve a caption/control pair to the control"; exit 1; }
 sleep 1
@@ -1646,6 +1720,11 @@ echo "$PICKED" | grep -q '"University"' \
 #     value and no accessible name — the grey prompt is the whole handle);
 #   - the read-back applies to DOM inputs at all (it was refused for every one of
 #     them while `value` and `placeholder` were captured as one string).
+# The dropdown block above left the page scrolled to the row it had to reach, and
+# a row scrolled out of the viewport is pruned from the capture — so `--label
+# "First name"` has nothing to resolve against until the page is back at the top.
+R act scroll-to --package "$PKG" --css 'div:nth-of-type(1) input' >/dev/null \
+  || { echo "FAIL: scroll-to must return to the top of the form"; exit 1; }
 R act type --package "$PKG" --label "First name" --text "Ada" | tee "$TMP/type-first.txt"
 grep -q "textLanded=exact" "$TMP/type-first.txt" \
   || { echo "FAIL: a DOM input must be read back, not reported unreadable"; exit 1; }
@@ -1653,8 +1732,15 @@ grep -q "text=Ada" "$TMP/type-first.txt" \
   || { echo "FAIL: the read-back must report the field's own text"; exit 1; }
 grep -q "focusedVia=label" "$TMP/type-first.txt" \
   || { echo "FAIL: type must TAP a --label target before dispatching"; exit 1; }
+# Each `type` leaves the keyboard up, and the next field down the form is then
+# underneath it — the tap lands on the keyboard and the text goes nowhere. Reticle
+# reports the occlusion; the suite has to act on it. (A headless automation IME
+# never raised a keyboard, which is why these lines used to be enough.)
+R act hide-keyboard --package "$PKG" >/dev/null 2>&1 || true
 R act type --package "$PKG" --label "Email" --text "ada@example.com" >/dev/null
+R act hide-keyboard --package "$PKG" >/dev/null 2>&1 || true
 R act type --package "$PKG" --label "Postcode" --text "00-001" >/dev/null
+R act hide-keyboard --package "$PKG" >/dev/null 2>&1 || true
 FILLED="$(R ui compact --live --package "$PKG")"
 echo "$FILLED" | grep -q '"Ada" .*placeholder:"First name"' \
   || { echo "FAIL: the value and the placeholder must both be readable, side by side"; exit 1; }
@@ -1669,6 +1755,9 @@ echo "$FILLED" | grep -qE 'textField .*focused' \
 # input inside it. Measured on a real form, that case answered
 # `textLanded=unreadable textReadback=unavailable:dom-node-is-not-a-text-input`
 # while a screenshot showed the value sitting in the field.
+# Below the fold on a phone, like every other row in the back half of this form.
+R act scroll-to --package "$PKG" --css '.wrapped' >/dev/null \
+  || { echo "FAIL: scroll-to must reach the wrapper row"; exit 1; }
 WRAPPED="$(R act type --package "$PKG" --css 'div.row.wrapped' --text "Wrap")"
 echo "$WRAPPED"
 echo "$WRAPPED" | grep -q "textLanded=exact" \
