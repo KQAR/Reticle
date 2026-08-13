@@ -769,7 +769,20 @@ echo "$IOS_REF_MISS" | grep -q "lazy list" \
   && { echo "FAIL: a ref miss on a DOM screen must not blame scrolling"; exit 1; }
 # HID tap onto a folded DOM frame; the observable click below goes through DOM
 # activation, which is HID-independent.
-"$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name"
+IOS_DOM_TAP="$("$HOST" --target ios --serial "$UDID" act tap --package "$LINKED_ID" --css "#echo-name")"
+echo "$IOS_DOM_TAP"
+# The page's own account of that touch — the one answer a tap has that is not
+# Reticle's own arithmetic, and the half that matters most here is that it says
+# NOTHING on a tap that hit its target. The witness exists because a wrong
+# page-to-device fold is silent (#234); a complaint on every screen would be one
+# nobody reads, so `landed=` appearing here is the regression.
+echo "$IOS_DOM_TAP" | grep -q "landed=" \
+  && { echo "FAIL: a tap that hit its target must report no landing complaint, got: $IOS_DOM_TAP"; exit 1; }
+"$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/webview-landed" >/dev/null
+grep -q '"domPointerHit"' "$TMP/webview-landed/snapshot.json" \
+  || { echo "FAIL: the page must record which element the touch landed on"; exit 1; }
+grep -q '"domPointerMatched"' "$TMP/webview-landed/snapshot.json" \
+  || { echo "FAIL: the web view host must carry the pointer record"; exit 1; }
 # Playwright-style piercing: an OPEN shadow root's content must fold in with a
 # chained selector, and activation must resolve chains through shadow roots and
 # same-origin iframes (works with no HID — the real-device path).
