@@ -107,12 +107,17 @@ object ComposeTextStyle {
             ?.let { ReticleReflect.invokeNoArg(it, "getWeight") as? Int }
             ?.let { put("fontWeight", MetadataValue.Integer(it.toLong())) }
 
-        // FontStyle / TextAlign / FontFamily are nullable, so they arrive boxed and
-        // their toString() is the authored name ("Italic", "Center", the family).
-        keyword(ReticleReflect.invokeNoArgByPrefix(style, "getFontStyle"))?.let {
+        // FontStyle / TextAlign / FontFamily read as their authored NAME ("Italic",
+        // "Center", the family) — but only when they arrive boxed, which depends on
+        // whether the property is nullable. `TextStyle.textAlign` is not: it is a
+        // non-null `TextAlign` value class defaulting to `Unspecified`, so it comes
+        // back as a raw packed Int and `toString()` on it is the ordinal. Measured
+        // on Compose 1.7.5: a centred `Text` reported `textAlign: "3"`, a number
+        // with no meaning to any consumer. Value classes are unpacked by name.
+        keyword(ReticleReflect.invokeNoArgByPrefix(style, "getFontStyle"), FONT_STYLE_CLASS)?.let {
             put("fontStyle", MetadataValue.Text(it.lowercase()))
         }
-        keyword(ReticleReflect.invokeNoArgByPrefix(style, "getTextAlign"))?.let {
+        keyword(ReticleReflect.invokeNoArgByPrefix(style, "getTextAlign"), TEXT_ALIGN_CLASS)?.let {
             put("textAlign", MetadataValue.Text(it.lowercase()))
         }
         keyword(ReticleReflect.invokeNoArgByPrefix(style, "getFontFamily"))?.let {
@@ -196,12 +201,38 @@ object ComposeTextStyle {
         }
     }
 
-    /** `toString()` of a boxed Compose enum-like value, or null when absent. */
-    private fun keyword(value: Any?): String? {
-        val text = value?.toString()?.trim() ?: return null
+    /**
+     * The authored NAME of a Compose enum-like value, or null when absent.
+     *
+     * Two arrival shapes, and the second is the one that bit: a NULLABLE property
+     * hands back a boxed object whose `toString()` is already the name, while a
+     * non-null value-class property hands back the raw packed primitive, whose
+     * `toString()` is the ordinal. [valueClass] names the class whose static
+     * `toString-impl` turns that primitive back into the name; without it, `Center`
+     * shipped as `"3"`.
+     */
+    private fun keyword(value: Any?, valueClass: String? = null): String? {
+        val unpacked = if (value is Int && valueClass != null) unpackValueClass(valueClass, value) else value
+        val text = unpacked?.toString()?.trim() ?: return null
         if (text.isEmpty() || text == "Unspecified" || text == "null") return null
         return text
     }
+
+    /**
+     * `<ValueClass>.toString-impl(packed)`. Absent or renamed, the caller falls back
+     * to the raw value's own `toString()` — which is wrong but harmless, and better
+     * than dropping a property because one static could not be found.
+     */
+    private fun unpackValueClass(className: String, packed: Int): Any? = try {
+        Class.forName(className)
+            .getMethod("toString-impl", Int::class.javaPrimitiveType)
+            .invoke(null, packed)
+    } catch (_: Throwable) {
+        null
+    }
+
+    private const val TEXT_ALIGN_CLASS = "androidx.compose.ui.text.style.TextAlign"
+    private const val FONT_STYLE_CLASS = "androidx.compose.ui.text.font.FontStyle"
 
     private val textUnitClass: Class<*>? by lazy {
         try {

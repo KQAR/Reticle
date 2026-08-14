@@ -121,15 +121,42 @@ object ReticleReflect {
             // "$prefix-*" keeps the prefix lookups in a namespace of their own,
             // so "getFontSize" by prefix and by exact name never collide.
             cachedMethod(target, "$prefix-*") { cls ->
-                cls.methods.firstOrNull {
-                    it.parameterTypes.isEmpty() &&
-                        (it.name == prefix || it.name.startsWith("$prefix-"))
-                }
+                cls.methods
+                    .filter { it.parameterTypes.isEmpty() && isPrefixMatch(it.name, prefix) }
+                    // A property can present SEVERAL no-arg methods under one prefix,
+                    // and picking the wrong one silently reads nothing. Measured on
+                    // Compose 1.7.5's `TextStyle.textAlign`, which compiles to three:
+                    //
+                    //   getTextAlign-buA522U$annotations -> void
+                    //   getTextAlign-e0LSkKk            -> int    (the packed value)
+                    //   getTextAlign-buA522U            -> TextAlign
+                    //
+                    // `$annotations` is a synthetic Kotlin stub that returns void, so
+                    // reading it yields null — and `Class.getMethods()` has NO ordered
+                    // contract, so which one won varied between JVM runs. That is the
+                    // worst failure this file can have: a style property that reads
+                    // correctly on one run and is absent on the next.
+                    //
+                    // Drop the ones that cannot be a value (void, synthetic, bridge,
+                    // and anything carrying `$`, which is a compiler-generated name),
+                    // then order the rest so the choice is DETERMINISTIC: the PACKED
+                    // (primitive) form first, because that is what this file's callers
+                    // are written against — `ComposeTextStyle` unpacks a `TextUnit` /
+                    // `Color` through the value class's own `…-impl` statics and has
+                    // nothing to call on a boxed one — and the name as the tiebreak.
+                    .filter { it.returnType != Void.TYPE && !it.isSynthetic && !it.isBridge }
+                    .filterNot { it.name.contains('$') }
+                    .minWithOrNull(
+                        compareBy({ if (it.returnType.isPrimitive) 0 else 1 }, { it.name })
+                    )
             }?.invoke(target)
         } catch (_: Throwable) {
             null
         }
     }
+
+    private fun isPrefixMatch(name: String, prefix: String): Boolean =
+        name == prefix || name.startsWith("$prefix-")
 
     /**
      * Shape metrics of a View's background: corner radius, stroke width, stroke

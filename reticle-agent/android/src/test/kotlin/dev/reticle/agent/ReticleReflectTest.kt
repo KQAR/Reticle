@@ -74,6 +74,46 @@ class ReticleReflectTest {
         assertEquals(14L, ReticleReflect.invokeNoArgByPrefix(holder, "getFontSize"))
     }
 
+    /**
+     * The failure this guard exists for, measured on the real Compose classes
+     * because no hand-written stand-in would have produced it.
+     *
+     * `TextStyle.textAlign` compiles to THREE no-arg methods under one prefix:
+     * `getTextAlign-buA522U$annotations` (void, a synthetic Kotlin stub),
+     * `getTextAlign-e0LSkKk` (the packed int) and `getTextAlign-buA522U` (the boxed
+     * value). `Class.getMethods()` has no ordered contract, so "the first match"
+     * picked a different one between JVM runs — and when it picked the `$annotations`
+     * stub the property read as null. A style value that is correct on one run and
+     * absent on the next is the worst shape a reader here can have: it looks like a
+     * screen that sets no alignment.
+     */
+    @Test
+    fun aPropertyWithSeveralCompiledFormsResolvesToAValueEveryTime() {
+        val style = androidx.compose.ui.text.TextStyle(
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        val reads = (1..8).map { ReticleReflect.invokeNoArgByPrefix(style, "getTextAlign") }
+
+        assertTrue(reads.all { it != null }, "the void `\$annotations` stub must never win: $reads")
+        assertEquals(1, reads.distinct().size, "the choice must be deterministic: $reads")
+    }
+
+    @Test
+    fun thePackedFormIsPreferredWhereBothExist() {
+        // `ComposeTextStyle` unpacks a value class through its own `…-impl` statics
+        // and has nothing to call on a boxed one, so when a property presents both
+        // forms the primitive is the one to take.
+        val style = androidx.compose.ui.text.TextStyle(
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        assertTrue(
+            ReticleReflect.invokeNoArgByPrefix(style, "getTextAlign") is Int,
+            "expected the packed int form"
+        )
+    }
+
     @Test
     fun anAbsentMethodIsNullRatherThanAThrow() {
         // The agent reads these during capture, on the app's main thread. A shape
