@@ -1,6 +1,85 @@
 # Changelog
 
-## Unreleased
+## 0.22.0 - 2026-08-14
+
+One theme: **what an in-process observer structurally cannot see stopped being the end
+of the sentence.** 0.21.0 closed driving on a real iOS device and left one refusal
+standing — UI the app does not own. That refusal now has a path beside it (a separate
+out-of-process runner, in its own command family and its own type), a third-party
+wheel that publishes accessors is read instead of estimated from a screenshot, and a
+DOM tap asks the page where it actually landed rather than reporting its own intent.
+
+Numbered a MINOR: the added surface is a new command family, and one reading changes
+shape — `wheel:opaque` becomes a real reading on the wheel families that publish
+their state through accessors.
+
+- **Another process's UI is reachable on a real iOS device: `reticle system …`.** A
+  permission alert, SpringBoard and Home were `no window of this process contains that
+  point` — correct, and a dead end. A resident out-of-process XCUITest runner
+  (`reticle-runner-ios`) now reads and drives them, because a test runner is granted a
+  backboardd HID connection an in-process agent never gets.
+  - `system prepare|status|stop|overlay|tree|tap|home|activate|screenshot`, kept in
+    its own namespace so a caller always knows which channel answered. Its results are
+    `SystemObservation`/`SystemNode` and **never** `Node`: this channel sees one
+    accessibility layer, so no view class, no Compose semantics, no DOM, no styles, no
+    regions, no `checked`/`expanded`/`isFocusable` and no visibility — each named in
+    `unreadable` and printed once per read, so a property it cannot see never reads as
+    a property the app lacks.
+  - The costs are stated rather than hidden: every attribute is a cross-process query
+    (one WebView traversal took 126s, measured), so reads are bounded by node count
+    AND depth, default to the topmost overlay, and declare truncation with both the
+    count returned and the ceiling hit. A read that had to start the runner says so
+    (`warning:runner-started-mid-command`), because starting it takes the foreground.
+  - `system screenshot` is display-level, which is the only picture on a device that
+    can contain the status bar, the keyboard's own window or another process's sheet.
+  - Real devices only, `--target ios` required, and `prepare` needs the repo checkout
+    plus a signing team; `scripts/e2e-ios-system.sh` is its round trip.
+
+- **A surface that cannot work on this platform is refused by name.** `ui outline
+  --target ios` answered `unknown render view 'outline'` — an internal error wearing a
+  user-facing message — and `--alias @N` was worse: it was narrowed away silently, so
+  the command ran with NO selector at all, the same shape the CLI already paid for
+  once with `act tap --text`. Both now say which flag, why it cannot work here (the
+  alias cache lives in the Kotlin helper) and what to use instead.
+
+- **Typing on iOS routes by what the target IS, not by which flag named it.**
+  `act type --css` typed into a web form while `act type --ref` on the SAME field
+  answered `unsupported_text_target` — a `WKWebView` publishes no `UIKeyInput`
+  responder however the field was named, so the most natural loop (read `ui compact`,
+  copy a ref, type) fell through to the UIKit path by construction. A ref that lands
+  on a `domNode` is now sent through the page. A canvas toolkit's own field is
+  reachable the same way, and the CocoaPods podspec ships the C target it needs.
+
+- **`scroll-to` no longer reports `found` when it matched the LIST.** Measured on a
+  device against a virtualized web wheel: `--label "1995"` answered `found=true
+  settled=true swipes=0` while no node carried 1995 and nothing had scrolled — a
+  scroll host carries the concatenated text of every row it has realized, so an
+  off-screen value substring-matches the CONTAINER and resolves to its own centre.
+  `found` means "go tap it", so the tap that followed landed on the wheel.
+
+- **An action dispatched into an INACTIVE iOS app says so.** The read side always
+  opened with `window: UNFOCUSED`; the action reported an ordinary success, and the
+  empty diff that followed got blamed on the target (measured: an account prompt over
+  the app made every tap inert while the dispatch kept saying it worked). The warning
+  is now on the action too, and stays silent when the reading is absent rather than
+  false.
+
+- **A long build reports progress instead of looking hung.** `system prepare` shells
+  out to `xcodebuild`, minutes on a cold device build: output was collected, so a
+  build that failed 20 seconds in looked identical to one still working. Phases and
+  diagnostics stream as they arrive (the full text still reaches the failure
+  classifier). Commands that should be quick carry deadlines — 120s `simctl`, 300s
+  `devicectl`, 10s for local lookups — and a timeout runs the child's teardown
+  sequence instead of leaking it; the build itself stays unbounded, because it is
+  visibly alive now and a real device build is legitimately slow.
+
+- **The plugin surface describes the CLI that exists.** The skill had no word for the
+  `system` family, still called `ui outline` / `--alias` cross-platform, still said
+  macOS 14+ (the host is macOS 15+), and `/reticle:verify` still told a reader there
+  is no coordinate tap on a real iOS device — a claim 0.21.0 had already made false.
+  All corrected, with `references/ios-system-channel.md` added for the setup and the
+  limits, and `AGENTS.md` now states the rule this drift broke: a new command family,
+  or a surface gated to one platform, is not shipped until the skill says so.
 
 - **A third-party wheel column is READ, not guessed at.** `wheel:opaque` was written on
   the belief that a self-drawn wheel exposes nothing — no child view, no adapter, no

@@ -6,7 +6,7 @@
 decisions are already settled so they are not re-litigated. `AGENTS.md` maps the
 other documents and what each one owns.
 
-Status: 2026-08-09, tracking 0.21.0. The capture/drive/evidence backbone is complete
+Status: 2026-08-14, tracking 0.22.0. The capture/drive/evidence backbone is complete
 and cross-platform; the **boundary-case sweep** (fifteen points) closed on
 2026-07-25. What remains is listed under [What's left](#whats-left) — no section of
 this document is a to-do list except that one.
@@ -71,7 +71,7 @@ host platform, WebView bridge, action traces and the capture proxy all ship, and
 the linked-agent real-device path is validated on an iPhone 13 Pro Max / iOS 26
 (`scripts/e2e-ios-device.sh` — observation, `activate`, `mutate`, trace evidence
 over the USB tunnel, plus a decrypted HTTPS event with the proxy bound to the LAN).
-The one gap left is **another process's UI on a device** (item 5) — everything inside the app under test is drivable there now. HarmonyOS is
+The last gap — **another process's UI on a device** (item 5) — is closed too, by the out-of-process system channel (`reticle system …`, `scripts/e2e-ios-system.sh`), which is a second channel beside the in-process one rather than a widening of it. HarmonyOS is
 unstarted and unvalidated — see Deferred.
 
 ---
@@ -159,16 +159,22 @@ layer, not a new capture mechanism.
 
 ### 5. iOS real-device input cliff — L, quantify before building
 
-**Mostly closed.** A device now drives everything inside the app: coordinate,
-`--region` and selector taps, swipe, drag and `scroll-to` are synthesized
-in-process (a `UITouch` through the application's own `UITouchesEvent`), text goes
-through `UIKeyInput`, and controls can be activated directly.
+**Closed.** A device drives everything inside the app: coordinate, `--region` and
+selector taps, swipe, drag and `scroll-to` are synthesized in-process (a `UITouch`
+through the application's own `UITouchesEvent`), text goes through `UIKeyInput`, and
+controls can be activated directly.
 
-What is left is genuinely another process: a system alert, the remote keyboard's
-own window, SpringBoard, Home / app-switcher gestures. That needs an XCUITest/WDA
-runner — a second process, its own signing and lifecycle — and the cause-check rule
-applies before building it: measure how many real verification steps actually need
-to touch UI the app does not own.
+What was genuinely another process — a system alert, the remote keyboard's own
+window, SpringBoard, Home / app-switcher gestures — is reached by the **system
+channel** (`reticle-runner-ios`, driven by `reticle system …`): a resident XCUITest
+runner with its own signing and lifecycle, added alongside the in-process path
+rather than inside it, and typed apart from it (`SystemObservation`, never `Node`)
+because it sees one accessibility layer and nothing more. Round trip:
+`scripts/e2e-ios-system.sh`.
+
+What is left here is only reach, not capability: the runner is a real-device path
+(prepare needs the repo checkout, Xcode and a signing team), so a simulator keeps
+using system-pipeline HID.
 
 ### 6. Phase remainders — S–L, additive
 

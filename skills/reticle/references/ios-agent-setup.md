@@ -96,6 +96,11 @@ the one id `xcodebuild -destination`, `devicectl` and `iproxy` all accept; the
 `devicectl list devices` CoreDevice UUID does not match an xcodebuild
 destination. The port is derived from the bundle id, same as on Android.
 
+Everything here is about the app's **own** runtime. UI the app does not own — a
+permission alert, SpringBoard, Home — has no route through the agent at any
+setup level; that is the system channel, and it installs separately:
+[ios-system-channel.md](ios-system-channel.md).
+
 Mechanism detail, and every other real-device boundary: `docs/ios.md`.
 
 ## Authorization

@@ -5,7 +5,7 @@
 **本文讲 Reticle 往哪走**：还剩什么（按优先级），以及哪些决定已经拍板、不必再讨论。
 其余文档各自的职责由 `AGENTS.md` 统一给出。
 
-状态：2026-08-09，对应 0.21.0。捕获 / 驱动 / 证据这条主干已完成且跨平台；
+状态：2026-08-14，对应 0.22.0。捕获 / 驱动 / 证据这条主干已完成且跨平台；
 **边界能力扫描**（15 个点）于 2026-07-25 收官。剩余工作全部列在
 [还剩什么](#还剩什么)——本文除该节外，没有任何一节是待办清单。
 
@@ -60,8 +60,9 @@
 覆盖模拟器与真机：iOS agent、host 平台层、WebView 桥、操作 trace、抓包代理都已落地，
 链接 agent 的真机路径在 iPhone 13 Pro Max / iOS 26 上验证通过
 （`scripts/e2e-ios-device.sh`——USB 隧道上的观察、`activate`、`mutate`、trace 证据，
-外加代理绑 LAN 后一条解密的 HTTPS 事件）。唯一剩下的缺口是**真机上属于别的进程的 UI**
-（第 5 项）——被测 app 自己的界面在真机上已经全部可驱动。HarmonyOS 尚未开始且零验证——见"暂缓"。
+外加代理绑 LAN 后一条解密的 HTTPS 事件）。最后一个缺口——**真机上属于别的进程的 UI**（第 5 项）——也已由进程外的
+system 通道补上（`reticle system …`，`scripts/e2e-ios-system.sh`）：它是进程内通道旁边的
+第二条通道，而不是把原来那条拓宽。HarmonyOS 尚未开始且零验证——见"暂缓"。
 
 ---
 
@@ -131,13 +132,18 @@ session 时间线已经把 UI 操作 + 网络 + 截图统一了，但一次校�
 
 ### 5. iOS 真机输入悬崖 — L，先量化再动手
 
-**基本补完。** 真机现在能驱动 app 内的一切：坐标 tap、`--region` tap、选择器 tap、
+**已补完。** 真机能驱动 app 内的一切：坐标 tap、`--region` tap、选择器 tap、
 swipe、drag、`scroll-to` 都在进程内合成（把 `UITouch` 放进 app 自己的 `UITouchesEvent`
 再 `-sendEvent:`），打字走 `UIKeyInput`，控件也可以直接激活。
 
-剩下的是真正属于别的进程的东西：系统弹窗、远程键盘自己的窗口、SpringBoard、
-Home / 应用切换手势。这需要 XCUITest/WDA runner —— 独立进程、自己的签名与生命周期 ——
-动手前依旧适用"先查病因"：先量清楚到底有多少真实校验步骤非得碰 app 自己没有的 UI。
+真正属于别的进程的东西——系统弹窗、远程键盘自己的窗口、SpringBoard、Home / 应用切换
+手势——现在由 **system 通道**（`reticle-runner-ios`，命令是 `reticle system …`）触达：
+一个常驻 XCUITest runner，独立进程、自己的签名与生命周期，加在进程内路径旁边而不是塞进
+它里面，类型上也是分开的（`SystemObservation`，永远不是 `Node`）——因为它只看得到一层
+无障碍信息。回路：`scripts/e2e-ios-system.sh`。
+
+这里剩下的只是覆盖面而非能力：runner 是真机路径（prepare 需要仓库、Xcode 和签名 team），
+模拟器仍走系统管线的 HID。
 
 ### 6. 阶段遗留 — S–L，纯增量
 
