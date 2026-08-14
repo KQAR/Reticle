@@ -48,6 +48,9 @@ artifacts path, and — when a boundary blocked the check rather than the app
 failing it — that distinction, stated.
 
 Every command above accepts `--target ios` for a simulator or a real device. On a
-real iOS device there is no coordinate tap: use `act activate` with a selector,
-and expect the in-process screenshot to omit anything that is not the app's own
-window (the status bar, the keyboard, another process's sheet).
+real iOS device every gesture is synthesized inside the app (`via=agent uikit`), so
+taps, `--region` taps, swipe, drag, `scroll-to` and `type` all work — what does not
+is UI the app does not own, and the in-process screenshot omits it too (the status
+bar, the keyboard's window, another process's sheet). For that layer the skill's
+`references/ios-system-channel.md` is the path; `ui outline` and `--alias @N` are
+Android-only, so pick iOS handles with `ui compact --live`.
