@@ -146,6 +146,13 @@ so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
   index table at its top. Put a new topic in `references/` unless it is needed to
   inspect a screen or tap a button, and give it a row saying **when** to open it —
   a reference nothing points at is unreachable.
+  A **new command family, or a surface that is gated to one platform, is not
+  shipped until the skill says so.** `ReticleCLI.help` is pinned against the
+  dispatch switches by `CommandSurfaceTests`, but nothing compares either to
+  `skills/` — measured: `system` shipped, and `ui outline` / `--alias` became
+  Android-only, while the skill still described the old world, so an agent reading
+  only the skill could not reach the one channel that answers "what is covering the
+  app" and would spend its turns on a refusal instead.
 - `commands/report.md`, `commands/verify.md` — slash commands (`/reticle:report`,
   `/reticle:verify`). Thin wrappers: each one defers to the skill for the workflow
   instead of restating it, so the two cannot drift apart. A command must be a
@@ -172,10 +179,14 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 - The agent observes app state. It is not the place where input events are
   synthesized — real input comes from the host via `adb shell input`. The one
   carve-out is iOS on a **real device**, where no HID surface is reachable from
-  the host at all: there the agent activates controls (`/activate`) and inserts
-  text (`/type`) in-process, because the alternative is no input path, not a
-  cleaner one. Both are iOS-only and documented as such in `Protocol.swift`;
-  neither is a licence to move Android input into the agent.
+  the host at all: there the agent activates controls (`/activate`), inserts text
+  (`/type`) and synthesizes touches (`/touch` — a `UITouch` in the app's own
+  `UIEvent` through `-sendEvent:`, which is what carries `tap`/`swipe`/`drag`/
+  `scroll-to` on a phone) in-process, because the alternative is no input path,
+  not a cleaner one. All three are iOS-only and documented as such in
+  `Protocol.swift`; none is a licence to move Android input into the agent. UI the
+  app does not own is not reached this way at all — that is the system channel
+  (`reticle-runner-ios`), a separate process with its own authority.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
   first for movement and input; selector actions fall back to view frames only
   when no semantic match exists.

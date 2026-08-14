@@ -11,7 +11,9 @@ description: >-
   recorded run did (`trace log`), show a read-only local Web panel for a
   multi-action evidence timeline, mock or replay network traffic, read app
   runtime logs, or live-patch a UI property (text/color/size/visibility) without
-  rebuilding. iOS needs `--target ios`.
+  rebuilding. iOS needs `--target ios`; on a real iOS device gestures are
+  synthesized in-process, and another process's UI (a permission alert,
+  SpringBoard, Home) is reached only through the separate `system` channel.
   Triggers: "what's on screen", "drive the app", "change this label at runtime",
   adb/UiAutomator/Espresso/XCUITest-style UI verification.
 ---
@@ -41,11 +43,12 @@ are doing**, since none of it is needed to inspect a screen or tap a button:
 | `references/daemon-and-panel.md` | A run needs a durable timeline across many commands, a browser-visible panel, or network capture |
 | `references/network-rules.md` | The app must see a different network — mock, block, map to another origin, add latency |
 | `references/ios-agent-setup.md` | `--target ios` and the runtime is unreachable — linking `ReticleKit`, or injecting into a device debug build |
+| `references/ios-system-channel.md` | On a real iOS device the thing you need is NOT the app's own UI — a permission alert, SpringBoard, Home (`reticle system …`) |
 
 ## Install (how the `reticle` binary is obtained)
 
-`reticle` is the **Swift host** — a no-JDK native macOS 14+ arm64 binary that drives
-Android through a sibling native helper (`reticle-helper`). **macOS 14+ arm64 only.**
+`reticle` is the **Swift host** — a no-JDK native macOS 15+ arm64 binary that drives
+Android through a sibling native helper (`reticle-helper`). **macOS 15+ arm64 only.**
 Two things matter operationally: the default path **always** uses the
 SHA256-verified prebuilt release — there is **no silent source build** — and a
 failed download **hard-stops** with actionable guidance instead of quietly
@@ -64,7 +67,7 @@ The full launcher resolution order and its env overrides (`RETICLE_HOST`,
 - **One** target device. With several attached (e.g. a phone + a stray emulator),
   every driving command fails fast listing the candidates — scope it with a global
   `--serial <id>` (or export `ANDROID_SERIAL`, which Reticle also honors). `doctor`
-  always lists them all regardless.
+  and `reticle devices` always list them all regardless.
 - `ANDROID_HOME` set, or adb on PATH.
 - The target app must expose the Reticle in-process server. Three cases:
   - **Linked app** (you control the build): add the `reticle-agent` AAR — a
@@ -161,9 +164,12 @@ prints `via agent` or `via simctl`. The device-level path is `simctl io`, which 
 **simulator-only** — on a **real device** the agent's in-process render is the only
 source (over the `iproxy` tunnel; the app must be foreground, since a suspended app
 loses its loopback socket). So on a device, anything that is not this app's own
-window is simply absent with nothing to switch to: the **status bar**, the system
-keyboard's host window, another process's sheet. Report that as a boundary, never
-as "the screen was empty."
+window is absent from *that* picture: the **status bar**, the system keyboard's
+host window, another process's sheet. There is one other source for it — `reticle
+system screenshot` is display-level and includes whatever covers the app — but it
+needs the system channel prepared on that device
+(`references/ios-system-channel.md`). Without it, report the gap as a boundary,
+never as "the screen was empty."
 
 ## Core workflow
 
@@ -174,7 +180,7 @@ reticle app inject  --package <pkg>              # debuggable app w/o the AAR: l
 reticle status      --package <pkg>              # probe runtime health + identity if anything's off
 reticle ui report   --package <pkg> --output reticle-report
 reticle ui compact  reticle-report/snapshot.json # token-cheap, one line per interactive/labelled node
-reticle ui outline  --live --package <pkg>       # numbered agent-facing outline + @N alias cache
+reticle ui outline  --live --package <pkg>       # numbered outline + @N alias cache (ANDROID-only)
 reticle ui node     reticle-report/snapshot.json --test-id <id>   # full node
 reticle ui node     reticle-report/snapshot.json --css '#pay'      # WebView DOM node
 reticle ui tree     reticle-report/snapshot.json --semantics  # semantic tree
@@ -228,6 +234,11 @@ properties, reachable with `ui node --ref rN` and visible in `ui tree`.
 run ends with `(N more item(s) beyond this projection's cap …)` — unlike a fold,
 those items are not printed at all, so never read a compact carrying that line as
 the whole screen; reach the rest with `ui tree` / `ui node --ref`.
+
+`ui outline` and the `--alias @N` it hands out are **Android-only** — the alias
+cache lives in the Kotlin helper, and `--target ios` refuses both by name rather
+than running with no selector. On iOS the equivalent loop is `ui compact --live`
+plus a stable handle (`--test-id` / `--label` / `--css`).
 
 `ui outline --live --package <pkg>` is the fastest ad-hoc agent loop: it prints
 **on-screen** labelled/interactive nodes as `@1`, `@2`, ... — on screen, not merely
@@ -292,6 +303,10 @@ aliases apart with unrelated content wedged between them. Two things address it:
   numbering that follows from the outline, all together. That is usually what you
   want: the screen the user is looking at, several-fold cheaper to read.
 
+`--depth <n>` is the other narrowing knob on a `ui` view: it stops the printed
+walk at that depth (the capture is unchanged), which is how a deep tree is read
+top-down without the leaves.
+
 Prefer scoping over filtering `occluded-by:` yourself. That marker is overloaded —
 it also means "under the keyboard" and "under a popup in the SAME window", which
 are different situations with different responses.
@@ -353,7 +368,9 @@ reticle act type  --package <pkg> --text "你好 / Zażółć"   # non-ASCII OK
 `window: UNFOCUSED` in a compact means another window — very likely another
 process's, e.g. a permission prompt — holds input focus. Nothing in the tree is
 tappable in that state, and the prompt itself is NOT in the tree (out of process, by
-design). Deal with the prompt first; don't retry taps.
+design). Deal with the prompt first; don't retry taps. On iOS the ACTION says it too
+(`warning: … NOT active …`), so a tap into an inactive app is never an ordinary
+success whose empty diff you would blame on the target.
 
 **`--css` matches, it does not string-compare.** It used to be an equality test
 against each node's captured `domCssSelector` — the whole ancestor path — so only a
@@ -741,11 +758,17 @@ costs ~25ms of `adb shell`; `--no-toast-probe` turns it off.
 `act type` are all carried inside the app under test — a real synthesized touch, so
 gesture recognizers and scroll views behave normally and `scroll-to` can realize a
 lazy row. `via=agent uikit` in the result is how you know which surface carried it.
-What a device cannot do is touch UI the app does not own: a system alert, the
-keyboard's own window, SpringBoard, Home. Those are refused by name (`no window of
-this process contains that point`), never reported as dispatched. An input gesture
-on a device must also name it: pass `--serial <device-ECID>`, or the host resolves
-its target to a booted simulator instead.
+What a device cannot do **in-process** is touch UI the app does not own: a system
+alert, the keyboard's own window, SpringBoard, Home. Those are refused by name (`no
+window of this process contains that point`), never reported as dispatched — and
+that refusal now has a path beside it rather than being a dead end: the
+out-of-process **system channel** (`reticle system overlay|tree|tap|home|activate|
+screenshot`) reads and drives exactly that layer, from a separate XCUITest runner.
+It is a different channel with a different reach — one accessibility layer, no view
+class, no DOM, no regions — so its results are never the app's own tree. Setup and
+its limits: `references/ios-system-channel.md`. An input gesture on a device must
+also name it: pass `--serial <device-ECID>`, or the host resolves its target to a
+booted simulator instead.
 
 **On a real iOS device, `act activate`'s answer is three-state.** `outcome=activated`
 means the target acknowledged it. `outcome=refused` (an error) means nothing was
@@ -844,7 +867,7 @@ and switch tactics — retrying, waiting, or re-capturing will not change it.**
 
 | You see | It means | Do this |
 | --- | --- | --- |
-| `window: UNFOCUSED …` | Another process's window (permission prompt, biometric sheet, share sheet, Custom Tab) has input focus. It is in NO node of the tree and NOT in the agent's screenshot | Deal with that window first; don't tap into the void |
+| `window: UNFOCUSED …` | Another process's window (permission prompt, biometric sheet, share sheet, Custom Tab) has input focus. It is in NO node of the tree and NOT in the agent's screenshot | Deal with that window first; don't tap into the void. On a **real iOS device** that window is readable and drivable through the system channel (`system overlay` / `system tap`) — nowhere else |
 | `dom:capped(N)` | This web view's DOM walk stopped at the traversal's own node cap after N nodes. Unlike the projection cap, the rest were never captured — no `ui tree` or `ui node --ref` can reach them | Narrow the page, or scroll and re-capture |
 | `dom:unavailable` | The DOM could not be read *at this moment* (a JS modal blocking the page thread, JS off, budget) | Dismiss the modal / re-capture — this one CAN clear |
 | `dom:unsupported-kernel` | A third-party WebView kernel (X5/UC). There is no DOM for it at any level | Target it as a plain view (`--test-id` / `--point`); `--css` will never match |
