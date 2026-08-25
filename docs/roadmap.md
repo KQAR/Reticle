@@ -114,17 +114,23 @@ yet measured as a problem.
 The audit's biggest gap, and not theoretical: the `nativeID` capture-vs-resolve
 mismatch hid in exactly this blind spot.
 
-- **The in-app Android agent has zero unit tests.** `MutationEngine` (selector
-  resolution), `SnapshotCapture` (the testId chain), `ReticleReflect`, and the
-  WebView/Compose bridges are all untested, and the pure logic among them is
-  JVM/Robolectric-testable.
+- ~~**The in-app Android agent has zero unit tests.**~~ **Closed** (#293, #295):
+  `MutationEngine`, `SnapshotCapture`, `ReticleReflect`, the region probe and the
+  Compose/Lottie/WebView reflection all carry unit tests now, and two of them
+  found a wrong reading on the way in.
+- ~~**Swift: the rule → Loom `translate*()` layer and the HTTP routes.**~~
+  **Closed.** The translation layer is pinned behaviorally — assertions go through
+  `RuleMatch.matches`, so a regex rewrite that preserves behavior passes and one
+  that changes which traffic is mocked fails — plus route-level regressions for
+  `flows/:id/replay` (each failure keeps its own status code) and the rule surface.
+  It paid for itself immediately: an anchored path regex (`^/v1/users/\d+$`,
+  documented as supported) was never lifted to a whole-URL pattern, so the store's
+  matcher reported the rule as matching while the engine's could match no URL at
+  all — `rule resolve` said yes and the mock never fired. Rules this lane drops
+  before the engine sees them now say so, too, instead of being silently inert.
 - **Inject orchestration is untested.** `JdwpClientTest` covers only handshake and
   id-size negotiation; `JdwpClient.inject()`'s breakpoint/InvokeMethod sequence and
   `Injector.inject`'s ordering + dead-zone retry are proven only on a device.
-- **Swift: the rule → Loom `translate*()` layer and the HTTP routes.** The
-  translation layer (path→regex lifting, priority ordering, no-op dropping) is the
-  most error-prone single point in the lane; `rules` and `flows/:id/replay` have no
-  route-level regression net.
 
 ### 3. Evidence assembly products — M each, nothing built
 
