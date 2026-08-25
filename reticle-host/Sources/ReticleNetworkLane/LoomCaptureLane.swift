@@ -116,7 +116,8 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
         self.engine = ProxyEngine(persistFlows: false)
         self.bodyStore = NetworkBodyStore(
             sessionDirectory: store.sessionDirectory,
-            limitBytes: configuration.bodyLimitBytes
+            limitBytes: configuration.bodyLimitBytes,
+            budgetBytes: configuration.bodyBudgetBytes
         )
         self.factory = NetworkEventFactory(target: configuration.target)
         self.port = configuration.port
@@ -527,6 +528,7 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
                 } catch {
                     warn("failed to store WebSocket frame \(index) for \(requestId); evidence will omit its payload: \(error)")
                 }
+                reportBodyEviction()
             }
             store.emit(factory.event(webSocket: payload, refs: refs))
             emitted = index + 1
@@ -624,6 +626,24 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
         } catch {
             warn("failed to store \(role) body for \(requestId); evidence will omit it: \(error)")
         }
+        reportBodyEviction()
+    }
+
+    /// Republishes a body-eviction episode as evidence. Disk is bounded and the oldest
+    /// bodies go first; a session where that happened silently would read as one where
+    /// those requests had empty bodies, which is a different fact entirely.
+    private func reportBodyEviction() {
+        guard let episode = bodyStore.takeEvictionEpisode() else { return }
+        let message = "network body budget reached; dropping the oldest stored bodies — "
+            + "\(episode.evictedBodiesTotal) body/bodies (\(episode.evictedBytesTotal) bytes) "
+            + "evicted so far this session. The flows themselves are still recorded; "
+            + "fetching an evicted body reports body:evicted"
+        warn(message)
+        store.emit(factory.event(advisory: NetworkAdvisoryPayload(
+            bodyEvictionMessage: message,
+            evictedBodiesTotal: episode.evictedBodiesTotal,
+            evictedBytesTotal: episode.evictedBytesTotal
+        )))
     }
 
     /// Emits a non-fatal warning to stderr, matching the host's `warning: …` prefix

@@ -1,5 +1,6 @@
 import Foundation
 import Hummingbird
+import ReticleNetworkLane
 
 struct ReticleSessionRoutes: Sendable {
     let store: EventStore
@@ -81,6 +82,17 @@ struct ReticleSessionRoutes: Sendable {
             throw HTTPError(.notFound, message: "artifact path is not allowed")
         }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            // A captured body the session evicted to stay inside its disk budget is a
+            // different fact from an artifact that never existed, and events.jsonl is
+            // append-only so the ref cannot be rewritten after the fact. The body
+            // store's eviction ledger is what makes the distinction answerable here.
+            if let bytes = NetworkBodyStore.evictedBytes(forArtifactAt: url) {
+                throw HTTPError(
+                    .gone,
+                    message: "body:evicted — this body held \(bytes) bytes and was dropped "
+                        + "to keep the session's network-bodies within budget"
+                )
+            }
             throw HTTPError(.notFound, message: "artifact file not found")
         }
         guard let fileType = attributes[.type] as? FileAttributeType, fileType == .typeRegular else {
