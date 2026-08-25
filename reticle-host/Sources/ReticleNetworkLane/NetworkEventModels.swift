@@ -28,23 +28,49 @@ enum NetworkEventType: String {
 /// of that is "still dropping when the session ended", and the running total says how
 /// much had been lost by then.
 struct NetworkAdvisoryPayload {
-    /// `capture-backlog-overflow` | `capture-backlog-recovered`. A closed set, so a
-    /// consumer can switch on it.
+    /// `capture-backlog-overflow` | `capture-backlog-recovered` |
+    /// `body-budget-eviction`. A closed set, so a consumer can switch on it.
     let kind: String
     let message: String
     /// Flows lost during the episode that just ended. Present on `recovered`, absent
     /// on `overflow`, where it is not yet knowable.
     var droppedFlows: Int?
-    /// Flows lost this session so far, at the moment of the advisory.
-    let droppedFlowsTotal: Int
+    /// Flows lost this session so far, at the moment of the advisory. Absent on
+    /// advisories that are not about the backlog — a body evicted for space is not a
+    /// dropped flow, and reporting it as one would understate the capture and
+    /// overstate the loss.
+    var droppedFlowsTotal: Int?
+    /// Body artifacts dropped this session to keep `network-bodies/` within budget.
+    var evictedBodiesTotal: Int?
+    /// Bytes those bodies held.
+    var evictedBytesTotal: Int?
+
+    /// A backlog advisory: the lane fell behind, or caught up.
+    init(kind: String, message: String, droppedFlowsTotal: Int) {
+        self.kind = kind
+        self.message = message
+        self.droppedFlowsTotal = droppedFlowsTotal
+    }
+
+    /// A body-budget advisory: bodies still on disk are bounded, so the oldest ones
+    /// are gone. The flows themselves were captured — their events, headers and sizes
+    /// are intact — which is why this is a separate kind rather than a dropped flow.
+    init(bodyEvictionMessage message: String, evictedBodiesTotal: Int, evictedBytesTotal: Int) {
+        kind = "body-budget-eviction"
+        self.message = message
+        self.evictedBodiesTotal = evictedBodiesTotal
+        self.evictedBytesTotal = evictedBytesTotal
+    }
 
     var json: [String: JSONValue] {
         var values: [String: JSONValue] = [
             "kind": .string(kind),
-            "message": .string(message),
-            "droppedFlowsTotal": .number(Double(droppedFlowsTotal))
+            "message": .string(message)
         ]
+        if let droppedFlowsTotal { values["droppedFlowsTotal"] = .number(Double(droppedFlowsTotal)) }
         if let droppedFlows { values["droppedFlows"] = .number(Double(droppedFlows)) }
+        if let evictedBodiesTotal { values["evictedBodiesTotal"] = .number(Double(evictedBodiesTotal)) }
+        if let evictedBytesTotal { values["evictedBytesTotal"] = .number(Double(evictedBytesTotal)) }
         return values
     }
 }

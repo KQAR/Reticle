@@ -333,6 +333,43 @@ struct LoomCaptureLaneTests {
         #expect(sink.ofType("network.request").count == 4_096)
     }
 
+    /// Disk is bounded, so a long session drops its oldest bodies — and that has to
+    /// reach the evidence. A session where bodies vanished silently reads exactly like
+    /// one where those responses had empty bodies, which is a different fact.
+    @Test func evictingBodiesForSpaceIsReportedAsEvidence() async {
+        let sink = RecordingSink()
+        defer { sink.cleanUp() }
+        // Budget for roughly one body; the second flow's body pushes the first out.
+        let lane = LoomCaptureLane(store: sink, configuration: NetworkProxyConfiguration(
+            port: 0, bodyLimitBytes: 4_096, bodyBudgetBytes: 120
+        ))
+
+        for index in 0..<2 {
+            lane.handle(Flow(
+                request: CapturedRequest(method: "GET", url: "https://api.example.com/\(index)", headers: []),
+                startedAt: epoch,
+                outcome: .completed(
+                    CapturedResponse(
+                        statusCode: 200,
+                        headers: [],
+                        body: Data(repeating: 0x41, count: 100)
+                    ),
+                    at: epoch.addingTimeInterval(0.1)
+                )
+            ))
+        }
+
+        let advisories = sink.ofType("network.advisory")
+        #expect(advisories.count == 1, "one advisory per eviction episode, not one per body")
+        #expect(string(advisories[0], "kind") == "body-budget-eviction")
+        #expect(number(advisories[0], "evictedBodiesTotal") == 1)
+        #expect(number(advisories[0], "evictedBytesTotal") == 100)
+        // The flows themselves were captured in full — only the stored copy of the
+        // body is gone, which is why this is not reported as a dropped flow.
+        #expect(advisories[0].payload["droppedFlowsTotal"] == nil)
+        #expect(sink.ofType("network.response").count == 2)
+    }
+
     // MARK: - Fixtures
 
     private func frame(

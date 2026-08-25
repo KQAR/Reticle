@@ -86,12 +86,28 @@ nothing at all — and an item with nothing needs that step before it is built
 
 ### 1. Long-session hygiene — S, by construction
 
-E2E runs are long, and the one known leak bites exactly there.
+**Closed.** `network-bodies/` used to grow one artifact per flow with nothing above
+it expiring — `AutoSession.prune()` evicts whole *past* sessions and deliberately
+skips the one being written — so a long verification session leaked disk.
+`NetworkBodyStore` now bounds itself: a per-session byte budget
+(`bodyBudgetBytes`, 256 MB by default) with oldest-first eviction, and the newest
+body is never the one dropped, so a body larger than the whole budget still lands.
 
-- **`network-bodies/` grows without eviction.** A body artifact is written per flow
-  and never dropped, so a long verification session leaks disk. Eviction must be
-  coupled to event-ring eviction: a body is evidence a live event still references,
-  so it cannot be dropped underneath it.
+The one design note worth keeping written down: this is **not** coupled to
+event-ring eviction, which is what this item originally specified. It cannot be.
+`events.jsonl` is append-only and an event that has aged out of the in-memory ring
+must stay fetchable, so the refs of a live event cannot be rewritten when its body
+goes. Eviction is therefore recorded rather than hidden — a
+`network.advisory` (`kind: body-budget-eviction`, once per episode) plus an
+`evicted.jsonl` ledger the artifact route reads, so a fetch answers
+`410 body:evicted — this body held N bytes` instead of a bare `404`. See
+`docs/boundaries.md`.
+
+What is still unbounded inside one session: trace artifacts (snapshots +
+screenshots under `traces/`). They are referenced by `trace log`, `replay gif` and
+the panel timeline, so dropping them silently breaks a replay rather than
+degrading one body — worth doing only with the same "say so" mechanism, and not
+yet measured as a problem.
 
 ### 2. Test coverage where a bug has already hidden — M
 

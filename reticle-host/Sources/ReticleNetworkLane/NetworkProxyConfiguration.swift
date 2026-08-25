@@ -3,6 +3,12 @@ import Foundation
 /// Runtime configuration for the host network proxy owned by `reticle serve`.
 public struct NetworkProxyConfiguration {
     public static let defaultMaxRequestBodyBytes = 64 * 1024 * 1024
+    /// Default ceiling on the body artifacts one session keeps on disk. A long
+    /// verification run writes one artifact per flow and nothing under it expires
+    /// (`AutoSession.prune()` skips the session being written), so the store evicts
+    /// oldest-first above this. 256 MB holds thousands of API bodies; a session that
+    /// needs more raises it explicitly rather than filling the disk by default.
+    public static let defaultBodyBudgetBytes = 256 * 1024 * 1024
 
     let port: Int
     /// Interface to bind. Defaults to loopback; a real device on Wi-Fi must reach
@@ -11,6 +17,10 @@ public struct NetworkProxyConfiguration {
     let bindHost: String
     let target: String?
     let bodyLimitBytes: Int
+    /// Ceiling on the *total* bytes of stored body artifacts for this session; over
+    /// it, the oldest bodies are evicted and the loss is reported as a
+    /// `network.advisory` plus an eviction ledger entry.
+    let bodyBudgetBytes: Int
     /// Ceiling on how much of one request body the proxy will buffer in memory
     /// before forwarding (the upstream forward needs the whole body today).
     /// Oversized uploads are rejected with 413 + a `network.error` event
@@ -28,6 +38,7 @@ public struct NetworkProxyConfiguration {
         bindHost: String = "127.0.0.1",
         target: String? = nil,
         bodyLimitBytes: Int = 1024 * 1024,
+        bodyBudgetBytes: Int = NetworkProxyConfiguration.defaultBodyBudgetBytes,
         maxRequestBodyBytes: Int = NetworkProxyConfiguration.defaultMaxRequestBodyBytes,
         upstreamTimeoutSeconds: TimeInterval = 30,
         mitmEnabled: Bool = false,
@@ -38,6 +49,7 @@ public struct NetworkProxyConfiguration {
         self.bindHost = bindHost
         self.target = target
         self.bodyLimitBytes = bodyLimitBytes
+        self.bodyBudgetBytes = bodyBudgetBytes
         self.maxRequestBodyBytes = maxRequestBodyBytes
         self.upstreamTimeoutSeconds = upstreamTimeoutSeconds
         self.mitmEnabled = mitmEnabled

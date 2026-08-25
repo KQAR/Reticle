@@ -75,10 +75,22 @@ system 通道补上（`reticle system …`，`scripts/e2e-ios-system.sh`）：�
 
 ### 1. 长会话卫生 — S，由构造可知
 
-E2E 跑得久，而这个已知泄漏恰好只在长跑时咬人。
+**已关闭。** 过去 `network-bodies/` 每条 flow 写一个产物，而其上没有任何东西会过期
+——`AutoSession.prune()` 只淘汰**历史**会话，并刻意跳过正在写入的那一个——所以长校验
+会话会漏磁盘。现在 `NetworkBodyStore` 自己有界：按会话的字节预算
+（`bodyBudgetBytes`，默认 256 MB），最旧优先淘汰；刚写入的那份永远不是被淘汰的那份，
+因此比整个预算还大的单个 body 仍会落盘。
 
-- **`network-bodies/` 无淘汰。** 每条 flow 写一个 body 产物且从不回收，长校验会话会
-  漏磁盘。淘汰必须与事件环的淘汰联动：body 是仍被存活事件引用的证据，不能在其脚下抽走。
+一条值得写下来的设计说明：这**没有**与事件环淘汰联动，而那正是本条最初的写法。它做不到。
+`events.jsonl` 是只追加的，且已从内存环中老化出去的事件仍必须可取，所以 body 消失时无法
+回头改写存活事件的 refs。于是淘汰改为被记录而非被隐藏：一条 `network.advisory`
+（`kind: body-budget-eviction`，每个 episode 一条）加一份 `evicted.jsonl` 台账供产物
+路由读取，取一个已淘汰 body 时回答 `410 body:evicted — this body held N bytes`，而不是
+干巴巴的 `404`。见 `docs/boundaries.md`。
+
+单个会话内仍然无界的部分：trace 产物（`traces/` 下的快照与截图）。它们被 `trace log`、
+`replay gif` 和面板时间线引用，静默删除会直接弄坏一次回放，而不是只降级一个 body ——
+只有配上同样的"说出来"机制才值得做，而且目前还没实测出它是问题。
 
 ### 2. 已经藏过 bug 的测试空白 — M
 
