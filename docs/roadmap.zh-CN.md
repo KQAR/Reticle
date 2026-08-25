@@ -96,15 +96,19 @@ system 通道补上（`reticle system …`，`scripts/e2e-ios-system.sh`）：�
 
 审计中最大的缺口，而且不是理论问题：`nativeID` 的"捕获与解析不一致"就藏在这里。
 
-- **进程内 Android agent 零单测。** `MutationEngine`（选择器解析）、`SnapshotCapture`
-  （testId 链）、`ReticleReflect`、WebView/Compose 桥全无测试，其中纯逻辑部分完全可用
-  JVM/Robolectric 测。
+- ~~**进程内 Android agent 零单测。**~~ **已关闭**（#293、#295）：`MutationEngine`、
+  `SnapshotCapture`、`ReticleReflect`、region 探针以及 Compose/Lottie/WebView 反射
+  现在都有单测，其中两处在补测过程中直接暴露出读错的行为并已修。
+- ~~**Swift 侧规则 → Loom 的 `translate*()` 层与 HTTP 路由层。**~~ **已关闭。** 翻译层
+  改用行为化断言（走 `RuleMatch.matches`）：保持行为的正则改写不会失败，改变"哪些流量
+  被 mock"的改写必然失败；另加 `flows/:id/replay`（三种失败各自保留状态码）与规则接口
+  的路由级回归。这层测试当场就还本了：一条锚定在路径上的正则（`^/v1/users/\d+$`，
+  文档里写明支持）从未被提升为整 URL 模式，于是 store 侧匹配器报"命中"，而引擎侧的模式
+  一个 URL 都匹配不上——`rule resolve` 说是，mock 却从不生效。此外，被本 lane 在交给
+  引擎之前丢掉的规则现在也会说出来，不再是静默失效。
 - **注入编排无测试。** `JdwpClientTest` 只覆盖握手与 id-size 协商；
   `JdwpClient.inject()` 的断点/InvokeMethod 序列和 `Injector.inject` 的顺序 + 死区重试
   只在设备上验证过。
-- **Swift 侧规则 → Loom 的 `translate*()` 层与 HTTP 路由层。** 翻译层（path→regex
-  提升、优先级排序、丢弃空操作）是整条 lane 最易错的单点；`rules` 与
-  `flows/:id/replay` 没有路由级回归网。
 
 ### 3. 证据装配产品 — 各 M，尚未开工
 
