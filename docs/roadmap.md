@@ -114,12 +114,15 @@ yet measured as a problem.
 The audit's biggest gap, and not theoretical: the `nativeID` capture-vs-resolve
 mismatch hid in exactly this blind spot.
 
-- ~~**The in-app Android agent has zero unit tests.**~~ **Closed** (#293, #295):
+**Closed** — all three blind spots now have coverage, and each of the three found
+something on the way in.
+
+- ~~**The in-app Android agent has zero unit tests.**~~ Closed (#293, #295):
   `MutationEngine`, `SnapshotCapture`, `ReticleReflect`, the region probe and the
-  Compose/Lottie/WebView reflection all carry unit tests now, and two of them
-  found a wrong reading on the way in.
-- ~~**Swift: the rule → Loom `translate*()` layer and the HTTP routes.**~~
-  **Closed.** The translation layer is pinned behaviorally — assertions go through
+  Compose/Lottie/WebView reflection all carry unit tests, and two of them found a
+  wrong reading.
+- ~~**Swift: the rule → Loom `translate*()` layer and the HTTP routes.**~~ Closed.
+  The translation layer is pinned behaviorally — assertions go through
   `RuleMatch.matches`, so a regex rewrite that preserves behavior passes and one
   that changes which traffic is mocked fails — plus route-level regressions for
   `flows/:id/replay` (each failure keeps its own status code) and the rule surface.
@@ -128,9 +131,16 @@ mismatch hid in exactly this blind spot.
   matcher reported the rule as matching while the engine's could match no URL at
   all — `rule resolve` said yes and the mock never fired. Rules this lane drops
   before the engine sees them now say so, too, instead of being silently inert.
-- **Inject orchestration is untested.** `JdwpClientTest` covers only handshake and
-  id-size negotiation; `JdwpClient.inject()`'s breakpoint/InvokeMethod sequence and
-  `Injector.inject`'s ordering + dead-zone retry are proven only on a device.
+- ~~**Inject orchestration is untested.**~~ Closed. A fake in-process JDWP VM
+  (`FakeJdwpVm`) runs the whole `inject()` sequence, and a fake device that really
+  serves JDWP behind its `forwardJdwp` runs `Injector.inject`. What is pinned is
+  the parts a passing device run cannot show: strings created only AFTER the thread
+  is suspended (the measured INVALID_OBJECT window), a BREAKPOINT with `Count(1)`
+  at `Handler.dispatchMessage` rather than a whole-app METHOD_ENTRY deopt, the
+  thread resumed and the breakpoint cleared on every exit path,
+  handshake-before-staging, and the dead-zone retry re-issuing its forward.
+  `EVENT_TIMEOUT_NANOS` gained a system-property override so the timeout MESSAGE is
+  testable, the way `REPLY_TIMEOUT_MS` already was.
 
 ### 3. Evidence assembly products — M each, nothing built
 
