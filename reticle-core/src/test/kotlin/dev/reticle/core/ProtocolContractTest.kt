@@ -136,6 +136,11 @@ class ProtocolContractTest {
         assertValid(eventSchema(), resource("fixtures/network-error-event.golden.json"), "network-error event fixture")
         assertValid(eventSchema(), resource("fixtures/network-websocket-event.golden.json"), "network-websocket event fixture")
         assertValid(eventSchema(), resource("fixtures/network-advisory-event.golden.json"), "network-advisory event fixture")
+        assertValid(
+            eventSchema(),
+            resource("fixtures/network-advisory-eviction-event.golden.json"),
+            "network-advisory body-eviction event fixture"
+        )
     }
 
     @Test
@@ -174,16 +179,56 @@ class ProtocolContractTest {
     }
 
     @Test
-    fun advisoryFixturePayloadSatisfiesItsTypedSchema() {
+    fun advisoryFixturePayloadsSatisfyTheirTypedSchema() {
         // An advisory describes the capture lane's own fidelity rather than an
         // exchange, so it too gets its own schema instead of loosening the shared one.
+        // Both kinds are pinned: a backlog advisory counts dropped flows, a
+        // body-budget one counts evicted artifacts, and the schema requires the
+        // counters per kind rather than requiring both of everything.
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
-        val payload = mapper.readTree(resource("fixtures/network-advisory-event.golden.json")).get("payload")
-        val errors = networkAdvisoryPayloadSchema().validate(payload)
-        if (errors.isNotEmpty()) {
-            fail("network-advisory fixture payload did not satisfy its schema:\n" +
-                errors.joinToString("\n") { "  - $it" })
+        for (name in listOf(
+            "network-advisory-event.golden.json",
+            "network-advisory-eviction-event.golden.json"
+        )) {
+            val payload = mapper.readTree(resource("fixtures/$name")).get("payload")
+            val errors = networkAdvisoryPayloadSchema().validate(payload)
+            if (errors.isNotEmpty()) {
+                fail("$name payload did not satisfy the advisory schema:\n" +
+                    errors.joinToString("\n") { "  - $it" })
+            }
         }
+    }
+
+    @Test
+    fun advisorySchemaRequiresTheCountersThatMatchItsKind() {
+        // The per-kind requirement is expressed with if/then, which is easy to write
+        // in a way that never fires. Prove it bites in both directions — otherwise a
+        // counter-less advisory would validate and a consumer switching on `kind`
+        // would read an absent count as zero loss.
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val schema = networkAdvisoryPayloadSchema()
+        val backlogWithoutCounter = mapper.readTree(
+            """{"kind":"capture-backlog-overflow","message":"full"}"""
+        )
+        assertTrue(
+            schema.validate(backlogWithoutCounter).isNotEmpty(),
+            "a backlog advisory without droppedFlowsTotal must not validate"
+        )
+        val evictionWithoutCounters = mapper.readTree(
+            """{"kind":"body-budget-eviction","message":"over budget"}"""
+        )
+        assertTrue(
+            schema.validate(evictionWithoutCounters).isNotEmpty(),
+            "a body-budget advisory without its evicted counters must not validate"
+        )
+        val evictionWithFlowCounter = mapper.readTree(
+            """{"kind":"body-budget-eviction","message":"over budget","evictedBodiesTotal":1,""" +
+                """"evictedBytesTotal":2,"droppedFlowsTotal":0}"""
+        )
+        assertTrue(
+            schema.validate(evictionWithFlowCounter).isEmpty(),
+            "a body-budget advisory may still carry the flow counter; it is optional, not forbidden"
+        )
     }
 
     private fun sampleSnapshot(): Snapshot = Snapshot(

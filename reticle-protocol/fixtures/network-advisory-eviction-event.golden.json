@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "evt_0000000000000006",
+  "ts": 1782751909900,
+  "session": "reticle-e2e",
+  "target": "android:dev.reticle.sample",
+  "source": "proxy",
+  "type": "network.advisory",
+  "payload": {
+    "kind": "body-budget-eviction",
+    "message": "network body budget reached; dropping the oldest stored bodies — 3 body/bodies (786432 bytes) evicted so far this session. The flows themselves are still recorded; fetching an evicted body reports body:evicted",
+    "evictedBodiesTotal": 3,
+    "evictedBytesTotal": 786432
+  },
+  "refs": {}
+}

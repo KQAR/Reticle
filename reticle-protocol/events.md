@@ -195,7 +195,8 @@ contract test validates the golden fixtures against the schema, and a Swift test
 pins the emitter's field set to the same schema so neither side can drift.
 Golden fixtures: `network-request-event.golden.json`,
 `network-response-event.golden.json`, `network-error-event.golden.json`,
-`network-websocket-event.golden.json`.
+`network-websocket-event.golden.json`, `network-advisory-event.golden.json`,
+`network-advisory-eviction-event.golden.json`.
 
 ### Capture advisories
 
@@ -218,6 +219,23 @@ with better manners — and overflowing it is reported as two edges:
 Two edges rather than one event per dropped flow, so a drop storm does not become
 its own flood. An overflow with no matching recovered event means the session ended
 while still dropping; `droppedFlowsTotal` says how much had been lost by then.
+
+Bodies are also bounded, on disk rather than in memory. `network-bodies/` grows one
+artifact per flow and nothing above it expires (`AutoSession.prune()` evicts whole
+*past* sessions and deliberately skips the one being written), so the body store keeps
+the session inside a byte budget (256 MB by default) by dropping the oldest artifacts:
+
+- `payload.kind: body-budget-eviction` — stored bodies passed the budget, so the
+  oldest were dropped. Carries `evictedBodiesTotal` and `evictedBytesTotal`, and
+  **not** `droppedFlowsTotal`: the flows themselves were captured in full, with their
+  events, headers, timings and sizes intact. Announced once per episode, re-armed when
+  a write evicts nothing.
+
+Fetching an evicted body's ref answers `410` with `body:evicted — this body held N
+bytes …` rather than a bare `404`. `events.jsonl` is append-only and an event that has
+aged out of the in-memory ring must stay fetchable, so the ref cannot be rewritten
+after the fact; the store's `network-bodies/evicted.jsonl` ledger is what keeps the
+distinction between "dropped for space" and "never existed" answerable.
 
 **What this cannot cover:** the engine's own stream buffer. `AsyncStream` gives a
 subscriber no way to learn it dropped something, so if the engine ever drops

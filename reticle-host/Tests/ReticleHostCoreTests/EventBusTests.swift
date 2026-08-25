@@ -371,6 +371,42 @@ struct EventBusTests {
         #expect((missingFileResponse as? HTTPURLResponse)?.statusCode == 404)
     }
 
+    /// A body the session evicted to stay inside its disk budget is not the same fact
+    /// as an artifact that never existed, and `events.jsonl` is append-only so the ref
+    /// cannot be corrected after the fact. The eviction ledger is what lets the route
+    /// distinguish them — 410 with `body:evicted` rather than a bare 404.
+    @Test func anEvictedBodyIsReportedAsGoneRatherThanMissing() async throws {
+        let root = try temporaryDirectory()
+        let store = try EventStore(session: "test", rootDirectory: root, limit: 10)
+        let bodies = store.sessionDirectory.appendingPathComponent("network-bodies", isDirectory: true)
+        try FileManager.default.createDirectory(at: bodies, withIntermediateDirectories: true)
+        let evicted = bodies.appendingPathComponent("flow-0-responseBody.bin")
+        try #"{"file":"flow-0-responseBody.bin","bytes":4096}"#
+            .appending("\n")
+            .write(to: bodies.appendingPathComponent("evicted.jsonl"), atomically: true, encoding: .utf8)
+        let vanished = bodies.appendingPathComponent("flow-9-responseBody.bin")
+        let event = try store.append(EventPostRequest(
+            source: "proxy",
+            type: "network.response",
+            refs: ["responseBody.flow-0": evicted.path, "responseBody.flow-9": vanished.path]
+        ))
+        let server = try ReticleHttpServer(store: store, port: 0)
+        try server.start()
+        defer { server.stop() }
+
+        let base = "http://127.0.0.1:\(server.port)/sessions/current/artifacts?event=\(event.id)&ref="
+        let (evictedData, evictedResponse) = try await URLSession.shared.data(
+            from: URL(string: base + "responseBody.flow-0")!)
+        #expect((evictedResponse as? HTTPURLResponse)?.statusCode == 410)
+        #expect(String(data: evictedData, encoding: .utf8)?.contains("body:evicted") == true)
+        #expect(String(data: evictedData, encoding: .utf8)?.contains("4096") == true)
+
+        // A ref whose file is simply absent still reads as absent, not as evicted.
+        let (_, missingResponse) = try await URLSession.shared.data(
+            from: URL(string: base + "responseBody.flow-9")!)
+        #expect((missingResponse as? HTTPURLResponse)?.statusCode == 404)
+    }
+
     @Test func httpServerServesHistoricalSessionsAndArtifacts() async throws {
         let root = try temporaryDirectory()
         let historical = try EventStore(session: "old", rootDirectory: root, limit: 10)
