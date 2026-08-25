@@ -26,6 +26,29 @@ struct NetworkEventPayloadSchemaTests {
         return (Set(properties), Set(required))
     }
 
+    /// Fields the schema requires for one advisory `kind`, read out of its
+    /// `allOf`/`if`-`then` blocks. Top-level `required` cannot express this: the two
+    /// kinds count different things, so requiring both counters of every advisory
+    /// would force emitters to invent a zero.
+    private func conditionalRequired(_ file: String, kind: String) throws -> Set<String> {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("reticle-protocol/schema/\(file)")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
+        var matched: Set<String> = []
+        for case let branch as [String: Any] in (object["allOf"] as? [Any] ?? []) {
+            let condition = branch["if"] as? [String: Any] ?? [:]
+            let properties = condition["properties"] as? [String: Any] ?? [:]
+            let kindRule = properties["kind"] as? [String: Any] ?? [:]
+            let allowed = (kindRule["enum"] as? [String]) ?? (kindRule["const"] as? String).map { [$0] } ?? []
+            guard allowed.contains(kind) else { continue }
+            let then = branch["then"] as? [String: Any] ?? [:]
+            matched.formUnion((then["required"] as? [String]) ?? [])
+        }
+        return matched
+    }
+
     /// The diff is nested inside the payload, so its own fields need the same
     /// pinning — an undeclared key there fails the Kotlin contract test just as hard.
     private func diffSchemaProperties() throws -> Set<String> {
@@ -114,7 +137,11 @@ struct NetworkEventPayloadSchemaTests {
         )
         recovered.droppedFlows = 104
 
-        for payload in [overflow, recovered] {
+        let eviction = NetworkAdvisoryPayload(
+            bodyEvictionMessage: "over budget", evictedBodiesTotal: 3, evictedBytesTotal: 786_432
+        )
+
+        for payload in [overflow, recovered, eviction] {
             let emitted = Set(payload.json.keys)
             #expect(emitted.subtracting(declared).isEmpty,
                     "advisory emitter produced undeclared fields: \(emitted.subtracting(declared).sorted())")
@@ -122,6 +149,21 @@ struct NetworkEventPayloadSchemaTests {
                     "advisory emitter omitted required fields: \(required.subtracting(emitted).sorted())")
         }
         #expect(overflow.json["droppedFlows"] == nil)
+        // The counters are required per kind (schema `allOf`/`if`), so the emitter has
+        // to carry the pair that matches — and NOT the other kind's, which would read
+        // as "zero flows dropped" on a session that dropped none because none were
+        // dropped for that reason.
+        let backlogRequired = try conditionalRequired(
+            "network-advisory-payload.schema.json", kind: "capture-backlog-overflow"
+        )
+        #expect(backlogRequired == ["droppedFlowsTotal"])
+        #expect(backlogRequired.subtracting(Set(overflow.json.keys)).isEmpty)
+        let evictionRequired = try conditionalRequired(
+            "network-advisory-payload.schema.json", kind: "body-budget-eviction"
+        )
+        #expect(evictionRequired == ["evictedBodiesTotal", "evictedBytesTotal"])
+        #expect(evictionRequired.subtracting(Set(eviction.json.keys)).isEmpty)
+        #expect(eviction.json["droppedFlowsTotal"] == nil)
     }
 
     /// The frame payload is its own shape with its own schema; pin the emitter to it

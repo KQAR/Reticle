@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://reticle.dev/schema/network-advisory-payload.schema.json",
   "title": "Reticle proxy network.advisory event payload",
-  "description": "The capture lane reporting on its own fidelity. Capture degrading is a fact about the evidence, so it belongs in the evidence rather than in a log line nobody reads. Loss is reported as two edges — overflow when recording starts falling behind, recovered once it catches up — rather than one event per dropped flow, which would make a drop storm its own flood.",
+  "description": "The capture lane reporting on its own fidelity. Capture degrading is a fact about the evidence, so it belongs in the evidence rather than in a log line nobody reads. Backlog loss is reported as two edges — overflow when recording starts falling behind, recovered once it catches up — rather than one event per dropped flow, which would make a drop storm its own flood; body eviction is reported once per episode for the same reason. Which counters are required depends on the kind: a body dropped for disk space is not a dropped flow, and reporting it as one would overstate the loss.",
   "type": "object",
-  "required": ["kind", "message", "droppedFlowsTotal"],
+  "required": ["kind", "message"],
   "additionalProperties": false,
   "properties": {
     "kind": {
-      "description": "capture-backlog-overflow: the lane started dropping flows it could not process fast enough. capture-backlog-recovered: it caught up, and the size of the gap is now known.",
+      "description": "capture-backlog-overflow: the lane started dropping flows it could not process fast enough. capture-backlog-recovered: it caught up, and the size of the gap is now known. body-budget-eviction: stored bodies exceeded the session's disk budget, so the oldest were dropped — the flows themselves remain recorded, and fetching an evicted body reports body:evicted.",
       "type": "string",
-      "enum": ["capture-backlog-overflow", "capture-backlog-recovered"]
+      "enum": ["capture-backlog-overflow", "capture-backlog-recovered", "body-budget-eviction"]
     },
     "message": {
       "type": "string",
@@ -25,6 +25,34 @@
       "description": "Flows lost this session so far, at the moment of the advisory. An overflow with no matching recovered event means the session ended while still dropping, and this is how much had been lost by then.",
       "type": "integer",
       "minimum": 0
+    },
+    "evictedBodiesTotal": {
+      "description": "Body artifacts dropped this session so far to keep network-bodies/ within its byte budget.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "evictedBytesTotal": {
+      "description": "Bytes those evicted bodies held.",
+      "type": "integer",
+      "minimum": 0
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": { "enum": ["capture-backlog-overflow", "capture-backlog-recovered"] }
+        },
+        "required": ["kind"]
+      },
+      "then": { "required": ["droppedFlowsTotal"] }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "body-budget-eviction" } },
+        "required": ["kind"]
+      },
+      "then": { "required": ["evictedBodiesTotal", "evictedBytesTotal"] }
+    }
+  ]
 }
