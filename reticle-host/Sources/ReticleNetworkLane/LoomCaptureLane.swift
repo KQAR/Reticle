@@ -258,6 +258,14 @@ public final class LoomCaptureLane: @unchecked Sendable, FlowReplaying, FlowQuer
                 return
             }
             let translated = LoomCaptureLane.translate(export)
+            // Rules this lane drops before the engine ever sees them get the same
+            // treatment as an engine rejection, and for the same reason: the store
+            // accepted the rule (a mock may legitimately be authored before its value),
+            // so without a word here an agent adds a mock, gets a 201, and watches live
+            // traffic anyway. Silence is the failure mode, not the drop.
+            for dropped in LoomCaptureLane.droppedRuleReasons(export, translated: translated) {
+                self?.warn("rule \(dropped.id) is NOT active: \(dropped.reason)")
+            }
             let reportBox = OneShot<SetRulesReport>()
             Task {
                 reportBox.resolve(await engine.setRules(translated))

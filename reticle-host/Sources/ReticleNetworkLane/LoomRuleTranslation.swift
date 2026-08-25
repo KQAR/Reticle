@@ -48,6 +48,31 @@ extension LoomCaptureLane {
             }
     }
 
+    /// Why each rule in `export` is missing from `translated`, for the sync path to
+    /// report. Derived by comparing the two rather than threaded out of `translate`,
+    /// which stays a pure total function — and derived from the SAME predicates
+    /// `translate` filters on, so a new drop reason cannot be added there without a
+    /// name for it here.
+    static func droppedRuleReasons(
+        _ export: NetworkRuleExport?,
+        translated: [TrafficRule]
+    ) -> [(id: String, reason: String)] {
+        guard let export else { return [] }
+        let kept = Set(translated.map(\.name))
+        let valueIds = Set(export.values.map(\.id))
+        return export.rules.filter { !kept.contains($0.id) }.map { rule in
+            if rule.actions.isNoOp {
+                return (rule.id, "it changes nothing (a passthrough route with no modifiers), "
+                    + "so it was not handed to the capture engine")
+            }
+            if let valueId = rule.mockValueId, !valueIds.contains(valueId) {
+                return (rule.id, "its mock response value \(valueId) does not exist — "
+                    + "create the value, then re-apply the rule")
+            }
+            return (rule.id, "it was dropped before reaching the capture engine")
+        }
+    }
+
     /// Maps a Reticle route onto Loom's. Returns nil to drop the rule when a `mock`
     /// route references a value that isn't in the export.
     static func translateRoute(_ route: NetworkRoute, valuesById: [String: NetworkMockExportValue]) -> Route? {
@@ -108,7 +133,16 @@ extension LoomCaptureLane {
         // Reticle matches a `/`-leading pattern against the URL path; Loom matches
         // the full URL, so a path pattern is lifted to a regex that skips the
         // scheme+authority prefix.
-        let isPath = rule.url.hasPrefix("/")
+        //
+        // A regex is tested for path-ness AFTER its leading `^` is dropped. Anchoring
+        // a path regex at the path is the natural way to write one (`^/v1/users/\d+$`),
+        // and reading the caret as part of the pattern made such a rule "absolute":
+        // handed to Loom verbatim, anchored at the start of a URL that begins with a
+        // scheme, so it could never match anything. A rule that matches nothing looks
+        // exactly like a mock that "doesn't work".
+        let isPath = rule.match == .regex
+            ? stripLeadingCaret(rule.url).hasPrefix("/")
+            : rule.url.hasPrefix("/")
         let originPrefix = "^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+"
 
         switch rule.match {
