@@ -692,7 +692,15 @@ class JdwpClient(private val socket: Socket) : Closeable {
         private const val PATH_CLASSLOADER_CTOR_SIG =
             "(Ljava/lang/String;Ljava/lang/ClassLoader;)V"
 
-        private const val EVENT_TIMEOUT_NANOS = 8_000_000_000L  // 8s
+        /**
+         * How long to wait for the armed breakpoint to fire before giving up. 8s on a
+         * device: the looper has to run the instrumented method, which needs the app
+         * foregrounded and the nudge delivered. Overridable by system property for the
+         * same reason [REPLY_TIMEOUT_MS] is — a test proving the timeout MESSAGE cannot
+         * afford to wait the real budget out.
+         */
+        private val EVENT_TIMEOUT_NANOS: Long
+            get() = (System.getProperty("reticle.jdwp.eventTimeoutMs")?.toLongOrNull() ?: 8_000L) * 1_000_000L
         private const val POLL_SLICE_MILLIS = 400
         private const val MAX_TRIGGERS = 8
 
