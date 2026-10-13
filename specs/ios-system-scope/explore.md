@@ -20,7 +20,7 @@
 - **[事实] 遍历开销是分钟级**：含网页内容的一次遍历耗时 126s（每次属性访问都是一次跨进程 AX 查询）。支撑 NFR-004。
 - **[事实] `hasFocus` 在整棵 web 内容树上恒为 `true`**，不可作为 `Node.isFocused` 的来源。
 - **[事实] WebView 内容可见但 DOM 不可见**：159 节点 / `webViews=3`，可读输入框、按钮、link、`enabled=false`（含 aria-disabled）、value；但 HTML `id`/`class`/CSS selector 全空、无 computed style。支撑 Out of Scope 中「不通过 system 通道读网页结构」。
-- **[事实] 本机签名可用组合**：Xcode 未登录任何账号（`defaults read com.apple.dt.Xcode IDEProvisioningTeams` 不存在），但 team `ABCDE12345` 的通配 profile `iOS Team Provisioning Profile: *` 已缓存在本地且其 ProvisionedDevices 含本设备，对应 keychain 证书 `<cert-sha1>`（`Apple Development: <name> (FGHIJ67890)`）。必须用 `CODE_SIGN_STYLE=Automatic`；`Manual` 会被拒（"is Xcode managed, but signing settings require a manually managed profile"）。
+- **[事实] 本机签名可用组合**：Xcode 未登录任何账号（`defaults read com.apple.dt.Xcode IDEProvisioningTeams` 不存在），但 team `<team-id>` 的通配 profile `iOS Team Provisioning Profile: *` 已缓存在本地且其 ProvisionedDevices 含本设备，对应 keychain 证书 `<cert-sha1>`（`Apple Development: <name> (<id>)`）。必须用 `CODE_SIGN_STYLE=Automatic`；`Manual` 会被拒（"is Xcode managed, but signing settings require a manually managed profile"）。
 - **[事实] `xcodebuild -destination` 要 UDID（`00008110-...`），`devicectl --device` 要 coredevice UUID（`<coredevice-uuid>`）**，两者不可互换。与 `scripts/e2e-ios-device.sh:26` 的既有注释一致。
 - **[事实] xcodebuild 不会自动装 target app**，需先 `devicectl device install app`。
 - **[待确认] runner 常驻时能否稳定被系统保留**，以及被回收的典型触发条件。已知它会因内存压力/长时间后台被回收，这是 NFR-011 存在的原因，但回收的具体阈值未测。
