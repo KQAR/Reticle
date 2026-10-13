@@ -27,8 +27,8 @@ import java.net.URL
  * The device port is derived from the package via [dev.reticle.core.PortMap].
  */
 class RuntimeClient(
-    private val adb: DeviceController,
-    private val hostPort: Int,
+    internal val adb: DeviceController,
+    internal val hostPort: Int,
     private val devicePort: Int,
 ) {
 

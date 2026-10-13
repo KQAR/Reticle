@@ -33,8 +33,46 @@ extension IosHelperClient {
             + "deal with that prompt first"
     }
 
+    /// The agent for `pkg`, once it is known to run on THIS client's target.
+    ///
+    /// The port is derived from the bundle id and a simulator shares the Mac's
+    /// loopback, so the same app on two simulators means two agents wanting one
+    /// port: the second never binds, and every command aimed at its simulator is
+    /// answered by the first one — reading `healthy` while observing the wrong
+    /// screen. The agent reports which simulator it is in, so the first contact
+    /// per bundle id checks it; later calls reuse the verdict.
+    func agent(_ pkg: String) async throws -> IosAgentHTTP {
+        let http = IosAgentHTTP(bundleId: pkg)
+        if verifiedAgents.withLock({ $0.contains(pkg) }) { return http }
+        // Unreachable is not a verdict: the call that follows reports it its own way.
+        guard let info = await http.probeRuntime() else { return http }
+        if let answeredFrom = info.deviceId {
+            let target = await try Simctl.resolveUdid(serial)
+            if let reason = Self.identityMismatch(pkg: pkg, port: http.port,
+                                                  answeredFrom: answeredFrom, target: target) {
+                throw HelperError(reason)
+            }
+        }
+        verifiedAgents.withLock { _ = $0.insert(pkg) }
+        return http
+    }
+
+    /// Why an agent answering from simulator `answeredFrom` is not the one on
+    /// `target` (a simulator udid, or a device ECID), or nil when it is.
+    ///
+    /// An agent that reports no simulator (a real device, or an agent older than
+    /// this field) passes: nothing it says can tell it apart, and refusing it would
+    /// refuse every device.
+    static func identityMismatch(pkg: String, port: Int, answeredFrom: String, target: String) -> String? {
+        guard answeredFrom != target else { return nil }
+        return "port conflict: '\(pkg)' on 127.0.0.1:\(port) is answered from simulator \(answeredFrom), "
+            + "not the target \(target). The same app is running there too, and simulators share this "
+            + "Mac's loopback port. Quit it (`xcrun simctl terminate \(answeredFrom) \(pkg)`) "
+            + "or target it with --serial \(answeredFrom)"
+    }
+
     func fetchSnapshot(_ pkg: String) async throws -> Snapshot {
-        let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
+        let (data, _) = try await agent(pkg).get(Endpoints.snapshot)
         return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
     }
 

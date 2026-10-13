@@ -80,7 +80,7 @@ extension IosHelperClient {
             perCharDelayMs: typeDelayMs(params)
         )
         let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.typeText, body: body)
+        let (data, _) = try await agent(pkg).post(Endpoints.typeText, body: body)
         let r = try ReticleJSON.decode(TypeTextResult.self, from: data)
         guard r.typed else {
             throw HelperError("in-process type failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")
@@ -103,7 +103,7 @@ extension IosHelperClient {
                                   "before": cleared.before ?? "", "after": cleared.after ?? ""]
         }
         if let submitted = r.submitted { out["submit"] = ["via": submitted] }
-        if let visible = (try? await IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+        if let visible = (try? await agent(pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
             out["keyboardVisible"] = visible
         }
         return out

@@ -175,7 +175,9 @@ final class ReticleRuntime: Sendable {
             pid: Int(getpid()),
             sdkInt: os.majorVersion,
             agentVersion: Reticle.version,
-            port: port
+            port: port,
+            // Set by the simulator for every process it runs; absent on a device.
+            deviceId: ProcessInfo.processInfo.environment["SIMULATOR_UDID"]
         )
     }
 }
