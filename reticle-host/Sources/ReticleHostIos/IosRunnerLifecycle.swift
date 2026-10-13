@@ -47,8 +47,22 @@ public struct IosRunnerConfig: Sendable, Equatable {
     /// none, because everything downstream trusts it.
     public var processName: String = "ReticleRunner-Runner"
 
+    /// The port the runner binds ON THE DEVICE.
     public var port: Int { PortMap.derivePort(bundleId) }
     public var appPort: Int { PortMap.derivePort(appBundleId) }
+
+    /// The HOST end of this device's `iproxy` tunnel to `port`.
+    ///
+    /// Per device, not `port` itself: the host's loopback is shared by every session
+    /// on this Mac, so two phones each tunnelling `port:port` fought over one local
+    /// port and the second session's commands answered from the first phone. The
+    /// range sits just above `PortMap`'s, so a runner tunnel can never take the port
+    /// an app agent's tunnel (or a simulator app) needs.
+    // ponytail: two udids still clash ~1/1000 (iproxy then fails to bind); an
+    // allocator is the upgrade if that is ever measured.
+    public func hostPort(udid: String) -> Int {
+        PortMap.derivePort("\(bundleId)@\(udid)") + PortMap.range
+    }
 
     /// Both ends tunnel over USB to loopback ports, so two channels that hash to
     /// the same port would fight over one tunnel. The odds are ~1/1000, and the
@@ -124,7 +138,7 @@ public final class IosRunnerLifecycle: Sendable {
     }
 
     func isAnswering() -> Bool {
-        (try? IosRunnerClient(config: config).health()) != nil
+        (try? IosRunnerClient(config: config, udid: udid).health()) != nil
     }
 
     func isRunning() async -> Bool {
@@ -343,15 +357,19 @@ public final class IosRunnerLifecycle: Sendable {
         return ("", "", 0)
     }
 
+    /// Matches THIS device's tunnel only (the argv `startTunnel` writes), so a stop
+    /// or restart here leaves another session's tunnel to another phone alone.
+    var tunnelPattern: String { "iproxy -u \(udid) \(config.hostPort(udid: udid)) " }
+
     func startTunnel() async {
         // A device's loopback is not the host's, so the port is forwarded over USB.
         // Same mechanism scripts/inject-ios-device.sh uses; ECID is the id here.
-        _ = await Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
+        _ = await Self.shell("/usr/bin/pkill", ["-f", tunnelPattern])
         // `Process` for the same reason as `startServing`: the tunnel must outlive
         // this call. The `pkill` above is one-shot, so it goes through `Shell`.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["iproxy", "-u", udid, "\(config.port)", "\(config.port)"]
+        p.arguments = ["iproxy", "-u", udid, "\(config.hostPort(udid: udid))", "\(config.port)"]
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         try? p.run()
@@ -370,7 +388,7 @@ public final class IosRunnerLifecycle: Sendable {
         if wasLive {
             // Ask it to leave on its own first — a clean server shutdown beats a
             // signal, which can strand the port.
-            _ = try? IosRunnerClient(config: config).shutdown()
+            _ = try? IosRunnerClient(config: config, udid: udid).shutdown()
             if await isRunning() {
                 _ = await Self.shell("/usr/bin/xcrun", ["devicectl", "device", "process", "signal",
                                                   "--device", udid,
@@ -390,7 +408,7 @@ public final class IosRunnerLifecycle: Sendable {
         }
         if let child, child.isRunning { child.terminate() }
         _ = await Self.shell("/usr/bin/pkill", ["-f", "test-without-building.*\(udid)"])
-        _ = await Self.shell("/usr/bin/pkill", ["-f", "iproxy \(config.port)"])
+        _ = await Self.shell("/usr/bin/pkill", ["-f", tunnelPattern])
         return await StopOutcome(hadLiveInstance: wasLive, state: isInstalled() ? .installed : .notInstalled)
     }
 

@@ -15,12 +15,14 @@ public struct IosRunnerClient: Sendable {
     /// cross-process query, so a full system-layer walk is tens of seconds. Liveness
     /// probes pass a short timeout explicitly — a slow read must not be confused
     /// with a dead runner, and a dead runner must not take a minute to detect.
-    public init(config: IosRunnerConfig, timeout: TimeInterval = 90.0) {
+    public init(config: IosRunnerConfig, udid: String, timeout: TimeInterval = 90.0) {
         self.config = config
+        self.port = config.hostPort(udid: udid)
         self.timeout = timeout
     }
 
-    var port: Int { config.port }
+    /// The host end of the tunnel, never the device-side port.
+    let port: Int
 
     // MARK: - Endpoints
 
@@ -161,7 +163,7 @@ public struct IosRunnerSession: Sendable {
 
     public init(lifecycle: IosRunnerLifecycle) {
         self.lifecycle = lifecycle
-        self.client = IosRunnerClient(config: lifecycle.config)
+        self.client = IosRunnerClient(config: lifecycle.config, udid: lifecycle.udid)
     }
 
     /// Run `body`; if it fails because the runner is gone, restart once and retry
