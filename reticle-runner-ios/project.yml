@@ -77,6 +77,9 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+        # Objective-C is here only for what Swift cannot do: catch an NSException
+        # and run code at +load (see RunnerObjC.m).
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/ReticleRunnerTests/ReticleRunner-Bridging-Header.h
 
 schemes:
   ReticleRunner:
