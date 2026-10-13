@@ -451,8 +451,9 @@ limit exists, what was measured, and which route was tried and rejected.
   `SIMULATOR_UDID`), and an answer from a simulator other than the target is a
   `port conflict` naming both — the same check catches one app on two simulators.
   `status` reports it as `runtime: conflict`. The reverse case (a device's tunnel
-  answering for a simulator target) is not caught: a device agent cannot name its
-  device, so it reports no id.
+  answering for a simulator target) is caught the same way: a device agent cannot
+  name its device, but it reports `RuntimeInfo.simulator=false`, which a simulator
+  target refuses. An agent older than both fields is not judged.
 
   Two more device gotchas the script handles: use the
   hardware **ECID** as the device id (`idevice_id -l`) — it is the one id that

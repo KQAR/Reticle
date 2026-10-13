@@ -33,7 +33,17 @@ struct IosAgentIdentityTests {
         let old = #"{"packageName":"dev.app","processName":"App","pid":1,"sdkInt":26,"agentVersion":"0","port":9000}"#
         let info = try ReticleJSON.decode(RuntimeInfo.self, from: Data(old.utf8))
         #expect(info.deviceId == nil)
+        #expect(info.simulator == nil)
         let encoded = String(decoding: try ReticleJSON.encodeWire(info), as: UTF8.self)
         #expect(!encoded.contains("deviceId"))
+        #expect(!encoded.contains("simulator"))
+    }
+
+    // The reverse case: a device cannot name itself, so the refusal has to say
+    // which tunnel to stop and which flag reaches the device instead.
+    @Test func aDeviceAnsweringForASimulatorTargetSaysHowToResolveIt() {
+        let reason = IosHelperClient.deviceAnsweringForSimulator(pkg: "dev.app", port: 9000, target: "SIM-A")
+        #expect(reason.contains("port conflict") && reason.contains("SIM-A"))
+        #expect(reason.contains("iproxy") && reason.contains("9000") && reason.contains("--serial"))
     }
 }

@@ -169,6 +169,11 @@ final class ReticleRuntime: Sendable {
         // mutex — an unsynchronized read is a data race under the Swift memory model.
         let port = state.withLock { $0.boundPort }
         let os = ProcessInfo.processInfo.operatingSystemVersion
+        #if targetEnvironment(simulator)
+        let simulator = true
+        #else
+        let simulator = false
+        #endif
         return RuntimeInfo(
             packageName: bundleId,
             processName: ProcessInfo.processInfo.processName,
@@ -177,7 +182,8 @@ final class ReticleRuntime: Sendable {
             agentVersion: Reticle.version,
             port: port,
             // Set by the simulator for every process it runs; absent on a device.
-            deviceId: ProcessInfo.processInfo.environment["SIMULATOR_UDID"]
+            deviceId: ProcessInfo.processInfo.environment["SIMULATOR_UDID"],
+            simulator: simulator
         )
     }
 }

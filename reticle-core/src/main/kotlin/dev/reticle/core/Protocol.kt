@@ -96,6 +96,13 @@ data class RuntimeInfo(
      * DIFFERENT simulator than the one it targets.
      */
     val deviceId: String? = null,
+    /**
+     * Whether the answering process runs in a simulator: true/false from an iOS
+     * agent that knows (compile-time), null from Android and from older agents.
+     * A device agent cannot name its device, so this is what lets a host notice a
+     * device's tunnel answering for a simulator target.
+     */
+    val simulator: Boolean? = null,
 )
 
 @Serializable
