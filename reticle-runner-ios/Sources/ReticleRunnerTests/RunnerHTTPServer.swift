@@ -163,7 +163,18 @@ final class RunnerHTTPServer: Sendable {
             // Provably on the main thread inside this closure, which is what
             // `assumeIsolated` asserts — no hop, no await, so the network queue
             // still blocks until the handler answers.
-            MainActor.assumeIsolated { handler(request) }
+            //
+            // Every route ends in XCTest, which can raise an NSException Swift
+            // cannot catch; one uncaught here kills the runner. Caught once, at
+            // the only door every handler goes through, it becomes an answer.
+            var response: Response?
+            let exception = RunnerCatchException {
+                response = MainActor.assumeIsolated { handler(request) }
+            }
+            if let exception {
+                return .failure(500, "XCTest raised \(exception) while serving \(request.method) \(request.path)")
+            }
+            return response!
         }
     }
 
