@@ -58,6 +58,44 @@ internal object ForwardRegistry {
     }
 }
 
+/**
+ * Whether the runtime that answered is the one running on the device this call
+ * targets.
+ *
+ * The package check alone cannot tell: two sessions driving the SAME package on
+ * two devices answer with the same name, and a host port forwarded to one device
+ * can end up reaching the other (`adb forward` rebinds a host port to whichever
+ * device asked last). Every reading then comes from the wrong phone while the
+ * runtime reads healthy. The pid can tell: the process that answered must be the
+ * one `pidof` finds on THIS device.
+ *
+ * Verified once per (serial, host port) and re-checked only when the answering
+ * pid changes, so the steady state costs no adb call — a rebound forward always
+ * shows up as a different pid.
+ */
+internal object RuntimeIdentity {
+    private val verified = java.util.concurrent.ConcurrentHashMap<Pair<String?, Int>, Int>()
+
+    /** Null when [info] came from [device]'s own process; otherwise why not. */
+    fun mismatch(device: DeviceController, hostPort: Int, info: RuntimeInfo): String? {
+        val key = device.serialOrNull to hostPort
+        if (verified[key] == info.pid) return null
+        val local = device.pidOf(info.processName)
+        if (local == info.pid) {
+            verified[key] = info.pid
+            return null
+        }
+        val target = device.serialOrNull?.let { "device $it" } ?: "the target device"
+        val here = local?.let { "pid $it" } ?: "not running"
+        return "port conflict: host port $hostPort is answered by '${info.processName}' pid ${info.pid}, " +
+            "but on $target that process is $here. The forward reaches ANOTHER device's app " +
+            "(is another session driving '${info.packageName}' on a different device?)"
+    }
+
+    /** Forget every verification; for tests, where the map is process-global. */
+    fun clear() = verified.clear()
+}
+
 /** Runtime connection helpers shared by helper RPC command handlers. */
 internal fun runtimeClientFor(
     device: DeviceController,
@@ -80,8 +118,11 @@ internal fun runtimeClientFor(
 
 internal fun assertHealthy(client: RuntimeClient, pkg: String) {
     when (val h = client.probe()) {
-        is RuntimeHealth.Healthy -> if (h.info.packageName != pkg) {
-            throw CliError("port conflict: served by '${h.info.packageName}', not '$pkg'")
+        is RuntimeHealth.Healthy -> {
+            if (h.info.packageName != pkg) {
+                throw CliError("port conflict: served by '${h.info.packageName}', not '$pkg'")
+            }
+            RuntimeIdentity.mismatch(client.adb, client.hostPort, h.info)?.let { throw CliError(it) }
         }
         is RuntimeHealth.Unreachable ->
             throw CliError("no Reticle runtime for '$pkg' (connection refused). Inject or launch first.")

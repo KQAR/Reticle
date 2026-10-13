@@ -57,7 +57,12 @@ internal object HelperDeviceCommands {
                 if (pid != null) put("pid", pid)
                 val client = runtimeClientFor(device, pkg, params)
                 put("runtime", when (val h = client.probe()) {
-                    is RuntimeHealth.Healthy -> if (h.info.packageName == pkg) "healthy" else "conflict"
+                    is RuntimeHealth.Healthy ->
+                        if (h.info.packageName == pkg && RuntimeIdentity.mismatch(device, client.hostPort, h.info) == null) {
+                            "healthy"
+                        } else {
+                            "conflict"
+                        }
                     is RuntimeHealth.Unreachable -> "unreachable"
                     is RuntimeHealth.Unresponsive -> "unresponsive"
                     is RuntimeHealth.Foreign -> "foreign"

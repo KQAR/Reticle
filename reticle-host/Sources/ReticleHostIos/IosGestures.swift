@@ -86,7 +86,7 @@ extension IosHelperClient {
             let before = await tracer?.capture()
             let obj: [String: Any]
             do {
-                let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.keyboardHide, body: Data())
+                let (data, _) = try await agent(pkg).post(Endpoints.keyboardHide, body: Data())
                 obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
             } catch {
                 throw HelperError("hide-keyboard needs the in-process agent (is the runtime up?): \(error)")
@@ -360,7 +360,7 @@ extension IosHelperClient {
                 // Pastes into the current focus — the focus-tap above (or the
                 // caller) must have put the caret in the right field.
                 do {
-                    try await IosAgentHTTP(bundleId: pkg).post(Endpoints.clipboard, body: Data(text.utf8))
+                    try await agent(pkg).post(Endpoints.clipboard, body: Data(text.utf8))
                 } catch {
                     throw HelperError("could not stage non-ASCII text on the clipboard (is the agent running?): \(error)")
                 }
@@ -391,7 +391,7 @@ extension IosHelperClient {
             // Opportunistic post-type keyboard state (typing almost always
             // leaves the keyboard covering the bottom of the screen); omitted
             // when the agent can't answer — typing must not fail over it.
-            if let visible = (try? await IosAgentHTTP(bundleId: pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
+            if let visible = (try? await agent(pkg).getJSONObject(Endpoints.keyboard))?["visible"] as? Bool {
                 result["keyboardVisible"] = visible
             }
             return try await finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
@@ -459,7 +459,7 @@ extension IosHelperClient {
     func activate(_ pkg: String, _ params: [String: Any]) async throws -> [String: Any] {
         let request = ActivationRequest(selector: selectorFromParams(params))
         let body = try ReticleJSON.encodeWire(request)
-        let (data, _) = try await IosAgentHTTP(bundleId: pkg).post(Endpoints.activate, body: body)
+        let (data, _) = try await agent(pkg).post(Endpoints.activate, body: body)
         let r = try ReticleJSON.decode(ActivationResult.self, from: data)
         if r.resolvedOutcome == .refused {
             throw HelperError("activation failed: \(r.message ?? "unknown") (ref=\(r.ref ?? "?"))")

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import ReticleHostShared
 import ReticleProtocol
 
@@ -31,6 +32,8 @@ import ReticleProtocol
 /// looks like on the way to being untouchable.
 public final class IosHelperClient: HostBackend {
     let serial: String?
+    /// Bundle ids whose agent has been checked to run on `serial` (see `agent(_:)`).
+    let verifiedAgents = Mutex<Set<String>>([])
 
     public init(serial: String?) {
         self.serial = serial
@@ -56,8 +59,15 @@ public final class IosHelperClient: HostBackend {
         } catch {
             FileHandle.standardError.write(Data("warning: could not list simulators: \(error)\n".utf8))
         }
-        if let info = await IosAgentHTTP(bundleId: request.package).probeRuntime() {
-            return StatusResult(devices: devices, running: true, pid: info.pid, runtime: "healthy",
+        let http = IosAgentHTTP(bundleId: request.package)
+        if let info = await http.probeRuntime() {
+            // The same verdict `agent(_:)` refuses on, reported here instead of thrown:
+            // status is where a conflict should be visible, not where it should fail.
+            var runtime = "healthy"
+            if await identityConflict(pkg: request.package, port: http.port, info: info) != nil {
+                runtime = "conflict"
+            }
+            return StatusResult(devices: devices, running: true, pid: info.pid, runtime: runtime,
                                 port: info.port, agentVersion: info.agentVersion)
         }
         return StatusResult(devices: devices, running: false, pid: nil, runtime: "unreachable")
@@ -114,6 +124,9 @@ public final class IosHelperClient: HostBackend {
                 + (inject ? "check the injection dylib is a simulator build and the app holds no injection block"
                           : "is ReticleKit linked and Reticle.start() called?"))
         }
+        // Answering is not enough: if the same app already holds the port on another
+        // simulator, THIS launch could not bind and the answer came from there.
+        _ = try await agent(pkg)
         return RuntimeStartResult(packageName: info.packageName, pid: info.pid, port: info.port,
                                   agentVersion: info.agentVersion)
     }
@@ -139,7 +152,7 @@ public final class IosHelperClient: HostBackend {
     // MARK: - Observation
 
     public func uiReport(_ request: PackageRequest) async throws -> UiReportResult {
-        let obj = try await IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.report)
+        let obj = try await agent(request.package).getJSONObject(Endpoints.report)
         let snapshot = obj["snapshot"] as? [String: Any] ?? [:]
         let semantics = obj["semantics"] as? [String: Any] ?? [:]
         let compact = obj["compact"] as? [String: Any] ?? [:]
@@ -161,7 +174,7 @@ public final class IosHelperClient: HostBackend {
             throw HelperError("iOS commands need --package <bundle-id>")
         }
         do {
-            let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.screenshot)
+            let (data, _) = try await agent(pkg).get(Endpoints.screenshot)
             return ScreenshotResult(pngBase64: data.base64EncodedString(), via: "agent",
                                     degraded: await screenshotDegrades(pkg))
         } catch {
@@ -239,7 +252,7 @@ public final class IosHelperClient: HostBackend {
             guard let pkg = request.package else {
                 throw HelperError("render --live needs --package")
             }
-            let (data, _) = try await IosAgentHTTP(bundleId: pkg).get(Endpoints.snapshot)
+            let (data, _) = try await agent(pkg).get(Endpoints.snapshot)
             return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: request.snapshotPath))
@@ -254,7 +267,7 @@ public final class IosHelperClient: HostBackend {
             value: MetadataValue.parsed(from: request.value)
         )
         let body = try ReticleJSON.encodeWire(mutation)
-        let (data, _) = try await IosAgentHTTP(bundleId: request.package).post(Endpoints.mutate, body: body)
+        let (data, _) = try await agent(request.package).post(Endpoints.mutate, body: body)
         let result = try ReticleJSON.decode(MutationResult.self, from: data)
         return MutationOutcome(
             applied: result.applied,
@@ -264,7 +277,7 @@ public final class IosHelperClient: HostBackend {
     }
 
     public func logs(_ request: PackageRequest) async throws -> [AppLogEntry] {
-        let obj = try await IosAgentHTTP(bundleId: request.package).getJSONObject(Endpoints.logs)
+        let obj = try await agent(request.package).getJSONObject(Endpoints.logs)
         return ((obj["entries"] as? [[String: Any]]) ?? []).map {
             AppLogEntry(level: $0["level"] as? String ?? "?", message: $0["message"] as? String ?? "")
         }

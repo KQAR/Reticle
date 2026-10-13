@@ -445,8 +445,15 @@ limit exists, what was measured, and which route was tried and rejected.
   instead. And the **tunnel port collides with the same app on a simulator**,
   because the port is derived from the bundle id and a simulator shares the host
   loopback: a leftover simulator app holds `:<derivedPort>`, `iproxy` cannot bind,
-  and every command then answers from the simulator while reading `runtime:
-  healthy`. The script refuses to start in that state.
+  and every command then answered from the simulator while reading `runtime:
+  healthy`. The script refuses to start in that state, and the host now refuses it
+  too: the agent reports its simulator's udid (`RuntimeInfo.deviceId`, from
+  `SIMULATOR_UDID`), and an answer from a simulator other than the target is a
+  `port conflict` naming both — the same check catches one app on two simulators.
+  `status` reports it as `runtime: conflict`. The reverse case (a device's tunnel
+  answering for a simulator target) is caught the same way: a device agent cannot
+  name its device, but it reports `RuntimeInfo.simulator=false`, which a simulator
+  target refuses. An agent older than both fields is not judged.
 
   Two more device gotchas the script handles: use the
   hardware **ECID** as the device id (`idevice_id -l`) — it is the one id that
