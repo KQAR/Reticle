@@ -254,14 +254,21 @@ public struct RuntimeInfo: Codable, Sendable {
     public var sdkInt: Int
     public var agentVersion: String
     public var port: Int
+    /// Which device the answering process runs on, when it can know: the
+    /// simulator's udid (`SIMULATOR_UDID`), nil on a real device and on Android.
+    /// A simulator shares the host's loopback, so this is how a host notices that
+    /// the port it reached is answered from ANOTHER simulator.
+    public var deviceId: String?
 
-    public init(packageName: String, processName: String, pid: Int, sdkInt: Int, agentVersion: String, port: Int) {
+    public init(packageName: String, processName: String, pid: Int, sdkInt: Int, agentVersion: String, port: Int,
+                deviceId: String? = nil) {
         self.packageName = packageName
         self.processName = processName
         self.pid = pid
         self.sdkInt = sdkInt
         self.agentVersion = agentVersion
         self.port = port
+        self.deviceId = deviceId
     }
 }
 

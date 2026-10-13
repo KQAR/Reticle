@@ -89,6 +89,13 @@ data class RuntimeInfo(
     val sdkInt: Int,
     val agentVersion: String,
     val port: Int,
+    /**
+     * Which device the answering process runs on, when the process can know it:
+     * the simulator's udid on iOS (`SIMULATOR_UDID`), null on a real device and on
+     * Android. Lets a host notice that a shared loopback port is answered from a
+     * DIFFERENT simulator than the one it targets.
+     */
+    val deviceId: String? = null,
 )
 
 @Serializable
