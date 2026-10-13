@@ -58,6 +58,24 @@ internal object ForwardRegistry {
     }
 }
 
+/**
+ * The HOST side of the forward, per (serial, package) rather than equal to the
+ * device port.
+ *
+ * The device port has to be the package's (the agent binds it), but the host
+ * port is one namespace shared by every session on this machine. When it was the
+ * device port, two sessions driving the same app on two devices both forwarded
+ * `tcp:P`, and adb silently rebound it to whichever came last — the first
+ * session then read the OTHER device while `/runtime` still answered healthy for
+ * the right package. Its own range, too: an iOS simulator's agent binds the
+ * host's loopback inside [PortMap]'s range.
+ */
+internal fun hostPortFor(serial: String?, pkg: String): Int =
+    HOST_PORT_BASE + (PortMap.derivePort("${serial.orEmpty()}/$pkg") - PortMap.BASE_PORT)
+
+/** Base of the host-side forward range, [HOST_PORT_BASE, HOST_PORT_BASE + PortMap.RANGE). */
+internal const val HOST_PORT_BASE = 18765
+
 /** Runtime connection helpers shared by helper RPC command handlers. */
 internal fun runtimeClientFor(
     device: DeviceController,
@@ -65,7 +83,7 @@ internal fun runtimeClientFor(
     params: JsonObject,
 ): RuntimeClient {
     val devicePort = params.intOrNull("port") ?: PortMap.derivePort(pkg)
-    val hostPort = params.intOrNull("hostPort") ?: devicePort
+    val hostPort = params.intOrNull("hostPort") ?: hostPortFor(device.serialOrNull, pkg)
     return RuntimeClient(device, hostPort, devicePort).also {
         // Consult the registry before forking `adb forward`: the forward is
         // already up when a client for the same mapping was built earlier in

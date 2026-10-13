@@ -419,7 +419,10 @@ operational notes that don't fit that table.
   `PortMap.derivePort` in `reticle-core` (shared verbatim by agent and CLI), so
   multiple linked apps don't collide on one fixed port. `RETICLE_PORT` (app) +
   `--port` (CLI) override it. Changing the hash desyncs both sides — the pinned
-  vectors in `PortMapTest` guard against that.
+  vectors in `PortMapTest` guard against that. The HOST end of `adb forward` is a
+  different port, per (serial, package) and `--no-rebind` (`hostPortFor` in
+  `HelperRuntime.kt`), so the same app on two devices never shares one; see
+  `docs/architecture.md`.
 - Device selection: a global `--serial <id>` scopes every command to one device
   (the host injects it into every RPC call via `HelperClient`); absent that,
   `Adb` falls back to `$ANDROID_SERIAL`. With multiple devices and neither set,
