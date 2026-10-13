@@ -64,9 +64,7 @@ public final class IosHelperClient: HostBackend {
             // The same verdict `agent(_:)` refuses on, reported here instead of thrown:
             // status is where a conflict should be visible, not where it should fail.
             var runtime = "healthy"
-            if let answeredFrom = info.deviceId, let target = try? await Simctl.resolveUdid(serial),
-               Self.identityMismatch(pkg: request.package, port: http.port,
-                                     answeredFrom: answeredFrom, target: target) != nil {
+            if await identityConflict(pkg: request.package, port: http.port, info: info) != nil {
                 runtime = "conflict"
             }
             return StatusResult(devices: devices, running: true, pid: info.pid, runtime: runtime,

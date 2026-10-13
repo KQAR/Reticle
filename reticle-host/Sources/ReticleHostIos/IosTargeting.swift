@@ -46,29 +46,49 @@ extension IosHelperClient {
         if verifiedAgents.withLock({ $0.contains(pkg) }) { return http }
         // Unreachable is not a verdict: the call that follows reports it its own way.
         guard let info = await http.probeRuntime() else { return http }
-        if let answeredFrom = info.deviceId {
-            let target = await try Simctl.resolveUdid(serial)
-            if let reason = Self.identityMismatch(pkg: pkg, port: http.port,
-                                                  answeredFrom: answeredFrom, target: target) {
-                throw HelperError(reason)
-            }
+        if let reason = await identityConflict(pkg: pkg, port: http.port, info: info) {
+            throw HelperError(reason)
         }
         verifiedAgents.withLock { _ = $0.insert(pkg) }
         return http
     }
 
+    /// Why the agent that answered `info` is not the one on this client's target,
+    /// or nil when it is (or when nothing it says can tell). Shared by `agent(_:)`,
+    /// which throws it, and `status`, which reports it.
+    func identityConflict(pkg: String, port: Int, info: RuntimeInfo) async -> String? {
+        if let answeredFrom = info.deviceId {
+            guard let target = try? await Simctl.resolveUdid(serial) else { return nil }
+            return Self.identityMismatch(pkg: pkg, port: port, answeredFrom: answeredFrom, target: target)
+        }
+        // A device cannot name itself, but it can say it is not a simulator —
+        // which is a conflict only when the target is one.
+        guard info.simulator == false, let target = try? await Simctl.resolveUdid(serial),
+              await Simctl.isSimulator(target) else { return nil }
+        return Self.deviceAnsweringForSimulator(pkg: pkg, port: port, target: target)
+    }
+
     /// Why an agent answering from simulator `answeredFrom` is not the one on
     /// `target` (a simulator udid, or a device ECID), or nil when it is.
     ///
-    /// An agent that reports no simulator (a real device, or an agent older than
-    /// this field) passes: nothing it says can tell it apart, and refusing it would
-    /// refuse every device.
+    /// An agent that names no simulator is not judged here: a device agent is
+    /// `deviceAnsweringForSimulator`'s case, and an agent older than both fields
+    /// passes, since refusing it would refuse every device.
     static func identityMismatch(pkg: String, port: Int, answeredFrom: String, target: String) -> String? {
         guard answeredFrom != target else { return nil }
         return "port conflict: '\(pkg)' on 127.0.0.1:\(port) is answered from simulator \(answeredFrom), "
             + "not the target \(target). The same app is running there too, and simulators share this "
             + "Mac's loopback port. Quit it (`xcrun simctl terminate \(answeredFrom) \(pkg)`) "
             + "or target it with --serial \(answeredFrom)"
+    }
+
+    /// A device's tunnel holds the port a simulator target's agent wanted, so the
+    /// simulator command is answered from the phone.
+    static func deviceAnsweringForSimulator(pkg: String, port: Int, target: String) -> String {
+        "port conflict: '\(pkg)' on 127.0.0.1:\(port) is answered from a real device (through its "
+            + "USB tunnel), not the target simulator \(target). The device tunnel holds the port this "
+            + "simulator's app wanted. Stop that tunnel (the `iproxy` forwarding \(port)) and relaunch the app on "
+            + "the simulator, or target the device with --serial <ECID>"
     }
 
     func fetchSnapshot(_ pkg: String) async throws -> Snapshot {
