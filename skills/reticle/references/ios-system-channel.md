@@ -41,6 +41,11 @@ would otherwise attribute to the app is stated instead of guessed at.
 reticle --target ios system stop --serial <udid>   # release the device
 ```
 
+A runner built before it opted out of XCTest's diagnostic screen recording left
+one video per session on the phone (gigabytes of "System Data", untouched by a
+reboot). `reticle --target ios doctor` measures it on each reachable device (`--json`:
+`xctestAttachments`) and, above 1 GB, prints the `devicectl` command that clears it.
+
 ## Reading
 
 ```bash
