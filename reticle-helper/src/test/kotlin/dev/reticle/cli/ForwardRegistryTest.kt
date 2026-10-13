@@ -3,6 +3,7 @@ package dev.reticle.cli
 import dev.reticle.cli.platform.CommandResult
 import dev.reticle.cli.platform.DeviceController
 import dev.reticle.cli.platform.DeviceState
+import dev.reticle.core.PortMap
 import java.net.ServerSocket
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -10,6 +11,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * Tests for the forward cache in [runtimeClientFor] / [ForwardRegistry], and its
@@ -128,7 +131,27 @@ class ForwardRegistryTest {
         )
     }
 
-    private fun jsonParams(port: Int, hostPort: Int? = null) = buildJsonObject {
+    @Test
+    fun theSameAppOnTwoDevicesGetsTwoHostPorts() {
+        // The bug this guards: the host port used to BE the device port, so two
+        // sessions on two devices running one app shared `tcp:P` and adb handed it
+        // to whichever forwarded last.
+        val a = ForwardCountingDevice(serialOrNull = "device-a")
+        val b = ForwardCountingDevice(serialOrNull = "device-b")
+        val noHostPort = buildJsonObject { put("port", 18888) }
+        runtimeClientFor(a, "com.example.app", noHostPort)
+        runtimeClientFor(b, "com.example.app", noHostPort)
+        val hostA = a.forwarded.single().first
+        val hostB = b.forwarded.single().first
+        assertNotEquals(hostA, hostB)
+        assertEquals(18888, a.forwarded.single().second, "the device side stays the agent's port")
+        assertEquals(hostPortFor("device-a", "com.example.app"), hostA, "derived, so stable across helper restarts")
+        assertTrue(hostA in HOST_PORT_BASE until HOST_PORT_BASE + PortMap.RANGE)
+    }
+
+    // The existing tests pin the forward cache, not the derivation: keep their
+    // host port explicit.
+    private fun jsonParams(port: Int, hostPort: Int? = port) = buildJsonObject {
         put("port", port)
         hostPort?.let { put("hostPort", it) }
     }

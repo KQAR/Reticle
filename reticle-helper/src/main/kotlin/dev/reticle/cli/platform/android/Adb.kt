@@ -92,9 +92,36 @@ class Adb(
     override fun shell(command: String, timeoutSeconds: Long): CommandResult =
         run("shell", command, timeoutSeconds = timeoutSeconds)
 
-    /** Forward a host TCP port to a device TCP port. Returns the host port. */
-    override fun forward(hostPort: Int, devicePort: Int): CommandResult =
-        run("forward", "tcp:$hostPort", "tcp:$devicePort")
+    /**
+     * Forward a host TCP port to a device TCP port, never stealing one.
+     *
+     * Plain `adb forward` silently REBINDS a host port already forwarded for
+     * another device, which is how a second session used to take the first one's
+     * channel without either noticing. `--no-rebind` refuses that — but it also
+     * refuses re-adding a mapping we already own (a helper restarted while the adb
+     * server kept the forward), so that one case is read back from
+     * `adb forward --list` and accepted.
+     */
+    override fun forward(hostPort: Int, devicePort: Int): CommandResult {
+        val result = run("forward", "--no-rebind", "tcp:$hostPort", "tcp:$devicePort")
+        if (result.ok) return result
+        val owner = forwardOwner(hostPort) ?: return result
+        val ours = serial ?: run("get-serialno").stdout.trim()
+        if (owner == "$ours tcp:$devicePort") return CommandResult(0, "", "")
+        return CommandResult(
+            result.exitCode, result.stdout,
+            "host port $hostPort is already forwarded ($owner), so another session or tool " +
+                "is using it — likely the same app on another device. Pass a different hostPort, " +
+                "or free it with `adb forward --remove tcp:$hostPort`."
+        )
+    }
+
+    /** `<serial> <remote>` of the existing forward on [hostPort], or null if there is none. */
+    private fun forwardOwner(hostPort: Int): String? =
+        run("forward", "--list").stdout.lineSequence()
+            .map { it.trim().split(Regex("\\s+")) }
+            .firstOrNull { it.size == 3 && it[1] == "tcp:$hostPort" }
+            ?.let { "${it[0]} ${it[2]}" }
 
     /**
      * Forward a host TCP port to a debuggable process's JDWP channel. This is the
