@@ -69,7 +69,12 @@ Four things this picture is meant to settle:
   permits from inside the foreground app.
 - **The port is derived, not fixed.** `PortMap.derivePort(applicationId)` is shared
   verbatim by agent and host, so two linked apps never collide — and changing that
-  hash desynchronizes both sides at once.
+  hash desynchronizes both sides at once. That is the DEVICE port. The host end of
+  `adb forward` is derived from (serial, applicationId) in its own range
+  (`hostPortFor`, 18765+) and forwarded with `--no-rebind`: the host port is one
+  namespace for every session on the machine, and when it equalled the device
+  port, the same app on two devices shared it and adb silently handed it to
+  whichever session forwarded last.
 - **`reticle serve` is host-owned state.** The agent and helper supply device
   operations and runtime observations; session events, artifacts, traffic rules and
   the panel never live on the device.
