@@ -52,7 +52,8 @@ enum RunnerInput {
 
     /// Tap an absolute screen coordinate on the system layer.
     static func tapPoint(x: Double, y: Double) -> SystemActionResult {
-        let screen = XCUIScreen.main.screenshot().image.size
+        let springboard = XCUIApplication(bundleIdentifier: springboardId)
+        let screen = springboard.frame.size
         guard x >= 0, y >= 0, x <= screen.width, y <= screen.height else {
             return SystemActionResult(
                 dispatched: false,
@@ -62,7 +63,6 @@ enum RunnerInput {
             )
         }
 
-        let springboard = XCUIApplication(bundleIdentifier: springboardId)
         let before = signature(of: springboard)
         // Normalized against the app's own frame, which for SpringBoard is the
         // whole screen.
