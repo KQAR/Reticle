@@ -16,7 +16,8 @@ public enum ReticleCLI {
     public static let help = """
     \(usage)
 
-      doctor                  adb + device readiness (flags offline/unauthorized)
+      doctor                  adb + device readiness (flags offline/unauthorized);
+                              --target ios: leftover XCTest recordings on real devices
       devices                 list attached devices
       status                  runtime health + identity for one package
       app launch|inject       start a linked app, or load the runtime into a
