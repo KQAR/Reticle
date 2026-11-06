@@ -12,6 +12,8 @@
 # It sends the app under test to the background (Home) and brings it back, and it
 # dismisses nothing it did not raise: if a system modal is already up, the run
 # stops and says so, because tapping someone else's alert is not this script's call.
+# One exception: the Apple Account verification prompt iOS keeps raising on a test
+# phone is answered "Not Now", since it carries no state anyone else waits on.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,6 +36,15 @@ expect "$OUT" "system: ready channel=host" "the tunnel and every service the cha
 
 echo "== OVERLAY (precondition) =="
 OUT="$("${SYS[@]}" overlay)"; echo "$OUT"
+case "$OUT" in
+  *"Apple账户验证"*|*"Apple Account Verification"*)
+    case "$OUT" in *'"以后"'*) LATER="以后" ;; *) LATER="Not Now" ;; esac
+    for _ in 1 2 3; do # a first touch on the alert is sometimes only highlighted
+      "${SYS[@]}" tap --label "$LATER"; sleep 1
+      OUT="$("${SYS[@]}" overlay)"; echo "$OUT"
+      case "$OUT" in *"overlay: none"*) break ;; esac
+    done ;;
+esac
 case "$OUT" in
   *"overlay: none"*) echo "  ok: nothing is covering the screen" ;;
   *) fail "a system modal is already up; answer it on the phone (or with \`system tap --label\`) and rerun" ;;
