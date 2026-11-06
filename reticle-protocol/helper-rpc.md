@@ -97,7 +97,9 @@ it does not change this helper stdio contract.
 
 ## Methods
 
-Common optional params on device methods: `serial`, `port`, `hostPort`. Selector
+Common optional params on device methods: `serial`, `port`, `hostPort` (the host
+end of the forward; defaults to a port derived from serial + package, never the
+device port). Selector
 params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 `ref`, `point` ("x,y"), `region`, `alias` (`@N` from the last outline cache).
 An `alias` is re-resolved against the live tree before use (matched by the
