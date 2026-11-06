@@ -13,7 +13,7 @@ import ReticleProtocol
 enum ReticleSystemCommands {
 
     static let usage = """
-    usage: reticle system <prepare|status|stop|overlay|tree|tap|home|activate|screenshot> [options]
+    usage: reticle system <prepare|status|stop|overlay|tree|tap|type|home|activate|screenshot> [options]
 
       prepare --team <id>   (runner) build, sign and install the runner on the device (once)
       status                whether the channel can reach the device
@@ -22,6 +22,9 @@ enum ReticleSystemCommands {
       tree [what]           read a named target: home | <bundle-id> (default: topmost)
       tap --label <text>    tap a labelled control on the system layer
       tap --point <x,y>     tap an absolute screen coordinate
+      type --text <text>    (host) paste into the focused field of the app in front, for an
+                            app without the agent; answers the paste prompt, reads back what
+                            landed, and puts the user's pasteboard back
       screenshot [--out f]  display-level PNG, including whatever covers the app
       home                  press Home (sends the app under test to the background)
       activate --package <bundle>
@@ -49,6 +52,7 @@ enum ReticleSystemCommands {
         case "overlay": try await overlay(args)
         case "tree": try await tree(args)
         case "tap": try await tap(args)
+        case "type": try await type(args)
         case "screenshot": try await screenshot(args)
         case "home": try await home(args)
         case "activate": try await activate(args)
@@ -237,6 +241,16 @@ enum ReticleSystemCommands {
         } else {
             print(try await makeBackend(args).act { try $0.tap(x: x, y: y) }.describe)
         }
+    }
+
+    static func type(_ args: Args) async throws {
+        guard let text = args.option("text") else {
+            throw HelperError("system type needs --text <text>")
+        }
+        guard let host = try await hostChannel(args) else {
+            throw HelperError("system type is host-only: the runner channel has no paste path (drop --via runner)")
+        }
+        print(try host.type(text: text).describe)
     }
 
     static func home(_ args: Args) async throws {

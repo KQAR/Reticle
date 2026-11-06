@@ -9,6 +9,8 @@
 //!   reticle-device <udid> home
 //!   reticle-device <udid> launch <bundle-id>   foregrounds without restarting
 //!   reticle-device <udid> screenshot <out.png>
+//!   reticle-device <udid> paste <text> <save>  pasteboard := text, then Cmd+V
+//!   reticle-device <udid> pasteboard-restore <saved> <uti|-> <save>
 //!   reticle-device <udid> stop                 end the resident session
 //!
 //! The first call starts a RESIDENT session for that device (`serve`, detached)
@@ -29,7 +31,7 @@ use idevice::{
     core_device::{
         CallInfoBlob, DisplayServiceClient, build_screen_audio_offer, build_screen_video_offer,
         build_start_audio_parameters, build_start_video_parameters,
-        ImageFormat, ScreenCaptureServiceClient,
+        ImageFormat, ScreenCaptureServiceClient, GENERAL_PASTEBOARD, PasteboardServiceClient,
         hid::{ButtonState, IndigoHidClient, UniversalHidServiceClient},
     },
     core_device_proxy::CoreDeviceProxy,
@@ -85,7 +87,7 @@ async fn main() {
     }
 }
 
-const USAGE: &str = "usage: reticle-device <udid> <probe|tree|tap|home|launch|screenshot|stop> …";
+const USAGE: &str = "usage: reticle-device <udid> <probe|tree|tap|home|launch|screenshot|paste|pasteboard-restore|stop> …";
 
 async fn dispatch(args: &[String]) -> R<Json> {
     let (udid, op) = match args {
@@ -358,6 +360,52 @@ impl Session {
                 let png = shot.take_screenshot(None, ImageFormat::Png).await?;
                 std::fs::write(path, &png)?;
                 Ok(json!({"bytes": png.len()}))
+            }
+            "paste" => {
+                // Put `text` on the pasteboard and press Cmd+V. What was there is
+                // written to `save` first, so `pasteboard-restore` can put it back.
+                let (text, save) = (request.get(1).ok_or(USAGE)?, request.get(2).ok_or(USAGE)?);
+                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> = PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                let held = pb.get(GENERAL_PASTEBOARD).await?;
+                let types: Vec<String> = held.items.iter().flat_map(|i| i.types.clone()).collect();
+                // Only plain text or one image can be written back; anything else
+                // the pasteboard held is named, so the caller can say it was lost.
+                let (kind, uti) = if let Some(old) = held.text() {
+                    std::fs::write(save, old)?;
+                    ("text", None)
+                } else if let Some((uti, bytes)) = held.image() {
+                    std::fs::write(save, bytes)?;
+                    ("image", Some(uti))
+                } else {
+                    ((if types.is_empty() { "empty" } else { "unrestorable" }), None)
+                };
+                let restorable = |t: &String| match kind {
+                    "text" => t.ends_with("plain-text") || t == "public.text",
+                    "image" => Some(t.as_str()) == uti,
+                    _ => false,
+                };
+                let lost: Vec<&String> = types.iter().filter(|t| !restorable(t)).collect();
+                pb.set_text(text, GENERAL_PASTEBOARD).await?;
+                let b = self.buttons().await?;
+                // Keyboard page usages: 0xE3 left GUI (Cmd), 0x19 'v'.
+                b.send_keyboard(0xE3, ButtonState::Down).await?;
+                b.send_keyboard(0x19, ButtonState::Down).await?;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                b.send_keyboard(0x19, ButtonState::Up).await?;
+                b.send_keyboard(0xE3, ButtonState::Up).await?;
+                Ok(json!({"saved": kind, "uti": uti, "lost": lost}))
+            }
+            "pasteboard-restore" => {
+                // pasteboard-restore <saved> <uti|-> <save>, as `paste` reported them.
+                let (kind, uti, save) = (request.get(1).ok_or(USAGE)?, request.get(2).ok_or(USAGE)?, request.get(3).ok_or(USAGE)?);
+                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> = PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                match kind.as_str() {
+                    "text" => pb.set_text(&std::fs::read_to_string(save)?, GENERAL_PASTEBOARD).await?,
+                    "image" => pb.set_image(&std::fs::read(save)?, uti, GENERAL_PASTEBOARD).await?,
+                    // There is no "clear"; an empty string is the nearest state.
+                    _ => pb.set_text("", GENERAL_PASTEBOARD).await?,
+                }
+                Ok(json!({}))
             }
             _ => Err(USAGE.into()),
         }

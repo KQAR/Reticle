@@ -115,6 +115,30 @@ struct IosHostSystemChannelTests {
         #expect(HostAXTree.normalize(x: -1, y: 10, screen: screen) == nil)
     }
 
+    private func app(field: String?, type: Int = 49, other: String = "Taps: 0") throws -> HostAXTree {
+        try tree(bundle: "dev.reticle.sampleios",
+                 root: node(1, "SampleApp", children: ["2", "3"], frame: [0, 0, 428, 926]),
+                 ["2": node(type, children: [], id: "swiftui.nickname", value: field),
+                  "3": node(48, other)])
+    }
+
+    /// `system type` reads back the one field whose value changed, in `act
+    /// type`'s vocabulary.
+    @Test func pastedTextIsReadBackFromTheFieldThatChanged() throws {
+        let r = HostAXTree.typed("abc", before: try app(field: "x"), after: try app(field: "xabc"))
+        #expect(r == .init(landed: "exact", field: "swiftui.nickname", before: "x", after: "xabc"))
+        #expect(HostAXTree.typed("abc", before: try app(field: nil), after: try app(field: nil)).landed == "none")
+        #expect(HostAXTree.typed("abc", before: try app(field: nil), after: try app(field: "ABC")).landed == "changed")
+    }
+
+    @Test func aSecureFieldOrAnAmbiguousChangeIsUnreadableNotGuessed() throws {
+        let secure = HostAXTree.typed("pw", before: try app(field: nil, type: 50), after: try app(field: "••", type: 50))
+        #expect(secure.landed == "unreadable:secure-field")
+        // Only labels changed: no value moved, so nothing claims the text landed.
+        let r = HostAXTree.typed("a", before: try app(field: "", other: "Taps: 0"), after: try app(field: "", other: "Taps: 1"))
+        #expect(r.landed == "none")
+    }
+
     @Test func aTreeThatNamesNoApplicationIsAnError() {
         #expect(throws: HelperError.self) {
             try HostAXTree.decode(["apps": [], "nodes": [:] as [String: Any]])

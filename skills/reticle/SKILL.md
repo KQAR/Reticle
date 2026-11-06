@@ -43,7 +43,7 @@ are doing**, since none of it is needed to inspect a screen or tap a button:
 | `references/daemon-and-panel.md` | A run needs a durable timeline across many commands, a browser-visible panel, or network capture |
 | `references/network-rules.md` | The app must see a different network — mock, block, map to another origin, add latency |
 | `references/ios-agent-setup.md` | `--target ios` and the runtime is unreachable — linking `ReticleKit`, or injecting into a device debug build |
-| `references/ios-system-channel.md` | On a real iOS device the thing you need is NOT the app's own UI — a permission alert, SpringBoard, Home (`reticle system …`) |
+| `references/ios-system-channel.md` | On a real iOS device the thing you need is NOT the app's own UI — a permission alert, SpringBoard, Home (`reticle system …`) — or you must type into an app that does not link the agent (`system type`) |
 
 ## Install (how the `reticle` binary is obtained)
 
