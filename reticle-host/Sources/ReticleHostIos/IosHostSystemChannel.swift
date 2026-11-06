@@ -7,9 +7,11 @@ import ReticleProtocol
 /// A CoreDevice tunnel gives the host what the runner had to be a UI test for:
 /// a HID connection backboardd routes into ANY process (touch, Home), and the
 /// device's own cross-process accessibility tree (remoteAX). Each call spawns
-/// `reticle-device` (Rust, over the MIT `idevice` crate) for one action. So
-/// there is no install, no signing team, no resident process and no
-/// automation-session lock. The runner stays behind `--via runner`.
+/// `reticle-device` (Rust, over the MIT `idevice` crate), which forwards to a
+/// resident session it keeps per device (tunnel, media stream and HID
+/// connections held open; ~50 ms a tap instead of ~2 s, and no virtual HID
+/// services created per tap). Nothing is installed on the device and there is
+/// no automation-session lock. The runner stays behind `--via runner`.
 ///
 /// What the device reports is NOT what XCUITest reports, and the results say so:
 /// - The tree holds only what is in front. With a system modal up, SpringBoard's
@@ -56,7 +58,14 @@ public struct IosHostSystemChannel: Sendable {
             return "system: unavailable channel=host device=\(udid) missing=[\(missing.joined(separator: ", "))]\n"
                 + "  the developer disk image provides these: attach the device to Xcode once to mount it"
         }
-        return "system: ready channel=host device=\(udid) (nothing to install; each command opens its own tunnel)"
+        return "system: ready channel=host device=\(udid) (nothing to install on the device)"
+    }
+
+    /// End the device's resident session; the next command starts a new one.
+    public func stop() throws -> String {
+        let stopped = try call(["stop"])["stopped"] as? Bool ?? false
+        return stopped ? "system stopped: the resident session for \(udid) ended"
+                       : "system stopped: nothing was running for \(udid)"
     }
 
     // MARK: - Reading

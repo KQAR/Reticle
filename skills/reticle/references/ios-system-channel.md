@@ -34,8 +34,11 @@ Xcode once does that). Check it with:
 reticle --target ios system status --serial <udid>   # ready / unavailable missing=[…]
 ```
 
-Every host command opens its own tunnel and takes ~2–3 s (a tree read is ~2.5 s, a
-tap with its before/after reads ~8 s). A from-source CLI needs `cargo` to build
+The first host command starts a resident session for the device (tunnel, display
+stream and HID connections kept open), so the HID part of a later tap is ~50 ms; a
+tree read is still ~2.5 s, so a tap with its before/after reads is ~5 s. The session
+ends after 2 minutes idle, on any error (the next command starts a new one), or on
+`system stop`. A from-source CLI needs `cargo` to build
 `reticle-device`; without it, use `--via runner`.
 
 Runner channel (`--via runner`), once per device:
