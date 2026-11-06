@@ -317,6 +317,7 @@ impl Session {
                     .ok_or_else(|| format!("no accessibility tree within {} ms", wait.as_millis()))?;
                 let mut out = tree.json();
                 out["readMs"] = (t0.elapsed().as_millis() as u64).into();
+                out["subscriptions"] = tree.subscriptions.into();
                 // The tree names a root only by pid; say which app that pid is.
                 let pids: Vec<u64> = out["apps"].as_array().into_iter().flatten().filter_map(|a| a["pid"].as_u64()).collect();
                 let owners = bundle_ids(d, &pids).await?;
