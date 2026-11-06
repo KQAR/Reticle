@@ -1387,6 +1387,26 @@ sleep 1
   || { echo "FAIL: expected lottie_only_choice in the app log bridge"; exit 1; }
 kill "$HOLD" 2>/dev/null || true
 
+echo "== IME REWRITE (HID type is read back, and retried in-process) =="
+# HID keystrokes go through the simulator's keyboard, so an IME rewrites ASCII on
+# the way in — measured: Pinyin turned "abc123 xyz" into "安倍吃3 x y z" while the
+# result said via=hid. `type` now reads the field back and, when the text did not
+# land verbatim, writes it in-process instead and says so.
+xcrun simctl keyboard "$UDID" zh_Hans
+export SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO=swiftui
+HOLD="$(hold_launch "$LINKED_ID")"
+unset SIMCTL_CHILD_RETICLE_SAMPLE_SCENARIO
+wait_live "$LINKED_ID" "swiftui.nickname"
+IME_OUT="$("$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" \
+  --test-id swiftui.nickname --clear --text "abc123 xyz")"
+echo "$IME_OUT"
+echo "$IME_OUT" | grep -q "textLanded=exact" \
+  || { echo "FAIL: the typed text must end up in the field verbatim, got: $IME_OUT"; exit 1; }
+"$HOST" --target ios ui compact --live --package "$LINKED_ID" | grep -q 'Nickname: abc123 xyz' \
+  || { echo "FAIL: the app's own echo must show the text verbatim"; exit 1; }
+kill "$HOLD" 2>/dev/null || true
+xcrun simctl keyboard "$UDID" en_US
+
 echo "== INJECTION path (noagent app) =="
 PORT="$(/usr/bin/python3 -c 'x=0x811C9DC5
 for b in "'"$NOAGENT_ID"'".encode(): x^=b; x=(x*0x01000193)&0xFFFFFFFF

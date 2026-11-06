@@ -147,13 +147,13 @@ extension IosHelperClient {
     }
 
     /// The focused text field's current value, from the tree.
-    private static func editableText(_ node: Node) -> String? {
+    static func editableText(_ node: Node) -> String? {
         if case .text(let value)? = node.custom["editableText"] { return value }
         return node.text
     }
 
     /// The field the caller is typing into: the focused one, or the resolved target.
-    private func focusedField(_ snapshot: Snapshot, params: [String: Any]) -> Node? {
+    func focusedField(_ snapshot: Snapshot, params: [String: Any]) -> Node? {
         if let focused = snapshot.nodes.values.first(where: { $0.isFocused == true && $0.role == "textField" }) {
             return focused
         }
@@ -228,6 +228,57 @@ extension IosHelperClient {
             emptied: after?.isEmpty == true, before: before, after: after,
             deletes: before.count, unavailable: after == nil ? "node-gone" : nil
         )
+    }
+
+    /// The field's text after HID typing, classified against what it held before.
+    /// The HID path goes through the simulator's keyboard, so an IME or
+    /// autocorrect can rewrite ASCII on its way in (measured: Pinyin turned
+    /// "abc123 xyz" into "安倍吃3 x y z"; en_US autocorrect "nihao ma" into
+    /// "Mishap ma"), and without this the result still read `via=hid`.
+    struct HidReadback {
+        var before: String
+        var after: String?
+        var verdict: TypeReadback.Verdict?
+        /// Why there is no verdict: a secure field (only bullets come back), or a
+        /// field that could not be found again.
+        var unreadable: String?
+
+        /// Anything but verbatim. `reformatted` is retried too: on this path it is
+        /// what an IME that inserts spaces looks like (measured: Pinyin turned
+        /// "abc123 xyz" into "abc 123 x y z"), and an app's own formatting simply
+        /// comes back again from the in-process write.
+        var needsRetry: Bool {
+            guard let verdict else { return false }
+            return verdict.landed != .exact
+        }
+    }
+
+    /// The focused field and its text, read before HID typing so the result can be
+    /// compared afterwards. Nil when there is no readable text field in focus.
+    func hidBaseline(_ pkg: String, params: [String: Any]) async -> (field: Node, text: String)? {
+        guard let snapshot = try? await fetchSnapshot(pkg),
+              let field = focusedField(snapshot, params: params),
+              let text = Self.editableText(field) else { return nil }
+        return (field, text)
+    }
+
+    func hidReadback(_ pkg: String, baseline: (field: Node, text: String), typed: String) async -> HidReadback {
+        try? await Task.sleep(for: .seconds(0.25))
+        let after = (try? await fetchSnapshot(pkg))
+            .flatMap { Self.refind(baseline.field, in: $0) }
+            .flatMap { Self.editableText($0) }
+        guard let after else {
+            return HidReadback(before: baseline.text, after: nil, verdict: nil, unreadable: "field-gone")
+        }
+        // A secure field reads back as one bullet per character: the count is all
+        // there is, and comparing bullets to letters would always say "changed".
+        let masked = { (s: String) in !s.isEmpty && s.allSatisfy { $0 == "•" } }
+        if masked(after) || masked(baseline.text) {
+            return HidReadback(before: baseline.text, after: after, verdict: nil, unreadable: "secure-field")
+        }
+        return HidReadback(before: baseline.text, after: after,
+                           verdict: TypeReadback.classify(before: baseline.text, after: after, typed: typed),
+                           unreadable: nil)
     }
 
     /// A field longer than this is not hammered with hundreds of key events — it is

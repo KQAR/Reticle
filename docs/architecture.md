@@ -228,6 +228,19 @@ caller's own escape hatch: one `input text` per character with that gap, for a
 field known to lose the burst. A field with no text channel reads
 `textLanded=unreadable` with a reason rather than passing by default.
 
+The iOS simulator's HID `type` reads back too, with the same classification (the
+Swift twin in `ReticleProtocol`, pinned with the Kotlin one by
+`reticle-protocol/fixtures/type-readback.cases.json`), but it retries on anything
+that is not `exact`. HID keystrokes pass through the simulator's keyboard, so
+there the rewriting is done by the input path, not by the app. Measured with the
+Pinyin keyboard on a Chinese-locale Mac, `abc123 xyz` arrived as `安倍吃3 x y z`.
+With en_US, autocorrect turned `nihao ma` into `Mishap ma`. Each was reported as
+`via=hid`. Now the field is cleared and written in-process (`agent insertText`,
+the device path), and the result says `via=hid → agent insertText` and keeps what
+HID left as `hidLanded=`. An app's own formatting just comes back again from the
+in-process write. A HID `--clear` that the IME defeats takes the same route
+(`hidClear=failed: …`).
+
 **And an action can be answered where no snapshot can see it.** Measured on an
 API 36 emulator, four channels at once while one text toast was on screen: the
 app's view tree — absent; the agent's in-process screenshot — absent; device-level

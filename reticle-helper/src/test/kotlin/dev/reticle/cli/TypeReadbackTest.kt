@@ -4,15 +4,22 @@ import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
+import dev.reticle.core.ReticleJson
 import dev.reticle.core.ScreenInfo
 import dev.reticle.core.Size
 import dev.reticle.core.Snapshot
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * [TypeReadback]: what actually reached the field, against what `chars=N` says was
@@ -22,6 +29,33 @@ import kotlin.test.assertTrue
  * neighbouring field on the same screen took all five.
  */
 class TypeReadbackTest {
+
+    /**
+     * The shared table: reticle-protocol/fixtures/type-readback.cases.json, which the
+     * Swift twin (ReticleProtocol `TypeReadback`) is pinned against too.
+     */
+    @Test
+    fun everySharedFixtureCaseClassifiesAsSpecified() {
+        val text = javaClass.classLoader
+            .getResourceAsStream("fixtures/type-readback.cases.json")
+            ?.bufferedReader()?.readText()
+            ?: fail("missing fixtures/type-readback.cases.json on the test classpath")
+        val cases = ReticleJson.instance.parseToJsonElement(text).jsonObject.getValue("cases").jsonArray
+        assertTrue(cases.isNotEmpty())
+        for (c in cases.map { it.jsonObject }) {
+            val name = c.getValue("name").jsonPrimitive.content
+            val expect = c.getValue("expect").jsonObject
+            val verdict = TypeReadback.classify(
+                before = c.getValue("before").jsonPrimitive.content,
+                after = c.getValue("after").jsonPrimitive.content,
+                typed = c.getValue("typed").jsonPrimitive.content,
+            )
+            assertEquals(expect.getValue("landed").jsonPrimitive.content, TypeReadback.label(verdict.landed), name)
+            assertEquals(expect.getValue("landedChars").jsonPrimitive.int, verdict.landedChars, name)
+            assertEquals(expect.getValue("loss").jsonPrimitive.boolean, TypeReadback.isLoss(verdict.landed), name)
+        }
+    }
+
 
     @Test
     fun everythingSentIsInTheFieldIsExact() {

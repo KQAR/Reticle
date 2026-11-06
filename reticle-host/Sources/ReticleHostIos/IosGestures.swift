@@ -329,6 +329,19 @@ extension IosHelperClient {
                 let outcome = try await clearFocusedField(pkg, udid: udid, params: params)
                 cleared = outcome.wire
                 clearedSummary = outcome.summary
+                if !outcome.emptied, outcome.after != nil {
+                    // HID Delete goes through the keyboard too, and an IME holding
+                    // composition eats it (measured with Pinyin: "abc" survived).
+                    // The field is readable, so clear and write it in-process.
+                    var result = try await typeInProcess(pkg, params, text: text)
+                    result["hidClear"] = "failed: \(outcome.describe())"
+                    if let after = result["after"] as? String {
+                        result["textLanded"] = TypeReadback.classify(before: "", after: after, typed: text).landed.rawValue
+                    }
+                    return try await finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
+                                                 point: focusPoint, source: result["focusedVia"] as? String,
+                                                 ref: result["ref"] as? String, result: result)
+                }
                 if !outcome.emptied {
                     throw HelperError(
                         "--clear did not empty the field (\(outcome.describe())), so typing now would "
@@ -337,7 +350,9 @@ extension IosHelperClient {
                     )
                 }
             }
-            let via: String
+            // Read the field now so what HID delivered can be compared below.
+            let baseline = await hidBaseline(pkg, params: params)
+            var via: String
             if IosText.isHidTypeable(text) {
                 // `--type-delay <ms>`: one key event per character with a gap, for a
                 // field whose formatter drops keystrokes it receives in one burst.
@@ -371,6 +386,38 @@ extension IosHelperClient {
                 via = "clipboard paste"
             }
             var result: [String: Any] = ["gesture": "type", "via": via, "text": text]
+            if let baseline {
+                let readback = await hidReadback(pkg, baseline: baseline, typed: text)
+                result["before"] = readback.before
+                if let after = readback.after { result["after"] = after }
+                if let unreadable = readback.unreadable {
+                    result["textLanded"] = "unreadable"
+                    result["textReadback"] = "unavailable:\(unreadable)"
+                } else if let verdict = readback.verdict {
+                    result["textLanded"] = verdict.landed.rawValue
+                }
+                if readback.needsRetry {
+                    // What the keyboard delivered is not what was sent. Put the field
+                    // back to what it held and write the whole value in-process, the
+                    // way the real-device path types, then classify THAT.
+                    var retry = params
+                    retry.removeValue(forKey: "ref"); retry.removeValue(forKey: "testId")
+                    retry.removeValue(forKey: "label"); retry.removeValue(forKey: "point")
+                    retry.removeValue(forKey: "css"); retry.removeValue(forKey: "submit")
+                    retry["clear"] = true
+                    let agent = try await typeInProcess(pkg, retry, text: readback.before + text)
+                    let final = (agent["after"] as? String) ?? ""
+                    result["hidLanded"] = "\(result["textLanded"] ?? "?"):\(readback.after ?? "")"
+                    result["textLanded"] = TypeReadback.classify(before: readback.before, after: final, typed: text)
+                        .landed.rawValue
+                    result["after"] = final
+                    via += " → agent insertText"
+                    result["via"] = via
+                }
+            } else {
+                result["textLanded"] = "unreadable"
+                result["textReadback"] = "unavailable:no-text-field-in-focus"
+            }
             if via == "clipboard paste", let gap = typeDelayMs(params), gap > 0 {
                 // Say so rather than let a paced-typing request read as honoured:
                 // a paste lands the whole string in one event, so there is nothing
