@@ -23,13 +23,9 @@ cd "$ROOT/sample-app-ios"
 
 echo "Building $PRODUCT for $TRIPLE"
 swift build --product "$PRODUCT" \
-  --sdk "$SDK" \
-  -Xswiftc -target -Xswiftc "$TRIPLE" \
-  -Xcc -target -Xcc "$TRIPLE" -Xcc -isysroot -Xcc "$SDK"
+  --triple "$TRIPLE" --sdk "$SDK"
 
-BIN_DIR="$(swift build --product "$PRODUCT" --sdk "$SDK" \
-  -Xswiftc -target -Xswiftc "$TRIPLE" -Xcc -target -Xcc "$TRIPLE" -Xcc -isysroot -Xcc "$SDK" \
-  --show-bin-path)"
+BIN_DIR="$(swift build --product "$PRODUCT" --triple "$TRIPLE" --sdk "$SDK" --show-bin-path)"
 BIN="$BIN_DIR/$PRODUCT"
 [ -f "$BIN" ] || { echo "built binary not found at $BIN"; exit 1; }
 

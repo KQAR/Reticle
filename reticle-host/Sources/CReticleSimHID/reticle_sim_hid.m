@@ -98,7 +98,13 @@ static void *load_simkit(NSString **reason) {
                           @"/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator"]) {
         dlopen(p.fileSystemRepresentation, RTLD_NOW);
     }
-    void *h = dlopen([[dev stringByAppendingString:@"/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"] fileSystemRepresentation], RTLD_NOW);
+    // Xcode 27 moved SimulatorKit from Developer/Library/PrivateFrameworks to the
+    // app bundle's Contents/SharedFrameworks; try the old home first.
+    void *h = NULL;
+    for (NSString *p in @[[dev stringByAppendingString:@"/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"],
+                          [dev stringByAppendingString:@"/../SharedFrameworks/SimulatorKit.framework/SimulatorKit"]]) {
+        if ((h = dlopen(p.fileSystemRepresentation, RTLD_NOW))) break;
+    }
     if (!h) { if (reason) *reason = @"cannot dlopen SimulatorKit"; return NULL; }
     simkit = h; return simkit;
 }
