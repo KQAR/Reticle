@@ -123,10 +123,11 @@ public final class IosHelperClient: HostBackend {
         if let env = ProcessInfo.processInfo.environment["RETICLE_IOS_INJECTION"] { return env }
         let fm = FileManager.default
         let cwd = fm.currentDirectoryPath
-        // SwiftPM names the output dir after the host triple even when cross-
-        // compiling for the simulator, so the dylib commonly lands under
-        // arm64-apple-macosx/. Check the known spots.
+        // Where scripts/build-ios-agent.sh's products land depends on the
+        // SwiftPM build system: swiftbuild (Xcode 27's default) uses
+        // out/Products/<config>-iphonesimulator; the native one a triple dir.
         let candidates = [
+            "reticle-agent/ios/.build/out/Products/Debug-iphonesimulator/libReticleInjection.dylib",
             "reticle-agent/ios/.build/arm64-apple-macosx/debug/libReticleInjection.dylib",
             "reticle-agent/ios/.build/arm64-apple-ios-simulator/debug/libReticleInjection.dylib",
             "reticle-agent/ios/.build/debug/libReticleInjection.dylib",

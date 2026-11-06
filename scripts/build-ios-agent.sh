@@ -5,6 +5,7 @@
 # iphonesimulator SDK/triple. Requires Xcode + an installed iOS Simulator SDK.
 #
 # Usage: scripts/build-ios-agent.sh [ios-deployment-target]
+# The last line of output is BIN_DIR=<products dir> (libReticleInjection.dylib lives there).
 set -euo pipefail
 
 DEPLOY="${1:-18.0}"
@@ -15,8 +16,7 @@ TRIPLE="${ARCH}-apple-ios${DEPLOY}-simulator"
 cd "$(dirname "$0")/../reticle-agent/ios"
 
 echo "Building reticle-agent/ios for ${TRIPLE}"
-exec swift build \
-  --sdk "$SDK" \
-  -Xswiftc -target -Xswiftc "$TRIPLE" \
-  -Xcc -target -Xcc "$TRIPLE" \
-  -Xcc -isysroot -Xcc "$SDK"
+swift build --triple "$TRIPLE" --sdk "$SDK"
+# Where the products landed differs by build system (native: <triple>/debug,
+# swiftbuild: out/Products/Debug-iphonesimulator), so ask rather than guess.
+echo "BIN_DIR=$(swift build --triple "$TRIPLE" --sdk "$SDK" --show-bin-path)"

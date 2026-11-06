@@ -80,8 +80,9 @@ xcrun simctl bootstatus "$UDID" >/dev/null 2>&1 || true
 
 echo "== build protocol + agent =="
 (cd reticle-swift && swift test >/dev/null)
-"$ROOT/scripts/build-ios-agent.sh" >/dev/null
-DYLIB="$ROOT/reticle-agent/ios/.build/arm64-apple-macosx/debug/libReticleInjection.dylib"
+AGENT_BIN="$("$ROOT/scripts/build-ios-agent.sh" | tail -1)"
+DYLIB="${AGENT_BIN#BIN_DIR=}/libReticleInjection.dylib"
+[ -f "$DYLIB" ] || { echo "FAIL: no injection dylib at $DYLIB"; exit 1; }
 
 echo "== build + install sample apps =="
 # Keep the linked app's bundle path: the permission section reinstalls it to re-arm
