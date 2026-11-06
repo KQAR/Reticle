@@ -124,6 +124,12 @@ if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
     log "building the native helper from source (needs a GraalVM with native-image)…"
     ( cd "${ROOT}" && ./gradlew --quiet :reticle-helper:nativeHelper :reticle-agent:android:dexPayload ) >&2
   fi
+  # reticle-device (the iOS real-device system channel) is Rust. Optional: without
+  # cargo the rest of the CLI still works and `system` says what is missing.
+  if command -v cargo >/dev/null 2>&1; then
+    ( cd "${ROOT}" && cargo build --quiet --release --manifest-path reticle-device/Cargo.toml ) >&2 \
+      || log "reticle-device did not build; \`system\` on a real iOS device needs it (or --via runner)."
+  fi
   # The Swift build is its own incremental check and a no-op costs about a second,
   # so it always runs rather than being guarded by timestamps.
   if command -v swift >/dev/null 2>&1; then

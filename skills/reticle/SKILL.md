@@ -166,8 +166,8 @@ source (over the `iproxy` tunnel; the app must be foreground, since a suspended 
 loses its loopback socket). So on a device, anything that is not this app's own
 window is absent from *that* picture: the **status bar**, the system keyboard's
 host window, another process's sheet. There is one other source for it — `reticle
-system screenshot` is display-level and includes whatever covers the app — but it
-needs the system channel prepared on that device
+system screenshot` is display-level and includes whatever covers the app — it
+needs the device attached over USB in developer mode
 (`references/ios-system-channel.md`). Without it, report the gap as a boundary,
 never as "the screen was empty."
 
@@ -763,7 +763,8 @@ alert, the keyboard's own window, SpringBoard, Home. Those are refused by name (
 window of this process contains that point`), never reported as dispatched — and
 that refusal now has a path beside it rather than being a dead end: the
 out-of-process **system channel** (`reticle system overlay|tree|tap|home|activate|
-screenshot`) reads and drives exactly that layer, from a separate XCUITest runner.
+screenshot`) reads and drives exactly that layer, from the Mac over a CoreDevice
+tunnel (or a separate XCUITest runner with `--via runner`).
 It is a different channel with a different reach — one accessibility layer, no view
 class, no DOM, no regions — so its results are never the app's own tree. Setup and
 its limits: `references/ios-system-channel.md`. An input gesture on a device must

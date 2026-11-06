@@ -15,9 +15,9 @@ enum ReticleSystemCommands {
     static let usage = """
     usage: reticle system <prepare|status|stop|overlay|tree|tap|home|activate|screenshot> [options]
 
-      prepare --team <id>   build, sign and install the runner on the device (once)
-      status                where the channel is: notInstalled / installed / connected
-      stop                  shut the runner down and release the device
+      prepare --team <id>   (runner) build, sign and install the runner on the device (once)
+      status                whether the channel can reach the device
+      stop                  (runner) shut the runner down and release the device
       overlay               read what is covering the app right now
       tree [what]           read a named target: home | <bundle-id> (default: topmost)
       tap --label <text>    tap a labelled control on the system layer
@@ -28,6 +28,8 @@ enum ReticleSystemCommands {
                             bring an app back to the front WITHOUT restarting it
 
     options:
+      --via host|runner     host (default): driven from this Mac over a CoreDevice tunnel,
+                            nothing installed on the device. runner: the XCUITest runner
       --serial <udid>       target device (defaults to the only attached one)
       --package <bundle>    the app under test, used for port-collision checks
     """
@@ -80,6 +82,10 @@ enum ReticleSystemCommands {
     }
 
     static func status(_ args: Args) async throws {
+        if let host = try await hostChannel(args) {
+            print(host.status())
+            return
+        }
         let backend = try await makeBackend(args)
         let s = await backend.status()
         print(s.describe)
@@ -99,6 +105,10 @@ enum ReticleSystemCommands {
     // MARK: - Reading
 
     static func overlay(_ args: Args) async throws {
+        if let host = try await hostChannel(args) {
+            render(try host.overlay(), args: args)
+            return
+        }
         let backend = try await makeBackend(args)
         render(try await backend.overlay(), args: args)
     }
@@ -114,6 +124,10 @@ enum ReticleSystemCommands {
         case "topmost": target = .topmostOverlay
         case "home": target = .home
         default: target = .app(bundleId: raw)
+        }
+        if let host = try await hostChannel(args) {
+            render(try host.tree(target: target), args: args)
+            return
         }
         let backend = try await makeBackend(args)
         render(try await backend.tree(target: target), args: args)
@@ -174,8 +188,12 @@ enum ReticleSystemCommands {
     }
 
     static func screenshot(_ args: Args) async throws {
-        let backend = try await makeBackend(args)
-        let shot = try await backend.screenshot()
+        let shot: ScreenshotResult
+        if let host = try await hostChannel(args) {
+            shot = try host.screenshot()
+        } else {
+            shot = try await makeBackend(args).screenshot()
+        }
         let path = args.option("out") ?? "system-screenshot.png"
         guard let data = Data(base64Encoded: shot.pngBase64) else {
             throw HelperError("the runner returned an unreadable image")
@@ -194,9 +212,13 @@ enum ReticleSystemCommands {
     // MARK: - Driving
 
     static func tap(_ args: Args) async throws {
-        let backend = try await makeBackend(args)
+        let host = try await hostChannel(args)
         if let label = args.option("label") {
-            print(try await backend.act { try $0.tap(label: label) }.describe)
+            if let host {
+                print(try host.tap(label: label).describe)
+            } else {
+                print(try await makeBackend(args).act { try $0.tap(label: label) }.describe)
+            }
             return
         }
         guard let point = args.option("point") else {
@@ -206,10 +228,18 @@ enum ReticleSystemCommands {
         guard parts.count == 2, let x = Double(parts[0]), let y = Double(parts[1]) else {
             throw HelperError("--point wants two numbers: --point 120,480")
         }
-        print(try await backend.act { try $0.tap(x: x, y: y) }.describe)
+        if let host {
+            print(try host.tap(x: x, y: y).describe)
+        } else {
+            print(try await makeBackend(args).act { try $0.tap(x: x, y: y) }.describe)
+        }
     }
 
     static func home(_ args: Args) async throws {
+        if let host = try await hostChannel(args) {
+            print(try host.home().describe)
+            return
+        }
         let backend = try await makeBackend(args)
         print(try await backend.act { try $0.home() }.describe)
     }
@@ -218,19 +248,37 @@ enum ReticleSystemCommands {
         guard let bundleId = args.option("package") ?? args.option("bundle-id") else {
             throw HelperError("system activate needs --package <bundle-id>")
         }
+        if let host = try await hostChannel(args) {
+            print(try host.activate(bundleId: bundleId).describe)
+            return
+        }
         let backend = try await makeBackend(args)
         print(try await backend.act { try $0.activate(bundleId: bundleId) }.describe)
     }
 
     // MARK: - Wiring
 
-    static func makeBackend(_ args: Args) async throws -> IosSystemBackend {
+    /// The host channel, unless `--via runner` asked for the XCUITest one (nil).
+    static func hostChannel(_ args: Args) async throws -> IosHostSystemChannel? {
+        switch args.option("via") ?? "host" {
+        case "host": return try await IosHostSystemChannel.make(udid: try deviceId(args))
+        case "runner": return nil
+        case let other: throw HelperError("--via is host or runner (got '\(other)')")
+        }
+    }
+
+    static func deviceId(_ args: Args) throws -> String {
         guard let udid = args.option("serial") ?? soleAttachedDevice() else {
             throw HelperError(
                 "could not tell which device to use: pass --serial <udid> "
                 + "(`idevice_id -l` lists attached devices)"
             )
         }
+        return udid
+    }
+
+    static func makeBackend(_ args: Args) async throws -> IosSystemBackend {
+        let udid = try deviceId(args)
         let appBundleId = args.option("package") ?? args.option("bundle-id") ?? ""
         return try await IosSystemBackend.make(udid: udid, appBundleId: appBundleId)
     }

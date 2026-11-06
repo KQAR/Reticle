@@ -210,6 +210,14 @@ jobs:
           done
           exit 1
 
+      # The host side of the iOS system channel on a real device (Rust, over the
+      # MIT `idevice` crate). Its parser is pinned by unit tests; the device half
+      # is a manual check (no device on CI).
+      - name: Test + build reticle-device
+        run: |
+          cargo test --release --locked --manifest-path reticle-device/Cargo.toml
+          cargo build --release --locked --manifest-path reticle-device/Cargo.toml
+
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
 

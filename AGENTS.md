@@ -99,15 +99,22 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   targets are enumerated in `docs/architecture.md` (module layout). Put new
   capture/rule code in the `ReticleNetworkLane` target, not Core; its end-to-end
   path is guarded by `scripts/e2e-proxy.sh`.
+- `reticle-device`: the **system channel**'s default backend (Rust, cargo, outside
+  both builds; ships beside `reticle-host`). One invocation = one CoreDevice tunnel
+  to a real iPhone = one action, answered as one JSON line: a HID tap or Home press
+  backboardd routes into any process, the device's own cross-process
+  accessibility tree (remoteAX), an app launch, a display screenshot. Depends only
+  on the MIT `idevice` crate. Driven by `IosHostSystemChannel`, which maps the tree
+  onto `SystemObservation` — nothing is installed on the device.
 - `reticle-runner-ios`: an XCUITest bundle (xcodegen, outside both builds) — the
-  **system channel**, and the one module here that is not part of the app under
-  test. A resident out-of-process runner reaches ANOTHER process's UI (a system
+  system channel's fallback backend (`--via runner`), and the one module here that
+  is not part of the app under test. A resident out-of-process runner reaches ANOTHER process's UI (a system
   permission alert, SpringBoard, the Home gesture) because a test runner is granted
   a backboardd HID connection an in-process agent never gets. It sees far less of
   what it reaches (one accessibility layer: no view class, no Compose semantics, no
   DOM, no styles, no regions), so its results are `SystemObservation`/`SystemNode`
   and **never** `Node` — the type split is what keeps them from being read as the
-  app's own tree. Driven by `reticle system …` through `IosSystemBackend`. Real
+  app's own tree. Driven by `reticle system --via runner …` through `IosSystemBackend`. Real
   devices only; `scripts/e2e-ios-system.sh` is its round trip.
 - `sample-app`: demo app that links the agent and proves the round trip. Has two
   flavors: `linked` (depends on the agent) and `noagent` (no agent, no runtime
@@ -178,15 +185,18 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   on the command line.
 - The agent observes app state. It is not the place where input events are
   synthesized — real input comes from the host via `adb shell input`. The one
-  carve-out is iOS on a **real device**, where no HID surface is reachable from
-  the host at all: there the agent activates controls (`/activate`), inserts text
+  carve-out is iOS on a **real device**, where the app's own controls are driven
+  in-process: there the agent activates controls (`/activate`), inserts text
   (`/type`) and synthesizes touches (`/touch` — a `UITouch` in the app's own
   `UIEvent` through `-sendEvent:`, which is what carries `tap`/`swipe`/`drag`/
   `scroll-to` on a phone) in-process, because the alternative is no input path,
   not a cleaner one. All three are iOS-only and documented as such in
   `Protocol.swift`; none is a licence to move Android input into the agent. UI the
-  app does not own is not reached this way at all — that is the system channel
-  (`reticle-runner-ios`), a separate process with its own authority.
+  app does not own is not reached this way at all — that is the system channel,
+  driven from the host over a CoreDevice HID connection (`reticle-device`) or by
+  the XCUITest runner (`reticle-runner-ios`). The host HID path exists but `act`
+  does not use it yet: it is one tunnel and ~2 s per gesture, against an in-process
+  path that already lands on the app's own controls.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
   first for movement and input; selector actions fall back to view frames only
   when no semantic match exists.

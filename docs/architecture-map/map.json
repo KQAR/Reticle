@@ -249,9 +249,21 @@
       "kind": "xctest-runner",
       "layer": "device",
       "sub": "out-of-process, iOS device only",
-      "detail": "A resident XCUITest runner, independent of the app under test. Reaches what the in-process agent structurally cannot — a system alert, SpringBoard, the Home gesture — because a test runner is granted a backboardd HID connection. Sees far less of what it reaches: one accessibility layer, no view class, no DOM, no styles, no regions. Its results use SystemObservation, never Node, so the two channels can never be read as one. Residency is a never-ending test method started with xcodebuild test-without-building.",
+      "detail": "The system channel's fallback backend (--via runner): a resident XCUITest runner, independent of the app under test. Reaches what the in-process agent structurally cannot — a system alert, SpringBoard, the Home gesture — because a test runner is granted a backboardd HID connection. Sees far less of what it reaches: one accessibility layer, no view class, no DOM, no styles, no regions. Its results use SystemObservation, never Node, so the two channels can never be read as one. Residency is a never-ending test method started with xcodebuild test-without-building.",
       "x": 1030,
       "y": 614,
+      "w": 250,
+      "h": 56
+    },
+    {
+      "id": "device-tool",
+      "label": "reticle-device",
+      "kind": "executable",
+      "layer": "host",
+      "sub": "Rust · idevice (MIT) · iOS device only",
+      "detail": "The system channel's default backend. One invocation = one CoreDevice tunnel to a real iPhone = one action, answered as one JSON line: a HID tap or Home press backboardd routes into ANY process, the device's own cross-process accessibility tree (remoteAX), an app launch, a display screenshot. Nothing is installed on the device. IosHostSystemChannel maps the tree onto SystemObservation, never Node. The XCUITest runner stays behind --via runner.",
+      "x": 1030,
+      "y": 258,
       "w": 250,
       "h": 56
     }
@@ -451,7 +463,7 @@
       "from": "host-ios",
       "to": "runner-ios",
       "kind": "drives",
-      "label": "reticle system"
+      "label": "system --via runner"
     },
     {
       "id": "e-runner-app",
@@ -459,6 +471,20 @@
       "to": "app-ios",
       "kind": "input",
       "label": "cross-process"
+    },
+    {
+      "id": "e-ios-devtool",
+      "from": "host-ios",
+      "to": "device-tool",
+      "kind": "drives",
+      "label": "reticle system"
+    },
+    {
+      "id": "e-devtool-app",
+      "from": "device-tool",
+      "to": "app-ios",
+      "kind": "input",
+      "label": "CoreDevice HID"
     }
   ],
   "edgeKinds": {

@@ -92,6 +92,14 @@ jobs:
       - name: Build the native helper (no-JDK reticle-helper)
         run: ./gradlew :reticle-helper:nativeHelper --stacktrace
 
+      # The host side of the iOS system channel on a real device (Rust, over the
+      # MIT `idevice` crate). Its parser is pinned by unit tests; the device half
+      # is a manual check (no device on CI).
+      - name: Test + build reticle-device
+        run: |
+          cargo test --release --locked --manifest-path reticle-device/Cargo.toml
+          cargo build --release --locked --manifest-path reticle-device/Cargo.toml
+
       - name: Build the Swift host
         run: swift build -c release --package-path reticle-host
 
@@ -113,17 +121,20 @@ jobs:
 
           HELPER=reticle-helper/build/native/reticle-helper
           HOST=reticle-host/.build/release/ReticleHost
+          DEVICE=reticle-device/target/release/reticle-device
           PAYLOAD=reticle-agent/android/build/reticle-payload/reticle-agent-payload.jar
           test -x "$HELPER" || { echo "native helper missing: $HELPER"; exit 1; }
           test -x "$HOST"   || { echo "swift host missing: $HOST"; exit 1; }
+          test -x "$DEVICE" || { echo "reticle-device missing: $DEVICE"; exit 1; }
           test -f "$PAYLOAD" || { echo "payload dex missing: $PAYLOAD"; exit 1; }
 
-          # Lay out the dist the launcher expects: <root>/reticle/bin/{reticle-host,reticle-helper}.
+          # Lay out the dist the launcher expects: <root>/reticle/bin/{reticle-host,reticle-helper,reticle-device}.
           # The native helper resolves its payload dex from <install>/lib, so place it there too.
           work="$(mktemp -d)"
           mkdir -p "$work/reticle/bin" "$work/reticle/lib"
           cp "$HOST"   "$work/reticle/bin/reticle-host"
           cp "$HELPER" "$work/reticle/bin/reticle-helper"
+          cp "$DEVICE" "$work/reticle/bin/reticle-device"
           cp "$PAYLOAD" "$work/reticle/lib/reticle-agent-payload.jar"
           chmod +x "$work/reticle/bin/"*
           ( cd "$work" && zip -q -r "$OLDPWD/dist/reticle-macos-arm64.zip" reticle )

@@ -45,7 +45,7 @@ fi
 [ -n "$DEV_UDID" ] || { echo "no device found (idevice_id -l empty)"; exit 1; }
 
 export RETICLE_RUNNER_PROJECT="${RETICLE_RUNNER_PROJECT:-$ROOT/reticle-runner-ios/ReticleRunner.xcodeproj}"
-SYS=("$HOST" "system" "--target" "ios" "--serial" "$DEV_UDID" "--package" "$BUNDLE")
+SYS=("$HOST" "system" "--target" "ios" "--serial" "$DEV_UDID" "--package" "$BUNDLE" "--via" "runner")
 
 echo "device: $DEV_UDID  team: $TEAM  app: $BUNDLE"
 

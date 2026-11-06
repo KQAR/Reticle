@@ -3,9 +3,16 @@
 `ui` and `act` read and drive the app **from inside it**, so everything outside its
 own windows is structurally invisible to them: a permission alert, the keyboard's
 own window, SpringBoard, Home. `reticle system …` is the second channel, and the
-only one that reaches those. It is a resident out-of-process XCUITest runner
-(`reticle-runner-ios`), granted a backboardd HID connection an in-process agent
-never gets.
+only one that reaches those. It has two backends:
+
+- **host** (default) — driven from this Mac over a CoreDevice tunnel by
+  `reticle-device`, which ships beside the CLI. Touch and Home go through a HID
+  connection backboardd routes into any process, and reads come from the device's
+  own cross-process accessibility tree. **Nothing is installed on the device**: no
+  runner, no signing team, no resident process.
+- **runner** (`--via runner`) — a resident out-of-process XCUITest runner
+  (`reticle-runner-ios`). Use it when the host channel is unavailable, or when you
+  need an XCUITest property the device tree does not carry.
 
 **Real iOS devices only**, and `--target ios` is required (`the system channel is
 iOS-only; pass --target ios`). There is no Android analogue and none is needed —
@@ -17,11 +24,25 @@ never the app's `Node`, and every read leads with `channel=…  process=…` for
 exactly that reason. Never merge a system tree into an app tree, and never quote a
 system node as evidence about the app under test.
 
-## One-time setup
+## Setup
+
+Host channel: none. The device has to be attached over **USB**, unlocked, trusted
+and in **developer mode** with the developer disk image mounted (attaching it to
+Xcode once does that). Check it with:
+
+```bash
+reticle --target ios system status --serial <udid>   # ready / unavailable missing=[…]
+```
+
+Every host command opens its own tunnel and takes ~2–3 s (a tree read is ~2.5 s, a
+tap with its before/after reads ~8 s). A from-source CLI needs `cargo` to build
+`reticle-device`; without it, use `--via runner`.
+
+Runner channel (`--via runner`), once per device:
 
 ```bash
 reticle --target ios system prepare --serial <udid> --team <signing-team-id>
-reticle --target ios system status  --serial <udid>   # notInstalled / installed / connected
+reticle --target ios system status  --serial <udid> --via runner   # notInstalled / installed / connected
 ```
 
 `prepare` builds, signs and installs the runner on that device. It needs the
@@ -64,7 +85,14 @@ computed style, interaction regions, `checked`/`expanded`/`isFocusable`, and
 visibility. A property missing here means *this channel cannot see it*, never that
 the app lacks it — read those through `ui` / `act` on the app's own tree.
 
-**Reads are expensive**: every attribute is a cross-process query (a WebView tree
+**The host channel reads only what is on screen.** With a system modal up, the
+device reports SpringBoard holding the modal's texts and buttons and nothing else,
+so `overlay` means "SpringBoard is in front and is not the home screen". `tree home`
+and `tree <bundle-id>` answer only when that process is in front; otherwise they
+are refused with what IS in front. It has no hit test, so `isHittable` is listed
+as unreadable, and home-screen icons read as `unrecognized:44`.
+
+**Runner reads are expensive**: every attribute is a cross-process query (a WebView tree
 took 126s, measured). Reads are bounded by node count and depth, default to the
 topmost overlay only, and declare truncation (`truncated: returned=… limit=…
 reason=…`). Ask for a bigger target by name, and expect a Home-screen read to be

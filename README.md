@@ -161,7 +161,8 @@ layer compiled by GraalVM native-image).
 The launcher resolves it in this order (first hit wins):
 
 1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
-2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper`).
+2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper` +
+   `reticle-device`).
 3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host via `swift`,
    native helper via the bundled Gradle + a GraalVM). For development only. It
    builds what is in the tree *now*: the Swift build always runs (a no-op costs
@@ -170,7 +171,9 @@ The launcher resolves it in this order (first hit wins):
    `reticle-protocol/` is newer than the binary — a leftover binary used to be
    exec'd unchanged, so an edited tree ran the old code. If the built host then
    reports a different release than `VERSION`, the launcher **stops** rather than
-   driving a device with a binary that is not this tree's code.
+   driving a device with a binary that is not this tree's code. With `cargo` on
+   PATH it also builds `reticle-device` (the iOS real-device `system` channel);
+   without it, everything else still works.
 4. A **prebuilt release** — cached under `~/.reticle/cli`, or freshly downloaded
    (SHA256-verified) from
    [GitHub Releases](https://github.com/KQAR/Reticle/releases). **This is the
@@ -214,7 +217,11 @@ arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
   CoreSimulator HID). `reticle serve` owns the local daemon session/event surface
   via Hummingbird 2.25.0, with the capture proxy in its own `ReticleNetworkLane`
   target and the iOS backend in `ReticleHostIos`.
-- `reticle-runner-ios` — the **system channel** for iOS real devices: a resident
+- `reticle-device` — the **system channel** for iOS real devices, driven from the
+  Mac (Rust, over the MIT `idevice` crate): a CoreDevice HID tap or Home press that
+  reaches any process, and the device's own cross-process accessibility tree.
+  Nothing is installed on the device.
+- `reticle-runner-ios` — the system channel's fallback (`--via runner`): a resident
   out-of-process XCUITest runner, independent of the app under test. It reaches
   what the in-app agent structurally cannot (a system permission alert,
   SpringBoard, the Home gesture) and reads much less of what it reaches (one
