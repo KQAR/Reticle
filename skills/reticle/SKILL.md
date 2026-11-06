@@ -680,7 +680,7 @@ A DOM input also carries `custom.domName` (its `name` attribute) and
 `id`, no `data-testid`, no value — those are the only handles that tell several
 identical fields apart.
 
-**`type` also reads the TEXT back (Android).** `chars=N` counts what was *sent*.
+**`type` also reads the TEXT back (Android, and the iOS simulator).** `chars=N` counts what was *sent*.
 A field that reformats its value on every change (and re-renders something bound
 to it) can lose characters out of the `adb input text` burst: measured,
 `--text "10000"` reported `chars=5` into a field that ended up holding `100`,
@@ -701,6 +701,12 @@ and the field's actual `text=`:
 - `unreadable` — no read-back was possible; `textReadback=unavailable:<reason>`
   names why (no text channel on the field, runtime unreachable, field gone).
   **Never** a claim that it landed.
+
+On the **iOS simulator** the HID keystrokes go through the simulator's keyboard, so
+an IME or autocorrect can rewrite them (Pinyin: `abc123 xyz` → `安倍吃3 x y z`).
+Anything but `exact` there is rewritten in-process and reported as
+`via=hid → agent insertText` with `hidLanded=<what HID left>`; `textLanded=` is
+then the in-process result.
 
 **Web forms read back like any other field.** They used to be the one place this
 whole check did not apply: every DOM input answered
