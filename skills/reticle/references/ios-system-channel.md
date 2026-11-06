@@ -118,6 +118,24 @@ nothing moved" is a stateable outcome rather than a success. A refusal lists wha
 with it, so bring it back with `system activate --package <bundle-id>` (which does
 not restart it, unlike `app launch`) before the next `ui` / `act` command.
 
+### Typing into an app without the agent (host only)
+
+```bash
+reticle --target ios system tap --point <x,y>        # focus the field first
+reticle --target ios system type --text "hello 你好"  # paste into the focused field
+```
+
+`system type` puts the text on the device pasteboard, presses Cmd+V, answers the
+paste prompt iOS raises (`Allow Paste` / `允许粘贴`), and reads the field back:
+`textLanded=` uses `act type`'s words (`exact`, `reformatted`, `changed`, `none`, …)
+with `before=`/`after=`, or `unreadable:<why>` (a secure field, several fields
+changing). The user's pasteboard is saved first and put back
+(`pasteboard=restored`); plain text and one image can be restored, anything else is
+listed in `pasteboardLost=[…]` and the pasteboard is left `cleared`. Any OTHER modal
+stops it with that modal's controls. Use it only for an app that does not link the
+agent; with the agent, `act type` inserts in-process with no prompt. Measured: ~9 s
+per call (three tree reads and a prompt).
+
 ## When NOT to use it
 
 For anything inside the app under test. The in-app channel sees far more and costs

@@ -130,6 +130,59 @@ public struct IosHostSystemChannel: Sendable {
         )
     }
 
+    /// The paste prompt's "allow" button, in the locales it was measured in.
+    static let allowPasteLabels: Set<String> = ["Allow Paste", "允许粘贴"]
+
+    /// Type `text` into the focused field of the app in front by pasting it: the
+    /// text input path for an app that does not link the agent (with the agent,
+    /// `act type` inserts in-process and needs none of this). The user's
+    /// pasteboard is saved first and put back afterwards, and the paste prompt
+    /// iOS raises for a pasteboard another process wrote is answered. What landed
+    /// is read back from the accessibility tree, never assumed.
+    public func type(text: String) throws -> HostTypeResult {
+        let before = try readTree()
+        if before.overlayIsUp {
+            let controls = before.frontButtons().compactMap(\.label)
+            return HostTypeResult(dispatched: false, refusal: "a system modal is covering the app; answer it first",
+                                  available: controls)
+        }
+        guard let app = before.frontBundle, app != Self.springboard else {
+            return HostTypeResult(dispatched: false, refusal: "no app is in front (the home screen is)")
+        }
+        let save = FileManager.default.temporaryDirectory.appendingPathComponent("reticle-pasteboard-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: save) }
+
+        let pasted = try call(["paste", text, save])
+        let saved = pasted["saved"] as? String ?? "unrestorable"
+        var result = HostTypeResult(dispatched: true, app: app)
+        result.lost = pasted["lost"] as? [String] ?? []
+        // Put the user's pasteboard back whatever happens in between.
+        let outcome = Result { try answerAndReadBack(text, before: before, into: &result) }
+        let restored = (try? call(["pasteboard-restore", saved, pasted["uti"] as? String ?? "-", save])) != nil
+        result.pasteboard = !restored ? "restore-failed" : (saved == "unrestorable" ? "cleared" : "restored")
+        try outcome.get()
+        return result
+    }
+
+    private func answerAndReadBack(_ text: String, before: HostAXTree, into result: inout HostTypeResult) throws {
+        var after = try readTree()
+        if after.overlayIsUp {
+            let buttons = after.frontButtons()
+            guard let allow = buttons.first(where: { Self.allowPasteLabels.contains($0.label ?? "") }),
+                  let f = allow.frame, let screen = after.screenSize,
+                  let (nx, ny) = HostAXTree.normalize(x: f.x + f.width / 2, y: f.y + f.height / 2, screen: screen)
+            else {
+                result.refusal = "a system modal that is not the paste prompt came up; nothing was answered"
+                result.available = buttons.compactMap(\.label)
+                return
+            }
+            _ = try call(["tap", String(nx), String(ny)])
+            result.prompt = allow.label
+            after = try readTree()
+        }
+        result.readback = HostAXTree.typed(text, before: before, after: after)
+    }
+
     public func home() throws -> SystemActionResult {
         _ = try call(["home"])
         // The caller checks the side effect; claiming it here would be a verdict.
@@ -266,6 +319,28 @@ struct HostAXTree {
         frontElements().map(\.element).filter { $0.elementType == Self.buttonType }
     }
 
+    /// XCUIElementType.secureTextField: its value is bullets, not the text.
+    static let secureFieldType = 50
+
+    /// Which field took typing, by comparing two reads of the same app: the one
+    /// element whose value changed. Matched by id, so a field that only moved
+    /// still counts as the same field.
+    static func typed(_ text: String, before: HostAXTree, after: HostAXTree) -> HostTypeResult.Readback {
+        guard before.frontBundle == after.frontBundle else { return .init(landed: "unreadable:app-changed") }
+        let old = Dictionary(before.frontElements().map { ($0.id, $0.element) }, uniquingKeysWith: { a, _ in a })
+        let changed = after.frontElements().filter { old[$0.id] != nil && old[$0.id]?.value != $0.element.value }
+        guard changed.count == 1, let field = changed.first?.element, let was = old[changed[0].id] else {
+            return .init(landed: changed.isEmpty ? TypeReadback.Landed.none.rawValue : "unreadable:\(changed.count)-fields-changed")
+        }
+        let name = field.identifier ?? field.label ?? field.placeholder
+        if field.elementType == secureFieldType {
+            return .init(landed: "unreadable:secure-field", field: name)
+        }
+        let (b, a) = (was.value ?? "", field.value ?? "")
+        return .init(landed: TypeReadback.classify(before: b, after: a, typed: text).landed.rawValue,
+                     field: name, before: b, after: a)
+    }
+
     /// SpringBoard in front and NOT showing the home screen: a system modal (or
     /// Control Center, or Notification Center) is covering whatever app ran.
     var overlayIsUp: Bool {
@@ -352,5 +427,48 @@ struct HostAXTree {
     static func normalize(x: Double, y: Double, screen: (width: Double, height: Double)) -> (Int, Int)? {
         guard x >= 0, y >= 0, x <= screen.width, y <= screen.height else { return nil }
         return (Int((x / screen.width * 65535).rounded()), Int((y / screen.height * 65535).rounded()))
+    }
+}
+
+/// What `system type` did. `readback.landed` uses `act type`'s vocabulary
+/// (`exact`, `reformatted`, `partial`, `dropped`, `none`, `changed`), plus
+/// `unreadable:<why>` when the tree cannot say.
+public struct HostTypeResult: Sendable {
+    public struct Readback: Sendable, Equatable {
+        public var landed: String
+        public var field: String?
+        public var before: String?
+        public var after: String?
+    }
+
+    public var dispatched: Bool
+    public var app: String?
+    public var refusal: String?
+    public var available: [String] = []
+    /// The paste prompt's button that was answered, when one came up.
+    public var prompt: String?
+    /// `restored`, `cleared` (it held nothing that can be written back),
+    /// or `restore-failed`.
+    public var pasteboard: String?
+    /// Types the pasteboard held that could not be put back.
+    public var lost: [String] = []
+    public var readback: Readback?
+
+    public var describe: String {
+        guard dispatched else {
+            return "refused via=paste reason=\(refusal ?? "?")"
+                + (available.isEmpty ? "" : " available=[\(available.joined(separator: ", "))]")
+        }
+        var line = "dispatched via=paste process=\(app ?? "?")"
+        if let prompt { line += " prompt=answered:\(prompt)" }
+        if let r = readback {
+            line += " textLanded=\(r.landed)"
+            if let f = r.field { line += " field=\(f)" }
+            if let b = r.before, let a = r.after { line += " before=\"\(b)\" after=\"\(a)\"" }
+        }
+        if let refusal { line += " stopped=\"\(refusal)\" available=[\(available.joined(separator: ", "))]" }
+        line += " pasteboard=\(pasteboard ?? "?")"
+        if !lost.isEmpty { line += " pasteboardLost=[\(lost.joined(separator: ", "))]" }
+        return line
     }
 }

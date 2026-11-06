@@ -67,6 +67,22 @@ expect "$OUT" "dispatched via=point:5,5" "a coordinate tap is dispatched"
 OUT="$("${SYS[@]}" tap --point 5000,5 || true)"; echo "$OUT"
 expect "$OUT" "outside the" "an off-screen coordinate is refused"
 
+echo "== PASTE TYPE =="
+# Needs the sample app's SwiftUI screen (it carries a text field); skipped otherwise.
+FIELD="$("${SYS[@]}" tree "$BUNDLE" | grep 'id=swiftui.nickname' || true)"
+if [ -z "$FIELD" ]; then
+  echo "  skip: swiftui.nickname is not on screen"
+else
+  # Focus the field at its right edge, so the caret lands at the end.
+  read -r FX FY FW FH <<<"$(echo "$FIELD" | sed -E 's/.*@\[([0-9]+),([0-9]+) ([0-9]+)x([0-9]+)\].*/\1 \2 \3 \4/')"
+  "${SYS[@]}" tap --point "$((FX + FW - 8)),$((FY + FH / 2))" >/dev/null
+  OUT="$("${SYS[@]}" type --text "e2e✓")"; echo "$OUT"
+  expect "$OUT" "dispatched via=paste" "the text is pasted"
+  expect "$OUT" "after=\"" "what landed is read back from the field"
+  expect "$OUT" "e2e✓\"" "the pasted text is in the field"
+  expect "$OUT" "pasteboard=restored" "the user's pasteboard is put back"
+fi
+
 echo "== SCREENSHOT =="
 OUT="$("${SYS[@]}" screenshot --out "$TMP/shot.png")"; echo "$OUT"
 expect "$OUT" "via=system-host:display" "the picture names its source"

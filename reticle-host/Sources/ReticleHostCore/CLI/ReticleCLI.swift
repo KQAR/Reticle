@@ -30,7 +30,7 @@ public enum ReticleCLI {
                               drive real input (`wheel` converges a picker column
                               on a value using the wheel's own reading; it is
                               Android-only)
-      system prepare|status|stop|overlay|tree|tap|home|activate|screenshot
+      system prepare|status|stop|overlay|tree|tap|type|home|activate|screenshot
                               the out-of-process channel: another process's UI
                               (a permission alert, SpringBoard). iOS real
                               devices only, and it sees one accessibility layer
