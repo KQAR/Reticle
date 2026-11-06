@@ -17,7 +17,7 @@ enum ReticleSystemCommands {
 
       prepare --team <id>   (runner) build, sign and install the runner on the device (once)
       status                whether the channel can reach the device
-      stop                  (runner) shut the runner down and release the device
+      stop                  end the device's resident session (host) / shut the runner down
       overlay               read what is covering the app right now
       tree [what]           read a named target: home | <bundle-id> (default: topmost)
       tap --label <text>    tap a labelled control on the system layer
@@ -93,6 +93,10 @@ enum ReticleSystemCommands {
     }
 
     static func stop(_ args: Args) async throws {
+        if let host = try await hostChannel(args) {
+            print(try host.stop())
+            return
+        }
         let backend = try await makeBackend(args)
         let outcome = await backend.stop()
         // Stopping something that was already stopped is success: it is the state

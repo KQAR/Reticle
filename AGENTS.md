@@ -195,8 +195,8 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   app does not own is not reached this way at all — that is the system channel,
   driven from the host over a CoreDevice HID connection (`reticle-device`) or by
   the XCUITest runner (`reticle-runner-ios`). The host HID path exists but `act`
-  does not use it yet: it is one tunnel and ~2 s per gesture, against an in-process
-  path that already lands on the app's own controls.
+  does not use it yet: the in-process path already lands on the app's own
+  controls, and the host path reads no app-side state to verify against.
 - Use the view tree for UI/layout/style validation. Use the semantic tree
   first for movement and input; selector actions fall back to view frames only
   when no semantic match exists.

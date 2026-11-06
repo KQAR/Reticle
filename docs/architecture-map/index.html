@@ -430,7 +430,7 @@ tailwind.config = {
       "kind": "executable",
       "layer": "host",
       "sub": "Rust · idevice (MIT) · iOS device only",
-      "detail": "The system channel's default backend. One invocation = one CoreDevice tunnel to a real iPhone = one action, answered as one JSON line: a HID tap or Home press backboardd routes into ANY process, the device's own cross-process accessibility tree (remoteAX), an app launch, a display screenshot. Nothing is installed on the device. IosHostSystemChannel maps the tree onto SystemObservation, never Node. The XCUITest runner stays behind --via runner.",
+      "detail": "The system channel's default backend. One invocation = one action, answered as one JSON line, forwarded to a resident per-device session that holds the CoreDevice tunnel, display stream and HID connections open (~50 ms a tap; it exits after 2 min idle or on any error): a HID tap or Home press backboardd routes into ANY process, the device's own cross-process accessibility tree (remoteAX), an app launch, a display screenshot. Nothing is installed on the device. IosHostSystemChannel maps the tree onto SystemObservation, never Node. The XCUITest runner stays behind --via runner.",
       "x": 1030,
       "y": 258,
       "w": 250,

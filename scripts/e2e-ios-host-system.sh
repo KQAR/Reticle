@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Round trip for the iOS SYSTEM CHANNEL's host backend on a REAL DEVICE: nothing
-# installed on the phone, every command one CoreDevice tunnel (`reticle-device`).
+# installed on the phone; `reticle-device` keeps one resident CoreDevice session.
 # (`e2e-ios-system.sh` is the same surface through the XCUITest runner.)
 #
 #   scripts/e2e-ios-host-system.sh [<device-udid>] [<bundle-id>]
@@ -71,5 +71,11 @@ echo "== SCREENSHOT =="
 OUT="$("${SYS[@]}" screenshot --out "$TMP/shot.png")"; echo "$OUT"
 expect "$OUT" "via=system-host:display" "the picture names its source"
 file "$TMP/shot.png" | grep -q "PNG image" || fail "not a PNG"
+
+echo "== STOP =="
+OUT="$("${SYS[@]}" stop)"; echo "$OUT"
+expect "$OUT" "resident session for $UDID ended" "the commands above ran in one resident session"
+OUT="$("${SYS[@]}" stop)"; echo "$OUT"
+expect "$OUT" "nothing was running" "stopping twice is not an error"
 
 echo "== OK =="
