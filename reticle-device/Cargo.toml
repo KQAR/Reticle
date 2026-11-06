@@ -13,6 +13,7 @@ tokio = { version = "1.43", features = ["full"] }
 plist = "1.7"
 uuid = { version = "1.16", features = ["v4"] }
 serde_json = "1"
+futures = "0.3"
 
 [profile.release]
 strip = true

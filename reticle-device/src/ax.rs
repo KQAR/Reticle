@@ -9,9 +9,10 @@
 //! * type 5 — one element: `associatedTranslationObject.objectID` plus a
 //!   dictionary of integer attribute -> value (see `apply`)
 //!
-//! The first dump carries elements and frames; labels arrive in later dumps for
-//! the same object ids, so a reader has to keep folding messages in for a while
-//! after the first tree (`linger`).
+//! The first dump carries elements, frames and labels; a second one ~0.5 s later
+//! adds the element types and identifiers for the same object ids (and on a
+//! system modal, sometimes nothing comes). So a reader keeps folding dumps in
+//! after the first tree until they stop changing it or go quiet.
 
 use idevice::{
     ReadWrite,
@@ -21,7 +22,9 @@ use idevice::{
 };
 use plist::Value;
 use serde_json::{Map, Value as Json, json};
+use futures::FutureExt;
 use std::collections::BTreeMap;
+use std::panic::AssertUnwindSafe;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 
@@ -142,6 +145,8 @@ pub struct Tree {
     pub nodes: BTreeMap<u64, Node>,
     /// Application roots in the order the device reported them, with their pid.
     pub apps: Vec<(u64, Option<u64>)>,
+    /// How many subscriptions it took to get the tree.
+    pub subscriptions: u32,
 }
 
 impl Tree {
@@ -291,10 +296,43 @@ async fn acknowledge(s: &mut Box<dyn ReadWrite>, m: &Message) -> R<()> {
     Ok(())
 }
 
-/// One subscription. `None` when no tree arrived within `wait`; otherwise every
-/// dump that arrived until `linger` after the first one, folded together.
+/// How long one subscription may stay silent before it is dropped and opened
+/// again. Measured: the first tree arrives about 1.1 s after subscribing.
+const RESUBSCRIBE: Duration = Duration::from_secs(3);
+
+/// After a tree, how long a silence ends the read. Measured: the follow-up dump
+/// comes ~0.5 s after the first.
+const QUIET: Duration = Duration::from_millis(800);
+
+/// Read the tree. A subscription that yields no tree within `RESUBSCRIBE`, or
+/// whose DTX stream the parser cannot read, is dropped and opened again until
+/// `wait` runs out; what earlier subscriptions folded in is kept. Once a tree is
+/// there, dumps keep being folded in until one adds nothing, none comes for
+/// `QUIET`, or `linger` passes. `None` when
+/// no tree arrived within `wait`.
 pub async fn read(adapter: &mut AdapterHandle, rsd: &RsdHandshake, wait: Duration, linger: Duration) -> R<Option<Tree>> {
     let port = rsd.services.get(SERVICE).ok_or("remoteAX is not advertised (developer disk image not mounted?)")?.port;
+    let deadline = Instant::now() + wait;
+    let mut tree = Tree::default();
+    let mut last_error = None;
+    while Instant::now() < deadline {
+        tree.subscriptions += 1;
+        let window = deadline.min(Instant::now() + RESUBSCRIBE);
+        match subscribe(adapter, port, &mut tree, window, linger).await {
+            Ok(true) => return Ok(Some(tree)),
+            Ok(false) => {}
+            Err(e) => last_error = Some(e),
+        }
+    }
+    match last_error {
+        Some(e) => Err(format!("no accessibility tree within {} ms: {e}", wait.as_millis()).into()),
+        None => Ok(None),
+    }
+}
+
+/// One subscription. `Ok(true)` once a tree arrived (whatever happened after);
+/// `Ok(false)` when `window` passed without one.
+async fn subscribe(adapter: &mut AdapterHandle, port: u16, tree: &mut Tree, window: Instant, linger: Duration) -> R<bool> {
     let mut s: Box<dyn ReadWrite> = Box::new(adapter.connect(port).await?);
     let mut caps = plist::Dictionary::new();
     caps.insert("com.apple.private.DTXBlockCompression".into(), 0.into());
@@ -302,37 +340,46 @@ pub async fn read(adapter: &mut AdapterHandle, rsd: &RsdHandshake, wait: Duratio
     call(&mut s, 1, "_notifyOfPublishedCapabilities:", Value::Dictionary(caps), false).await?;
     call(&mut s, 2, "clientNeedsAccessibility:", true.into(), true).await?;
 
-    let started = Instant::now();
-    let mut tree = Tree::default();
     let mut first: Option<Instant> = None;
+    let mut last = Instant::now();
     let result: R<()> = async {
         loop {
-            let deadline = match first {
-                Some(at) => at + linger,
-                None => started + wait,
-            };
-            let left = deadline.saturating_duration_since(Instant::now());
+            let until = first.map_or(window, |at| (at + linger).min(last + QUIET));
+            let left = until.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return Ok(());
             }
-            let m = match tokio::time::timeout(left, Message::from_reader(&mut s)).await {
-                Ok(m) => m?,
+            // The parser slices on lengths read off the wire and panics on a short
+            // or malformed message; a panic is one more reason to resubscribe.
+            let read = AssertUnwindSafe(Message::from_reader(&mut s)).catch_unwind();
+            let m = match tokio::time::timeout(left, read).await {
                 Err(_) => return Ok(()),
+                Ok(Err(_)) => return Err("the remoteAX stream could not be parsed".into()),
+                Ok(Ok(m)) => m?,
             };
             acknowledge(&mut s, &m).await?;
             let Some(AuxValue::Array(bytes)) = m.aux.as_ref().and_then(|a| a.values.first()) else { continue };
             let Some(outer) = Archive::parse(bytes) else { continue };
             let Some(inner) = outer.data(outer.root()).and_then(Archive::parse) else { continue };
-            if tree.absorb(&inner) && first.is_none() && tree.ready() {
-                first = Some(Instant::now());
+            let before = first.map(|_| tree.json());
+            if !tree.absorb(&inner) {
+                continue;
+            }
+            last = Instant::now();
+            match before {
+                None if tree.ready() => first = Some(Instant::now()),
+                Some(before) if before == tree.json() => return Ok(()),
+                _ => {}
             }
         }
     }
     .await;
     let _ = call(&mut s, 3, "clientNeedsAccessibility:", false.into(), true).await;
     let _ = s.shutdown().await;
-    result?;
-    Ok(first.map(|_| tree))
+    if first.is_some() {
+        return Ok(true);
+    }
+    result.map(|_| false)
 }
 
 #[cfg(test)]

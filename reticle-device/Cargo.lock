@@ -701,6 +701,7 @@ dependencies = [
 name = "reticle-device"
 version = "0.0.0"
 dependencies = [
+ "futures",
  "idevice",
  "plist",
  "serde_json",

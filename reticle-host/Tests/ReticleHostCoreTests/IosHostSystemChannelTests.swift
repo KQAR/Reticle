@@ -75,6 +75,20 @@ struct IosHostSystemChannelTests {
         }
     }
 
+    /// Under a modal the tree is SpringBoard's, but "SpringBoard is in front" is
+    /// the wrong answer: the refusal names the modal and its controls.
+    @Test func aReadUnderASystemModalNamesTheModal() throws {
+        for target in ["dev.reticle.sampleios", "com.apple.springboard"] {
+            do {
+                _ = try alertUp().front(named: target)
+                Issue.record("a read under a modal must be refused")
+            } catch let e as HelperError {
+                #expect(e.message.contains("system modal"))
+                #expect(e.message.contains("\"Later\", \"Allow\""))
+            }
+        }
+    }
+
     // This channel has no hit test; a constant `false` must say so.
     @Test func hittabilityIsDeclaredUnreadable() throws {
         let n = try alertUp().overlay().nodes["s3"]

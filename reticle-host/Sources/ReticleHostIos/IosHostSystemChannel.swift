@@ -290,7 +290,17 @@ struct HostAXTree {
     /// The front application's tree, when it is the one asked for. This channel
     /// reads only what is on screen, so a target that is not in front is refused
     /// with what IS there rather than answered with an empty tree.
+    /// A system modal is reported as what it is: what is behind it is unreadable
+    /// until it is answered, so naming SpringBoard as "in front" would mislead.
     func front(named bundle: String) throws -> SystemObservation {
+        if overlayIsUp {
+            let controls = frontButtons().compactMap(\.label).map { "\"\($0)\"" }.joined(separator: ", ")
+            throw HelperError(
+                "a system modal is covering the screen (controls: \(controls.isEmpty ? "none labelled" : controls)), "
+                + "so \(bundle) cannot be read behind it. Read it with `system overlay` and answer it with "
+                + "`system tap --label <control>` first"
+            )
+        }
         guard frontBundle == bundle else {
             throw HelperError(
                 "\(bundle) is not in front (\(frontBundle ?? "an unidentified app") is). The host channel "
