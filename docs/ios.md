@@ -1,8 +1,9 @@
 # Reticle on iOS
 
 Reticle's iOS support inspects and drives a **running** iOS app on the
-**Simulator** and on a **real device** via a linked framework. A device has no
-host-reachable HID surface, so everything is driven from inside the app instead:
+**Simulator** and on a **real device** via a linked framework. On a device the
+app's own UI is driven from inside the app (the host HID path over a CoreDevice
+tunnel is used only by the `system` channel, for UI the app does not own):
 touches are synthesized into UIKit's own event path, text goes through
 `UIKeyInput`, and controls can also be activated directly. It speaks the same `reticle-protocol` wire contract as Android
 (`platform="ios"`), so the host commands and the panel are reused; only the
@@ -313,9 +314,11 @@ limit exists, what was measured, and which route was tried and rejected.
   keyboard's own window, SpringBoard, Home and app-switcher gestures. A coordinate
   no window of this process holds is refused by name (`no window of this process
   contains that point`) rather than reported as dispatched. Closing that would need
-  an XCUITest/WDA runner — a separate process. **That runner now exists**
-  (`reticle-runner-ios`, driven by the `system` command family); the in-process limit
-  above is unchanged, the reach was added ALONGSIDE it rather than inside it.
+  a separate authority. **The `system` command family is that authority**: by default
+  from the host over a CoreDevice tunnel (`reticle-device`: HID touch/Home plus the
+  device's own cross-process accessibility tree, nothing installed on the device),
+  or through the XCUITest runner (`reticle-runner-ios`, `--via runner`). The
+  in-process limit above is unchanged; the reach was added ALONGSIDE it.
   Mechanism notes, all measured on an iPhone 13 Pro Max / iOS 26:
 
   - The runner is granted a **backboardd HID connection**
@@ -513,8 +516,9 @@ limit exists, what was measured, and which route was tried and rejected.
   guidance to use `act activate` only when the private class/symbols are absent
   (a mismatched Xcode SimulatorKit layout) — not by iOS version. `act type` is the
   exception: with no HID surface it types in-process instead of failing, and says
-  which path it took. A real device has no HID surface regardless; `act activate`
-  (selector or `--css`) and `act type` are the two gestures that work there.
+  which path it took. `act` on a real device does not use HID at all (its gestures
+  are synthesized in-process); the host HID surface a device does have is the
+  `system` channel's.
 - **SwiftUI `Text` with inline markdown links collapses in accessibility.** The
   whole Text surfaces as one `axElement` ("Read the Terms and Privacy") with no
   per-link child elements, so individual links inside one SwiftUI `Text` are not

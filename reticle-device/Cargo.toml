@@ -1,0 +1,18 @@
+[package]
+name = "reticle-device"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "Host-side system channel for a real iOS device: CoreDevice HID input and the cross-process accessibility tree"
+
+[dependencies]
+# MIT. Pinned to a revision measured against a real device (iOS 27.0.1).
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "89702099f4d7552f704f93b4526756abda319ceb", default-features = false, features = ["aws-lc", "usbmuxd", "core_device", "display_stream", "core_device_proxy", "rsd", "tunnel_tcp_stack", "dvt", "device_info", "application_listing"] }
+tokio = { version = "1.43", features = ["full"] }
+plist = "1.7"
+uuid = { version = "1.16", features = ["v4"] }
+serde_json = "1"
+
+[profile.release]
+strip = true
