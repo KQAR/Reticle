@@ -22,6 +22,8 @@
 //! next call then starts a fresh one. `RETICLE_DEVICE_ONESHOT=1` skips it and
 //! opens a tunnel per call.
 //!
+//! Each tap appends a timing line to `$TMPDIR/reticle-device-<udid>.log`.
+//!
 //! Needs developer mode and a mounted developer disk image; no app on the device.
 
 mod ax;
@@ -32,7 +34,7 @@ use idevice::{
         CallInfoBlob, DisplayServiceClient, build_screen_audio_offer, build_screen_video_offer,
         build_start_audio_parameters, build_start_video_parameters,
         ImageFormat, ScreenCaptureServiceClient, GENERAL_PASTEBOARD, PasteboardServiceClient,
-        hid::{ButtonState, IndigoHidClient, UniversalHidServiceClient},
+        hid::{ButtonState, IndigoHidClient, TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient},
     },
     core_device_proxy::CoreDeviceProxy,
     dvt::{application_listing::ApplicationListingClient, device_info::DeviceInfoClient, process_control::ProcessControlClient, remote_server::RemoteServerClient},
@@ -56,6 +58,8 @@ pub type R<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const MEDIA_SETTLE: Duration = Duration::from_millis(1000);
 const OPEN: Duration = Duration::from_millis(500);
 const HOLD: Duration = Duration::from_millis(300);
+/// How long a tap's finger stays down; idevice's own `tap` uses the same.
+const HOLD_TAP: Duration = Duration::from_millis(50);
 /// One request's bound, and how long a resident session waits for the next one.
 const CALL: Duration = Duration::from_secs(60);
 const IDLE: Duration = Duration::from_secs(120);
@@ -109,7 +113,7 @@ async fn dispatch(args: &[String]) -> R<Json> {
 
 async fn one_shot(udid: &str, request: &[String]) -> R<Json> {
     tokio::time::timeout(CALL, async {
-        let mut s = Session { d: connect(udid).await?, stream: None, touch: None, buttons: None };
+        let mut s = Session { d: connect(udid).await?, stream: None, touch: None, buttons: None, log: tap_log_path(udid) };
         let out = s.run(request).await;
         // A one-shot connection must outlive its last report, or the report is lost.
         if s.touch.is_some() || s.buttons.is_some() {
@@ -127,6 +131,13 @@ async fn one_shot(udid: &str, request: &[String]) -> R<Json> {
 }
 
 // ---- resident session --------------------------------------------------------
+
+/// Every tap appends one timing line here, to tell a touch the device dropped
+/// from one that went out late. Started over once it passes `TAP_LOG_CAP`.
+fn tap_log_path(udid: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("reticle-device-{udid}.log"))
+}
+const TAP_LOG_CAP: u64 = 1 << 20;
 
 fn socket_path(udid: &str) -> PathBuf {
     std::env::temp_dir().join(format!("reticle-device-{udid}.sock"))
@@ -188,7 +199,7 @@ async fn serve(udid: &str) -> R<()> {
         return Ok(()); // another session already owns this device
     }
     let _ = std::fs::remove_file(&path);
-    let mut s = Session { d: connect(udid).await?, stream: None, touch: None, buttons: None };
+    let mut s = Session { d: connect(udid).await?, stream: None, touch: None, buttons: None, log: tap_log_path(udid) };
     // Open both HID connections up front, so no request pays OPEN.
     s.touch().await?;
     s.buttons().await?;
@@ -265,6 +276,7 @@ struct Session {
     stream: Option<MediaStream>,
     touch: Option<UniversalHidServiceClient<Box<dyn ReadWrite>>>,
     buttons: Option<IndigoHidClient<Box<dyn ReadWrite>>>,
+    log: PathBuf,
 }
 
 impl Session {
@@ -291,6 +303,37 @@ impl Session {
             tokio::time::sleep(OPEN).await;
         }
         Ok(self.buttons.as_mut().unwrap())
+    }
+
+    /// Contact, `HOLD_TAP`, release (what idevice's `tap` does), timed: one line
+    /// per tap in the log, with how long each report took to go out and how long
+    /// the finger was really down.
+    async fn tap(&mut self, x: u16, y: u16) -> R<()> {
+        let opened = self.touch.is_none();
+        let t0 = Instant::now();
+        let hid = self.touch().await?;
+        let t1 = Instant::now();
+        hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, None).await?;
+        let t2 = Instant::now();
+        tokio::time::sleep(HOLD_TAP).await;
+        let t3 = Instant::now();
+        let sent = hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, None).await;
+        let t4 = Instant::now();
+        let ms = |a: Instant, b: Instant| b.duration_since(a).as_secs_f64() * 1000.0;
+        let wall = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+        let line = format!(
+            "{wall} tap {x},{y} opened={opened} open_ms={:.1} contact_ms={:.1} held_ms={:.1} release_ms={:.1} release={}\n",
+            ms(t0, t1), ms(t1, t2), ms(t2, t4), ms(t3, t4),
+            if sent.is_ok() { "ok" } else { "error" },
+        );
+        if std::fs::metadata(&self.log).is_ok_and(|m| m.len() > TAP_LOG_CAP) {
+            let _ = std::fs::remove_file(&self.log);
+        }
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&self.log) {
+            let _ = f.write_all(line.as_bytes());
+        }
+        Ok(sent?)
     }
 
     /// `request` is the command line after the udid: `[op, args…]`.
@@ -335,7 +378,7 @@ impl Session {
                 if x > 65535 || y > 65535 {
                     return Err("tap coordinates are normalized to 0..=65535".into());
                 }
-                self.touch().await?.tap(x as u16, y as u16).await?;
+                self.tap(x as u16, y as u16).await?;
                 Ok(json!({}))
             }
             "home" => {
