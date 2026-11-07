@@ -70,6 +70,24 @@ expect "$OUT" "dispatched via=activate process=$BUNDLE changed=yes" "the app com
 OUT="$("${SYS[@]}" tree "$BUNDLE")"; echo "$OUT" | head -5
 expect "$OUT" "channel=system-host process=$BUNDLE" "the app's own tree is read by name"
 
+echo "== TAP LANDS =="
+# The session's first touch, on a control whose effect can be read: the SwiftUI
+# screen's "Sign In" bumps "Taps: N". A dispatched tap the app never received
+# fails here. Skipped when the sample app is on another screen.
+BUTTON="$("${SYS[@]}" tree "$BUNDLE" | grep 'id=login.signIn' || true)"
+taps() { "${SYS[@]}" tree "$BUNDLE" | sed -nE 's/.*id=swiftui.status "Taps: ([0-9]+).*/\1/p'; }
+if [ -z "$BUTTON" ] || [ -z "$(taps)" ]; then
+  echo "  skip: login.signIn / swiftui.status is not on screen"
+else
+  read -r BX BY BW BH <<<"$(echo "$BUTTON" | sed -E 's/.*@\[([0-9]+),([0-9]+) ([0-9]+)x([0-9]+)\].*/\1 \2 \3 \4/')"
+  BEFORE="$(taps)"
+  OUT="$("${SYS[@]}" tap --point "$((BX + BW / 2)),$((BY + BH / 2))")"; echo "$OUT"
+  sleep 1
+  AFTER="$(taps)"; echo "Taps: $BEFORE -> $AFTER"
+  [ "$AFTER" = "$((BEFORE + 1))" ] && echo "  ok: the tap reached the app exactly once" \
+    || fail "Sign In counted $BEFORE -> $AFTER; the tap was dispatched but did not land once"
+fi
+
 echo "== POINT TAP =="
 # The app's top-left corner holds no control in any scenario; the point is that a
 # coordinate tap is dispatched and its before/after comparison is reported.
