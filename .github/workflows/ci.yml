@@ -213,8 +213,10 @@ jobs:
       # The host side of the iOS system channel on a real device (Rust, over the
       # MIT `idevice` crate). Its parser is pinned by unit tests; the device half
       # is a manual check (no device on CI).
-      - name: Test + build reticle-device
+      - name: Lint + test + build reticle-device
         run: |
+          cargo fmt --check --manifest-path reticle-device/Cargo.toml
+          cargo clippy --release --locked --manifest-path reticle-device/Cargo.toml -- -D warnings
           cargo test --release --locked --manifest-path reticle-device/Cargo.toml
           cargo build --release --locked --manifest-path reticle-device/Cargo.toml
 

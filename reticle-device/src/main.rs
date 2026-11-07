@@ -31,13 +31,15 @@ mod ax;
 use idevice::{
     IdeviceService, ReadWrite, RsdService,
     core_device::{
-        CallInfoBlob, DisplayServiceClient, build_screen_audio_offer, build_screen_video_offer,
-        build_start_audio_parameters, build_start_video_parameters,
-        ImageFormat, ScreenCaptureServiceClient, GENERAL_PASTEBOARD, PasteboardServiceClient,
+        CallInfoBlob, DisplayServiceClient, GENERAL_PASTEBOARD, ImageFormat, PasteboardServiceClient, ScreenCaptureServiceClient,
+        build_screen_audio_offer, build_screen_video_offer, build_start_audio_parameters, build_start_video_parameters,
         hid::{ButtonState, IndigoHidClient, TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient},
     },
     core_device_proxy::CoreDeviceProxy,
-    dvt::{application_listing::ApplicationListingClient, device_info::DeviceInfoClient, process_control::ProcessControlClient, remote_server::RemoteServerClient},
+    dvt::{
+        application_listing::ApplicationListingClient, device_info::DeviceInfoClient, process_control::ProcessControlClient,
+        remote_server::RemoteServerClient,
+    },
     rsd::RsdHandshake,
     tcp::handle::{AdapterHandle, UdpSocketHandle},
     usbmuxd::{UsbmuxdAddr, UsbmuxdConnection},
@@ -67,14 +69,14 @@ const IDLE: Duration = Duration::from_secs(120);
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let [udid, op] = args.as_slice() {
-        if op == "serve" {
-            if let Err(e) = serve(udid).await {
-                eprintln!("reticle-device serve: {e}");
-                std::process::exit(1);
-            }
-            return;
+    if let [udid, op] = args.as_slice()
+        && op == "serve"
+    {
+        if let Err(e) = serve(udid).await {
+            eprintln!("reticle-device serve: {e}");
+            std::process::exit(1);
         }
+        return;
     }
     let started = Instant::now();
     let out = match dispatch(&args).await {
@@ -217,9 +219,8 @@ async fn serve(udid: &str) -> R<()> {
                 return Ok(());
             }
             let started = Instant::now();
-            let out = tokio::time::timeout(CALL, s.run(&request))
-                .await
-                .unwrap_or_else(|_| Err("the device stopped answering (60 s)".into()));
+            let out =
+                tokio::time::timeout(CALL, s.run(&request)).await.unwrap_or_else(|_| Err("the device stopped answering (60 s)".into()));
             let (answer, fatal) = match out {
                 Ok(mut v) => {
                     v["ok"] = true.into();
@@ -256,10 +257,7 @@ struct Device {
 
 async fn connect(udid: &str) -> R<Device> {
     let mut mux = UsbmuxdConnection::default().await?;
-    let dev = mux
-        .get_device(udid)
-        .await
-        .map_err(|e| format!("device {udid} is not attached over USB: {e}"))?;
+    let dev = mux.get_device(udid).await.map_err(|e| format!("device {udid} is not attached over USB: {e}"))?;
     let provider = dev.to_provider(UsbmuxdAddr::from_env_var()?, "reticle-device");
     let proxy = CoreDeviceProxy::connect(&provider)
         .await
@@ -323,7 +321,10 @@ impl Session {
         let wall = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
         let line = format!(
             "{wall} tap {x},{y} opened={opened} open_ms={:.1} contact_ms={:.1} held_ms={:.1} release_ms={:.1} release={}\n",
-            ms(t0, t1), ms(t1, t2), ms(t2, t4), ms(t3, t4),
+            ms(t0, t1),
+            ms(t1, t2),
+            ms(t2, t4),
+            ms(t3, t4),
             if sent.is_ok() { "ok" } else { "error" },
         );
         if std::fs::metadata(&self.log).is_ok_and(|m| m.len() > TAP_LOG_CAP) {
@@ -391,7 +392,8 @@ impl Session {
             }
             "launch" => {
                 let bundle = request.get(1).ok_or(USAGE)?;
-                let mut remote: RemoteServerClient<Box<dyn ReadWrite>> = RemoteServerClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                let mut remote: RemoteServerClient<Box<dyn ReadWrite>> =
+                    RemoteServerClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
                 let mut control = ProcessControlClient::new(&mut remote).await?;
                 // KillExisting=false: a running app is brought forward as it is.
                 let pid = control.launch_app(bundle.as_str(), None, None, false, false).await?;
@@ -399,7 +401,8 @@ impl Session {
             }
             "screenshot" => {
                 let path = request.get(1).ok_or(USAGE)?;
-                let mut shot: ScreenCaptureServiceClient<Box<dyn ReadWrite>> = ScreenCaptureServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                let mut shot: ScreenCaptureServiceClient<Box<dyn ReadWrite>> =
+                    ScreenCaptureServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
                 let png = shot.take_screenshot(None, ImageFormat::Png).await?;
                 std::fs::write(path, &png)?;
                 Ok(json!({"bytes": png.len()}))
@@ -408,7 +411,8 @@ impl Session {
                 // Put `text` on the pasteboard and press Cmd+V. What was there is
                 // written to `save` first, so `pasteboard-restore` can put it back.
                 let (text, save) = (request.get(1).ok_or(USAGE)?, request.get(2).ok_or(USAGE)?);
-                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> = PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> =
+                    PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
                 let held = pb.get(GENERAL_PASTEBOARD).await?;
                 let types: Vec<String> = held.items.iter().flat_map(|i| i.types.clone()).collect();
                 // Only plain text or one image can be written back; anything else
@@ -441,7 +445,8 @@ impl Session {
             "pasteboard-restore" => {
                 // pasteboard-restore <saved> <uti|-> <save>, as `paste` reported them.
                 let (kind, uti, save) = (request.get(1).ok_or(USAGE)?, request.get(2).ok_or(USAGE)?, request.get(3).ok_or(USAGE)?);
-                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> = PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
+                let mut pb: PasteboardServiceClient<Box<dyn ReadWrite>> =
+                    PasteboardServiceClient::connect_rsd(&mut d.adapter, &mut d.rsd).await?;
                 match kind.as_str() {
                     "text" => pb.set_text(&std::fs::read_to_string(save)?, GENERAL_PASTEBOARD).await?,
                     "image" => pb.set_image(&std::fs::read(save)?, uti, GENERAL_PASTEBOARD).await?,
@@ -514,13 +519,9 @@ impl MediaStream {
         let session = uuid::Uuid::new_v4();
         let id = || uuid::Uuid::new_v4().to_string().to_uppercase();
         let offer = build_screen_audio_offer(&id(), &info)?;
-        client
-            .start_media_stream(build_start_audio_parameters(&host, audio.local_port(), &peer, 50000, offer, 140, session))
-            .await?;
+        client.start_media_stream(build_start_audio_parameters(&host, audio.local_port(), &peer, 50000, offer, 140, session)).await?;
         let offer = build_screen_video_offer(&id(), &info, uuid::Uuid::new_v4().as_u128() as u32)?;
-        client
-            .start_media_stream(build_start_video_parameters(&host, video.local_port(), &peer, 50001, offer, 140, 1, session))
-            .await?;
+        client.start_media_stream(build_start_video_parameters(&host, video.local_port(), &peer, 50001, offer, 140, 1, session)).await?;
         tokio::time::sleep(MEDIA_SETTLE).await;
         Ok(MediaStream { client, _sockets: (audio, video) })
     }

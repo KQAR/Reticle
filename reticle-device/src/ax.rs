@@ -14,6 +14,7 @@
 //! system modal, sometimes nothing comes). So a reader keeps folding dumps in
 //! after the first tree until they stop changing it or go quiet.
 
+use futures::FutureExt;
 use idevice::{
     ReadWrite,
     dvt::message::{Aux, AuxValue, Message, MessageHeader, PayloadHeader},
@@ -22,7 +23,6 @@ use idevice::{
 };
 use plist::Value;
 use serde_json::{Map, Value as Json, json};
-use futures::FutureExt;
 use std::collections::BTreeMap;
 use std::panic::AssertUnwindSafe;
 use std::time::{Duration, Instant};
@@ -45,10 +45,7 @@ impl Archive {
     pub fn parse(bytes: &[u8]) -> Option<Archive> {
         let v = Value::from_reader(std::io::Cursor::new(bytes)).ok()?;
         let d = v.as_dictionary()?;
-        Some(Archive {
-            objects: d.get("$objects")?.as_array()?.clone(),
-            root: d.get("$top")?.as_dictionary()?.get("root")?.clone(),
-        })
+        Some(Archive { objects: d.get("$objects")?.as_array()?.clone(), root: d.get("$top")?.as_dictionary()?.get("root")?.clone() })
     }
 
     fn resolve<'a>(&'a self, v: &'a Value) -> &'a Value {
@@ -170,10 +167,8 @@ impl Tree {
                     }
                 }
                 Some(5) => {
-                    let Some(id) = a
-                        .field(response, "associatedTranslationObject")
-                        .and_then(|o| a.field(o, "objectID"))
-                        .and_then(|v| a.uint(v))
+                    let Some(id) =
+                        a.field(response, "associatedTranslationObject").and_then(|o| a.field(o, "objectID")).and_then(|v| a.uint(v))
                     else {
                         continue;
                     };
@@ -196,11 +191,7 @@ impl Tree {
     }
 
     pub fn json(&self) -> Json {
-        let apps: Vec<Json> = self
-            .apps
-            .iter()
-            .map(|(id, pid)| json!({"id": id.to_string(), "pid": pid}))
-            .collect();
+        let apps: Vec<Json> = self.apps.iter().map(|(id, pid)| json!({"id": id.to_string(), "pid": pid})).collect();
         let nodes: Map<String, Json> = self
             .nodes
             .iter()
@@ -238,11 +229,8 @@ fn apply(a: &Archive, node: &mut Node, attribute: u64, value: &Value) {
     }
     match attribute {
         8 | 9 => {
-            let ids = a
-                .array(value)
-                .into_iter()
-                .filter_map(|v| a.uint(v).or_else(|| a.field(v, "objectID").and_then(|x| a.uint(x))))
-                .collect();
+            let ids =
+                a.array(value).into_iter().filter_map(|v| a.uint(v).or_else(|| a.field(v, "objectID").and_then(|x| a.uint(x)))).collect();
             if attribute == 8 { node.children = ids } else { node.visible_children = ids }
         }
         21 => {
@@ -452,10 +440,7 @@ mod tests {
 
     #[test]
     fn ignores_a_response_that_is_not_a_tree() {
-        let objects = vec![
-            Value::String("$null".into()),
-            dict(&[("associatedRequestType", 2.into()), ("resultData", uid(0))]),
-        ];
+        let objects = vec![Value::String("$null".into()), dict(&[("associatedRequestType", 2.into()), ("resultData", uid(0))])];
         let mut tree = Tree::default();
         assert!(!tree.absorb(&archive(objects)));
         assert!(!tree.ready());
