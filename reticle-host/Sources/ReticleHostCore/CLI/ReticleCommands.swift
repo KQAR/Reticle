@@ -13,16 +13,34 @@ func cmdDevices(_ backend: HostBackend, _ args: Args) async throws {
 func cmdDoctor(_ backend: HostBackend, _ args: Args) async throws {
     let ping = try await backend.ping()
     let devices = try await backend.listDevices()
+    // Real devices only, so only under --target ios: the runner leaves its
+    // recordings on a phone, and an Android doctor should not shell out to xcrun.
+    let attachments = platformTarget(args) == "ios"
+        ? await IosXCTestAttachments.scan(serial: serialOption(args)) : []
     if JsonEnvelope.enabled(args) {
-        try JsonEnvelope.success([
+        var data: [String: Any] = [
             "helper": ["pong": true, "version": ping.version],
             "devices": devices.map(\.jsonObject),
-        ])
+        ]
+        if platformTarget(args) == "ios" {
+            data["xctestAttachments"] = attachments.map { f -> [String: Any] in
+                var o: [String: Any] = ["udid": f.udid, "name": f.name, "bytes": f.totalBytes,
+                                        "warn": f.totalBytes > IosXCTestAttachments.warnBytes]
+                if let error = f.error { o["error"] = error }
+                return o
+            }
+        }
+        try JsonEnvelope.success(data)
         return
     }
     print("helper: ok (cli version \(ping.version))")
-    if devices.isEmpty { print("devices: none"); return }
+    if devices.isEmpty { print("devices: none") }
     for d in devices { print("  \(d.serial)  [\(d.state)]") }
+    let advice = attachments.flatMap(IosXCTestAttachments.advice)
+    if !advice.isEmpty {
+        print("real devices:")
+        advice.forEach { print($0) }
+    }
 }
 
 func cmdStatus(_ backend: HostBackend, _ args: Args) async throws {
