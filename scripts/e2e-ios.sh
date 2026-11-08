@@ -1310,7 +1310,7 @@ echo "$DOM_BLOCKED" | grep -q "jsDialog.busyButton" \
 echo "$DOM_BLOCKED" | grep -q "domBlocked.status" \
   || { echo "FAIL: native content next to the web view must still be captured"; exit 1; }
 # Once the loop ends the bridge answers again — the marker must clear, not stick.
-sleep 5
+wait_live "$LINKED_ID" "Busy done"
 "$HOST" --target ios ui report --package "$LINKED_ID" --output "$TMP/dom-back"
 DOM_BACK="$("$HOST" --target ios ui compact "$TMP/dom-back/snapshot.json")"
 echo "$DOM_BACK" | grep -q "Busy done" \

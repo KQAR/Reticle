@@ -51,6 +51,11 @@ enum SampleWebFixtures {
     /// `evaluateJavaScript` cannot call back, so the DOM read must time out and the
     /// view must degrade to one opaque node reporting `dom:unavailable`.
     ///
+    /// The loop is 10s, not shorter: the tap that starts it records an action trace by
+    /// default, and that trace's after-capture (plus the tap's landing witness) waits
+    /// out its own DOM-read budget against this very loop. Measured on iOS 26.3: the
+    /// tap returned 4.5s later, so a 4s loop had ended before the capture under test.
+    ///
     /// (Disabling content JavaScript does NOT reproduce this: measured, the app's
     /// own `evaluateJavaScript` still runs and the DOM reads fine.)
     static func makeDomBlockedWebView() -> WKWebView {
@@ -382,8 +387,8 @@ enum SampleWebFixtures {
               Pay (raises a JS alert)
             </button>
             <button id="js-busy" data-testid="jsDialog.busyButton"
-              onclick="var end = Date.now() + 4000; while (Date.now() < end) {} document.getElementById('js-status').innerText = 'Busy done';">
-              Block the JS thread for 4s
+              onclick="var end = Date.now() + 10000; while (Date.now() < end) {} document.getElementById('js-status').innerText = 'Busy done';">
+              Block the JS thread for 10s
             </button>
           </body>
         </html>
