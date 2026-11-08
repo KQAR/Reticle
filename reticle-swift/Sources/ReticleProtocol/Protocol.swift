@@ -254,14 +254,27 @@ public struct RuntimeInfo: Codable, Sendable {
     public var sdkInt: Int
     public var agentVersion: String
     public var port: Int
+    /// Which device the answering process runs on, when it can know: the
+    /// simulator's udid (`SIMULATOR_UDID`), nil on a real device and on Android.
+    /// A simulator shares the host's loopback, so this is how a host notices that
+    /// the port it reached is answered from ANOTHER simulator.
+    public var deviceId: String?
+    /// Whether the answering process runs in a simulator: set by an iOS agent
+    /// (compile-time), nil from Android and from older agents. A device agent
+    /// cannot name its device, so this is what lets a host notice a device's
+    /// tunnel answering for a simulator target.
+    public var simulator: Bool?
 
-    public init(packageName: String, processName: String, pid: Int, sdkInt: Int, agentVersion: String, port: Int) {
+    public init(packageName: String, processName: String, pid: Int, sdkInt: Int, agentVersion: String, port: Int,
+                deviceId: String? = nil, simulator: Bool? = nil) {
         self.packageName = packageName
         self.processName = processName
         self.pid = pid
         self.sdkInt = sdkInt
         self.agentVersion = agentVersion
         self.port = port
+        self.deviceId = deviceId
+        self.simulator = simulator
     }
 }
 
