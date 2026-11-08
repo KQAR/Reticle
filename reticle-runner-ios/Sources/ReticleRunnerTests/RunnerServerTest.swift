@@ -64,7 +64,11 @@ final class RunnerServerTest: XCTestCase {
 
     private func registerRoutes(on server: RunnerHTTPServer) {
         server.route("GET /health") { _ in
-            let screen = XCUIScreen.main.screenshot().image.size
+            // SpringBoard's frame is the screen in points. Not a screenshot, which
+            // captures a whole frame per health poll (measured ~135 ms vs ~30 ms),
+            // and not UIScreen, which this launch-screen-less process sees in
+            // legacy 320x480 compatibility mode.
+            let screen = XCUIApplication(bundleIdentifier: RunnerInput.springboardId).frame.size
             let payload: [String: Any] = [
                 "version": RunnerServerTest.runnerVersion,
                 "screenWidth": screen.width,
