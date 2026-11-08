@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ReticleHostIos
 import ReticleHostShared
@@ -95,5 +96,23 @@ struct IosRunnerLifecycleTests {
         #expect(IosRunnerLifecycle.value(of: "application-identifier", in: xml) == "ABCDE12345.*")
         #expect(IosRunnerLifecycle.value(of: "Name", in: xml) == "iOS Team Provisioning Profile: *")
         #expect(IosRunnerLifecycle.value(of: "not-present", in: xml) == nil)
+    }
+
+    // After an Xcode update, prepare leaves the old SDK's xctestrun beside the new
+    // one; the session must start from the one prepare wrote last.
+    @Test func theNewestXctestrunIsTheOneUsed() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xctestrun-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let old = "\(dir)/ReticleRunner_iphoneos26.2-arm64.xctestrun"
+        let new = "\(dir)/ReticleRunner_iphoneos27.1-arm64.xctestrun"
+        for (path, age) in [(new, 0.0), (old, -86_400.0)] {
+            FileManager.default.createFile(atPath: path, contents: Data())
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: age)], ofItemAtPath: path)
+        }
+        FileManager.default.createFile(atPath: "\(dir)/notes.txt", contents: Data())
+        #expect(IosRunnerLifecycle.newestXctestrun(in: dir) == new)
+        #expect(IosRunnerLifecycle.newestXctestrun(in: "\(dir)/missing") == nil)
     }
 }

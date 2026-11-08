@@ -320,14 +320,23 @@ public final class IosRunnerLifecycle: Sendable {
     }
 
     /// The xctestrun `prepare` left behind, which is what makes a later session
-    /// start without building anything.
+    /// start without building anything. The newest one: its name carries the SDK
+    /// (`ReticleRunner_iphoneos27.1-arm64.xctestrun`), so a prepare after an Xcode
+    /// update leaves the old SDK's file beside it, and directory order is no order.
     public func xctestrunPath(derivedDataPath: String) -> String? {
-        let products = "\(derivedDataPath)/Build/Products"
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: products) else {
-            return nil
-        }
-        guard let name = names.first(where: { $0.hasSuffix(".xctestrun") }) else { return nil }
-        return "\(products)/\(name)"
+        Self.newestXctestrun(in: "\(derivedDataPath)/Build/Products")
+    }
+
+    static func newestXctestrun(in products: String) -> String? {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: products) else { return nil }
+        return names.filter { $0.hasSuffix(".xctestrun") }
+            .map { "\(products)/\($0)" }
+            .max { modified($0) < modified($1) }
+    }
+
+    private static func modified(_ path: String) -> Date {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? .distantPast
     }
 
     /// Launch the resident test run. Held as a child process because ending it is
