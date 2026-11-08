@@ -73,7 +73,7 @@ public final class IosSystemBackend: Sendable {
         await Status(
             state: lifecycle.state(),
             udid: lifecycle.udid,
-            port: lifecycle.config.port,
+            port: lifecycle.config.hostPort(udid: lifecycle.udid),
             runnerBundleId: lifecycle.config.bundleId,
             usableTeams: IosRunnerLifecycle.usableTeams().sorted()
         )

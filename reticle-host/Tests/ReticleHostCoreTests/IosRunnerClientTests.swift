@@ -19,12 +19,31 @@ struct IosRunnerClientTests {
         ))
     }
 
-    @Test func theClientAddressesTheRunnersOwnDerivedPort() async {
+    @Test func theClientAddressesThisDevicesTunnelNotTheDevicePort() async {
         let config = IosRunnerConfig(appBundleId: "dev.reticle.sampleios")
-        let client = IosRunnerClient(config: config)
-        #expect(client.port == config.port)
-        // Not the app's port — that one belongs to the linked agent.
-        #expect(client.port != config.appPort)
+        let client = IosRunnerClient(config: config, udid: "00000000-0000000000000000")
+        #expect(client.port == config.hostPort(udid: "00000000-0000000000000000"))
+        // Not the device-side port, and outside the app agents' range entirely.
+        #expect(client.port != config.port)
+        #expect(client.port >= PortMap.basePort + PortMap.range)
+    }
+
+    // Two phones on one Mac used to tunnel the same local port, so the second
+    // session's commands answered from the first phone.
+    @Test func twoDevicesGetTwoTunnels() async {
+        let config = IosRunnerConfig(appBundleId: "dev.reticle.sampleios")
+        #expect(config.hostPort(udid: "00000000-0000000000000000")
+            != config.hostPort(udid: "00000000-0000000000000001"))
+    }
+
+    // `stop` on one phone must not kill another session's tunnel to another phone.
+    @Test func tunnelCleanupMatchesThisDeviceOnly() async {
+        let lc = IosRunnerLifecycle(
+            config: IosRunnerConfig(appBundleId: "dev.reticle.sampleios"),
+            udid: "00000000-0000000000000000"
+        )
+        #expect(lc.tunnelPattern.contains("-u 00000000-0000000000000000"))
+        #expect(lc.tunnelPattern.contains("\(lc.config.hostPort(udid: lc.udid))"))
     }
 
     @Test func aSuccessfulCallReportsNoRestart() async throws {
