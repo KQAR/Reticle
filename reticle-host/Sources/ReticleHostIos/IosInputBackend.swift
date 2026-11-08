@@ -27,7 +27,10 @@ struct IosInputBackend {
     }
 
     /// True if a HID client can be obtained for this simulator right now.
+    /// `RETICLE_IOS_NO_HID=1` says no, so a simulator run can take the in-process
+    /// path a real device takes (scripts/e2e-ios.sh does, for `act type`).
     func isAvailable() -> Bool {
+        if ProcessInfo.processInfo.environment["RETICLE_IOS_NO_HID"] == "1" { return false }
         var buf = errorBuffer()
         return reticle_sim_hid_available(udid, &buf, buf.count) == 0
     }

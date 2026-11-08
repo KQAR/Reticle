@@ -417,12 +417,13 @@ sleep 1
 #
 # A phone has no host-reachable HID keyboard, so `act type` there hands the
 # characters to the app itself (`/type` -> `UIKeyInput.insertText`). That path is
-# forced here by naming a serial that resolves to no HID surface: the host then
-# takes exactly the branch a device takes, against an agent it reaches over the
-# simulator's shared loopback. Without this, the device branch would only ever run
-# in scripts/e2e-ios-device.sh, which needs a phone and does not run in CI.
-NO_HID_SERIAL="reticle-no-hid-surface"
-TYPED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+# forced here with RETICLE_IOS_NO_HID=1: the simulator then reports no HID
+# keyboard, and the host types through the agent as it does on a device. (It used
+# to name a serial that resolves to no device and reach this simulator's agent over
+# the shared loopback; the agent identity check now refuses that, rightly.)
+# Without this, the device branch would only ever run in scripts/e2e-ios-device.sh,
+# which needs a phone and does not run in CI.
+TYPED="$(RETICLE_IOS_NO_HID=1 "$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" \
   --test-id swiftui.nickname --text "héllo 世界")"
 echo "$TYPED"
 echo "$TYPED" | grep -q "via=agent insertText" \
@@ -439,7 +440,7 @@ echo "$TYPED" | grep -q "after=héllo 世界" \
   || { echo "FAIL: in-process typing did not drive the SwiftUI binding"; exit 1; }
 # `--clear` on this path deletes what is there (one backspace per character,
 # through the same pipeline) and proves the field was empty before typing.
-CLEARED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+CLEARED="$(RETICLE_IOS_NO_HID=1 "$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" \
   --test-id swiftui.nickname --text "abc" --clear)"
 echo "$CLEARED"
 echo "$CLEARED" | grep -q "cleared=emptied(8ch)" \
@@ -458,7 +459,7 @@ echo "$CLEARED" | grep -q "cleared=emptied(8ch)" \
 # tried (see `TextInputEngine.submit`). The sample's handler would set
 # "submitted 42" if it ever fired — it does not, so what must not happen is the
 # result reading like a submit that worked.
-SUBMITTED="$("$HOST" --target ios --serial "$NO_HID_SERIAL" act type --package "$LINKED_ID" \
+SUBMITTED="$(RETICLE_IOS_NO_HID=1 "$HOST" --target ios --serial "$UDID" act type --package "$LINKED_ID" \
   --test-id swiftui.nickname --text "42" --clear --submit)"
 echo "$SUBMITTED"
 echo "$SUBMITTED" | grep -q "swiftui-coordinator" \
@@ -1085,7 +1086,7 @@ echo "$CLEAR_OUT" | grep -q "cleared=emptied(${BEFORE_LEN}ch)" \
 # characters go through the agent, and `--submit` fires the return-key action
 # in-process — `textFieldShouldReturn` on a UIKit field, which this screen
 # implements. The proof is the app's own status line, not the reported `via`.
-DEVICE_PATH_SUBMIT="$("$HOST" --target ios --serial "reticle-no-hid-surface" act type \
+DEVICE_PATH_SUBMIT="$(RETICLE_IOS_NO_HID=1 "$HOST" --target ios --serial "$UDID" act type \
   --package "$LINKED_ID" --test-id login.codeField --text "4321" --clear --submit)"
 echo "$DEVICE_PATH_SUBMIT"
 echo "$DEVICE_PATH_SUBMIT" | grep -q "via=agent insertText" \
