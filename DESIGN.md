@@ -244,7 +244,7 @@ The page rhythm is **dense evidence screenshots** — the panel leads with high-
 
 ## Colors
 
-> Palette adopted from the Linear dark-surface spec. Implementation target: the `:root` custom-property block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` (see **Iteration Guide** 7). Every color token here is a CSS custom property of the same name there (`--canvas`, `--surface-1`, `--ink`, `--primary`, …), as is every `rounded` token (`--rounded-lg`, …).
+> Palette adopted from the Linear dark-surface spec. Implementation target: the `:root` custom-property block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` (see **Iteration Guide** 7). Every color token here is a CSS custom property of the same name there (`--canvas`, `--surface-1`, `--ink`, `--primary`, …), as is every `rounded` token (`--rounded-lg`, …) and `spacing` token (`--spacing-lg`, …). Each `typography` token is a `font` shorthand `--type-<name>` plus `--tracking-<name>` for its letter-spacing.
 
 ### Brand & Accent
 
@@ -510,7 +510,7 @@ Cards hold at `{rounded.lg}` 12px — never pill, rarely 16px. Pills are reserve
 4. New node types on the timeline get: a marker color from the existing semantic set, a `{rounded.lg}` surface-1 card, and an eyebrow type label — in that order.
 5. Treat lavender as scarce: selection, focus, links, action markers — nothing else.
 6. Lead every action trace with an evidence screenshot.
-7. The `:root` block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` carries every `colors` and `rounded` token under its own name (`--canvas`, `--surface-1`, `--ink`, `--primary`, `--rounded-lg`, …), and component rules reference only those properties — never hard-code a hex in a component rule (the lightbox's literal shadow is the one quoted exception). Change a value on both sides in the same change. Typography and spacing are **not** migrated yet: the panel still uses its own font sizes and paddings, and Inter / JetBrains Mono are named first in the font stacks but not bundled, so they apply only where installed.
+7. The `:root` block in `reticle-host/Sources/ReticleHostCore/Daemon/WebPanel.swift` carries every token under its own name: `colors` and `rounded` directly (`--canvas`, `--primary`, `--rounded-lg`, …), `spacing` as `--spacing-<name>`, and each `typography` token as `--type-<name>` (a `font` shorthand) plus `--tracking-<name>`. Component rules reference only those properties — never hard-code a hex, font size or token-sized gap in a component rule; always set `font` and `letter-spacing` together, since letter-spacing inherits. The quoted exceptions are the lightbox's literal shadow, the off-grid paddings this spec states literally (filter tab 6px 14px, chip 2px vertical), and layout geometry (marker lane widths, marker offset). Change a value on both sides in the same change. Below 900px the panel drops card and page padding from `{spacing.lg}` to `{spacing.md}` so cards keep usable width on phones. Inter / JetBrains Mono are named first in the font stacks but not bundled, so they apply only where installed.
 8. The panel stays **display-only** (see `docs/roadmap.md` → Deferred, "Web panel reverse-drive"): no mutating controls, so no primary-button spec exists — do not add one without revisiting that decision, which would force a bidirectional transport.
 9. Add new variants as separate component entries.
 10. Run `npx @google/design.md lint DESIGN.md` after edits.
