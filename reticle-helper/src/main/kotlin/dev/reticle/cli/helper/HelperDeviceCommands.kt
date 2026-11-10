@@ -142,6 +142,9 @@ internal object HelperDeviceCommands {
         val traceBefore = traceRecorder?.capture()
         val before = verifySel?.let { HelperVerify.captureState(evidenceClient!!, it) }
         var target: ResolvedInputTarget? = null
+        // The tree a tap was judged against, for the host's coverage/obstruction
+        // verdicts. Held outside `result` so it never lands in trace.json.
+        var probe: JsonObject? = null
 
         // Watch the system Toast Queue across the action. A text toast is in no
         // window of this app, so an action answered by one produced a byte-identical
@@ -197,21 +200,12 @@ internal object HelperDeviceCommands {
                 }
                 val x = target!!.point.x.toInt()
                 val y = target!!.point.y.toInt()
-                // Judged BEFORE the touch: after it the screen this coordinate was
-                // aimed at may not exist any more.
-                val coverage = if (rawPoint) {
-                    pointCoverage(device, pkg, params, traceBefore?.snapshot, target!!.point.x, target!!.point.y)
-                } else {
-                    null
-                }
-                // Judged BEFORE the touch as well, and for EVERY tap rather than
-                // only a coordinate one: a selector tap is the case that was silent
-                // here. It resolves, confirms the rect has stopped moving, reports
-                // `settled=1` — and then hands the touch to whatever is drawn over
-                // that point. See [ScreenCoverage.obstruction].
-                val obstruction = tapObstruction(
+                // Captured BEFORE the touch, for EVERY tap: the host judges a
+                // coordinate's coverage and any tap's obstruction from it (see
+                // [tapProbe]); after the touch the screen may not exist any more.
+                probe = tapProbe(
                     device, pkg, params, traceBefore?.snapshot,
-                    target!!.point.x, target!!.point.y, target!!.ref,
+                    target!!.point.x, target!!.point.y, rawPoint,
                 )
                 input.tap(x, y)
                 // Asked AFTER the touch, because the answer only exists once the page has
@@ -222,8 +216,6 @@ internal object HelperDeviceCommands {
                     put("gesture", "tap")
                     put("x", x)
                     put("y", y)
-                    coverage?.let { put("coverage", it) }
-                    obstruction?.let { put("obstruction", it) }
                     put("source", target!!.source)
                     target!!.ref?.let { put("ref", it) }
                     // The frame was only partly reachable and the tap was aimed at
@@ -322,11 +314,12 @@ internal object HelperDeviceCommands {
             val settleMs = if (verify == null) (params.intOrNull("traceDelayMs") ?: 250).toLong() else 0L
             it.write(sub, selectorOrNull(params), target, withToast, traceBefore!!, settleMs)
         }
-        if (verify == null && trace == null) return withToast
+        if (verify == null && trace == null && probe == null) return withToast
         return buildJsonObject {
             withToast.forEach { (k, v) -> put(k, v) }
             verify?.let { put("verify", it) }
             trace?.let { put("trace", it) }
+            probe?.let { put("tapProbe", it) }
         }
     }
 

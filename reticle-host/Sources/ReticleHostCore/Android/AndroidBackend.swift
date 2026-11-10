@@ -162,7 +162,36 @@ final class AndroidBackend: HostBackend {
             let entry = try OutlineAliasCache.resolve(alias, serial: serial, package: request.package, home: aliasHome)
             params["aliasEntry"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
         }
-        return ActOutcome(raw: try transport.call(.act, params))
+        return ActOutcome(raw: try Self.judgeTap(transport.call(.act, params)))
+    }
+
+    /// Turns a tap's `tapProbe` (the tree the helper dispatched against) into the
+    /// `coverage` and `obstruction` verdicts, the way `IosGestures` judges its own
+    /// taps — one `ScreenCoverage` for both platforms. The probe itself is dropped:
+    /// it is a whole snapshot, and `--json` callers asked for the result.
+    static func judgeTap(_ raw: [String: Any]) throws -> [String: Any] {
+        guard let probe = raw["tapProbe"] as? [String: Any] else { return raw }
+        var out = raw
+        out.removeValue(forKey: "tapProbe")
+        let x = (probe["x"] as? NSNumber)?.doubleValue ?? 0
+        let y = (probe["y"] as? NSNumber)?.doubleValue ?? 0
+        let rawPoint = probe["point"] as? Bool ?? false
+        guard let tree = probe["snapshot"] else {
+            // A tree that could not be read is reported for a coordinate (an absent
+            // verdict would read as "the coordinate was fine") and stays quiet as an
+            // obstruction: a check that could not run is not evidence of one.
+            if rawPoint {
+                let why = probe["error"] as? String ?? "the tree could not be read at dispatch time"
+                out["coverage"] = ScreenCoverage.unavailable(x: x, y: y, why: why).jsonObject
+            }
+            return out
+        }
+        let snapshot = try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
+        if rawPoint { out["coverage"] = ScreenCoverage.at(snapshot, x: x, y: y).jsonObject }
+        if let obstruction = ScreenCoverage.obstruction(snapshot, x: x, y: y, targetRef: raw["ref"] as? String) {
+            out["obstruction"] = obstruction.jsonObject(x: x, y: y)
+        }
+        return out
     }
 
     // MARK: - Android-only device configuration

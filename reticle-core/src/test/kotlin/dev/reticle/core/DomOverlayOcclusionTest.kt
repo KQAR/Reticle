@@ -2,7 +2,6 @@ package dev.reticle.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -143,29 +142,6 @@ class DomOverlayOcclusionTest {
         )
         val income = CompactObservation.from(snapshot).items.first { it.ref == "income" }
         assertNull(income.occludedBy, "an unpainted full-screen layer is not a cover: ${income.line()}")
-    }
-
-    @Test
-    fun tap_warnsWhenTheTouchWouldLandInTheSheet() {
-        // The read path knowing and the act path not knowing is how the measured
-        // failure got through: the type command's own targeting tap has to say it.
-        val snapshot = sheetOpenSnapshot()
-        val obstruction = ScreenCoverage.obstruction(snapshot, x = 540.0, y = 430.0, targetRef = "income")
-        assertNotNull(obstruction, "a tap aimed under an open in-page sheet must be flagged")
-        assertEquals(ScreenCoverage.OBSTRUCTED_BY_NODE, obstruction.reason)
-        assertEquals("backdrop", obstruction.ref)
-        assertTrue(
-            obstruction.detail.contains("hit-testing"),
-            "a DOM cover's reason is the page's own default, not interactivity: ${obstruction.detail}",
-        )
-    }
-
-    @Test
-    fun tap_isUnobstructedOnceTheSheetIsGone() {
-        val nodes = LinkedHashMap(sheetOpenSnapshot().nodes)
-        nodes["body"] = nodes["body"]!!.copy(children = listOf("form"))
-        val snapshot = sheetOpenSnapshot().copy(nodes = nodes)
-        assertNull(ScreenCoverage.obstruction(snapshot, x = 540.0, y = 430.0, targetRef = "income"))
     }
 
     @Test

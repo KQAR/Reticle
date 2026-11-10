@@ -105,7 +105,7 @@ data class CompactObservation(
             val screenArea = snapshot.screen.size.width * snapshot.screen.size.height
             fun drawsAt(node: Node, cx: Double, cy: Double): Boolean {
                 val frame = node.frame ?: return false
-                if (frame.width * frame.height <= screenArea * ScreenCoverage.CONTAINER_AREA_FRACTION) {
+                if (frame.width * frame.height <= screenArea * CONTAINER_AREA_FRACTION) {
                     return true
                 }
                 // A full-screen DOM layer that is out of flow AND paints its own box is
@@ -500,6 +500,15 @@ private fun collapseWrappers(snapshot: Snapshot, items: List<CompactItem>): Fold
 
 /** How much bigger than the node it wraps a layer may be and still be a wrapper. */
 private const val WRAPPER_AREA_RATIO = 2.0
+
+/**
+ * Above this share of the screen, an interactive node is scenery (a `WebView`, a
+ * full-screen overlay frame) rather than a control. The same value as Swift
+ * `ScreenCoverage.containerAreaFraction`, where the measurement behind it is
+ * written down; kept here because the in-process agent's `/compact` needs it and
+ * `ScreenCoverage` itself now lives only in the host.
+ */
+private const val CONTAINER_AREA_FRACTION = 0.5
 
 @Serializable
 data class CompactItem(

@@ -541,9 +541,10 @@ Three rules hold this together. **Refs are shared**: a `ref` from any projection
 re-resolves to the same node — and on Android to the same live `View`, since
 `viewByRef` replays the identical walk with the identical numbering. So a style
 finding can be tapped, and a tapped node can be inspected, without a second
-capture. And **each derivation exists exactly twice** — Kotlin in `reticle-core`,
-Swift in `ReticleProtocol` — because the Android helper and the iOS host are
-different binaries. Twins are pinned by shared fixtures under
+capture. And **a derivation the Android agent or helper still calls exists twice**
+— Kotlin in `reticle-core`, Swift in `ReticleProtocol` — because they are different
+binaries from the iOS host; one only the host needs (the text projections below,
+and `ScreenCoverage`) exists once, in `ReticleProtocol`. Twins are pinned by shared fixtures under
 `reticle-protocol/fixtures/`, which is the only thing stopping them from slowly
 answering differently; `CompactObservation` drifted that way before the fixtures
 existed.
@@ -962,7 +963,7 @@ on an agreement row, is the checkbox rather than the link.
 
 ## Coverage: the tool keeps its own score
 
-`ScreenCoverage` (Kotlin in `reticle-core`, Swift in `ReticleProtocol`, pinned by
+`ScreenCoverage` (Swift in `ReticleProtocol` only, pinned by
 `reticle-protocol/fixtures/screen-coverage.cases.json`) answers one question in two
 sizes: for a single point, is there an addressable node over it and if not what is
 in the way; for the whole screen, what share of the touch-relevant area has one.
@@ -973,6 +974,14 @@ nothing. A coordinate tap now carries a verdict — `no semantic selector covers
 `ui coverage` samples the screen on a stated grid and lists each unreachable region
 by reason, host ref and rect. See [blind-agent-gaps.md](blind-agent-gaps.md) for the
 measured run that made this a defect rather than a nicety.
+
+Both verdicts a tap carries — `coverage` for a `--point`, and `obstruction` (who
+receives the touch instead of the target) for every tap — are judged in the HOST,
+for both platforms, against the tree the tap was dispatched at. The iOS host has that
+tree already; the Android helper captures it before the touch (reusing the trace's
+pre-action snapshot when tracing is on) and returns it as `tapProbe`, which the host
+judges and strips. A `--css` hint names the shortest unique handle (`CssHandle`), the
+same string `ui outline` prints for that node.
 
 Four rules decide a point, in this order, and each one was earned:
 
