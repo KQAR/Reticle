@@ -1,8 +1,8 @@
 import Foundation
 
-/// Style observation — the Swift twin of reticle-core's `StyleObservation`.
-/// Every rendering rule here must match that file line for line; the shared
-/// fixture `reticle-protocol/fixtures/style-observation.cases.json` pins both.
+/// Style observation — the only implementation; the Swift host renders it for
+/// Android and iOS alike. `reticle-protocol/fixtures/style-observation.cases.json`
+/// pins its output.
 ///
 /// This is deliberately NOT a comparison. Reticle does not know what the values
 /// ought to be — a design frame, a previous build and a second device are all

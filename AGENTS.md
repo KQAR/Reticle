@@ -30,22 +30,34 @@ panel's visual language — the token spec (colors, type, surface ladder) the
 ## Current Shape
 
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
-  observations, wire protocol, selectors, and the text projections themselves
-  (`Render` — `compact` / `tree` / `semantics` / `regions` / `coverage`, beside
-  `StyleObservation.render` and `ScreenCoverage`, which answers "what on this screen
-  has no selector over it" for one point and for the whole screen). No Android dependency. Shared by the CLI and the
-  in-app agent. One implementation of `reticle-protocol`; the Swift
-  `ReticleProtocol` is the parallel one. **A projection's formatting belongs here,
-  not in the helper**: a derivation shared while its rendering is not has only half
-  a contract, which is how `compact` drifted before
-  `reticle-protocol/fixtures/snapshot-render.cases.json` pinned both sides.
+  observations, wire protocol, selectors, and `ScreenCoverage` (which answers
+  "what on this screen has no selector over it" for one point and for the whole
+  screen). No Android dependency. Shared by the CLI and the in-app agent. One
+  implementation of `reticle-protocol`; the Swift `ReticleProtocol` is the
+  parallel one. The text projections (`Render`, `StyleObservation`, `outline`) are
+  **not** here any more: they exist once, in `ReticleProtocol`, and the Swift host
+  renders them for both platforms — see the Direction entry below.
 - `reticle-swift` (`ReticleProtocol`): SwiftPM library — the Swift implementation
   of `reticle-protocol` (Codable models with omit-defaults JSON, `SemanticTree` /
-  `CompactObservation` derivations, `PortMap`, and `Render` — the twin of
-  `dev.reticle.core.Render`, pinned against it by
-  `reticle-protocol/fixtures/snapshot-render.cases.json`). Depended on by both the
+  `CompactObservation` derivations, `PortMap`, and the text projections `Render` /
+  `StyleObservation` / `Outline` — the ONLY implementations, for both platforms,
+  their format pinned by `reticle-protocol/fixtures/snapshot-render.cases.json` and
+  `style-observation.cases.json`). Depended on by both the
   iOS agent and the Swift host so the protocol is never re-ported. Outside the
   Gradle build.
+- **Direction (2026-11): pure snapshot logic moves into the Swift host for BOTH
+  platforms.** The helper captures; the host renders, resolves and classifies, so a
+  projection has ONE implementation instead of a Kotlin/Swift pair kept honest by
+  fixtures. Done so far: every `ui <view>` renders in the host for Android too
+  (`SnapshotRender`, `Outline`), and the `@N` alias cache is the host's
+  (`OutlineAliasCache`): `act --alias` resolves it and sends the helper the cached
+  entry (`aliasEntry`) to re-find in the live tree. The helper has no `render` RPC
+  and `reticle-core` no `Render` / `StyleObservation`. Selector-miss diagnostics
+  are `ReticleProtocol.SelectorDiagnostics`. Still paired: selector resolution,
+  `WaitVerdict`, `ScreenCoverage`, `TapReach` — only what the in-app agent itself
+  calls has to stay in Kotlin. `reticle-core` keeps what the in-app Android agent
+  needs (models, capture-side derivations). Do not add new pure logic to
+  `reticle-core` or the helper.
 - `reticle-agent/android` (`:reticle-agent:android`): Android library (AAR).
   In-process loopback HTTP server, view-tree + Compose-semantics capture,
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata

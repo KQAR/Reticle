@@ -1,9 +1,8 @@
 import XCTest
 @testable import ReticleProtocol
 
-/// The `ui <view>` roster, against this port — driven by the language-neutral
-/// fixture reticle-protocol/fixtures/render-views.cases.json, which the Kotlin
-/// suite reads too.
+/// The `ui <view>` roster, against the one renderer — driven by the
+/// language-neutral fixture reticle-protocol/fixtures/render-views.cases.json.
 ///
 /// The CLI advertises ONE list of views for every target, so a view is either
 /// rendered here or refused by a reason that names the boundary. What this suite

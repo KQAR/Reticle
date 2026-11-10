@@ -1,4 +1,6 @@
 import Foundation
+import ReticleHostIos
+import ReticleProtocol
 
 /// The Android `HostBackend`: typed calls in, JSONL RPC out.
 ///
@@ -13,9 +15,15 @@ import Foundation
 /// has no wire at all) had to speak JSONL to be callable.
 final class AndroidBackend: HostBackend {
     private let transport: HelperCalling
+    /// The global `--serial`, which keys the outline alias cache per device.
+    private let serial: String?
+    /// Where `~/.reticle/aliases` lives; a parameter only so tests can isolate it.
+    private let aliasHome: URL
 
-    init(_ transport: HelperCalling) {
+    init(_ transport: HelperCalling, serial: String? = nil, aliasHome: URL = OutlineAliasCache.defaultHome) {
         self.transport = transport
+        self.serial = serial
+        self.aliasHome = aliasHome
     }
 
     func close() { transport.close() }
@@ -91,23 +99,29 @@ final class AndroidBackend: HostBackend {
         )
     }
 
+    /// Every view renders HERE, from a snapshot the helper only captures — see
+    /// `SnapshotRender`. `outline` also writes the `@N` alias cache `act --alias`
+    /// reads, from the same window-scoped snapshot its text came from, so `@N`
+    /// means what the caller just read.
     func render(_ request: RenderRequest) throws -> RenderResult {
-        var params: [String: Any] = ["view": request.view]
-        // The helper's own contract: a path, or `live: "true"` to capture now. The
-        // typed request carries one field for both (a sentinel path), so the two can
-        // never disagree about where the snapshot comes from; the split back into two
-        // wire keys belongs here, with the rest of the wire knowledge.
-        if request.snapshotPath == RenderRequest.liveSnapshotPath {
-            params["live"] = "true"
-        } else {
-            params["snapshot"] = request.snapshotPath
+        let snapshot = try renderSnapshot(request)
+        guard request.view == "outline" else { return try SnapshotRender.render(request, snapshot: snapshot) }
+        let scoped = try SnapshotRender.scoped(snapshot, window: request.window)
+        let (text, entries) = Outline.render(scoped)
+        if let package = request.package {
+            try OutlineAliasCache.write(scoped, entries, serial: serial, package: package, home: aliasHome)
         }
-        if let depth = request.depth { params["depth"] = depth }
-        if let package = request.package { params["package"] = package }
-        if let window = request.window { params["window"] = window }
-        for (key, value) in request.selector.wireParams { params[key] = value }
-        let r = try transport.call(.render, params)
-        return RenderResult(text: r["text"] as? String ?? "")
+        return RenderResult(text: text)
+    }
+
+    private func renderSnapshot(_ request: RenderRequest) throws -> Snapshot {
+        guard request.snapshotPath == RenderRequest.liveSnapshotPath else {
+            return try SnapshotRender.load(path: request.snapshotPath)
+        }
+        guard let package = request.package else { throw HelperError("render --live needs --package") }
+        let r = try transport.call(.uiReport, ["package": package])
+        guard let tree = r["snapshot"] else { throw HelperError("uiReport returned no snapshot") }
+        return try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
     }
 
     func logs(_ request: PackageRequest) throws -> [AppLogEntry] {
@@ -139,8 +153,16 @@ final class AndroidBackend: HostBackend {
         )
     }
 
+    /// An `@N` alias is resolved against the host's outline cache here and sent as
+    /// `aliasEntry`; the helper only re-finds that entry in the live tree. `wait`
+    /// keeps the bare alias so the helper refuses it by name.
     func act(_ request: ActRequest) throws -> ActOutcome {
-        ActOutcome(raw: try transport.call(.act, request.wireParams))
+        var params = request.wireParams
+        if let alias = request.selector.alias, request.gesture != "wait" {
+            let entry = try OutlineAliasCache.resolve(alias, serial: serial, package: request.package, home: aliasHome)
+            params["aliasEntry"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
+        }
+        return ActOutcome(raw: try transport.call(.act, params))
     }
 
     // MARK: - Android-only device configuration

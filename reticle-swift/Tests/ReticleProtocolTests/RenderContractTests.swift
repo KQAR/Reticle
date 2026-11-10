@@ -2,15 +2,13 @@ import XCTest
 @testable import ReticleProtocol
 
 /// The text projections an agent reads (`ui compact`, `ui tree`,
-/// `ui tree --semantics`, `ui regions`), driven by the SAME language-neutral
-/// fixture the Kotlin suite reads:
+/// `ui tree --semantics`, `ui regions`), driven by the language-neutral fixture
 /// reticle-protocol/fixtures/snapshot-render.cases.json.
 ///
-/// This is the anti-drift device for the projections an agent looks at most. An
-/// Android snapshot renders through `dev.reticle.core.Render` in the Kotlin helper
-/// and an iOS one through `Render` here; before the fixture existed the two were
-/// pinned only by hand-mirrored unit tests, and `compact` had already drifted that
-/// way once — the derivation was shared while the formatting was not.
+/// Android and iOS snapshots both render through this `Render` in the Swift host.
+/// The fixture began as the anti-drift device between it and a Kotlin twin (which
+/// `compact` had already drifted from once); the twin is gone, and the cases now
+/// pin the format the agent reads.
 final class RenderContractTests: XCTestCase {
 
     private struct Case: Decodable {

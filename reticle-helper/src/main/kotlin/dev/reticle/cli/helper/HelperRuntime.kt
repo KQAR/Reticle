@@ -206,7 +206,7 @@ internal data class ResolvedInputTarget(
 
 internal fun resolveInputTarget(device: DeviceController, pkg: String, params: JsonObject): ResolvedInputTarget {
     params.str("alias")?.let { alias ->
-        val entry = OutlineRenderer.resolveAlias(params.str("serial"), pkg, alias)
+        val entry = AliasEntry.from(params, alias)
         // The cache records where the node WAS when the outline ran; re-resolve
         // against the live tree so a relayout between `ui outline` and `act`
         // doesn't land the tap on stale coordinates. The cached frame is the
@@ -321,7 +321,7 @@ private fun aliasLiveTarget(
     pkg: String,
     params: JsonObject,
     alias: String,
-    entry: OutlineRenderer.Entry,
+    entry: AliasEntry,
 ): ResolvedInputTarget? = runCatching {
     val client = runtimeClientFor(device, pkg, params)
     if (client.probe() !is RuntimeHealth.Healthy) return null
@@ -335,7 +335,7 @@ private fun aliasLiveTarget(
  * Pure matching half of [aliasLiveTarget], separated so it can be tested
  * without a device.
  */
-internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: OutlineRenderer.Entry): Node? {
+internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: AliasEntry): Node? {
     val nodes = liveNodes.filter { it.isVisible && it.frame != null }
     val matched = nodes.filter { node ->
         (entry.testId != null && node.testId == entry.testId) ||

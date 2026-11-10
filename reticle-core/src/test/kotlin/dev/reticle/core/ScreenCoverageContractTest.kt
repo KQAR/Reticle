@@ -69,7 +69,7 @@ class ScreenCoverageContractTest {
     fun everyFixtureCaseReportsAsSpecified() {
         val failures = ArrayList<String>()
         for (case in cases()) {
-            val actual = Render.coverage(case.snapshot).lines()
+            val actual = ScreenCoverage.of(case.snapshot).render().lines()
             if (actual != case.report) {
                 failures.add(
                     "  - ${case.name} [report]\n" +

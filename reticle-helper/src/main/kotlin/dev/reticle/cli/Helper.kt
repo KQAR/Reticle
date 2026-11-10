@@ -1,6 +1,8 @@
 package dev.reticle.cli
 
 import dev.reticle.core.ReticleJson
+import dev.reticle.core.Snapshot
+import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -106,6 +108,7 @@ object Helper {
      */
     private fun dispatch(method: String, params: JsonObject): JsonElement = when (method) {
         "ping" -> buildJsonObject { put("pong", true); put("version", RETICLE_VERSION) }
+        "decodeSnapshot" -> decodeSnapshot(params)
         "listDevices" -> HelperDeviceCommands.listDevices()
         "status" -> HelperDeviceCommands.status(params)
         "inject" -> HelperDeviceCommands.inject(params)
@@ -116,11 +119,22 @@ object Helper {
         "logs" -> HelperDeviceCommands.logs(params)
         "logcat" -> HelperDeviceCommands.logcat(params)
         "screenshot" -> HelperDeviceCommands.screenshot(params)
-        "render" -> HelperRenderCommands.render(params)
         "proxyStatus" -> HelperProxyCommands.status(params)
         "proxySet" -> HelperProxyCommands.set(params)
         "proxyClear" -> HelperProxyCommands.clear(params)
         "proxyInstallCa" -> HelperProxyCommands.installCa(params)
         else -> throw CliError("unknown method '$method'")
+    }
+
+    /**
+     * CI's native-image smoke: decode a snapshot file with no device. Every other
+     * method that deserializes (uiReport, act) needs adb, and kotlinx-serialization
+     * under native-image (enums, the polymorphic MetadataValue) is the path most
+     * likely to break in the native binary while the JVM tests stay green.
+     */
+    private fun decodeSnapshot(params: JsonObject): JsonElement {
+        val path = params.str("snapshot") ?: throw CliError("decodeSnapshot needs `snapshot` (a file path)")
+        val snapshot = ReticleJson.instance.decodeFromString(Snapshot.serializer(), File(path).readText())
+        return buildJsonObject { put("nodeCount", snapshot.nodes.size); put("rootRef", snapshot.rootRef) }
     }
 }

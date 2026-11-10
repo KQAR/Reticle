@@ -4,8 +4,12 @@ import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class AliasLiveMatchTest {
     @Test
@@ -66,13 +70,33 @@ class AliasLiveMatchTest {
         assertNull(aliasLiveMatch(live, entry))
     }
 
+    @Test
+    fun anAliasWithoutTheHostResolvedEntryIsRefusedByName() {
+        // An older host sends only `alias`; the cache it would need lives host-side now.
+        val e = assertFailsWith<CliError> { AliasEntry.from(buildJsonObject { put("alias", "@1") }, "@1") }
+        assertContains(e.message ?: "", "upgrade reticle")
+    }
+
+    @Test
+    fun parsesTheEntryTheHostSends() {
+        val params = buildJsonObject {
+            put("aliasEntry", buildJsonObject {
+                put("alias", "@2"); put("ref", "r9"); put("role", "button"); put("testId", "pay")
+                put("enabled", true); put("interactive", true)
+                put("frame", buildJsonObject { put("x", 10); put("y", 200); put("width", 100); put("height", 40) })
+            })
+        }
+        val entry = AliasEntry.from(params, "@2")
+        assertEquals("pay", entry.testId)
+        assertEquals(220.0, entry.frame.centerY)
+    }
+
     private fun entry(
         testId: String? = null,
         label: String? = null,
         role: String = "button",
         frame: Rect,
-    ): OutlineRenderer.Entry = OutlineRenderer.Entry(
-        alias = "@1",
+    ): AliasEntry = AliasEntry(
         ref = "cached",
         role = role,
         label = label,
@@ -80,8 +104,6 @@ class AliasLiveMatchTest {
         testId = testId,
         resourceId = null,
         css = null,
-        enabled = true,
-        interactive = true,
     )
 
     private fun node(

@@ -207,9 +207,9 @@ public final class IosHelperClient: HostBackend {
         }
     }
 
-    /// `--alias` is Android-only: the `@N` numbers are handed out by `ui outline`, which
-    /// is the Kotlin helper's own host-side cache (`OutlineRenderer`). This host keeps no
-    /// such cache, so an alias here can resolve to nothing.
+    /// `--alias` is Android-only: the `@N` numbers are handed out by `ui outline`, whose
+    /// cache (`OutlineAliasCache`) only the Android backend writes and resolves, so an
+    /// alias here can resolve to nothing.
     ///
     /// It is refused BY NAME at every iOS entry point that takes a selector, rather than
     /// narrowed away in `HostSelector.protocolSelector` — where it used to vanish
@@ -220,31 +220,14 @@ public final class IosHelperClient: HostBackend {
         guard alias != nil else { return }
         throw HelperError(
             "\(command) cannot take --alias on iOS: `@N` aliases are handed out by "
-                + "`ui outline`, which is Android-only (the alias cache lives in the Kotlin "
-                + "helper). Use --test-id / --resource-id / --css / --ref / --label — "
+                + "`ui outline`, which is Android-only. Use --test-id / --resource-id / --css / --ref / --label — "
                 + "`ui compact` prints one for every item on the screen."
         )
     }
 
     public func render(_ request: RenderRequest) async throws -> RenderResult {
         try Self.rejectAlias(request.selector.alias, command: "ui \(request.view)")
-        var snapshot = try await loadSnapshotForRender(request)
-        if let window = request.window {
-            guard let scoped = snapshot.scopedToWindow(window) else {
-                let refs = snapshot.windowRefs()
-                throw HelperError("no window '\(window)' in this capture. Windows here (bottom to top): "
-                    + (refs.isEmpty ? "(none — this capture has no window nodes)" : refs.joined(separator: ", "))
-                    + ". Use `--window top` for whichever is on top.")
-            }
-            snapshot = scoped
-        }
-        let text = try Render.view(
-            request.view,
-            snapshot: snapshot,
-            depth: request.depth ?? Int.max,
-            selector: request.selector.protocolSelector
-        )
-        return RenderResult(text: text)
+        return try SnapshotRender.render(request, snapshot: try await loadSnapshotForRender(request))
     }
 
     private func loadSnapshotForRender(_ request: RenderRequest) async throws -> Snapshot {
@@ -254,10 +237,9 @@ public final class IosHelperClient: HostBackend {
                 throw HelperError("render --live needs --package")
             }
             let (data, _) = try await agent(pkg).get(Endpoints.snapshot)
-            return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
+            return try SnapshotRender.decode(data)
         }
-        let data = try Data(contentsOf: URL(fileURLWithPath: request.snapshotPath))
-        return try ReticleJSON.decode(Snapshot.self, from: data).requireSupportedSchema()
+        return try SnapshotRender.load(path: request.snapshotPath)
     }
 
     public func mutate(_ request: MutateRequest) async throws -> MutationOutcome {

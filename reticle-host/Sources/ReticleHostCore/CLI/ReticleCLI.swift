@@ -169,13 +169,19 @@ public enum ReticleCLI {
             // Natively in-host: typed the whole way down, no JSONL anywhere.
             return IosHelperClient(serial: serial)
         }
+        // Connected on first use: `ui <view> <file>` renders in the host and never
+        // calls the helper, so it must not need one to exist.
+        return AndroidBackend(LazyHelperClient { try makeAndroidTransport(args: args, serial: serial) }, serial: serial)
+    }
+
+    private static func makeAndroidTransport(args: Args, serial: String?) throws -> HelperCalling {
         // The three Android transports differ only in how the JSONL envelope
         // travels, so one adapter turns any of them into the typed backend.
         if shouldUseDaemonHelper(args) {
-            return AndroidBackend(DaemonHelperClient(serial: serial))
+            return DaemonHelperClient(serial: serial)
         }
         if let client = HelperDaemonLauncher.ensureClient(args: args, serial: serial) {
-            return AndroidBackend(client)
+            return client
         }
         guard let helper = resolveHelper(args) else {
             throw HelperUnavailable("could not find the reticle helper; set RETICLE_HELPER or pass --helper")
@@ -186,7 +192,7 @@ public enum ReticleCLI {
             serial: serial
         )
         try client.start()
-        return AndroidBackend(client)
+        return client
     }
 
     /// Returns the process exit code for the command.

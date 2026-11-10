@@ -54,7 +54,7 @@ kotlin {
  * `native-image` on PATH). Output: build/native/reticle-helper.
  *
  * kotlinx-serialization 2.0 uses compile-time serializers, so this needs no
- * hand-written reflection config (verified: ping/listDevices/render all work).
+ * hand-written reflection config (verified: ping/listDevices/uiReport all work).
  */
 val nativeHelper by tasks.registering(Exec::class) {
     group = "reticle"

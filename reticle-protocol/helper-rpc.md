@@ -101,16 +101,22 @@ Common optional params on device methods: `serial`, `port`, `hostPort` (the host
 end of the forward; defaults to a port derived from serial + package, never the
 device port). Selector
 params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
-`ref`, `point` ("x,y"), `region`, `alias` (`@N` from the last outline cache).
-An `alias` is re-resolved against the live tree before use (matched by the
-cached entry's selector, then label+role, nearest-to-cached-frame on ties) so a
-relayout between `ui outline` and `act` does not land on stale coordinates; the
-cached frame is only used when the runtime is unreachable, and the result's
-`source` says which path was taken (`outline:@N->live` vs cached frame).
+`ref`, `point` ("x,y"), `region`, `alias` + `aliasEntry`. The `@N` alias cache
+is the HOST's (`ui outline` renders and writes it there), so on an `act` the host
+resolves `alias` against it and sends the cached entry as `aliasEntry` (the
+cache-entry object: `ref`, `role`, `label?`, `frame`, `testId?`, `resourceId?`,
+`css?`, …); an `alias` arriving without one is refused. The helper re-resolves
+that entry against the live tree before use (matched by the entry's selector,
+then label+role, nearest-to-cached-frame on ties) so a relayout between
+`ui outline` and `act` does not land on stale coordinates; the cached frame is
+only used when the runtime is unreachable, and the result's `source` says which
+path was taken (`outline:@N->live` vs cached frame). `wait` gets the bare
+`alias` only, and refuses it by name.
 
 | Method | Params | Result |
 | --- | --- | --- |
 | `ping` | — | `{ "pong": true, "version": "<cli version>" }` |
+| `decodeSnapshot` | `snapshot` (path) | `{ "nodeCount", "rootRef" }` — decodes a snapshot file with no device. CI's smoke for kotlinx-serialization under native-image; the host never calls it |
 | `listDevices` | — | `{ "devices": [ { "serial", "state" }, ... ] }` |
 | `status` | `package?` | `{ "devices": [...], ["package", "running", "pid", "runtime"] }` — `runtime` ∈ `healthy`/`conflict`/`unreachable`/`unresponsive`/`foreign` |
 | `inject` | `package` (req), `payloadDex?`, `restartUnderDebugger?` (mark the app as being debugged so AMS relaxes the input-dispatch ANR during the JDWP suspension — **force-stops and relaunches the target**, so it is opt-in) | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
@@ -121,7 +127,6 @@ cached frame is only used when the runtime is unreachable, and the result's
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
 | `screenshot` | `package?` | `{ "via", "pngBase64" }` — agent `/screenshot` if reachable, else `adb screencap` |
-| `render` | `view` (tree/semantics/compact/outline/node/regions), `snapshot` (path), `depth?`, `window?` (a window ref or `top` — narrows the SNAPSHOT before rendering, so every view and the `@N` numbering scope together; an unknown ref is an error naming the windows that exist), selector, optional `package` to write outline alias cache | `{ "text": "<rendered>" }` — local snapshot rendering; `outline` adds `item i/n` hints for repeated vertical targets and writes those hints into the alias cache. With more than one window in the capture, `compact` and `outline` group their lines under a `window <ref> … [top]` header per window, topmost first |
 | `proxyStatus` | `serial?` | `{ "httpProxy": "<host:port>" }` or empty when unset |
 | `proxySet` | `serial?`, either `host` + `port` or raw `value` | `{ "previous", "current" }` — configures Android global `http_proxy`; `127.0.0.1:<port>` also creates `adb reverse tcp:<port> tcp:<port>` |
 | `proxyClear` | `serial?`, `port?` | `{ "previous", "current": "" }` — clears Android global `http_proxy` and removes the matching adb reverse when `port` is supplied |
@@ -162,8 +167,10 @@ cached frame is only used when the runtime is unreachable, and the result's
 
 The Swift host (`reticle-host/`) now reaches functional parity with the Kotlin
 CLI's one-shot command surface through these methods: device control
-(status/inject/launch), evidence (uiReport/render/screenshot/logs/logcat), and
-action (act/mutate). Binary screenshots cross as base64 (`pngBase64`).
+(status/inject/launch), evidence (uiReport/screenshot/logs/logcat), and
+action (act/mutate). Binary screenshots cross as base64 (`pngBase64`). There is
+no render method: every `ui <view>` (including `outline` and its alias cache)
+renders in the host from a snapshot file or a `uiReport` capture.
 
 Not yet exposed (add a method + a `Helper.dispatch` branch when needed): a
 streaming/long-poll `logs --follow`, and any future `act` gestures beyond
