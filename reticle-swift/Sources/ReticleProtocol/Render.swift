@@ -1,20 +1,18 @@
 import Foundation
 
-/// Host-side text renderers over a snapshot, ported from the Kotlin helper's
-/// `HelperRenderCommands`. These are pure functions over the protocol models, so
-/// they are platform-neutral: the Swift host uses them to render an iOS snapshot
-/// exactly as the Kotlin helper renders an Android one.
+/// Host-side text renderers over a snapshot — the ONLY renderers: the Swift host
+/// uses them for iOS and Android snapshots alike (the Kotlin twins are gone).
 ///
-/// `outline` (the `@N` alias cache) is Android-only and refused BY NAME here — see
+/// `outline` is rendered by `Outline`, not here; the host only wires it for Android
+/// (where `act --alias` reads its cache), so for iOS it is refused BY NAME — see
 /// `RenderError.androidOnly`. It used to fall through to `unknownView`, which is the
 /// failure this whole file exists to prevent: a projection the CLI advertises for
 /// every target answering with an internal-sounding error that names no boundary and
 /// suggests no path. The boundary itself is stated once, in `docs/boundaries.md`.
 public enum Render {
-    /// Every `ui <view>` name the CLI accepts. A view is in this roster whether or
-    /// not THIS port renders it: the roster is what both ports are measured against,
-    /// so a name added on one platform cannot quietly become an "unknown view" on the
-    /// other. Pinned against the Kotlin twin by
+    /// Every `ui <view>` name the CLI accepts, on every target. A view is in this
+    /// roster whether or not it renders for a given platform, so a name cannot
+    /// quietly become an "unknown view" on one of them. Pinned by
     /// `reticle-protocol/fixtures/render-views.cases.json`.
     public static let roster = [
         "tree", "semantics", "compact", "outline", "node", "regions", "style", "coverage",
@@ -54,8 +52,8 @@ public enum Render {
             case .unknownView(let v): return "unknown render view '\(v)'"
             case .androidOnly(let v):
                 return "ui \(v) is Android-only: it numbers the screen's nodes into a `@N` alias "
-                    + "cache kept host-side by the Kotlin helper, and the Swift host keeps no such "
-                    + "cache — so an alias it printed could never be resolved back. Use `ui compact` "
+                    + "cache that only the Android act path resolves, so an alias it printed here "
+                    + "could never be resolved back. Use `ui compact` "
                     + "for the same screen: every item there already carries the selector an alias "
                     + "stands in for (#testId / @resourceId / a css handle / ref)."
             case .noSelector: return "node render needs a selector (testId/resourceId/ref)"

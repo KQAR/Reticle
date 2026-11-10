@@ -91,27 +91,6 @@ class ProjectionTruncationTest {
     }
 
     @Test
-    fun theCompactRenderSaysWhatItsCapDropped() {
-        val rendered = Render.compact(snapshot(buttons = 205))
-        assertTrue(
-            rendered.lines().last().contains("5 more item(s) beyond this projection's cap"),
-            "the compact render must end by saying what the cap dropped:\n${rendered.lines().last()}"
-        )
-    }
-
-    @Test
-    fun styleCountsWhatTheCapDropped() {
-        val observation = StyleObservation.from(snapshot(buttons = 5), maxItems = 2)
-        assertEquals(2, observation.items.size)
-        assertEquals(3, observation.truncatedItems)
-        val rendered = observation.render()
-        assertTrue(
-            rendered.lines().last().contains("3 more style-bearing node(s)"),
-            "the style projection must say what its cap dropped:\n$rendered"
-        )
-    }
-
-    @Test
     fun aChangePastTheRenderCapStillChangesTheWaitDigest() {
         // Same first 3 items; a 4th appears. Capped at 3, the digests would be
         // equal and `wait --idle` would call a moving screen quiet.

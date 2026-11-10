@@ -31,7 +31,6 @@ public enum HelperMethod: String, CaseIterable, Sendable {
     case logs
     case logcat
     case screenshot
-    case render
     case proxyStatus
     case proxySet
     case proxyClear

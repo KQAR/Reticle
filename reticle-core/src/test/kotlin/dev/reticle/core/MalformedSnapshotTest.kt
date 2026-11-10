@@ -145,12 +145,6 @@ class MalformedSnapshotTest {
     }
 
     @Test
-    fun styleObservationReturnsOnParentCycle() {
-        val style = StyleObservation.from(parentCycleSnapshot())
-        assertTrue(style.items.any { it.ref == "leaf" })
-    }
-
-    @Test
     fun labelResolutionReturnsOnParentCycle() {
         val snapshot = parentCycleSnapshot()
         val resolver = SelectorResolver(snapshot, SemanticTree.build(snapshot))
@@ -188,13 +182,6 @@ class MalformedSnapshotTest {
     }
 
     @Test
-    fun styleObservationReturnsOnChildrenCycleAndEmitsEachRefOnce() {
-        val style = StyleObservation.from(childrenCycleSnapshot())
-        assertEquals(1, style.items.count { it.ref == "leaf" })
-        assertEquals(style.items.size, style.items.map { it.ref }.distinct().size)
-    }
-
-    @Test
     fun labelResolutionReturnsOnChildrenCycle() {
         val snapshot = childrenCycleSnapshot()
         val resolver = SelectorResolver(snapshot, SemanticTree.build(snapshot))
@@ -205,12 +192,11 @@ class MalformedSnapshotTest {
     // ---- one ref under two parents ----------------------------------------
 
     @Test
-    fun duplicatedRefIsEmittedOnceByBothProjections() {
+    fun duplicatedRefIsEmittedOnceByTheCompactProjection() {
         val snapshot = duplicateParentSnapshot()
         // Dedup via the visit seen-set matches the document-order contract used
         // everywhere else (refsInDocumentOrder, SemanticTree.firstNode): a node
         // is one node however many parents list it.
         assertEquals(1, CompactObservation.from(snapshot).items.count { it.ref == "dup" })
-        assertEquals(1, StyleObservation.from(snapshot).items.count { it.ref == "dup" })
     }
 }

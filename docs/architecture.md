@@ -551,14 +551,19 @@ existed.
 And **the rendering is part of the projection, not part of the host.** A shared
 derivation whose text formatting lives in each host separately has only half a
 contract — the two can agree on every field and still print one screen two ways,
-which is precisely how `compact` drifted. So `Render` (`compact` / `tree` /
-`semantics` / `regions`) sits in `reticle-core` and in `ReticleProtocol` beside the
-derivations, both pinned by
-`reticle-protocol/fixtures/snapshot-render.cases.json`; the hosts only call it. What
-stays host-side is what genuinely is: fetching or loading the snapshot, window
-scoping, `ui node` (which renders through selector diagnostics), and the Android-only
-`@N` alias cache — the one projection with no Swift twin, and named as such in
-`Render.swift` rather than left to be discovered.
+which is precisely how `compact` drifted. Pinning a Kotlin and a Swift renderer to
+one fixture fixed that; having ONE renderer removes the pair. So the text
+projections — `Render` (`compact` / `tree` / `semantics` / `regions` / `node` /
+`coverage`), `StyleObservation.render`, and `Outline` — exist only in
+`ReticleProtocol`, and the Swift host renders them for **both** platforms: the
+Android helper captures (`uiReport`) and ships the snapshot, and has no render
+method at all. `reticle-protocol/fixtures/snapshot-render.cases.json` now pins the
+format rather than a twin. What is host I/O around them: loading or fetching the
+snapshot and window scoping (`SnapshotRender`), and the `@N` alias cache
+(`OutlineAliasCache`, `~/.reticle/aliases/<serial>/<package>/last-outline.json`),
+which `act --alias` resolves on the host before sending the helper the cached entry
+to re-find in the live tree. `outline` is still wired for Android only — named as
+such in `Render.swift` rather than left to be discovered.
 
 The wire format carries a `schemaVersion` (`Snapshot.SCHEMA_VERSION`, pinned
 against `snapshot.schema.json`), and every snapshot ingested from outside the
@@ -683,10 +688,10 @@ roadmap's `diff design` item was dropped rather than built. The projection is th
 same shape for a design comparison, a cross-build check, or the same screen on two
 devices, and Reticle does not need to know which.
 
-`StyleObservation` in `reticle-core`, mirrored in `ReticleProtocol`, owns the
-derivation AND its text rendering — both host renderers just call `render()`, so
-the Kotlin helper and the Swift host cannot format one snapshot two ways. Pinned
-for both by `reticle-protocol/fixtures/style-observation.cases.json`.
+`StyleObservation` in `ReticleProtocol` owns the derivation AND its text
+rendering, and the Swift host renders it for both platforms — the Kotlin twin was
+deleted when Android rendering moved into the host. Pinned by
+`reticle-protocol/fixtures/style-observation.cases.json`.
 
 The DOM channel behaves deliberately differently from the native ones. Both bridges
 (Android `WebViewBridge`, iOS the WKWebView twin) tag their 26 `domStyle*` keys
@@ -1047,11 +1052,11 @@ Which box in the [first diagram](#the-shape-of-the-system) each module is:
 
 | Module | Kind | Contents |
 | --- | --- | --- |
-| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol + the text projections (`Render`, `StyleObservation.render`) — one implementation of `reticle-protocol` |
-| `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, and `Render` — the twin of `dev.reticle.core.Render`, so the tree/compact/semantics/regions text is formatted from the protocol module on both platforms rather than once per host. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
+| `reticle-core` | Pure JVM | Snapshot / semantic / region models + wire protocol + the derivations the agent and helper still call — one implementation of `reticle-protocol` (no text projections: those render in the Swift host) |
+| `reticle-swift` (`ReticleProtocol`) | SwiftPM library | The Swift implementation of `reticle-protocol`: Codable models, omit-defaults JSON, `SemanticTree`/`CompactObservation` derivations, `PortMap`, `SelectorDiagnostics`, and the text projections (`Render`, `StyleObservation`, `Outline`) — the only renderers; the Swift host uses them for both platforms, and the Android helper only captures. Depended on by both the iOS agent and the Swift host so neither re-ports the protocol. |
 | `reticle-agent/android` (`:reticle-agent:android`) | Android AAR | In-process server, capture, Compose bridge, region detection, mutation, screenshot, auto-start |
 | `reticle-agent/ios` (`ReticleKit` + `ReticleInjection` + `ReticleInjectionBootstrap`) | SwiftPM package | In-process iOS agent: loopback server, UIKit capture, accessibility-derived SwiftUI (`axElement`) bridge, allowlist mutation, in-process screenshot, `Reticle` facade, and DYLD-constructor / linked auto-start. Emits `platform="ios"` protocol JSON. Invisible to Gradle. |
-| `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector *diagnostics* (resolution itself is `reticle-core`, beside its Swift twin). Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
+| `reticle-helper` | Android host layer (Kotlin) | adb wrapper, runtime client, input backend, JDWP injector, selector *diagnostics* for `act` misses (resolution itself is `reticle-core`, beside its Swift twin). No rendering: `ui <view>` and the `@N` alias cache are the Swift host's. Ships as the no-JDK native `reticle-helper`; its only entry points are `helper` (the RPC server the Swift host drives), `version`, `help`. |
 | `reticle-host` | Swift host CLI + daemon | The user-facing `reticle` (macOS arm64). Selects a platform via `--target` (default `android`) behind the typed `HostBackend` interface (one method per capability, typed requests/results): Android device commands go through `AndroidBackend`, the single place the helper's JSONL method names and parameter keys are spelled — as `HelperMethod` cases rather than literals, which also lets the daemon's `/helper/rpc` broker refuse any method the wire contract does not define instead of forwarding a caller's string; **iOS is handled natively in-host** (`IosHelperClient` — `simctl`/`devicectl` + direct loopback HTTP + private CoreSimulator HID), no helper. Also owns `reticle serve`, session events, panel, proxy/MITM, and mock state. Internally four SwiftPM library targets stacked bottom-up — `ReticleHostShared` (dependency-free `JSONValue` / event models / `HelperError` / the `HelperCalling` call surface / the version constant), `ReticleNetworkLane` (the capture proxy + MITM + mock engine, behind the `NetworkEventSink` interface), `ReticleHostIos` (the iOS platform backend: `simctl`/`devicectl`, loopback HTTP, the wait/scroll-to/verify loops, CoreSimulator HID — depending on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI), and `ReticleHostCore` (daemon, CLI, panel, Android helper clients, grouped as `Daemon/` `CLI/` `Android/`) — plus the `ReticleHost` executable and `CReticleSimHID`, a C target that `dlopen`s the private CoreSimulator HID frameworks at runtime so a missing or renamed symbol degrades to a clear error instead of a link failure. `ReticleHostCore` `@_exported`s the lower three, so the split is an internal boundary, not an API change. |
 | `reticle-device` | Rust executable (cargo) | The **system channel**'s default backend: a resident per-device CoreDevice session (tunnel, display stream and HID connections held open; a tap is ~50 ms) to a real iPhone — HID tap / Home, the device's own cross-process accessibility tree, app launch, display screenshot — over the MIT `idevice` crate. Ships beside `reticle-host`; nothing is installed on the device |
 | `reticle-runner-ios` | iOS XCUITest bundle (xcodegen) | The system channel's fallback (`--via runner`): a resident out-of-process runner, independent of the app under test. Reaches another process's UI — a system alert, SpringBoard, the Home gesture — because a test runner is granted a backboardd HID connection, which an in-process agent never gets. Sees far less of what it reaches (one accessibility layer: no view class, no DOM, no styles, no regions), so its results use `SystemObservation`/`SystemNode`, never `Node`. Driven by `reticle system …` through `IosSystemBackend`. Real devices only. |

@@ -207,9 +207,9 @@ public final class IosHelperClient: HostBackend {
         }
     }
 
-    /// `--alias` is Android-only: the `@N` numbers are handed out by `ui outline`, which
-    /// is the Kotlin helper's own host-side cache (`OutlineRenderer`). This host keeps no
-    /// such cache, so an alias here can resolve to nothing.
+    /// `--alias` is Android-only: the `@N` numbers are handed out by `ui outline`, whose
+    /// cache (`OutlineAliasCache`) only the Android backend writes and resolves, so an
+    /// alias here can resolve to nothing.
     ///
     /// It is refused BY NAME at every iOS entry point that takes a selector, rather than
     /// narrowed away in `HostSelector.protocolSelector` — where it used to vanish
@@ -220,8 +220,7 @@ public final class IosHelperClient: HostBackend {
         guard alias != nil else { return }
         throw HelperError(
             "\(command) cannot take --alias on iOS: `@N` aliases are handed out by "
-                + "`ui outline`, which is Android-only (the alias cache lives in the Kotlin "
-                + "helper). Use --test-id / --resource-id / --css / --ref / --label — "
+                + "`ui outline`, which is Android-only. Use --test-id / --resource-id / --css / --ref / --label — "
                 + "`ui compact` prints one for every item on the screen."
         )
     }

@@ -171,7 +171,7 @@ public enum ReticleCLI {
         }
         // Connected on first use: `ui <view> <file>` renders in the host and never
         // calls the helper, so it must not need one to exist.
-        return AndroidBackend(LazyHelperClient { try makeAndroidTransport(args: args, serial: serial) })
+        return AndroidBackend(LazyHelperClient { try makeAndroidTransport(args: args, serial: serial) }, serial: serial)
     }
 
     private static func makeAndroidTransport(args: Args, serial: String?) throws -> HelperCalling {

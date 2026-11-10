@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "The `ui <view>` roster, shared by both ports of reticle-protocol.",
+    "The `ui <view>` roster, which the Swift host renders for both platforms.",
     "",
     "A view name the CLI accepts must, on BOTH platforms, either render or be refused",
     "by a reason that names the platform boundary. What this fixture exists to forbid",
