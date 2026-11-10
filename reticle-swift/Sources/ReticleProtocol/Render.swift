@@ -46,6 +46,7 @@ public enum Render {
         case unknownView(String)
         case androidOnly(String)
         case noSelector
+        /// Carries the full human-facing message from `SelectorDiagnostics.nodeMiss`.
         case nodeNotFound(String)
 
         public var description: String {
@@ -58,7 +59,7 @@ public enum Render {
                     + "for the same screen: every item there already carries the selector an alias "
                     + "stands in for (#testId / @resourceId / a css handle / ref)."
             case .noSelector: return "node render needs a selector (testId/resourceId/ref)"
-            case .nodeNotFound(let s): return "no node matched selector \(s)"
+            case .nodeNotFound(let message): return message
             }
         }
     }
@@ -184,7 +185,7 @@ public enum Render {
     static func node(_ snapshot: Snapshot, selector: Selector?) throws -> String {
         guard let selector else { throw RenderError.noSelector }
         guard let match = try findNode(snapshot, selector) else {
-            throw RenderError.nodeNotFound(selector.describe())
+            throw RenderError.nodeNotFound(SelectorDiagnostics.nodeMiss(snapshot, selector))
         }
         let data = try ReticleJSON.encodePretty(match)
         return String(decoding: data, as: UTF8.self)
@@ -201,7 +202,7 @@ public enum Render {
             || selector.cssSelector != nil || selector.ref != nil
         else { return StyleObservation.from(snapshot).render() }
         guard let node = try findNode(snapshot, selector) else {
-            throw RenderError.nodeNotFound("\(selector)")
+            throw RenderError.nodeNotFound(SelectorDiagnostics.nodeMiss(snapshot, selector))
         }
         return StyleObservation.from(snapshot, startRef: node.ref).render()
     }

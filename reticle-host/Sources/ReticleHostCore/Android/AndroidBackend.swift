@@ -1,4 +1,6 @@
 import Foundation
+import ReticleHostIos
+import ReticleProtocol
 
 /// The Android `HostBackend`: typed calls in, JSONL RPC out.
 ///
@@ -91,7 +93,27 @@ final class AndroidBackend: HostBackend {
         )
     }
 
+    /// Every view but `outline` renders HERE, from a snapshot the helper only
+    /// captures — see `SnapshotRender`. `outline` and an `@N` alias still go to the
+    /// helper, which owns the alias cache both of them read or write.
     func render(_ request: RenderRequest) throws -> RenderResult {
+        guard request.view == "outline" || request.selector.alias != nil else {
+            return try SnapshotRender.render(request, snapshot: try renderSnapshot(request))
+        }
+        return try helperRender(request)
+    }
+
+    private func renderSnapshot(_ request: RenderRequest) throws -> Snapshot {
+        guard request.snapshotPath == RenderRequest.liveSnapshotPath else {
+            return try SnapshotRender.load(path: request.snapshotPath)
+        }
+        guard let package = request.package else { throw HelperError("render --live needs --package") }
+        let r = try transport.call(.uiReport, ["package": package])
+        guard let tree = r["snapshot"] else { throw HelperError("uiReport returned no snapshot") }
+        return try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
+    }
+
+    private func helperRender(_ request: RenderRequest) throws -> RenderResult {
         var params: [String: Any] = ["view": request.view]
         // The helper's own contract: a path, or `live: "true"` to capture now. The
         // typed request carries one field for both (a sentinel path), so the two can

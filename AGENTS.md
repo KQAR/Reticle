@@ -46,6 +46,14 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   `reticle-protocol/fixtures/snapshot-render.cases.json`). Depended on by both the
   iOS agent and the Swift host so the protocol is never re-ported. Outside the
   Gradle build.
+- **Direction (2026-11): pure snapshot logic moves into the Swift host for BOTH
+  platforms.** The helper captures; the host renders, resolves and classifies, so a
+  projection has ONE implementation instead of a Kotlin/Swift pair kept honest by
+  fixtures. Done so far: `ui <view>` renders in the host for Android too
+  (`SnapshotRender`), except `outline` and `--alias`, whose cache is still the
+  helper's; selector-miss diagnostics are `ReticleProtocol.SelectorDiagnostics`.
+  `reticle-core` keeps what the in-app Android agent needs (models, capture-side
+  derivations). Do not add new pure logic to `reticle-core` or the helper.
 - `reticle-agent/android` (`:reticle-agent:android`): Android library (AAR).
   In-process loopback HTTP server, view-tree + Compose-semantics capture,
   allowlisted runtime mutation, in-process screenshot, app-authored log/metadata

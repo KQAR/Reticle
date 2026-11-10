@@ -112,6 +112,20 @@ public struct Snapshot: Codable, Sendable {
         for ref in nodes.keys.sorted() where found == nil { visit(ref) }
         return found
     }
+    /// Every node in **document order** — the order `first(where:)` searches in.
+    /// For a walk that must not depend on dictionary iteration (see above).
+    public func documentOrder() -> [Node] {
+        var seen = Set<String>()
+        var out: [Node] = []
+        func visit(_ ref: String) {
+            guard seen.insert(ref).inserted, let node = nodes[ref] else { return }
+            out.append(node)
+            for child in node.children { visit(child) }
+        }
+        visit(rootRef)
+        for ref in nodes.keys.sorted() { visit(ref) }
+        return out
+    }
     public func children(of ref: String) -> [Node] {
         (nodes[ref]?.children ?? []).compactMap { nodes[$0] }
     }
