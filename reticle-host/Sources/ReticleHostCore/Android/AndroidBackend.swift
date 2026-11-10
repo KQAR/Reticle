@@ -191,7 +191,34 @@ final class AndroidBackend: HostBackend {
         if let obstruction = ScreenCoverage.obstruction(snapshot, x: x, y: y, targetRef: raw["ref"] as? String) {
             out["obstruction"] = obstruction.jsonObject(x: x, y: y)
         }
+        backfillTrace(out)
         return out
+    }
+
+    /// The helper wrote trace.json before these verdicts existed, so they are added
+    /// here, in the shape the helper used when it judged taps itself: each one a
+    /// compact JSON string in the manifest's string-valued `result`. Best effort —
+    /// a trace that cannot be rewritten must not fail a tap that already happened.
+    static func backfillTrace(_ out: [String: Any]) {
+        let verdicts = ["coverage", "obstruction"].compactMap { key in
+            (out[key] as? [String: Any]).map { (key, $0) }
+        }
+        guard !verdicts.isEmpty, let trace = out["trace"] as? [String: Any],
+              let dir = trace["path"] as? String else { return }
+        let url = URL(fileURLWithPath: dir).appendingPathComponent(trace["manifest"] as? String ?? "trace.json")
+        guard let data = try? Data(contentsOf: url),
+              var manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        var result = manifest["result"] as? [String: Any] ?? [:]
+        for (key, value) in verdicts {
+            guard let json = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
+            else { continue }
+            result[key] = String(decoding: json, as: UTF8.self)
+        }
+        manifest["result"] = result
+        guard let rewritten = try? JSONSerialization.data(
+            withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) else { return }
+        try? rewritten.write(to: url, options: .atomic)
     }
 
     // MARK: - Android-only device configuration

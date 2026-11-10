@@ -103,4 +103,34 @@ struct PointCoverageOutcomeTests {
         let selector = try AndroidBackend.judgeTap(["gesture": "tap", "tapProbe": selectorProbe])
         #expect(selector["coverage"] == nil && selector["obstruction"] == nil && selector["tapProbe"] == nil)
     }
+
+    @Test func theVerdictsAreBackfilledIntoTheHelpersTraceManifest() throws {
+        // The helper writes trace.json before the host judges the tap, so without the
+        // backfill an Android trace would be the only one missing the verdicts.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("trace-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let manifest: [String: Any] = [
+            "gesture": "tap", "diff": [] as [Any],
+            "result": ["gesture": "tap", "x": "50", "y": "40", "source": "point"],
+        ]
+        let url = dir.appendingPathComponent("trace.json")
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+
+        _ = try AndroidBackend.judgeTap([
+            "gesture": "tap", "x": 50, "y": 40, "source": "point",
+            "trace": ["path": dir.path, "manifest": "trace.json"] as [String: Any],
+            "tapProbe": ["x": 50.0, "y": 40.0, "point": true, "snapshot": Self.probeTree] as [String: Any],
+        ])
+
+        let written = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        let result = written?["result"] as? [String: Any]
+        #expect(result?["source"] as? String == "point")
+        let coverage = try (result?["coverage"] as? String).map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(coverage??["selector"] as? String == "--test-id pay")
+        #expect(result?["obstruction"] == nil)
+    }
 }
+
