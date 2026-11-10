@@ -6,7 +6,7 @@
     "2. The semantic tree, by testId -> resourceId -> cssSelector -> ref -> label.",
     "3. The view tree, by the SAME precedence, for nodes the semantic projection dropped.",
     "Every first-match lookup walks the tree in document order (DFS from the root, then any orphan refs in sorted order), so duplicate ids resolve to the same node on both platforms and across runs.",
-    "A --label that matches more than one visible node in different subtrees is an ERROR (ambiguousLabel); nested duplicates resolve to the innermost. Scoped to the highest-stacked window that contains any candidate. Several matches stacked on ONE rect (every candidate's tap point inside every other's rect) are one target, not several: they resolve to the first in document order, with source `label:coincident` so the collapse is stated rather than hidden."
+    "A --label that matches more than one visible node in different subtrees is an ERROR (ambiguousLabel); nested duplicates resolve to the innermost \u2014 except that an interactive match is never dropped for a NON-interactive one nested inside it (a control over the caption that repeats its name resolves to the control, whose centre is where a tap lands). Scoped to the highest-stacked window that contains any candidate. Several matches stacked on ONE rect (every candidate's tap point inside every other's rect) are one target, not several: they resolve to the first in document order, with source `label:coincident` so the collapse is stated rather than hidden."
   ],
   "snapshot": {
     "schemaVersion": 1,
@@ -225,7 +225,9 @@
           "n9",
           "n_wheel_band1",
           "n_wheel_band2",
-          "n_wheel_band3"
+          "n_wheel_band3",
+          "n50",
+          "n52"
         ]
       },
       "n6": {
@@ -525,6 +527,71 @@
             "value": 1
           }
         }
+      },
+      "n50": {
+        "$comment": "iOS 26 Liquid Glass tab bar: a tab button wraps a caption repeating its name, the caption's centre sits LOWER than the button's, far enough that the button's centre is outside the caption's rect, (in the real bar, inside the home-indicator band that swallows taps), and the platter draws the whole button row twice at one rect (n52/n53). The label must resolve to the BUTTON's centre, not the caption's.",
+        "ref": "n50",
+        "parentRef": "w2",
+        "kind": "view",
+        "typeName": "_UITabButton",
+        "role": "button",
+        "contentDescription": "Orders tab",
+        "frame": {
+          "x": 700.0,
+          "y": 1450.0,
+          "width": 200.0,
+          "height": 100.0
+        },
+        "isInteractive": true,
+        "children": [
+          "n51"
+        ]
+      },
+      "n51": {
+        "ref": "n51",
+        "parentRef": "n50",
+        "kind": "view",
+        "typeName": "UILabel",
+        "role": "text",
+        "text": "Orders tab",
+        "frame": {
+          "x": 760.0,
+          "y": 1515.0,
+          "width": 80.0,
+          "height": 30.0
+        }
+      },
+      "n52": {
+        "ref": "n52",
+        "parentRef": "w2",
+        "kind": "view",
+        "typeName": "_UITabButton",
+        "role": "button",
+        "contentDescription": "Orders tab",
+        "frame": {
+          "x": 700.0,
+          "y": 1450.0,
+          "width": 200.0,
+          "height": 100.0
+        },
+        "isInteractive": true,
+        "children": [
+          "n53"
+        ]
+      },
+      "n53": {
+        "ref": "n53",
+        "parentRef": "n52",
+        "kind": "view",
+        "typeName": "UILabel",
+        "role": "text",
+        "text": "Orders tab",
+        "frame": {
+          "x": 760.0,
+          "y": 1515.0,
+          "width": 80.0,
+          "height": 30.0
+        }
       }
     }
   },
@@ -729,6 +796,20 @@
         },
         "source": "label:coincident",
         "ref": "n_wheel_band1"
+      }
+    },
+    {
+      "name": "a label on a control and on the caption inside it resolves to the control, not the caption",
+      "selector": {
+        "label": "Orders tab"
+      },
+      "expect": {
+        "point": {
+          "x": 800.0,
+          "y": 1500.0
+        },
+        "source": "label:coincident",
+        "ref": "n50"
       }
     },
     {

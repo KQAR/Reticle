@@ -368,7 +368,18 @@ public enum Render {
             }
             return false
         }
-        let leaves = matches.filter { node in !matches.contains { isAncestor(node, of: $0) } }
+        // ...except a CONTROL over a caption that only repeats its name: there the
+        // CONTROL is the target and the caption drops out. Measured on iOS 26's
+        // Liquid Glass tab bar: `_UITabButton` "Orders" wraps a label "Orders" whose
+        // centre sits 14pt lower — inside the home-indicator band, where a tap is
+        // swallowed by the system — so `--label Orders` "succeeded" and changed
+        // nothing, while the button's own centre switched the tab. See the Kotlin twin.
+        let leaves = matches.filter { node in
+            if !node.isInteractive, matches.contains(where: { $0.isInteractive && isAncestor($0, of: node) }) {
+                return false
+            }
+            return !matches.contains { isAncestor(node, of: $0) && ($0.isInteractive || !node.isInteractive) }
+        }
         // A caption and the control it names are not an ambiguity either. A form
         // states a field's name in a separate element and points the control at it
         // (`aria-labelledby`, `<label for>`), so ONE string legitimately belongs to
