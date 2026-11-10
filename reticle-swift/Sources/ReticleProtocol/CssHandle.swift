@@ -18,8 +18,9 @@ import Foundation
 ///     that would resolve to a different node than the one being described.
 ///
 /// Uniqueness is decided against the paths in THIS capture, which is the same set
-/// `--css` will be matched against. Kept identical to reticle-core's `CssHandle`,
-/// which `ScreenCoverage` still uses on the Kotlin side.
+/// `--css` will be matched against. Used by `Outline` (the `css=` slot) and by
+/// `ScreenCoverage` (the `--css` a coordinate tap is told it could have used), so
+/// the handle a hint names is the handle the outline prints.
 public enum CssHandle {
     private static let child = " > "
 

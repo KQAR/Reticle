@@ -2,12 +2,11 @@ import XCTest
 @testable import ReticleProtocol
 
 /// The blind-agent coverage self-report — `ui coverage` and the verdict every
-/// coordinate tap carries — driven by the SAME language-neutral fixture the Kotlin
-/// suite reads: reticle-protocol/fixtures/screen-coverage.cases.json.
+/// coordinate tap carries — driven by reticle-protocol/fixtures/screen-coverage.cases.json.
 ///
-/// The anti-drift device for a number an agent calibrates on. If the iOS host and
-/// the Android helper disagree about what "unreachable" means, a `--point` fallback
-/// justified on one platform reads as unnecessary on the other.
+/// `ScreenCoverage` is the only implementation and judges both platforms' taps in
+/// the host, so this fixture is no longer an anti-drift device between two ports;
+/// it pins the sentences an agent calibrates on, with cases from both platforms.
 final class ScreenCoverageContractTests: XCTestCase {
 
     private struct ExpectedPoint: Decodable {
@@ -179,5 +178,65 @@ final class ScreenCoverageContractTests: XCTestCase {
             nodes: Dictionary(uniqueKeysWithValues: nodes.map { ($0.ref, $0) })
         )
         XCTAssertEqual(ScreenCoverage.at(snapshot, x: 32, y: 32).ref, "over")
+    }
+
+    func testTheFixtureCoversEveryVerdictTheReportCanReach() throws {
+        // Each of these is a DIFFERENT response by the agent reading it: a covered
+        // point means drop the coordinate, a boundary means keep it, inert means
+        // look again, nothing-captured means the screen moved. A verdict that stops
+        // being pinned collapses into whichever neighbour still is.
+        let cases = try loadCases()
+        let reasons = cases.flatMap { $0.points.map(\.reason) }
+        for reason in [
+            ScreenCoverage.reasonAddressable, ScreenCoverage.reasonCrossOrigin,
+            ScreenCoverage.reasonContainerOnly, ScreenCoverage.reasonNotInteractive,
+            ScreenCoverage.reasonNothingCaptured, ScreenCoverage.reasonOffScreen,
+            ScreenCoverage.reasonWheel,
+        ] {
+            XCTAssertTrue(reasons.contains { $0 == reason || $0.hasPrefix("\(reason)(") }, "no case pins '\(reason)'")
+        }
+        XCTAssertTrue(reasons.contains { $0.hasPrefix("\(ScreenCoverage.reasonDomCapped)(") },
+                      "no case pins a capped DOM walk")
+        let selectors = cases.flatMap { $0.points.compactMap(\.selector) }
+        for flag in ["--test-id", "--css", "--label"] {
+            XCTAssertTrue(selectors.contains { $0.hasPrefix(flag) }, "no case pins the '\(flag)' hint")
+        }
+    }
+
+    func testTheFixtureCoversBothPlatforms() throws {
+        let platforms = Set(try loadCases().map(\.snapshot.platform))
+        XCTAssertTrue(platforms.contains("android"), "no android case")
+        XCTAssertTrue(platforms.contains("ios"), "no iOS case")
+    }
+
+    func testAScreenSizedTappableContainerIsNotCoverForThePointsInsideIt() {
+        // The measurement that reshaped the rule: an Android `WebView` is focusable,
+        // clickable and carries a resource id, so it passes every test a control
+        // does while covering the display. Counted as cover, it reported a real
+        // hybrid screen as 100% addressable. A selector tap on it lands on ITS
+        // centre, which is not where the agent was aiming.
+        let web = Node(
+            ref: "wv", parentRef: "r0", kind: .view, typeName: "android.webkit.WebView",
+            role: "webView", resourceId: "webview", frame: Rect(x: 0, y: 0, width: 100, height: 100),
+            isInteractive: true
+        )
+        let root = Node(
+            ref: "r0", kind: .application, typeName: "android.app.Application", role: "application",
+            children: ["wv"]
+        )
+        let snapshot = Snapshot(
+            capturedAtMillis: 0,
+            platform: "android",
+            screen: ScreenInfo(size: Size(width: 100, height: 100), density: 3),
+            rootRef: "r0",
+            nodes: ["r0": root, "wv": web]
+        )
+        let verdict = ScreenCoverage.at(snapshot, x: 90, y: 90)
+        XCTAssertEqual(verdict.reason, ScreenCoverage.reasonContainerOnly)
+        XCTAssertEqual(verdict.ref, "wv")
+        XCTAssertTrue(verdict.detail.contains("(50,50)"), "the container's own tap point must be stated")
+        let report = ScreenCoverage.of(snapshot)
+        XCTAssertEqual(report.addressableCells, 0)
+        XCTAssertEqual(report.unreachableCells, report.touchRelevantCells)
     }
 }

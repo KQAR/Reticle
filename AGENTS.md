@@ -30,9 +30,7 @@ panel's visual language — the token spec (colors, type, surface ladder) the
 ## Current Shape
 
 - `reticle-core`: pure JVM snapshot models, semantic tree models, compact
-  observations, wire protocol, selectors, and `ScreenCoverage` (which answers
-  "what on this screen has no selector over it" for one point and for the whole
-  screen). No Android dependency. Shared by the CLI and the in-app agent. One
+  observations, wire protocol and selectors. No Android dependency. Shared by the CLI and the in-app agent. One
   implementation of `reticle-protocol`; the Swift `ReticleProtocol` is the
   parallel one. The text projections (`Render`, `StyleObservation`, `outline`) are
   **not** here any more: they exist once, in `ReticleProtocol`, and the Swift host
@@ -40,9 +38,11 @@ panel's visual language — the token spec (colors, type, surface ladder) the
 - `reticle-swift` (`ReticleProtocol`): SwiftPM library — the Swift implementation
   of `reticle-protocol` (Codable models with omit-defaults JSON, `SemanticTree` /
   `CompactObservation` derivations, `PortMap`, and the text projections `Render` /
-  `StyleObservation` / `Outline` — the ONLY implementations, for both platforms,
-  their format pinned by `reticle-protocol/fixtures/snapshot-render.cases.json` and
-  `style-observation.cases.json`). Depended on by both the
+  `StyleObservation` / `Outline`, plus `ScreenCoverage` (which answers "what on
+  this screen has no selector over it" for one point and for the whole screen) and
+  `CssHandle` — the ONLY implementations, for both platforms, their format pinned by
+  `reticle-protocol/fixtures/snapshot-render.cases.json`,
+  `style-observation.cases.json` and `screen-coverage.cases.json`). Depended on by both the
   iOS agent and the Swift host so the protocol is never re-ported. Outside the
   Gradle build.
 - **Direction (2026-11): pure snapshot logic moves into the Swift host for BOTH
@@ -53,8 +53,10 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   (`OutlineAliasCache`): `act --alias` resolves it and sends the helper the cached
   entry (`aliasEntry`) to re-find in the live tree. The helper has no `render` RPC
   and `reticle-core` no `Render` / `StyleObservation`. Selector-miss diagnostics
-  are `ReticleProtocol.SelectorDiagnostics`. Still paired: selector resolution,
-  `WaitVerdict`, `ScreenCoverage`, `TapReach` — only what the in-app agent itself
+  are `ReticleProtocol.SelectorDiagnostics`. A tap's `coverage` / `obstruction`
+  verdicts are judged in the host by `ReticleProtocol.ScreenCoverage` from the
+  snapshot the helper dispatched against (`tapProbe`). Still paired: selector
+  resolution, `WaitVerdict`, `TapReach` — only what the in-app agent itself
   calls has to stay in Kotlin. `reticle-core` keeps what the in-app Android agent
   needs (models, capture-side derivations). Do not add new pure logic to
   `reticle-core` or the helper.
@@ -268,13 +270,14 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
 - **A coordinate is a reported degradation, never a quiet path.** `act tap --point`
-  attaches a `ScreenCoverage.at` verdict and the host prints it as a warning: either
+  attaches a `ScreenCoverage.at` verdict, judged in the host for both platforms (on
+  Android from the helper's `tapProbe` snapshot), and the host prints it as a warning: either
   the boundary that justified the coordinate, or the flag that would have worked
   (which is the worse case — a coordinate skips the re-resolve, the settle confirm
   and the stale-rect evidence). `ui coverage` is the whole-screen form. Both come
-  from ONE derivation with a Swift twin, pinned by
-  `reticle-protocol/fixtures/screen-coverage.cases.json` — a new reason token goes
-  there or it ships unpinned on one side. Its rules were corrected by devices, not
+  from ONE derivation (`ReticleProtocol.ScreenCoverage`, no Kotlin twin), pinned by
+  `reticle-protocol/fixtures/screen-coverage.cases.json` — a new reason token gets a
+  case there. Its rules were corrected by devices, not
   by reasoning: see the `Coverage` section of `docs/architecture.md` before changing
   what counts as cover.
 - App-authored probes are process-global: publish on screen entry, retract on

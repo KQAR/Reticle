@@ -1,5 +1,5 @@
 {
-  "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by BOTH the Kotlin (reticle-core ScreenCoverageContractTest) and Swift (ReticleProtocol ScreenCoverageContractTests) suites, so the Android helper and the iOS host cannot answer 'how much of this screen is unreachable?' two ways. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover - and, since a second measurement (a login screen carrying a full-screen debug overlay read as 31% addressable while every control on it worked), those cells are reported on their own line rather than counted as gaps. Case five pins the other half of a tap's honesty: WHO receives the touch. A point can be perfectly addressable and still unreachable - the IME, a window above the target, or a node drawn over it takes the touch while the tap reports settled=1 - so every tap now carries an obstruction verdict, and the quiet cases (nothing in the way, and a screen-sized overlay container, which is scenery rather than an obstruction) are pinned too, because a warning that fires on an ordinary tap is one nobody reads.",
+  "$comment": "Authoritative cases for the blind-agent coverage self-report - `ui coverage` and the verdict every `act tap --point` carries - read by the Swift ReticleProtocol ScreenCoverageContractTests suite. ReticleProtocol's ScreenCoverage is the only implementation: the host judges every platform's taps with it (the Android helper hands back the snapshot it dispatched against), so 'how much of this screen is unreachable?' has one answer. Each case is a snapshot plus the exact `ui coverage` lines and the exact per-point verdicts. What the cases pin: a coordinate over a node that HAD a selector is reported as an unnecessary fallback, naming the flag that would have worked (test id, then resource id, then css, then label, then ref); a coordinate over a named boundary is reported as justified, naming the boundary and its host node; a coordinate over captured-but-inert content and one over nothing captured are different answers; a point outside the screen says so instead of reading as empty; the grid sampling and the cell size are stated in the output rather than hidden in it; and inert/empty cells are counted apart from gaps, because without pixels a paragraph of text and a control the projection failed to mark are the same observation. Case four is the measurement that reshaped the rule: a hybrid screen read as 100% addressable because the WebView itself is tappable and carries an id, so a screen-sized container is now judged as scenery rather than as cover - and, since a second measurement (a login screen carrying a full-screen debug overlay read as 31% addressable while every control on it worked), those cells are reported on their own line rather than counted as gaps. Case five pins the other half of a tap's honesty: WHO receives the touch. A point can be perfectly addressable and still unreachable - the IME, a window above the target, or a node drawn over it takes the touch while the tap reports settled=1 - so every tap now carries an obstruction verdict, and the quiet cases (nothing in the way, and a screen-sized overlay container, which is scenery rather than an obstruction) are pinned too, because a warning that fires on an ordinary tap is one nobody reads.",
   "cases": [
     {
       "name": "a coordinate over an addressable node is an unnecessary fallback, and the hint names the most stable handle each node has",
@@ -1087,6 +1087,119 @@
               }
             },
             "parentRef": "sheet"
+          }
+        }
+      }
+    },
+    {
+      "name": "a DOM node's hint names its shortest unique css handle, not the full ancestor path the traversal captured",
+      "$comment": "The handle `ui outline` prints and the one a --point warning suggests are the same string (CssHandle). Before one implementation existed, the Kotlin hint shortened while the Swift one printed the whole lineage, and no case caught it. `input.amount` alone matches both fields, so the handle grows exactly one segment and stops.",
+      "report": [
+        "coverage: 128x64, sampled on a 4x2 grid of 32px cells",
+        "addressable: 4 of 4 touch-relevant cell(s) (100%)",
+        "unreachable: none — every touch-relevant cell has an addressable node over it",
+        "inert: 4 cell(s) — a node is captured there, none of it interactive",
+        "empty: 0 cell(s) — no captured node contains the point",
+        "(inert, empty and container-only cells are NOT counted as gaps: without pixels, plain content and a control the projection failed to mark are the same observation)"
+      ],
+      "points": [
+        {
+          "x": 32,
+          "y": 16,
+          "covered": true,
+          "reason": "selector-available",
+          "ref": "d1",
+          "selector": "--css 'div.field > input.amount'",
+          "warning": "--point was not needed at (32,16): --css 'div.field > input.amount' resolves to d1 (textField), whose frame contains this point and would tap (32,16). A selector tap re-resolves and confirms its target; a coordinate does neither"
+        }
+      ],
+      "snapshot": {
+        "schemaVersion": 1,
+        "capturedAtMillis": 1719400000000,
+        "platform": "android",
+        "screen": {
+          "size": {
+            "width": 128,
+            "height": 64
+          },
+          "density": 3.0,
+          "fontScale": 1.0
+        },
+        "rootRef": "r0",
+        "nodes": {
+          "r0": {
+            "ref": "r0",
+            "kind": "application",
+            "typeName": "android.app.Application",
+            "role": "application",
+            "children": [
+              "w1"
+            ]
+          },
+          "w1": {
+            "ref": "w1",
+            "kind": "window",
+            "typeName": "com.android.internal.policy.DecorView",
+            "role": "window",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 128,
+              "height": 64
+            },
+            "children": [
+              "d1",
+              "d2"
+            ],
+            "parentRef": "r0"
+          },
+          "d1": {
+            "ref": "d1",
+            "kind": "domNode",
+            "typeName": "input",
+            "role": "textField",
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "input"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": "html > body > div.app > form.checkout > div.field > input.amount"
+              }
+            },
+            "parentRef": "w1"
+          },
+          "d2": {
+            "ref": "d2",
+            "kind": "domNode",
+            "typeName": "input",
+            "role": "textField",
+            "frame": {
+              "x": 64,
+              "y": 0,
+              "width": 64,
+              "height": 32
+            },
+            "isInteractive": true,
+            "custom": {
+              "domTag": {
+                "_type": "text",
+                "value": "input"
+              },
+              "domCssSelector": {
+                "_type": "text",
+                "value": "html > body > div.app > form.checkout > div.note > input.amount"
+              }
+            },
+            "parentRef": "w1"
           }
         }
       }

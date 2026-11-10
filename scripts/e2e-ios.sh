@@ -221,8 +221,8 @@ echo "$IOS_NO_SELECTOR" | grep -q -- '--label "<visible text>"' \
   || { echo "FAIL: a selector miss must name --label; got: $IOS_NO_SELECTOR"; exit 1; }
 
 echo "== COVERAGE: THE SCREEN REPORTS WHAT AN AGENT CANNOT ADDRESS =="
-# The iOS half of the blind-agent self-report. The derivation is shared and pinned
-# for both platforms by reticle-protocol/fixtures/screen-coverage.cases.json; what
+# The iOS half of the blind-agent self-report. The derivation is the host's, one for
+# both platforms, pinned by reticle-protocol/fixtures/screen-coverage.cases.json; what
 # only a device can prove is the WIRING — that `ui coverage` is a view here too, and
 # that the HID tap path attaches the verdict a coordinate needs. Before this, a
 # `--point` tap reported success and said nothing about why pixels were the only
