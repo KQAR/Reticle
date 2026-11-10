@@ -21,6 +21,8 @@ import Foundation
 /// same set, so a method added on one side fails the build instead of drifting.
 public enum HelperMethod: String, CaseIterable, Sendable {
     case ping
+    /// CI-only native-image smoke; the host never calls it.
+    case decodeSnapshot
     case listDevices
     case status
     case inject

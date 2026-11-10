@@ -252,10 +252,12 @@ jobs:
           # version needs no helper/device; proves the host binary runs.
           "$HOST" version
           # the native helper's RPC loop answers ping with no JDK.
-          # Snapshot deserialization under native-image is not smoked here any
-          # more: it was reached through the helper's `render` RPC, which moved
-          # to the host, and every remaining method needs a device.
           printf '{"id":1,"method":"ping","params":{}}\n' | "$HELPER" helper | grep -q '"ok":true'
+          # decodeSnapshot decodes a full Snapshot through kotlinx-serialization —
+          # the code path most likely to regress under native-image (enums, the
+          # polymorphic MetadataValue). ping alone never touches deserialization.
+          printf '{"id":2,"method":"decodeSnapshot","params":{"snapshot":"reticle-protocol/fixtures/snapshot.golden.json"}}\n' \
+            | "$HELPER" helper | grep -q '"ok":true'
 
       # The network lane end-to-end: CLI -> discovery -> daemon -> proxy ->
       # events.jsonl over real sockets, including a MITM'd HTTPS mock hit.

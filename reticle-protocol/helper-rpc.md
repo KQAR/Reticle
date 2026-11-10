@@ -116,6 +116,7 @@ path was taken (`outline:@N->live` vs cached frame). `wait` gets the bare
 | Method | Params | Result |
 | --- | --- | --- |
 | `ping` | — | `{ "pong": true, "version": "<cli version>" }` |
+| `decodeSnapshot` | `snapshot` (path) | `{ "nodeCount", "rootRef" }` — decodes a snapshot file with no device. CI's smoke for kotlinx-serialization under native-image; the host never calls it |
 | `listDevices` | — | `{ "devices": [ { "serial", "state" }, ... ] }` |
 | `status` | `package?` | `{ "devices": [...], ["package", "running", "pid", "runtime"] }` — `runtime` ∈ `healthy`/`conflict`/`unreachable`/`unresponsive`/`foreign` |
 | `inject` | `package` (req), `payloadDex?`, `restartUnderDebugger?` (mark the app as being debugged so AMS relaxes the input-dispatch ANR during the JDWP suspension — **force-stops and relaunches the target**, so it is opt-in) | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
