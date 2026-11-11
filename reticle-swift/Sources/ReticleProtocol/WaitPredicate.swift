@@ -1,16 +1,11 @@
 import Foundation
 
 /// `act wait`: the predicate a caller states, and the three-state answer.
-/// Mirrors reticle-core's `WaitPredicate.kt`.
 ///
-/// Why the classification lives in the protocol package rather than in the host:
-/// the poll loop is per-platform I/O (the Kotlin helper drives Android, the Swift
-/// host drives iOS), but the *meaning* of the answer must not be written twice.
-/// `scroll-to`'s settle logic already drifted that way — the Kotlin
-/// `HelperScrollTo` and the Swift `IosHelperClient.scrollTo` are two hand-written
-/// implementations of one idea. Everything here is decided from a snapshot-derived
-/// probe, and `reticle-protocol/fixtures/wait-classification.cases.json` pins both
-/// sides to one table.
+/// One implementation for both platforms: the host's `WaitRunner` polls (over
+/// the helper's `snapshot` RPC on Android, the agent's HTTP on iOS) and decides
+/// here. Everything is decided from a snapshot-derived probe, and
+/// `reticle-protocol/fixtures/wait-classification.cases.json` pins the table.
 ///
 /// The rule this file enforces: **existence is three-state, not two.** "I did not
 /// find it" and "I could not have seen it" are different observations, and
@@ -134,7 +129,7 @@ public struct WaitProbe: Codable, Sendable {
         self.ambiguous = ambiguous
     }
 
-    // Decoding must match the Kotlin defaults exactly, because the shared fixture
+    // Decoding must match the declared defaults exactly, because the fixture
     // table omits every field at its default value.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -153,8 +148,7 @@ public struct WaitProbe: Codable, Sendable {
     }
 
     /// The screen-level half of a probe — everything that does not depend on the
-    /// per-platform selector resolver. Shared with the Kotlin twin so the two hosts
-    /// cannot drift on the digest's inputs (which decides quiescence) or on how a
+    /// selector resolver: the digest's inputs (which decide quiescence) and how a
     /// scroll-travel reason is spelled (which an agent reads).
     public static func screenState(_ snapshot: Snapshot, _ compact: CompactObservation) -> WaitProbe {
         WaitProbe(

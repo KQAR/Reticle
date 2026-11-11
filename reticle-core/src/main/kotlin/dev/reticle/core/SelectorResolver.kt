@@ -10,7 +10,7 @@ package dev.reticle.core
  * `SelectorResolution.AmbiguousLabel` / `.RegionMiss`. The helper's RPC layer
  * reports any throwable by message, so nothing is lost by not being a `CliError`;
  * the reason they stay two distinct types is that a poll loop must tell them apart
- * (see `HelperWait`): an ambiguity makes an answer *unknowable*, while a phrase that
+ * (the host's `WaitRunner`): an ambiguity makes an answer *unknowable*, while a phrase that
  * is simply not on screen yet is an honest negative a `wait` should keep waiting on.
  */
 open class SelectorResolutionException(message: String) : RuntimeException(message)

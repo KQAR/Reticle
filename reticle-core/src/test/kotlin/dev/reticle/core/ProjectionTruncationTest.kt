@@ -89,43 +89,4 @@ class ProjectionTruncationTest {
         val observation = CompactObservation.from(snapshot(buttons = 3), maxItems = 200)
         assertEquals(0, observation.truncatedItems)
     }
-
-    @Test
-    fun aChangePastTheRenderCapStillChangesTheWaitDigest() {
-        // Same first 3 items; a 4th appears. Capped at 3, the digests would be
-        // equal and `wait --idle` would call a moving screen quiet.
-        val before = CompactObservation.from(snapshot(buttons = 3), maxItems = Int.MAX_VALUE)
-        val after = CompactObservation.from(snapshot(buttons = 4), maxItems = Int.MAX_VALUE)
-        assertNotEquals(WaitProbe.digestOf(before), WaitProbe.digestOf(after))
-    }
-
-    @Test
-    fun focusMovingBetweenFieldsChangesTheWaitDigest() {
-        fun snap(focusedRef: String): Snapshot {
-            val root = Node(
-                ref = "root", kind = NodeKind.application, typeName = "Application",
-                children = listOf("a", "b"),
-            )
-            val fields = listOf("a", "b").map {
-                Node(
-                    ref = it, parentRef = "root", kind = NodeKind.view,
-                    typeName = "EditText", role = "textField", text = "field $it",
-                    frame = Rect(0.0, if (it == "a") 100.0 else 300.0, 400.0, 90.0),
-                    isInteractive = true, isFocused = it == focusedRef,
-                )
-            }
-            return Snapshot(
-                capturedAtMillis = 0L,
-                screen = ScreenInfo(size = Size(400.0, 900.0), density = 3.0),
-                rootRef = "root",
-                nodes = (listOf(root) + fields).associateBy { it.ref },
-            )
-        }
-        val focusOnA = CompactObservation.from(snap("a"))
-        val focusOnB = CompactObservation.from(snap("b"))
-        assertNotEquals(
-            WaitProbe.digestOf(focusOnA), WaitProbe.digestOf(focusOnB),
-            "caret moving from field a to field b is a screen change: same geometry, different armed field"
-        )
-    }
 }

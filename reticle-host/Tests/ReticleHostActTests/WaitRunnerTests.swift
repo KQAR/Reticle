@@ -176,6 +176,10 @@ struct WaitRunnerTests {
         #expect(try WaitRunner.predicate(from: ["for": "@status"]).describe() == "appear resourceId=status")
         #expect(try WaitRunner.predicate(from: ["for": "css=#pay"]).describe() == "appear css=#pay")
         #expect(try WaitRunner.predicate(from: ["for": "r7"]).describe() == "appear ref=r7")
+        #expect(try WaitRunner.predicate(from: ["for": "testId=x"]).describe() == "appear testId=x")
+        #expect(try WaitRunner.predicate(from: ["label": "Delete item"]).describe() == "appear label=Delete item")
+        // `--region` narrows a label to one phrase, as it does for `act`.
+        #expect(try WaitRunner.predicate(from: ["label": "Terms", "region": "Privacy"]).selector?.region == "Privacy")
         #expect(try WaitRunner.predicate(from: ["testId": "x", "gone": true]).describe() == "gone testId=x")
         #expect(
             try WaitRunner.predicate(from: ["testId": "x", "textContains": "Paid"]).describe()

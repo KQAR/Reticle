@@ -1,14 +1,9 @@
 import XCTest
 @testable import ReticleProtocol
 
-/// `act wait`'s outcome table, driven by the SAME language-neutral fixture the
-/// Kotlin suite reads: reticle-protocol/fixtures/wait-classification.cases.json.
-///
-/// This is the anti-drift device for the feature. The Android poll loop lives in
-/// the Kotlin helper and the iOS one in the Swift host, so without one shared
-/// table the two would answer differently over time — which is exactly what
-/// happened to `scroll-to`'s settle logic, whose Kotlin and Swift halves are two
-/// hand-written implementations of one idea.
+/// `act wait`'s outcome table, driven by the language-neutral fixture
+/// reticle-protocol/fixtures/wait-classification.cases.json. The host runs this
+/// one classifier for both Android and iOS, so this suite is its only pin.
 final class WaitClassificationTests: XCTestCase {
 
     private struct Expect: Decodable {

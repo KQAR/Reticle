@@ -154,15 +154,6 @@ class MalformedSnapshotTest {
         assertEquals("leaf", resolved.ref)
     }
 
-    @Test
-    fun waitProbeReturnsOnParentCycle() {
-        val snapshot = parentCycleSnapshot()
-        // The scrollable leaf's windowOf walk enters the cycle inside the wait
-        // poll loop's screen-state probe; it must answer, not hang `act wait`.
-        val probe = WaitProbe.screenState(snapshot, CompactObservation.from(snapshot))
-        assertTrue(probe.digest.isNotEmpty())
-    }
-
     // ---- children cycle --------------------------------------------------
 
     @Test

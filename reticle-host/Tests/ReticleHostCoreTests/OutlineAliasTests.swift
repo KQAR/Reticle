@@ -46,7 +46,7 @@ struct OutlineAliasTests {
         #expect(transport.calls.map(\.method) == ["uiReport"], "outline renders in the host")
 
         transport.reply = ["ok": true]
-        _ = try backend.act(ActRequest(
+        _ = try await backend.act(ActRequest(
             gesture: "tap", package: "dev.reticle.sample", selector: HostSelector(alias: "@1")
         ))
         let sent = try #require(transport.calls.last?.params)
@@ -56,12 +56,13 @@ struct OutlineAliasTests {
         #expect((entry["frame"] as? [String: Any])?["y"] as? Double == 200)
     }
 
-    @Test func waitKeepsTheBareAliasSoTheHelperRefusesItByName() throws {
+    @Test func waitRefusesAnAliasByNameWithoutReadingTheCache() async throws {
         let transport = Recording()
         let backend = AndroidBackend(transport, aliasHome: try tempHome())
-        _ = try backend.act(ActRequest(gesture: "wait", package: "p", selector: HostSelector(alias: "@1")))
-        #expect(transport.calls.last?.params["aliasEntry"] == nil)
-        #expect(transport.calls.last?.params["alias"] as? String == "@1")
+        await #expect(throws: HelperError.self) {
+            _ = try await backend.act(ActRequest(gesture: "wait", package: "p", selector: HostSelector(alias: "@1")))
+        }
+        #expect(transport.calls.isEmpty)
     }
 
     @Test func cacheMissesAndCorruptionAreCleanErrors() throws {

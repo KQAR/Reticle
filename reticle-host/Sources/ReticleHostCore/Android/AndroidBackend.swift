@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostAct
 import ReticleHostIos
 import ReticleProtocol
 
@@ -154,15 +155,45 @@ final class AndroidBackend: HostBackend {
     }
 
     /// An `@N` alias is resolved against the host's outline cache here and sent as
-    /// `aliasEntry`; the helper only re-finds that entry in the live tree. `wait`
-    /// keeps the bare alias so the helper refuses it by name.
-    func act(_ request: ActRequest) throws -> ActOutcome {
+    /// `aliasEntry`; the helper only re-finds that entry in the live tree.
+    func act(_ request: ActRequest) async throws -> ActOutcome {
+        if request.gesture == "wait" { return ActOutcome(raw: try await wait(request)) }
         var params = request.wireParams
-        if let alias = request.selector.alias, request.gesture != "wait" {
+        if let alias = request.selector.alias {
             let entry = try OutlineAliasCache.resolve(alias, serial: serial, package: request.package, home: aliasHome)
             params["aliasEntry"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
         }
         return ActOutcome(raw: try Self.judgeTap(transport.call(.act, params)))
+    }
+
+    /// `act wait` runs here, over the helper's `snapshot` primitive — the same
+    /// `WaitRunner` iOS uses, so there is one poll loop and one classifier. The
+    /// first fetch probes the runtime (health + pid identity); the polls after it
+    /// do not. An RPC failure mid-wait is thrown, never folded into `unknowable`:
+    /// that outcome means "this state could not be seen", not "the tool broke".
+    /// Like iOS, a wait honours `--verify` but writes no trace.
+    private func wait(_ request: ActRequest) async throws -> [String: Any] {
+        let params = request.wireParams
+        let predicate = try WaitRunner.predicate(from: params)
+        var probe = true
+        let fetch: SnapshotFetch = {
+            let r = try self.transport.call(.snapshot, ["package": request.package, "probe": probe])
+            probe = false
+            guard let tree = r["snapshot"] else { throw HelperError("snapshot returned no snapshot") }
+            return try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
+        }
+        let run = {
+            try await WaitRunner(fetch: fetch).run(
+                predicate: predicate,
+                timeoutMs: request.timeoutMs ?? WaitSchedule.defaultTimeoutMs,
+                quietMs: request.quietMs ?? WaitSchedule.defaultQuietMs
+            )
+        }
+        guard let watch = try ActVerify.watchSelector(params) else { return try await run() }
+        let before = await ActVerify.capture(watch, fetch: fetch)
+        var result = try await run()
+        result["verify"] = await ActVerify.poll(watch, before: before, params: params, fetch: fetch)
+        return result
     }
 
     /// Turns a tap's `tapProbe` (the tree the helper dispatched against) into the

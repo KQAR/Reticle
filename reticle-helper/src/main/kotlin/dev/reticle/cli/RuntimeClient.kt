@@ -84,6 +84,9 @@ class RuntimeClient(
         ReticleJson.instance.decodeFromString(Snapshot.serializer(), getString(Endpoints.SNAPSHOT))
             .requireSupportedSchema()
 
+    /** The agent's `/snapshot` body, undecoded: the `snapshot` RPC forwards it to the host as-is. */
+    fun snapshotJson(): String = getString(Endpoints.SNAPSHOT)
+
     /**
      * Fetch a single-capture report from the in-app agent. The agent captures one
      * snapshot and derives every report view from that same frame.
