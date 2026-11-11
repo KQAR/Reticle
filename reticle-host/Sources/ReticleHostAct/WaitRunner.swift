@@ -6,41 +6,35 @@ import ReticleProtocol
 // ambiguous against Foundation's ObjC selector type, and a file-private alias
 // cannot appear in the signature of an internal, testable helper.
 
-/// Interpret a CLI / batch-step boolean (`true`, `"true"`, `1`) as a flag.
-private func waitFlag(_ value: Any?) -> Bool {
-    switch value {
-    case let b as Bool: return b
-    case let s as String: return s == "true" || s == "1"
-    case let n as NSNumber: return n.boolValue
-    default: return false
-    }
-}
-
-/// `act wait` on iOS: poll the live tree until a stated predicate holds, then
-/// report the same three-state answer the Android helper reports.
+/// `act wait`: poll the live tree until a stated predicate holds, then report the
+/// three-state answer (`resolved` / `absent` / `unknowable`).
 ///
 /// Structured as a runner over an injected `fetch` closure so the loop is testable
-/// without a simulator, and so the only iOS-specific parts are the two things that
-/// genuinely differ: how a snapshot is fetched, and which resolver decides that a
-/// selector resolved. The classification and the screen-level probe come from
-/// `ReticleProtocol` — the same code path the Kotlin helper uses, pinned to one
-/// fixture table.
+/// without a device, and so the only platform-specific part is how a snapshot is
+/// fetched. Resolution is the shared `SelectorResolution` — the one `act` uses —
+/// and the classification and the screen-level probe come from `ReticleProtocol`,
+/// pinned to one fixture table.
 ///
-/// Needs no HID surface: it only observes. So it works on real devices, like
+/// Needs no input surface: it only observes. So it works on real devices, like
 /// `hide-keyboard` and unlike `tap`.
-struct IosWaitRunner {
-    /// `async` because the snapshot comes over loopback HTTP, which is a real
-    /// await now — and because that makes every poll in `run` a cancellation point.
-    let fetch: () async throws -> Snapshot
+public struct WaitRunner {
+    /// `async` because the snapshot comes over loopback HTTP (or a helper RPC),
+    /// which is a real await — and because that makes every poll in `run` a
+    /// cancellation point.
+    public let fetch: SnapshotFetch
     /// Injectable clock, in milliseconds since an arbitrary origin.
-    var now: () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
+    public var now: () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
     /// Injectable so the tests can drive the schedule without real time; `async`
     /// so the real one is `Task.sleep`, which a cancelled command stops at.
-    var sleep: (Int) async -> Void = { ms in
+    public var sleep: (Int) async -> Void = { ms in
         try? await Task.sleep(for: .milliseconds(ms))
     }
 
-    func run(predicate: WaitPredicate, timeoutMs: Int, quietMs: Int) async throws -> [String: Any] {
+    public init(fetch: @escaping SnapshotFetch) {
+        self.fetch = fetch
+    }
+
+    public func run(predicate: WaitPredicate, timeoutMs: Int, quietMs: Int) async throws -> [String: Any] {
         let started = now()
         let deadline = started + timeoutMs
         var polls = 0
@@ -63,7 +57,7 @@ struct IosWaitRunner {
             let satisfied = predicate.kind == .idle ? quiet : probe.satisfies(predicate)
             if satisfied || now() >= deadline {
                 let verdict = WaitVerdict.classify(predicate, probe, quiet: quiet)
-                return IosWaitRunner.render(
+                return WaitRunner.render(
                     predicate: predicate,
                     verdict: verdict,
                     probe: probe,
@@ -83,7 +77,7 @@ struct IosWaitRunner {
         }
     }
 
-    /// One poll: capture, resolve the way `act` resolves on iOS, read the markers.
+    /// One poll: capture, resolve the way `act` resolves, read the markers.
     private func probeOnce(_ predicate: WaitPredicate) async throws -> WaitProbe {
         let snapshot = try await fetch()
         // UNCAPPED: the digest decides quiescence, and a change past the render
@@ -142,7 +136,7 @@ struct IosWaitRunner {
 
     /// Assemble the wire result. Kept static and internal so a test can assert the
     /// exact key set the CLI printer and `--json` consumers read.
-    static func render(
+    public static func render(
         predicate: WaitPredicate,
         verdict: WaitVerdict,
         probe: WaitProbe,
@@ -174,7 +168,7 @@ struct IosWaitRunner {
 
     /// Concrete follow-ups, so an `unknowable` hands back a tactic instead of just a
     /// complaint. Mirrors the Kotlin helper's list.
-    static func nextSteps(predicate: WaitPredicate, verdict: WaitVerdict) -> [String] {
+    public static func nextSteps(predicate: WaitPredicate, verdict: WaitVerdict) -> [String] {
         var out: [String] = []
         func add(_ step: String) { if !out.contains(step) { out.append(step) } }
         let selector: String? = {
@@ -223,7 +217,7 @@ struct IosWaitRunner {
 
     /// Build the predicate the caller stated. Mirrors `HelperWait.predicateFrom`,
     /// including every refusal, so the two platforms reject the same inputs.
-    static func predicate(from params: [String: Any]) throws -> WaitPredicate {
+    public static func predicate(from params: [String: Any]) throws -> WaitPredicate {
         let token = params["for"] as? String
         var selector: ReticleProtocol.Selector?
         if let token, token != "idle" {
@@ -235,9 +229,9 @@ struct IosWaitRunner {
                 selector = s
             }
         }
-        let gone = waitFlag(params["gone"])
+        let gone = ActParams.isTruthy(params["gone"])
         let textContains = params["textContains"] as? String
-        let idleRequested = waitFlag(params["idle"]) || token == "idle"
+        let idleRequested = ActParams.isTruthy(params["idle"]) || token == "idle"
 
         if idleRequested {
             if selector != nil {
@@ -281,7 +275,7 @@ struct IosWaitRunner {
 
     /// `--for`'s token grammar, identical to `--verify`'s so there is only one
     /// spelling to learn.
-    static func parseWaitToken(_ token: String) throws -> ReticleProtocol.Selector {
+    public static func parseWaitToken(_ token: String) throws -> ReticleProtocol.Selector {
         if token.hasPrefix("#") { return ReticleProtocol.Selector(testId: String(token.dropFirst())) }
         if token.hasPrefix("@") { return ReticleProtocol.Selector(resourceId: String(token.dropFirst())) }
         if token.hasPrefix("css=") { return ReticleProtocol.Selector(cssSelector: String(token.dropFirst(4))) }

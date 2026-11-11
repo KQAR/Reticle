@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ReticleProtocol
-@testable import ReticleHostIos
+@testable import ReticleHostAct
 
 /// The iOS `act wait` poll loop, driven with an injected clock and snapshot source
 /// so the timing behaviour is pinned without a simulator.
@@ -10,7 +10,7 @@ import ReticleProtocol
 /// ReticleProtocol's suite; what is tested here is the loop around it — budget,
 /// backoff, quiescence bookkeeping, early exit, and the argument refusals.
 @Suite(.serialized)
-struct IosWaitTests {
+struct WaitRunnerTests {
 
     /// A snapshot with one node, so a selector can resolve or miss on demand.
     private func snapshot(testId: String?, text: String? = nil, visible: Bool = true) -> Snapshot {
@@ -48,10 +48,10 @@ struct IosWaitTests {
 
     /// A runner whose clock advances only when the loop sleeps, so a "10s" budget
     /// costs no wall-clock time and the assertions are deterministic.
-    private func runner(_ snapshots: [Snapshot]) -> IosWaitRunner {
+    private func runner(_ snapshots: [Snapshot]) -> WaitRunner {
         let clock = Clock()
         var index = 0
-        var r = IosWaitRunner(fetch: {
+        var r = WaitRunner(fetch: {
             let s = snapshots[min(index, snapshots.count - 1)]
             index += 1
             return s
@@ -172,35 +172,35 @@ struct IosWaitTests {
     }
 
     @Test func predicateParsingMatchesTheVerifyTokenGrammar() async throws {
-        #expect(try IosWaitRunner.predicate(from: ["for": "#cart.total"]).describe() == "appear testId=cart.total")
-        #expect(try IosWaitRunner.predicate(from: ["for": "@status"]).describe() == "appear resourceId=status")
-        #expect(try IosWaitRunner.predicate(from: ["for": "css=#pay"]).describe() == "appear css=#pay")
-        #expect(try IosWaitRunner.predicate(from: ["for": "r7"]).describe() == "appear ref=r7")
-        #expect(try IosWaitRunner.predicate(from: ["testId": "x", "gone": true]).describe() == "gone testId=x")
+        #expect(try WaitRunner.predicate(from: ["for": "#cart.total"]).describe() == "appear testId=cart.total")
+        #expect(try WaitRunner.predicate(from: ["for": "@status"]).describe() == "appear resourceId=status")
+        #expect(try WaitRunner.predicate(from: ["for": "css=#pay"]).describe() == "appear css=#pay")
+        #expect(try WaitRunner.predicate(from: ["for": "r7"]).describe() == "appear ref=r7")
+        #expect(try WaitRunner.predicate(from: ["testId": "x", "gone": true]).describe() == "gone testId=x")
         #expect(
-            try IosWaitRunner.predicate(from: ["testId": "x", "textContains": "Paid"]).describe()
+            try WaitRunner.predicate(from: ["testId": "x", "textContains": "Paid"]).describe()
                 == "text testId=x contains \"Paid\""
         )
-        #expect(try IosWaitRunner.predicate(from: ["idle": true]).describe() == "idle")
-        #expect(try IosWaitRunner.predicate(from: ["for": "idle"]).describe() == "idle")
+        #expect(try WaitRunner.predicate(from: ["idle": true]).describe() == "idle")
+        #expect(try WaitRunner.predicate(from: ["for": "idle"]).describe() == "idle")
     }
 
     @Test func refusesPredicatesItCannotAnswer() async {
         // Each refusal exists because the alternative is a wait that always
         // "succeeds" and therefore means nothing.
-        #expect(throws: (any Error).self) { try IosWaitRunner.predicate(from: [:]) }
+        #expect(throws: (any Error).self) { try WaitRunner.predicate(from: [:]) }
         #expect(throws: (any Error).self) {
-            try IosWaitRunner.predicate(from: ["testId": "x", "point": "10,20"])
+            try WaitRunner.predicate(from: ["testId": "x", "point": "10,20"])
         }
         #expect(throws: (any Error).self) {
-            try IosWaitRunner.predicate(from: ["testId": "x", "alias": "@1"])
+            try WaitRunner.predicate(from: ["testId": "x", "alias": "@1"])
         }
         #expect(throws: (any Error).self) {
-            try IosWaitRunner.predicate(from: ["testId": "x", "gone": true, "textContains": "y"])
+            try WaitRunner.predicate(from: ["testId": "x", "gone": true, "textContains": "y"])
         }
         #expect(throws: (any Error).self) {
-            try IosWaitRunner.predicate(from: ["idle": true, "testId": "x"])
+            try WaitRunner.predicate(from: ["idle": true, "testId": "x"])
         }
-        #expect(throws: (any Error).self) { try IosWaitRunner.parseWaitToken("bogus=1") }
+        #expect(throws: (any Error).self) { try WaitRunner.parseWaitToken("bogus=1") }
     }
 }

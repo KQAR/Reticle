@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostAct
 import ReticleHostShared
 import ReticleProtocol
 
@@ -37,13 +38,14 @@ extension IosHelperClient {
         if (params["gesture"] as? String) != "wait" {
             try Self.rejectAlias(params["alias"] as? String, command: "act \((params["gesture"] as? String) ?? "tap")")
         }
-        guard let watch = try verifyWatchSelector(params) else {
+        guard let watch = try ActVerify.watchSelector(params) else {
             return try await performAct(params)
         }
         let pkg = try bundleId(params)
-        let before = await captureVerifyState(pkg, watch)
+        let fetch: SnapshotFetch = { try await self.fetchSnapshot(pkg) }
+        let before = await ActVerify.capture(watch, fetch: fetch)
         var result = try await performAct(params)
-        result["verify"] = await pollVerify(pkg, watch, before: before, params: params)
+        result["verify"] = await ActVerify.poll(watch, before: before, params: params, fetch: fetch)
         return result
     }
 
@@ -55,15 +57,15 @@ extension IosHelperClient {
         // before/after evidence package — the same trace shape Android emits, so
         // `reticle serve` and the panel ingest an iOS action identically.
         let tracer = (params["traceOutput"] as? String).map {
-            IosActionTrace(
+            ActionTraceWriter(
                 root: URL(fileURLWithPath: $0),
                 packageName: pkg,
-                http: IosAgentHTTP(bundleId: pkg),
                 // Captured here, from the request, for the same reason the Kotlin
                 // helper captures at construction: by the time the trace is written
                 // the request has been reduced to a result, and a `type`'s text is
                 // no longer recoverable from it.
-                recordedParams: ActionTraceParamNames.capture(from: params)
+                recordedParams: ActionTraceParamNames.capture(from: params),
+                capture: Self.traceCapture(IosAgentHTTP(bundleId: pkg))
             )
         }
         let settleMs = (params["traceDelayMs"] as? Int) ?? 250
@@ -72,7 +74,7 @@ extension IosHelperClient {
         // Explicit in-process activation (the on-device "tap"): works everywhere,
         // no HID surface needed.
         if gesture == "activate" {
-            let before = await tracer?.capture()
+            let before = await tracer?.record()
             let result = try await activate(pkg, params)
             return try await finishTrace(tracer, before, settleMs, gesture: "activate", selector: selector,
                                    point: nil, source: result["via"] as? String, ref: result["ref"] as? String,
@@ -83,7 +85,7 @@ extension IosHelperClient {
         // devices and simulators alike, and reports the settled before/after
         // state straight from the agent.
         if gesture == "hideKeyboard" || gesture == "hide-keyboard" {
-            let before = await tracer?.capture()
+            let before = await tracer?.record()
             let obj: [String: Any]
             do {
                 let (data, _) = try await agent(pkg).post(Endpoints.keyboardHide, body: Data())
@@ -102,8 +104,8 @@ extension IosHelperClient {
         // The one gesture that dispatches no input: it only observes, so like
         // `hide-keyboard` it needs no HID surface and works on real devices too.
         if gesture == "wait" {
-            let predicate = try IosWaitRunner.predicate(from: params)
-            let runner = IosWaitRunner(fetch: { try await self.fetchSnapshot(pkg) })
+            let predicate = try WaitRunner.predicate(from: params)
+            let runner = WaitRunner(fetch: { try await self.fetchSnapshot(pkg) })
             return await try runner.run(
                 predicate: predicate,
                 timeoutMs: (params["timeoutMs"] as? Int) ?? WaitSchedule.defaultTimeoutMs,
@@ -132,13 +134,13 @@ extension IosHelperClient {
                     throw HelperError("point taps need a touch surface; this device has none "
                         + "(no agent `POST /touch`), so name the target and use `act activate`")
                 }
-                let before = await tracer?.capture()
+                let before = await tracer?.record()
                 var result = try await activate(pkg, params)
                 // `--settle` is about a coordinate going stale between resolve and
                 // dispatch; in-process activation does both in one step, so there is
                 // nothing to wait out. Say so rather than reporting a settle that
                 // never ran.
-                if settleRequested(params) {
+                if ActTargeting.settleRequested(params) {
                     result["settleSkipped"] = "activation resolves and dispatches in-process"
                 }
                 return try await finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
@@ -148,12 +150,12 @@ extension IosHelperClient {
             let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "tap")
             let snapshot = try await fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-            let target = try resolveTarget(params, snapshot: snapshot)
+            let target = try ActTargeting.resolveTarget(params, snapshot: snapshot)
             let firstPoint = target.point
             var point = firstPoint
             var stable: Bool? = nil
             let rawPoint = params["point"] != nil
-            if settleRequested(params), rawPoint {
+            if ActTargeting.settleRequested(params), rawPoint {
                 throw HelperError("--settle needs a selector: a raw --point has nothing to re-resolve, "
                     + "so there is no way to tell whether it has stopped moving")
             }
@@ -164,7 +166,8 @@ extension IosHelperClient {
             // command reports an unqualified success. `--settle` raises the budget for
             // a target that is genuinely animating in; `--no-settle` opts out.
             if !rawPoint, !isTruthy(params["noSettle"]) {
-                let settled = await settleTapPoint(pkg, params, first: point)
+                let settled = await ActTargeting.settleTapPoint(
+                    params, first: point, fetch: { try await self.fetchSnapshot(pkg) })
                 point = settled.point
                 stable = settled.stable
             }
@@ -177,7 +180,7 @@ extension IosHelperClient {
             // SELECTOR tap needs too: it resolves correctly, confirms the rect, and
             // is then eaten by the IME or by a window above the one it aimed at.
             let obstruction = ScreenCoverage.obstruction(snapshot, x: point.x, y: point.y, targetRef: target.ref)
-            let before = await tracer?.capture()
+            let before = await tracer?.record()
             try await surface.tap(x: point.x, y: point.y, screen: screen)
             var result: [String: Any] = [
                 "gesture": "tap", "via": surface.describe, "x": point.x, "y": point.y,
@@ -222,7 +225,8 @@ extension IosHelperClient {
             // one that can catch a fold that is wrong by an amount nothing else can
             // judge. Quiet on every ordinary tap. Only for the HID path: `activate`
             // dispatches on the element itself and uses no coordinate to be wrong.
-            if !rawPoint, let landing = await domTapLanding(pkg, params, target: target) {
+            if !rawPoint, let landing = await ActTargeting.domTapLanding(
+                params, target: target, fetch: { try await self.fetchSnapshot(pkg) }) {
                 result["landed"] = landing
             }
             return try await finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
@@ -230,13 +234,13 @@ extension IosHelperClient {
                                    result: result)
         case "swipe", "drag":
             let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: gesture)
-            guard let from = parsePoint(params["from"]), let to = parsePoint(params["to"]) else {
+            guard let from = ActParams.point(params["from"]), let to = ActParams.point(params["to"]) else {
                 throw HelperError("\(gesture) needs --from x,y and --to x,y")
             }
             let snapshot = try await fetchSnapshot(pkg)
             let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
             let duration = Double((params["duration"] as? String) ?? "") ?? (gesture == "drag" ? 600 : 250)
-            let before = await tracer?.capture()
+            let before = await tracer?.record()
             try await surface.swipe(from: (from.x, from.y), to: (to.x, to.y), screen: screen, durationMs: duration)
             return try await finishTrace(tracer, before, settleMs, gesture: gesture, selector: selector,
                                    point: from, source: "point", ref: nil,
@@ -261,7 +265,14 @@ extension IosHelperClient {
             // The gesture a device needed most: a lazy list's unrealized row has no
             // node until something scrolls it into view, and activation cannot scroll.
             let surface = try await IosTouchSurface.resolve(simUdid: simUdid, bundleId: pkg, gesture: "scroll-to")
-            return try await scrollTo(pkg, params, surface: surface)
+            return try await ScrollTo(
+                fetch: { try await self.fetchSnapshot(pkg) },
+                drag: { from, to, durationMs, screen in
+                    try await surface.swipe(from: (from.x, from.y), to: (to.x, to.y),
+                                            screen: (screen.width, screen.height), durationMs: Double(durationMs))
+                },
+                via: surface.describe
+            ).run(params)
         case "type":
             guard let text = params["text"] as? String else { throw HelperError("type needs --text") }
             // No HID surface — a real device (whose `--serial` is a hardware ECID,
@@ -281,7 +292,7 @@ extension IosHelperClient {
             if let simUdid { isSim = await Simctl.isSimulator(simUdid) } else { isSim = false }
             let hidUnavailable = isSim ? !IosInputBackend(udid: simUdid!).isAvailable() : true
             guard let udid = simUdid, isSim, !hidUnavailable else {
-                let before = await tracer?.capture()
+                let before = await tracer?.record()
                 var result = try await typeInProcess(pkg, params, text: text)
                 if isSim, hidUnavailable { result["hid"] = "unavailable — typed in-process instead" }
                 return try await finishTrace(tracer, before, settleMs, gesture: "type", selector: selector,
@@ -299,7 +310,7 @@ extension IosHelperClient {
                     + "ECID as --serial (`idevice_id -l`) — typing then goes through the agent."
                 )
             }
-            let before = await tracer?.capture()
+            let before = await tracer?.record()
             // If the caller named a target field, tap it first so the text lands
             // in THAT field — HID typing and clipboard paste both go to whatever
             // currently holds focus, so `type --test-id foo` otherwise silently
@@ -310,7 +321,7 @@ extension IosHelperClient {
             if selector != nil {
                 let snapshot = try await fetchSnapshot(pkg)
                 let screen = (snapshot.screen.size.width, snapshot.screen.size.height)
-                let point = try resolveTapPoint(params, snapshot: snapshot)
+                let point = try ActTargeting.resolveTapPoint(params, snapshot: snapshot)
                 try IosInputBackend(udid: udid).tap(x: point.x, y: point.y, screen: screen)
                 focusPoint = point
                 // Give the tapped field a beat to take focus before dispatching
@@ -452,7 +463,7 @@ extension IosHelperClient {
     /// Merge a trace evidence package into an action result when tracing is on and
     /// the before-state was captured; otherwise return the result untouched.
     func finishTrace(
-        _ tracer: IosActionTrace?, _ before: IosActionTrace.Capture?, _ settleMs: Int,
+        _ tracer: ActionTraceWriter?, _ before: TraceCapture?, _ settleMs: Int,
         gesture: String, selector: TargetSelector?,
         point: Point?, source: String?, ref: String?,
         result: [String: Any]
@@ -464,6 +475,19 @@ extension IosHelperClient {
             result: result.mapValues { "\($0)" }, before: before, settleMs: settleMs
         )
         return out
+    }
+
+    /// A trace side from the running agent: the snapshot bytes verbatim, and a
+    /// best-effort screenshot written where the writer asked.
+    static func traceCapture(_ http: IosAgentHTTP) -> (URL) async -> TraceCapture? {
+        { screenshotTo in
+            guard let (snapData, _) = try? await http.get(Endpoints.snapshot),
+                  let snapshot = try? ReticleJSON.decode(Snapshot.self, from: snapData)
+                      .requireSupportedSchema() else { return nil }
+            let png = (try? await http.get(Endpoints.screenshot))?.data
+            let wrote = png.map { (try? $0.write(to: screenshotTo)) != nil } ?? false
+            return TraceCapture(snapshotJSON: snapData, snapshot: snapshot, screenshot: wrote ? screenshotTo : nil)
+        }
     }
 
     /// The selector to record in a trace, or nil when no selector fields were

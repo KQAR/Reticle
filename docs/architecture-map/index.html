@@ -214,7 +214,7 @@ tailwind.config = {
       "kind": "swift-target",
       "layer": "host",
       "sub": "Daemon/ · CLI/ · Android/",
-      "detail": "The daemon, the CLI, the read-only panel, and the Android helper clients. AndroidBackend is the single place the helper's JSONL method names and parameter keys are spelled, so a rename has one edit site. @_exports the three targets below it, so the split is an internal boundary rather than an API change.",
+      "detail": "The daemon, the CLI, the read-only panel, and the Android helper clients. AndroidBackend is the single place the helper's JSONL method names and parameter keys are spelled, so a rename has one edit site. @_exports the four targets below it, so the split is an internal boundary rather than an API change.",
       "x": 300,
       "y": 162,
       "w": 240,
@@ -226,10 +226,22 @@ tailwind.config = {
       "kind": "swift-target",
       "layer": "host",
       "sub": "iOS has no helper",
-      "detail": "The iOS platform backend, in-host: simctl / devicectl, direct loopback HTTP, private CoreSimulator HID, and its own wait / scroll-to / verify loops. Depends on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI.",
+      "detail": "The iOS platform backend, in-host: simctl / devicectl, direct loopback HTTP and private CoreSimulator HID. Its wait / scroll-to / verify / trace loops are ReticleHostAct, driven through iOS closures. Depends on nothing above it, so the daemon cannot reach into platform code and the backend cannot reach up into the CLI.",
       "x": 760,
       "y": 162,
       "w": 240,
+      "h": 56
+    },
+    {
+      "id": "host-act",
+      "label": "ReticleHostAct",
+      "kind": "swift-target",
+      "layer": "host",
+      "sub": "shared act orchestration",
+      "detail": "The platform-neutral act loops: WaitRunner, ActionTraceWriter + ActionTraceDiff, ActVerify, ActTargeting (resolve / reach / settle / DOM landing) and ScrollTo. A platform injects only closures — fetch a snapshot, capture a trace side, tap, drag — so iOS and (as #326 lands) Android share one implementation. Kept out of ReticleProtocol because the iOS agent links that library.",
+      "x": 555,
+      "y": 258,
+      "w": 190,
       "h": 56
     },
     {
@@ -504,6 +516,34 @@ tailwind.config = {
     {
       "id": "e-ios-swift",
       "from": "host-ios",
+      "to": "proto-swift",
+      "kind": "depends",
+      "label": ""
+    },
+    {
+      "id": "e-ios-act",
+      "from": "host-ios",
+      "to": "host-act",
+      "kind": "depends",
+      "label": ""
+    },
+    {
+      "id": "e-core-act",
+      "from": "host-core",
+      "to": "host-act",
+      "kind": "depends",
+      "label": ""
+    },
+    {
+      "id": "e-act-shared",
+      "from": "host-act",
+      "to": "host-shared",
+      "kind": "depends",
+      "label": ""
+    },
+    {
+      "id": "e-act-swift",
+      "from": "host-act",
       "to": "proto-swift",
       "kind": "depends",
       "label": ""

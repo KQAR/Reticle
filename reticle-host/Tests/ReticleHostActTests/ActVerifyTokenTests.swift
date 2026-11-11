@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ReticleProtocol
-@testable import ReticleHostIos
+@testable import ReticleHostAct
 import ReticleHostShared
 
 /// Pins the iOS `--verify` token grammar to the Android helper's `parseVerifyToken`
@@ -9,11 +9,11 @@ import ReticleHostShared
 /// Kotlin/Swift boundary; this test is the drift guard so the `key=value` spellings
 /// (which once silently regressed to never-matching on Android) can't rot on iOS.
 @Suite("iOS verify token grammar")
-struct IosVerifyTokenTests {
+struct ActVerifyTokenTests {
     private let empty = ReticleProtocol.Selector()
 
     private func parse(_ token: String, act: ReticleProtocol.Selector? = nil) throws -> ReticleProtocol.Selector? {
-        try IosHelperClient.parseVerifyToken(token, actSelector: act ?? empty)
+        try ActVerify.parseToken(token, actSelector: act ?? empty)
     }
 
     @Test func sigilForms() async throws {
@@ -43,27 +43,27 @@ struct IosVerifyTokenTests {
 
     @Test func trueWithoutASelectorFailsLoudly() async {
         #expect(throws: HelperError.self) {
-            _ = try IosHelperClient.parseVerifyToken("true", actSelector: ReticleProtocol.Selector())
+            _ = try ActVerify.parseToken("true", actSelector: ReticleProtocol.Selector())
         }
     }
 
     @Test func unknownKeyFailsLoudly() async {
         #expect(throws: HelperError.self) {
-            _ = try IosHelperClient.parseVerifyToken("bogus=x", actSelector: ReticleProtocol.Selector())
+            _ = try ActVerify.parseToken("bogus=x", actSelector: ReticleProtocol.Selector())
         }
     }
 
     @Test func bareVerifyAcceptsALabelAsTheActedOnSelector() async throws {
         // The Android twin's case: a label is a node selector, and bare `--verify`
         // used to refuse it while the caller was acting by selector.
-        let sel = try IosHelperClient.parseVerifyToken(
+        let sel = try ActVerify.parseToken(
             "true", actSelector: ReticleProtocol.Selector(label: "Potwierdź")
         )
         #expect(sel?.label == "Potwierdź")
     }
 
     @Test func labelEqualsTokenIsALabel() async throws {
-        let sel = try IosHelperClient.parseVerifyToken(
+        let sel = try ActVerify.parseToken(
             "label=Potwierdź", actSelector: ReticleProtocol.Selector()
         )
         #expect(sel?.label == "Potwierdź")

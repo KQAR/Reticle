@@ -2,15 +2,11 @@ import Foundation
 import ReticleHostShared
 import ReticleProtocol
 
-// `act --verify` on iOS: capture the watched node's state before the gesture, poll
-// it after, and report the same `verify` result shape the Android helper produces
-// (which is what makes the host's `printVerify` platform-agnostic).
-//
-// Split out of `IosHelperClient` for the same reason as the scroll-to half.
-extension IosHelperClient {
-    // MARK: - Verify (act --verify)
-
-    struct VerifyState {
+/// `act --verify`: capture the watched node's state before the gesture, poll it
+/// after, and report the `verify` result shape the host's `printVerify` renders —
+/// the same shape the Android helper's `HelperVerify` produces.
+public enum ActVerify {
+    public struct State {
         let found: Bool
         let text: String?
         let label: String?
@@ -29,19 +25,19 @@ extension IosHelperClient {
     /// verify is off. Mirrors the Android helper's `parseVerifyToken` grammar so both
     /// platforms accept the same spellings (`#id`/`testId=`/`@id`/`resourceId=`/
     /// `css=`/`ref=`/bare ref, plus `true` = watch the acted-on selector).
-    func verifyWatchSelector(_ params: [String: Any]) throws -> TargetSelector? {
+    public static func watchSelector(_ params: [String: Any]) throws -> ReticleProtocol.Selector? {
         let token: String
         if let s = params["verify"] as? String { token = s }
         else if let b = params["verify"] as? Bool { token = b ? "true" : "false" }
         else { return nil }
-        return try IosHelperClient.parseVerifyToken(token, actSelector: selectorFromParams(params))
+        return try parseToken(token, actSelector: ActParams.selector(params))
     }
 
     /// Resolves a `--verify` token into the node selector to watch. Pure and
     /// `internal` so it can be unit-tested without a device, mirroring the Android
     /// helper's `parseVerifyToken` (and its `VerifyTokenTest`) grammar 1:1 — this
     /// exact grammar silently regressed on Android once, so it stays test-guarded.
-    static func parseVerifyToken(_ token: String, actSelector: ReticleProtocol.Selector) throws -> ReticleProtocol.Selector? {
+    public static func parseToken(_ token: String, actSelector: ReticleProtocol.Selector) throws -> ReticleProtocol.Selector? {
         switch token {
         case "false":
             return nil
@@ -76,15 +72,15 @@ extension IosHelperClient {
     /// Captures the watched node's current state, or a not-found state when the
     /// selector resolves nothing. A snapshot fetch failure reads as not-found —
     /// verify never fails the action it wraps.
-    func captureVerifyState(_ pkg: String, _ selector: TargetSelector) async -> VerifyState {
-        guard let snapshot = try? await fetchSnapshot(pkg), let node = try? Render.findNode(snapshot, selector) else {
-            return VerifyState(
+    public static func capture(_ selector: ReticleProtocol.Selector, fetch: SnapshotFetch) async -> State {
+        guard let snapshot = try? await fetch(), let node = try? Render.findNode(snapshot, selector) else {
+            return State(
                 found: false, text: nil, label: nil, enabled: false, visible: false, frame: nil,
                 checked: nil, expanded: nil, custom: [:]
             )
         }
         let frame = node.frame.map(\.intDescription)
-        return VerifyState(
+        return State(
             found: true,
             text: node.text,
             label: node.contentDescription,
@@ -99,17 +95,19 @@ extension IosHelperClient {
 
     /// Polls the watched node until it differs from `before` or the budget expires,
     /// returning the `{selector, changed, note?, changes[]}` shape `printVerify` reads.
-    func pollVerify(_ pkg: String, _ selector: TargetSelector, before: VerifyState, params: [String: Any]) async -> [String: Any] {
+    public static func poll(
+        _ selector: ReticleProtocol.Selector, before: State, params: [String: Any], fetch: SnapshotFetch
+    ) async -> [String: Any] {
         let budgetMs = (params["verifyTimeoutMs"] as? Int)
             ?? (params["verifyTimeoutMs"] as? Double).map(Int.init)
             ?? 2000
         let deadline = Date().addingTimeInterval(Double(budgetMs) / 1000.0)
-        var after = await captureVerifyState(pkg, selector)
-        var changes = diffVerify(before, after)
+        var after = await capture(selector, fetch: fetch)
+        var changes = diff(before, after)
         while changes.isEmpty && Date() < deadline {
             try? await Task.sleep(for: .seconds(0.15))
-            after = await captureVerifyState(pkg, selector)
-            changes = diffVerify(before, after)
+            after = await capture(selector, fetch: fetch)
+            changes = diff(before, after)
         }
         let selStr: String
         if let t = selector.testId { selStr = "#\(t)" }
@@ -129,7 +127,7 @@ extension IosHelperClient {
         return out
     }
 
-    func diffVerify(_ before: VerifyState, _ after: VerifyState) -> [(field: String, before: String?, after: String?)] {
+    static func diff(_ before: State, _ after: State) -> [(field: String, before: String?, after: String?)] {
         var out: [(field: String, before: String?, after: String?)] = []
         if before.found != after.found { out.append((field: "present", before: String(before.found), after: String(after.found))) }
         if before.text != after.text { out.append((field: "text", before: before.text, after: after.text)) }

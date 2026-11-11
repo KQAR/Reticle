@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "ReticleHostCore", targets: ["ReticleHostCore"]),
         .library(name: "ReticleNetworkLane", targets: ["ReticleNetworkLane"]),
         .library(name: "ReticleHostIos", targets: ["ReticleHostIos"]),
+        .library(name: "ReticleHostAct", targets: ["ReticleHostAct"]),
     ],
     dependencies: [
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", exact: "2.25.0"),
@@ -78,9 +79,25 @@ let package = Package(
             path: "Sources/ReticleNetworkLane",
             swiftSettings: strictConcurrency
         ),
+        // The platform-neutral `act` orchestration: the wait runner, the action-trace
+        // writer + diff, `--verify`, target resolution/reach/settle, and the scroll-to
+        // loop. Each platform injects only how a snapshot is fetched and how input is
+        // dispatched (closures), so one implementation serves iOS now and Android as
+        // its orchestration moves out of the Kotlin helper (#326). Not in
+        // ReticleProtocol: the iOS agent links that library, and orchestration does
+        // not belong in the app under test.
+        .target(
+            name: "ReticleHostAct",
+            dependencies: [
+                "ReticleHostShared",
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
+            ],
+            path: "Sources/ReticleHostAct",
+            swiftSettings: strictConcurrency
+        ),
         // The iOS platform backend: simctl/devicectl device control, direct loopback
-        // HTTP to the in-process agent, the wait/scroll-to/verify loops, and private
-        // CoreSimulator HID input. It implements `HelperCalling` (in the shared layer)
+        // HTTP to the in-process agent, and private CoreSimulator HID input; its
+        // act loops are `ReticleHostAct` driven through iOS closures. It implements `HelperCalling` (in the shared layer)
         // and depends on nothing above it — no daemon, no CLI — so the compiler now
         // enforces what was previously only true by habit: the daemon never reaches
         // into platform code, and a platform backend never reaches up into the CLI.
@@ -88,6 +105,7 @@ let package = Package(
             name: "ReticleHostIos",
             dependencies: [
                 "ReticleHostShared",
+                "ReticleHostAct",
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
                 "CReticleSimHID",
             ],
@@ -98,6 +116,7 @@ let package = Package(
             name: "ReticleHostCore",
             dependencies: [
                 "ReticleHostShared",
+                "ReticleHostAct",
                 "ReticleNetworkLane",
                 "ReticleHostIos",
                 .product(name: "Hummingbird", package: "hummingbird"),
@@ -135,9 +154,6 @@ let package = Package(
                 "ReticleHostIos",
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
-                // Lets the action-trace diff contract test build `Snapshot`s from the
-                // shared fixture, so the Swift port is pinned against the same table
-                // the Kotlin port reads.
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
                 // Lets the capture-lane tests synthesize Loom `Flow`s directly, so the
                 // normalization from flow to `network.*` event is pinned without a live
@@ -147,6 +163,19 @@ let package = Package(
             ],
             path: "Tests/ReticleHostCoreTests",
             swiftSettings: strictConcurrency
-        )
+        ),
+        .testTarget(
+            name: "ReticleHostActTests",
+            dependencies: [
+                "ReticleHostAct",
+                "ReticleHostShared",
+                // Lets the action-trace diff contract test build `Snapshot`s from the
+                // shared fixture, so the Swift port is pinned against the same table
+                // the Kotlin port reads.
+                .product(name: "ReticleProtocol", package: "reticle-swift"),
+            ],
+            path: "Tests/ReticleHostActTests",
+            swiftSettings: strictConcurrency
+        ),
     ]
 )

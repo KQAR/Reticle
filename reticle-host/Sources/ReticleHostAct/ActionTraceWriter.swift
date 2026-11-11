@@ -2,52 +2,76 @@ import Foundation
 import ReticleHostShared
 import ReticleProtocol
 
-/// Writes the per-action evidence package for iOS actions — the Swift analogue
-/// of the Kotlin helper's `HelperActionTrace`. It produces the same on-disk
-/// shape (before/after snapshots + screenshots + a `trace.json` manifest) so
-/// `reticle serve` ingestion and the web panel consume an iOS trace exactly like
-/// an Android one. The only added manifest field is `platform`, which lets the
-/// daemon label the event `ios:<pkg>` instead of assuming Android.
-struct IosActionTrace {
-    struct Capture {
-        /// Raw snapshot bytes as the agent emitted them — written verbatim so the
-        /// artifact is byte-faithful and never drifts through a re-encode.
-        let snapshotJSON: Data
-        /// Decoded snapshot, used only to compute the diff.
-        let snapshot: Snapshot
-        let screenshotPNG: Data?
+/// One side of a trace: the snapshot as the agent emitted it, plus where its
+/// screenshot was written (nil when none could be taken).
+public struct TraceCapture {
+    /// Raw snapshot bytes as the agent emitted them — written verbatim so the
+    /// artifact is byte-faithful and never drifts through a re-encode.
+    public let snapshotJSON: Data
+    /// Decoded snapshot, used only to compute the diff.
+    public let snapshot: Snapshot
+    /// The file the screenshot landed in — the path `capture` was handed — or nil.
+    public let screenshot: URL?
+
+    public init(snapshotJSON: Data, snapshot: Snapshot, screenshot: URL?) {
+        self.snapshotJSON = snapshotJSON
+        self.snapshot = snapshot
+        self.screenshot = screenshot
+    }
+}
+
+/// Writes the per-action evidence package (before/after snapshots + screenshots +
+/// a `trace.json` manifest) — the shape `reticle serve` ingestion and the web panel
+/// consume. The Swift twin of the Kotlin helper's `HelperActionTrace`; the only
+/// added manifest field is `platform`, which lets the daemon label the event
+/// `ios:<pkg>` instead of assuming Android.
+///
+/// The platform supplies `capture`: fetch a snapshot, and write a screenshot to the
+/// given path if one can be taken. A screenshot goes to a file rather than through
+/// memory so a helper that already writes one need not ship it back over its pipe.
+public struct ActionTraceWriter {
+    public let root: URL
+    public let packageName: String
+    /// Gesture-shaping inputs, captured from the request at construction.
+    public let recordedParams: [String: String]
+    /// Snapshot + best-effort screenshot to `screenshotTo`; nil when no snapshot
+    /// could be read. A missing screenshot is not fatal.
+    public let capture: (_ screenshotTo: URL) async -> TraceCapture?
+
+    public init(
+        root: URL, packageName: String, recordedParams: [String: String],
+        capture: @escaping (_ screenshotTo: URL) async -> TraceCapture?
+    ) {
+        self.root = root
+        self.packageName = packageName
+        self.recordedParams = recordedParams
+        self.capture = capture
     }
 
-    let root: URL
-    let packageName: String
-    let http: IosAgentHTTP
-    /// Gesture-shaping inputs, captured from the request at construction.
-    let recordedParams: [String: String]
-
-    /// Capture a snapshot (+ best-effort screenshot) from the running agent. A
-    /// missing screenshot is not fatal — the trace still records the snapshots.
-    func capture() async -> Capture? {
-        guard let (snapData, _) = try? await http.get(Endpoints.snapshot),
-              let snapshot = try? ReticleJSON.decode(Snapshot.self, from: snapData)
-                  .requireSupportedSchema() else { return nil }
-        let png = (try? await http.get(Endpoints.screenshot))?.data
-        return Capture(snapshotJSON: snapData, snapshot: snapshot, screenshotPNG: png)
+    /// Capture one side of the trace. The screenshot is staged in the temp dir,
+    /// because the action's directory is only created once the trace is written.
+    // ponytail: a before-capture whose gesture then throws leaves its staged PNG in
+    // the temp dir for the OS to sweep; clean up explicitly if that ever matters.
+    public func record() async -> TraceCapture? {
+        let staged = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reticle-trace-\(UUID().uuidString).png")
+        return await capture(staged)
     }
 
     /// Write the before/after artifacts and `trace.json`, returning the compact
     /// `trace` result dict the host prints and publishes to the daemon.
-    func write(
+    public func write(
         gesture: String,
         selector: ReticleProtocol.Selector?,
         targetPoint: Point?,
         targetSource: String?,
         targetRef: String?,
         result: [String: String],
-        before: Capture,
+        before: TraceCapture,
         settleMs: Int
     ) async throws -> [String: Any] {
         if settleMs > 0 { try? await Task.sleep(for: .seconds(Double(settleMs)) / 1000.0) }
-        guard let after = await capture() else {
+        guard let after = await record() else {
             throw HelperError("action trace: could not capture the after-state snapshot")
         }
         let recordedAt = Int64(Date().timeIntervalSince1970 * 1000)
@@ -58,10 +82,14 @@ struct IosActionTrace {
         let afterSnapshot = "after.snapshot.json"
         try before.snapshotJSON.write(to: dir.appendingPathComponent(beforeSnapshot))
         try after.snapshotJSON.write(to: dir.appendingPathComponent(afterSnapshot))
-        let beforeScreenshot = before.screenshotPNG != nil ? "before.screenshot.png" : nil
-        let afterScreenshot = after.screenshotPNG != nil ? "after.screenshot.png" : nil
-        if let png = before.screenshotPNG { try png.write(to: dir.appendingPathComponent(beforeScreenshot!)) }
-        if let png = after.screenshotPNG { try png.write(to: dir.appendingPathComponent(afterScreenshot!)) }
+        let beforeScreenshot = before.screenshot != nil ? "before.screenshot.png" : nil
+        let afterScreenshot = after.screenshot != nil ? "after.screenshot.png" : nil
+        if let png = before.screenshot {
+            try FileManager.default.moveItem(at: png, to: dir.appendingPathComponent(beforeScreenshot!))
+        }
+        if let png = after.screenshot {
+            try FileManager.default.moveItem(at: png, to: dir.appendingPathComponent(afterScreenshot!))
+        }
 
         let diff = ActionTraceDiff.compare(before: before.snapshot, after: after.snapshot)
 
@@ -140,15 +168,15 @@ struct IosActionTrace {
     }
 }
 
-/// Pure snapshot diffing for iOS action traces — a faithful port of
+/// Pure snapshot diffing for action traces — a faithful port of
 /// `dev.reticle.core.trace.ActionTraceDiff` so both platforms emit the same
 /// compact before/after change list. Each change is `{ref?, field, before?,
 /// after?, node?, note?}`; nil fields are omitted (a missing key decodes to
 /// null). Both ports are pinned by
 /// `reticle-protocol/fixtures/action-trace-diff.cases.json`.
-enum ActionTraceDiff {
+public enum ActionTraceDiff {
     /// Longest node text carried as identity before clipping.
-    static let identityTextLimit = 60
+    public static let identityTextLimit = 60
 
     /// How much a field says about what an action DID, lowest rank listed first.
     ///
@@ -191,7 +219,7 @@ enum ActionTraceDiff {
         return 2
     }
 
-    static func compare(before: Snapshot, after: Snapshot, maxChanges: Int = 100) -> [[String: Any]] {
+    public static func compare(before: Snapshot, after: Snapshot, maxChanges: Int = 100) -> [[String: Any]] {
         var found: [(ref: String?, field: String, identityRank: Int, change: [String: Any])] = []
         func add(_ ref: String?, _ field: String, _ old: String?, _ new: String?) {
             if old == new { return }
