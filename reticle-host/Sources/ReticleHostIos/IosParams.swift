@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostAct
 import ReticleProtocol
 
 // Reading the RPC parameter dictionary: flags, selectors, points, metadata values.
@@ -12,26 +13,9 @@ extension IosHelperClient {
     // MARK: - Selector / value helpers
 
     /// Interpret a CLI / batch-step boolean (`true`, `"true"`, `1`) as a flag.
-    func isTruthy(_ value: Any?) -> Bool {
-        switch value {
-        case let b as Bool: return b
-        case let s as String: return s == "true" || s == "1"
-        case let n as NSNumber: return n.boolValue
-        default: return false
-        }
-    }
+    func isTruthy(_ value: Any?) -> Bool { ActParams.isTruthy(value) }
 
-    func selectorFromParams(_ params: [String: Any]) -> TargetSelector {
-        TargetSelector(
-            testId: params["testId"] as? String,
-            resourceId: params["resourceId"] as? String,
-            cssSelector: params["css"] as? String,
-            ref: params["ref"] as? String,
-            point: parsePoint(params["point"]),
-            label: params["label"] as? String,
-            region: params["region"] as? String
-        )
-    }
+    func selectorFromParams(_ params: [String: Any]) -> TargetSelector { ActParams.selector(params) }
 
     /// Coerce a CLI string value into a MetadataValue (bool / int / real / text),
     /// matching how the Kotlin helper interprets `mutate --value`.

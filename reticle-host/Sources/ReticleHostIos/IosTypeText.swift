@@ -1,4 +1,5 @@
 import Foundation
+import ReticleHostAct
 import ReticleHostShared
 import ReticleProtocol
 
@@ -48,7 +49,7 @@ extension IosHelperClient {
             } else {
                 let snapshot = try await fetchSnapshot(pkg)
                 resolvedAgainst = snapshot
-                let resolved = try resolveTarget(params, snapshot: snapshot)
+                let resolved = try ActTargeting.resolveTarget(params, snapshot: snapshot)
                 guard let ref = resolved.ref else {
                     throw HelperError("selector \(requested.describe()) resolved to a coordinate with no node, "
                         + "and in-process typing needs a node to focus")
@@ -157,7 +158,7 @@ extension IosHelperClient {
         if let focused = snapshot.nodes.values.first(where: { $0.isFocused == true && $0.role == "textField" }) {
             return focused
         }
-        guard let resolved = try? resolveTarget(params, snapshot: snapshot), let ref = resolved.ref else {
+        guard let resolved = try? ActTargeting.resolveTarget(params, snapshot: snapshot), let ref = resolved.ref else {
             return nil
         }
         return snapshot.nodes[ref]

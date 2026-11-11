@@ -1,6 +1,6 @@
 import Testing
 import ReticleProtocol
-@testable import ReticleHostIos
+@testable import ReticleHostAct
 
 /// A scroll host carries the concatenated text of every row it has realized, so a
 /// `--label` for a value that is NOT on screen substring-matches the list itself.
@@ -11,7 +11,7 @@ import ReticleProtocol
 /// `act scroll-to --label "1995"` answered `found=true settled=true swipes=0`
 /// while no node in the tree carried 1995 and nothing had scrolled.
 @Suite("iOS scroll-to container-match guard")
-struct IosScrollToContainerMatchTests {
+struct ScrollToContainerMatchTests {
 
     private func node(
         _ ref: String, parent: String? = nil, scroll: ScrollInfo? = nil
@@ -28,12 +28,10 @@ struct IosScrollToContainerMatchTests {
             nodes: Dictionary(uniqueKeysWithValues: nodes.map { ($0.ref, $0) }))
     }
 
-    private let client = IosHelperClient(serial: nil)
-
     @Test func theContainerItselfIsNotATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let snap = snapshot([node("r0"), container])
-        #expect(client.matchedTheContainer("r10", container: container, snapshot: snap))
+        #expect(ScrollTo.matchedTheContainer("r10", container: container, snapshot: snap))
     }
 
     @Test func anAncestorOfTheContainerIsNotATarget() async {
@@ -42,21 +40,21 @@ struct IosScrollToContainerMatchTests {
         let outer = node("r5")
         let container = node("r10", parent: "r5", scroll: ScrollInfo(canScrollDown: true))
         let snap = snapshot([node("r0"), outer, container])
-        #expect(client.matchedTheContainer("r5", container: container, snapshot: snap))
+        #expect(ScrollTo.matchedTheContainer("r5", container: container, snapshot: snap))
     }
 
     @Test func anotherScrollableNodeIsNotATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let sibling = node("r20", scroll: ScrollInfo(canScrollUp: true))
         let snap = snapshot([node("r0"), container, sibling])
-        #expect(client.matchedTheContainer("r20", container: container, snapshot: snap))
+        #expect(ScrollTo.matchedTheContainer("r20", container: container, snapshot: snap))
     }
 
     @Test func arowInsideTheContainerIsATarget() async {
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let row = node("r11", parent: "r10")
         let snap = snapshot([node("r0"), container, row])
-        #expect(!client.matchedTheContainer("r11", container: container, snapshot: snap))
+        #expect(!ScrollTo.matchedTheContainer("r11", container: container, snapshot: snap))
     }
 
     @Test func anUnknownRefIsNotTreatedAsTheContainer() async {
@@ -64,7 +62,7 @@ struct IosScrollToContainerMatchTests {
         // become a refusal that hides a real miss.
         let container = node("r10", scroll: ScrollInfo(canScrollDown: true))
         let snap = snapshot([node("r0"), container])
-        #expect(!client.matchedTheContainer("r99", container: container, snapshot: snap))
-        #expect(!client.matchedTheContainer(nil, container: container, snapshot: snap))
+        #expect(!ScrollTo.matchedTheContainer("r99", container: container, snapshot: snap))
+        #expect(!ScrollTo.matchedTheContainer(nil, container: container, snapshot: snap))
     }
 }

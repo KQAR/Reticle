@@ -8,3 +8,5 @@
 // Same reasoning for the iOS platform backend, split out so the daemon cannot
 // reach into platform code and the backend cannot reach up into the CLI.
 @_exported import ReticleHostIos
+// And the platform-neutral act orchestration both backends drive.
+@_exported import ReticleHostAct

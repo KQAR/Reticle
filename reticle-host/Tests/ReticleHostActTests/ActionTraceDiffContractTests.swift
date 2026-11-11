@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import ReticleProtocol
 import ReticleHostShared
-@testable import ReticleHostIos
+@testable import ReticleHostAct
 
 /// The action-trace diff contract, driven by the language-neutral fixture at
 /// reticle-protocol/fixtures/action-trace-diff.cases.json.
