@@ -2,7 +2,7 @@ import Foundation
 
 /// Did the page receive the touch, and on which element?
 ///
-/// Twin of the Kotlin `DomTapWitness`, where the reasoning is written down. The short
+/// The one implementation (the Kotlin twin went with #326). The short
 /// version: everything else a tap reports is what it INTENDED (the selector resolved,
 /// the rect had stopped moving, the coordinate was dispatched), so a wrong
 /// page-to-device fold is silent — it reported `settled=1` and missed by ~130px on a

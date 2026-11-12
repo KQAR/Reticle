@@ -167,7 +167,7 @@ extension IosHelperClient {
             // a target that is genuinely animating in; `--no-settle` opts out.
             if !rawPoint, !isTruthy(params["noSettle"]) {
                 let settled = await ActTargeting.settleTapPoint(
-                    params, first: point, fetch: { try await self.fetchSnapshot(pkg) })
+                    params, first: point, snapshot: snapshot, fetch: { try await self.fetchSnapshot(pkg) })
                 point = settled.point
                 stable = settled.stable
             }
@@ -220,13 +220,18 @@ extension IosHelperClient {
                let complaint = DomRectCheck.outsideHost(snapshot, ref: ref) {
                 result["rectSuspect"] = complaint
             }
+            // The node this resolved to publishes no control of its own — shared with
+            // Android (`ActTap.inertNote`); see there for why it is a note, not a refusal.
+            if let ref = target.ref, let inert = ActTap.inertNote(snapshot, ref: ref) {
+                result["targetInert"] = inert
+            }
             // And where the touch ACTUALLY landed, according to the page — the one
             // answer a tap has that is not Reticle's own arithmetic, so it is the only
             // one that can catch a fold that is wrong by an amount nothing else can
             // judge. Quiet on every ordinary tap. Only for the HID path: `activate`
             // dispatches on the element itself and uses no coordinate to be wrong.
             if !rawPoint, let landing = await ActTargeting.domTapLanding(
-                params, target: target, fetch: { try await self.fetchSnapshot(pkg) }) {
+                params, target: target, dispatched: snapshot, fetch: { try await self.fetchSnapshot(pkg) }) {
                 result["landed"] = landing
             }
             return try await finishTrace(tracer, before, settleMs, gesture: "tap", selector: selector,
@@ -472,7 +477,7 @@ extension IosHelperClient {
         var out = result
         out["trace"] = try await tracer.write(
             gesture: gesture, selector: selector, targetPoint: point, targetSource: source, targetRef: ref,
-            result: result.mapValues { "\($0)" }, before: before, settleMs: settleMs
+            result: result.mapValues(ActionTraceWriter.traceString), before: before, settleMs: settleMs
         )
         return out
     }
@@ -491,12 +496,9 @@ extension IosHelperClient {
     }
 
     /// The selector to record in a trace, or nil when no selector fields were
-    /// given (a bare point/coordinate action). Mirrors the helper's `selectorOrNull`.
+    /// given — `ActionTraceWriter.selector`, shared with Android.
     func selectorForTrace(_ params: [String: Any]) -> TargetSelector? {
-        let s = selectorFromParams(params)
-        let empty = s.testId == nil && s.resourceId == nil && s.cssSelector == nil
-            && s.ref == nil && s.point == nil && s.region == nil
-        return empty ? nil : s
+        ActionTraceWriter.selector(params)
     }
 
     /// Fail loudly before a gesture if HID can't be brought up on this simulator.

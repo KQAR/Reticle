@@ -28,8 +28,15 @@ public enum HelperMethod: String, CaseIterable, Sendable {
     case inject
     case launch
     case uiReport
-    /// One raw agent `/snapshot`, for the loops the host runs itself (`act wait`).
+    /// One raw agent `/snapshot`, for the loops the host runs itself (`act wait`,
+    /// a tap's settle, `--verify`); with `screenshotPath`, also a trace side.
     case snapshot
+    /// One `adb shell input` dispatch; the host decides where and when.
+    case input
+    /// The Toast Queue watch an action is wrapped in: `start` → token, `stop` → toasts.
+    case toastWatch
+    /// Agent IMM hide, `KEYCODE_ESCAPE` fallback — an Android-only fallback, so one call.
+    case hideKeyboard
     case act
     case mutate
     case logs

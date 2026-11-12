@@ -2,13 +2,15 @@ import Foundation
 import Testing
 @testable import ReticleHostCore
 
-/// A helper transport that answers `snapshot` with a canned tree (or an error)
-/// and `act` with a canned tap, recording every call.
+/// A helper transport that answers the capture and input primitives with canned
+/// replies, recording every call: `snapshot` (a canned tree, or an error), `input`,
+/// `toastWatch` (`toasts` on stop), `hideKeyboard`, and the helper-run `act`.
 final class SnapshotTransport: HelperCalling, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var calls: [(method: String, params: [String: Any])] = []
     var snapshot: String
     var failSnapshot = false
+    var toasts: [[String: Any]] = []
 
     init(_ snapshot: String) { self.snapshot = snapshot }
 
@@ -18,9 +20,23 @@ final class SnapshotTransport: HelperCalling, @unchecked Sendable {
         lock.unlock()
         if method == "snapshot" {
             if failSnapshot { throw HelperError("no Reticle runtime for 'p' (connection refused)") }
-            return ["snapshot": try JSONSerialization.jsonObject(with: Data(snapshot.utf8))]
+            var out: [String: Any] = ["snapshot": try JSONSerialization.jsonObject(with: Data(snapshot.utf8))]
+            if let path = params["screenshotPath"] as? String {
+                out["screenshot"] = FileManager.default.createFile(atPath: path, contents: Data("png".utf8))
+            }
+            return out
         }
-        return ["gesture": "tap"]
+        switch method {
+        case "input": return ["ok": true]
+        case "toastWatch": return params["op"] as? String == "start" ? ["token": "t1"] : ["toasts": toasts]
+        case "hideKeyboard": return ["gesture": "hideKeyboard", "via": "agent imm", "wasVisible": true]
+        default: return ["gesture": params["gesture"] ?? "?"]
+        }
+    }
+
+    func params(_ method: String) -> [[String: Any]] {
+        lock.lock(); defer { lock.unlock() }
+        return calls.filter { $0.method == method }.map(\.params)
     }
 
     var methods: [String] { lock.lock(); defer { lock.unlock() }; return calls.map(\.method) }
@@ -165,9 +181,9 @@ struct ActWaitBatchTests {
     @Test func aStrictWaitStepStopsTheBatch() async throws {
         let file = try stepsFile("""
         [
-          { "gesture": "tap", "testId": "pay" },
+          { "gesture": "tap", "point": "10,20", "noToastProbe": true },
           { "gesture": "wait", "testId": "s", "textContains": "Paid", "timeoutMs": 0, "strict": true },
-          { "gesture": "tap", "testId": "done" }
+          { "gesture": "tap", "point": "10,20", "noToastProbe": true }
         ]
         """)
         defer { try? FileManager.default.removeItem(atPath: file) }
@@ -176,26 +192,26 @@ struct ActWaitBatchTests {
             try await cmdAct(AndroidBackend(transport), Args(["act", "batch", "--package", "p", "--file", file]))
         }
         // The third step must never have been dispatched.
-        #expect(transport.methods.filter { $0 == "act" }.count == 1)
+        #expect(transport.methods.filter { $0 == "input" }.count == 1)
     }
 
     @Test func aNonStrictWaitStepRecordsAndCarriesOn() async throws {
         let transport = try await batch("""
         [
           { "gesture": "wait", "testId": "s", "textContains": "Paid", "timeoutMs": 0 },
-          { "gesture": "tap", "testId": "done" }
+          { "gesture": "tap", "point": "10,20", "noToastProbe": true }
         ]
         """, screen: SnapshotTransport.screen())
-        #expect(transport.methods.last == "act", "a non-strict wait must not gate the batch")
+        #expect(transport.methods.last == "input", "a non-strict wait must not gate the batch")
     }
 
     @Test func aStrictWaitThatResolvesDoesNotStopTheBatch() async throws {
         let transport = try await batch("""
         [
           { "gesture": "wait", "testId": "s", "textContains": "Paid", "strict": true },
-          { "gesture": "tap", "testId": "done" }
+          { "gesture": "tap", "point": "10,20", "noToastProbe": true }
         ]
         """, screen: SnapshotTransport.screen(testId: "s", text: "Paid"))
-        #expect(transport.methods == ["snapshot", "act"])
+        #expect(transport.methods == ["snapshot", "snapshot", "input"])
     }
 }

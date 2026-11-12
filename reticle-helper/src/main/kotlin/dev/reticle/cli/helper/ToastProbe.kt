@@ -117,3 +117,39 @@ internal class ToastProbe private constructor(
         }
     }
 }
+
+/**
+ * The `toastWatch` RPC's open watches, by token.
+ *
+ * The helper is shared — the per-device helperd serves every command on the host —
+ * so a watch is session state, and a host that crashes between `start` and `stop`
+ * would otherwise leave its entry here for the life of the helper. Each call reaps
+ * tokens older than [TTL_MS]: the probe's own sampling thread is long finished by
+ * then (its schedule is ~1.3s), so only the map entry is at stake. An action that
+ * genuinely runs past the TTL loses its toasts and reads `stop` of an unknown token
+ * as "none seen" — a missed observation, never a failed action.
+ */
+internal object ToastWatches {
+    private const val TTL_MS = 60_000L
+
+    private class Open(val probe: ToastProbe?, val startedAt: Long)
+
+    private val open = java.util.concurrent.ConcurrentHashMap<String, Open>()
+
+    fun start(device: DeviceController, packageName: String): String {
+        reap()
+        val token = java.util.UUID.randomUUID().toString()
+        open[token] = Open(ToastProbe.start(device, packageName, enabled = true), System.currentTimeMillis())
+        return token
+    }
+
+    fun stop(token: String): List<ToastQueue.Sighting> {
+        reap()
+        return open.remove(token)?.probe?.stop().orEmpty()
+    }
+
+    private fun reap() {
+        val cutoff = System.currentTimeMillis() - TTL_MS
+        open.entries.removeIf { it.value.startedAt < cutoff }
+    }
+}

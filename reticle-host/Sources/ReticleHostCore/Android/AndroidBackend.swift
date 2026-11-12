@@ -15,11 +15,11 @@ import ReticleProtocol
 /// every call site could misspell a key and every backend (including iOS, which
 /// has no wire at all) had to speak JSONL to be callable.
 final class AndroidBackend: HostBackend {
-    private let transport: HelperCalling
+    let transport: HelperCalling
     /// The global `--serial`, which keys the outline alias cache per device.
-    private let serial: String?
+    let serial: String?
     /// Where `~/.reticle/aliases` lives; a parameter only so tests can isolate it.
-    private let aliasHome: URL
+    let aliasHome: URL
 
     init(_ transport: HelperCalling, serial: String? = nil, aliasHome: URL = OutlineAliasCache.defaultHome) {
         self.transport = transport
@@ -154,103 +154,8 @@ final class AndroidBackend: HostBackend {
         )
     }
 
-    /// An `@N` alias is resolved against the host's outline cache here and sent as
-    /// `aliasEntry`; the helper only re-finds that entry in the live tree.
-    func act(_ request: ActRequest) async throws -> ActOutcome {
-        if request.gesture == "wait" { return ActOutcome(raw: try await wait(request)) }
-        var params = request.wireParams
-        if let alias = request.selector.alias {
-            let entry = try OutlineAliasCache.resolve(alias, serial: serial, package: request.package, home: aliasHome)
-            params["aliasEntry"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
-        }
-        return ActOutcome(raw: try Self.judgeTap(transport.call(.act, params)))
-    }
-
-    /// `act wait` runs here, over the helper's `snapshot` primitive — the same
-    /// `WaitRunner` iOS uses, so there is one poll loop and one classifier. The
-    /// first fetch probes the runtime (health + pid identity); the polls after it
-    /// do not. An RPC failure mid-wait is thrown, never folded into `unknowable`:
-    /// that outcome means "this state could not be seen", not "the tool broke".
-    /// Like iOS, a wait honours `--verify` but writes no trace.
-    private func wait(_ request: ActRequest) async throws -> [String: Any] {
-        let params = request.wireParams
-        let predicate = try WaitRunner.predicate(from: params)
-        var probe = true
-        let fetch: SnapshotFetch = {
-            let r = try self.transport.call(.snapshot, ["package": request.package, "probe": probe])
-            probe = false
-            guard let tree = r["snapshot"] else { throw HelperError("snapshot returned no snapshot") }
-            return try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
-        }
-        let run = {
-            try await WaitRunner(fetch: fetch).run(
-                predicate: predicate,
-                timeoutMs: request.timeoutMs ?? WaitSchedule.defaultTimeoutMs,
-                quietMs: request.quietMs ?? WaitSchedule.defaultQuietMs
-            )
-        }
-        guard let watch = try ActVerify.watchSelector(params) else { return try await run() }
-        let before = await ActVerify.capture(watch, fetch: fetch)
-        var result = try await run()
-        result["verify"] = await ActVerify.poll(watch, before: before, params: params, fetch: fetch)
-        return result
-    }
-
-    /// Turns a tap's `tapProbe` (the tree the helper dispatched against) into the
-    /// `coverage` and `obstruction` verdicts, the way `IosGestures` judges its own
-    /// taps — one `ScreenCoverage` for both platforms. The probe itself is dropped:
-    /// it is a whole snapshot, and `--json` callers asked for the result.
-    static func judgeTap(_ raw: [String: Any]) throws -> [String: Any] {
-        guard let probe = raw["tapProbe"] as? [String: Any] else { return raw }
-        var out = raw
-        out.removeValue(forKey: "tapProbe")
-        let x = (probe["x"] as? NSNumber)?.doubleValue ?? 0
-        let y = (probe["y"] as? NSNumber)?.doubleValue ?? 0
-        let rawPoint = probe["point"] as? Bool ?? false
-        guard let tree = probe["snapshot"] else {
-            // A tree that could not be read is reported for a coordinate (an absent
-            // verdict would read as "the coordinate was fine") and stays quiet as an
-            // obstruction: a check that could not run is not evidence of one.
-            if rawPoint {
-                let why = probe["error"] as? String ?? "the tree could not be read at dispatch time"
-                out["coverage"] = ScreenCoverage.unavailable(x: x, y: y, why: why).jsonObject
-            }
-            return out
-        }
-        let snapshot = try SnapshotRender.decode(JSONSerialization.data(withJSONObject: tree))
-        if rawPoint { out["coverage"] = ScreenCoverage.at(snapshot, x: x, y: y).jsonObject }
-        if let obstruction = ScreenCoverage.obstruction(snapshot, x: x, y: y, targetRef: raw["ref"] as? String) {
-            out["obstruction"] = obstruction.jsonObject(x: x, y: y)
-        }
-        backfillTrace(out)
-        return out
-    }
-
-    /// The helper wrote trace.json before these verdicts existed, so they are added
-    /// here, in the shape the helper used when it judged taps itself: each one a
-    /// compact JSON string in the manifest's string-valued `result`. Best effort —
-    /// a trace that cannot be rewritten must not fail a tap that already happened.
-    static func backfillTrace(_ out: [String: Any]) {
-        let verdicts = ["coverage", "obstruction"].compactMap { key in
-            (out[key] as? [String: Any]).map { (key, $0) }
-        }
-        guard !verdicts.isEmpty, let trace = out["trace"] as? [String: Any],
-              let dir = trace["path"] as? String else { return }
-        let url = URL(fileURLWithPath: dir).appendingPathComponent(trace["manifest"] as? String ?? "trace.json")
-        guard let data = try? Data(contentsOf: url),
-              var manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        var result = manifest["result"] as? [String: Any] ?? [:]
-        for (key, value) in verdicts {
-            guard let json = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
-            else { continue }
-            result[key] = String(decoding: json, as: UTF8.self)
-        }
-        manifest["result"] = result
-        guard let rewritten = try? JSONSerialization.data(
-            withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        ) else { return }
-        try? rewritten.write(to: url, options: .atomic)
-    }
+    // `act` lives in AndroidAct.swift: the host orchestrates it over the helper's
+    // capture and input primitives.
 
     // MARK: - Android-only device configuration
 

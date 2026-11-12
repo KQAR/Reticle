@@ -3,7 +3,7 @@ import Foundation
 /// Which request keys are gesture inputs worth recording in an action trace
 /// manifest's `params`, in the order a manifest and a digest list them.
 ///
-/// The Swift copy of `dev.reticle.core.trace.ActionTraceParams`. It lives in the
+/// The only copy since #326 (the Kotlin `ActionTraceParams` is gone). It lives in the
 /// shared layer because three consumers need it — the iOS trace writer, the
 /// `trace log` renderer, and anything later that reads a manifest — and a third
 /// hand-maintained copy of a list of strings is how the two that matter start

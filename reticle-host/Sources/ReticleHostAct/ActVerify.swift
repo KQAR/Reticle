@@ -4,7 +4,7 @@ import ReticleProtocol
 
 /// `act --verify`: capture the watched node's state before the gesture, poll it
 /// after, and report the `verify` result shape the host's `printVerify` renders —
-/// the same shape the Android helper's `HelperVerify` produces.
+/// for both platforms (the Kotlin `HelperVerify` went with #326).
 public enum ActVerify {
     public struct State {
         let found: Bool

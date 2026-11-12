@@ -214,7 +214,7 @@ tailwind.config = {
       "kind": "swift-target",
       "layer": "host",
       "sub": "Daemon/ · CLI/ · Android/",
-      "detail": "The daemon, the CLI, the read-only panel, and the Android helper clients. AndroidBackend is the single place the helper's JSONL method names and parameter keys are spelled, so a rename has one edit site. It runs act wait itself: ReticleHostAct's WaitRunner polling the helper's snapshot primitive. @_exports the four targets below it, so the split is an internal boundary rather than an API change.",
+      "detail": "The daemon, the CLI, the read-only panel, and the Android helper clients. AndroidBackend is the single place the helper's JSONL method names and parameter keys are spelled, so a rename has one edit site. It orchestrates Android's act itself over the helper's capture and input primitives (snapshot, input, toastWatch, hideKeyboard): wait, tap, swipe/drag, hide-keyboard, and the verify / trace / toast envelope around every gesture — scroll-to, wheel and type still run in the helper's act, wrapped by that envelope. @_exports the four targets below it, so the split is an internal boundary rather than an API change.",
       "x": 300,
       "y": 162,
       "w": 240,
@@ -238,7 +238,7 @@ tailwind.config = {
       "kind": "swift-target",
       "layer": "host",
       "sub": "shared act orchestration",
-      "detail": "The platform-neutral act loops: WaitRunner, ActionTraceWriter + ActionTraceDiff, ActVerify, ActTargeting (resolve / reach / settle / DOM landing) and ScrollTo. A platform injects only closures — fetch a snapshot, capture a trace side, tap, drag — so iOS and Android share one implementation — act wait already for both, the rest of Android's act as #326 lands. Kept out of ReticleProtocol because the iOS agent links that library.",
+      "detail": "The platform-neutral act loops: WaitRunner, ActionTraceWriter + ActionTraceDiff, ActVerify, ActTargeting (resolve / reach / DOM landing), ActTap (a tap's settle confirm and its evidence) and ScrollTo. A platform injects only closures — fetch a snapshot, capture a trace side, tap, drag — so iOS and Android share one implementation: wait, tap, verify and the trace already for both; scroll-to / wheel / type as the rest of #326 lands. Kept out of ReticleProtocol because the iOS agent links that library.",
       "x": 555,
       "y": 258,
       "w": 190,
@@ -322,7 +322,7 @@ tailwind.config = {
       "kind": "swift-package",
       "layer": "shared",
       "sub": "the parallel implementation",
-      "detail": "reticle-swift: Codable models with omit-defaults JSON, the SemanticTree / CompactObservation derivations, SelectorResolution, SelectorDiagnostics, PortMap, the text projections (Render, StyleObservation, Outline) and ScreenCoverage (ui coverage, and the coverage/obstruction verdicts a tap carries — on Android judged from the helper's tapProbe snapshot) — the ONLY implementations, used by the Swift host for both platforms; the Android helper only captures. Depended on by BOTH the iOS agent and the Swift host, so the protocol is never re-ported a third time.",
+      "detail": "reticle-swift: Codable models with omit-defaults JSON, the SemanticTree / CompactObservation derivations, SelectorResolution, SelectorDiagnostics, DomTapWitness / DomRectCheck, PortMap, the text projections (Render, StyleObservation, Outline) and ScreenCoverage (ui coverage, and the coverage/obstruction verdicts a tap carries — judged in the host from the snapshot the tap was aimed in, for both platforms) — the ONLY implementations, used by the Swift host for both platforms; the Android helper only captures. Depended on by BOTH the iOS agent and the Swift host, so the protocol is never re-ported a third time.",
       "x": 760,
       "y": 258,
       "w": 240,
@@ -334,7 +334,7 @@ tailwind.config = {
       "kind": "contract",
       "layer": "shared",
       "sub": "the anti-drift device",
-      "detail": "Language-neutral JSON cases read by both test suites: selector-resolution.cases.json, action-trace-diff.cases.json. Each exists because the two implementations had already silently drifted — a rule added on one side only ships unpinned. snapshot-render.cases.json, style-observation.cases.json and wait-classification.cases.json now pin a format with ONE (Swift) implementation.",
+      "detail": "Language-neutral JSON cases read by both test suites: selector-resolution.cases.json, tap-reach.cases.json. Each exists because the two implementations had already silently drifted — a rule added on one side only ships unpinned. snapshot-render, style-observation, wait-classification, action-trace-diff and dom-tap-witness now pin a format with ONE (Swift) implementation.",
       "x": 555,
       "y": 352,
       "w": 190,
@@ -791,30 +791,34 @@ tailwind.config = {
       "steps": [
         {
           "title": "Resolve the selector, semantic tree first",
-          "detail": "Movement and input use the semantic tree and fall back to view frames only when no semantic match exists. The report says HOW it resolved (semantic:testId, region:span, charGrid:approx) — a char-grid approximation is not a semantic hit.",
+          "detail": "In the HOST, for Android too: SelectorResolution walks the semantic tree first and falls back to view frames only when no semantic match exists, then ActTap re-resolves until the point holds still (the settle confirm) — the first read reuses the trace's BEFORE capture. The report says HOW it resolved (semantic:testId, region:span, charGrid:approx) — a char-grid approximation is not a semantic hit.",
           "nodes": [
-            "helper",
-            "proto-core"
+            "host-core",
+            "host-act",
+            "proto-swift"
           ],
           "edges": [
-            "e-helper-core"
+            "e-core-act",
+            "e-act-swift"
           ]
         },
         {
           "title": "Capture BEFORE",
-          "detail": "The tracer takes a snapshot (and a screenshot where the agent's path is available) before anything is dispatched.",
+          "detail": "The host asks the helper for one snapshot plus a screenshot written straight to a file (snapshot with screenshotPath) before anything is dispatched.",
           "nodes": [
+            "helper",
             "agent-android",
             "endpoints"
           ],
           "edges": [
+            "e-core-helper",
             "e-wire-agentA",
             "e-agentA-ep"
           ]
         },
         {
           "title": "Dispatch real input from the host",
-          "detail": "adb shell input tap at the resolved point. The agent never synthesizes input — this is the whole reason the two responsibilities are split across the wire.",
+          "detail": "One helper input call: adb shell input tap at the point the host settled on. The agent never synthesizes input — this is the whole reason the two responsibilities are split across the wire. coverage / obstruction / rectSuspect / targetInert are judged from that same tree before the touch; a DOM tap then asks the page where it landed.",
           "nodes": [
             "wire-android",
             "app-android"
@@ -828,15 +832,15 @@ tailwind.config = {
           "detail": "The diff is RANKED before it is capped: by field (appearance, then what a user would see, then identity, then the geometry tail), then by how addressable the node is. Ordering by ref instead let a scrolling list's frame churn evict the one node that appeared.",
           "nodes": [
             "agent-android",
-            "proto-core"
+            "host-act"
           ],
           "edges": [
-            "e-agentA-pcore"
+            "e-wire-agentA"
           ]
         },
         {
           "title": "And watch for an answer the diff cannot hold",
-          "detail": "Every act samples the system Toast Queue (dumpsys notification) across the action. On Android 11+ a text toast is drawn by the SYSTEM in its own window — in no view tree, in no in-process screenshot, taking no focus — so an action answered by one produced an identical before/after pair and read as 0 change(s), the signal for a gesture that hit nothing. Reports toast=/toastKind=/toastDuration=, and trace log leads the step with it. A Toast.setView toast and a WindowManager overlay are app-drawn and ALREADY nodes, so the kind says which half holds the text. Host-side over adb, no agent, no hidden API.",
+          "detail": "Every act samples the system Toast Queue (dumpsys notification) across the action — the helper samples, the host opens and closes the watch (toastWatch start/stop) around the gesture. On Android 11+ a text toast is drawn by the SYSTEM in its own window — in no view tree, in no in-process screenshot, taking no focus — so an action answered by one produced an identical before/after pair and read as 0 change(s), the signal for a gesture that hit nothing. Reports toast=/toastKind=/toastDuration=, and trace log leads the step with it. A Toast.setView toast and a WindowManager overlay are app-drawn and ALREADY nodes, so the kind says which half holds the text. Host-side over adb, no agent, no hidden API.",
           "nodes": [
             "helper",
             "wire-android"
@@ -849,11 +853,13 @@ tailwind.config = {
           "title": "Every change names its node",
           "detail": "ActionTraceChange.node carries testId/resourceId/label/role — or clipped text when there is no other handle — read from whichever side the node exists on, so a node that VANISHED is still named. Attached once per ref.",
           "nodes": [
-            "proto-core",
+            "host-act",
+            "proto-swift",
             "fixtures"
           ],
           "edges": [
-            "e-pcore-fix"
+            "e-act-swift",
+            "e-pswift-fix"
           ]
         },
         {
@@ -861,10 +867,10 @@ tailwind.config = {
           "detail": "The only places an expectation is stated are --verify and act wait --strict. Everything else emits evidence and lets the agent assert. --verify re-reads the named node and reports its changed fields.",
           "nodes": [
             "host-core",
-            "helper"
+            "host-act"
           ],
           "edges": [
-            "e-core-helper"
+            "e-core-act"
           ]
         },
         {

@@ -23,10 +23,8 @@ import Foundation
 /// failed to mark are the same observation, and guessing would turn every screen
 /// into a false report.
 ///
-/// The ONLY implementation, for both platforms: the Android helper hands the host
-/// the snapshot it dispatched a tap against (`tapProbe`, see
-/// reticle-protocol/helper-rpc.md) and the host judges it here, exactly as the iOS
-/// host judges its own. Pinned by reticle-protocol/fixtures/screen-coverage.cases.json.
+/// The ONLY implementation, for both platforms: the host aims every tap itself, so
+/// it judges the snapshot the tap was aimed in here, Android and iOS alike. Pinned by reticle-protocol/fixtures/screen-coverage.cases.json.
 public enum ScreenCoverage {
 
     /// Default sampling cell for `of`, in device pixels.

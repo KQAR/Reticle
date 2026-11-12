@@ -5,9 +5,8 @@ import XCTest
 /// A DOM rect folded outside the view that draws it — the one case of a wrong
 /// page-to-device fold that can be STATED rather than guessed at.
 ///
-/// Mirrors `DomRectCheckTest` (Kotlin) verdict for verdict. Hand-written on both
-/// sides rather than driven from a fixture because the rule is a single containment
-/// test with no decision table to pin.
+/// Hand-written rather than fixture-driven: the rule is a single containment test
+/// with no decision table to pin, and it has one implementation.
 final class DomRectCheckTests: XCTestCase {
 
     func testARectInsideItsHostIsNotSuspect() {

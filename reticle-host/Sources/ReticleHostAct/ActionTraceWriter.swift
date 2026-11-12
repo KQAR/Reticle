@@ -22,9 +22,9 @@ public struct TraceCapture {
 
 /// Writes the per-action evidence package (before/after snapshots + screenshots +
 /// a `trace.json` manifest) — the shape `reticle serve` ingestion and the web panel
-/// consume. The Swift twin of the Kotlin helper's `HelperActionTrace`; the only
-/// added manifest field is `platform`, which lets the daemon label the event
-/// `ios:<pkg>` instead of assuming Android.
+/// consume — for both platforms (the Kotlin `HelperActionTrace` went with #326).
+/// `platform` comes from the snapshot, so the daemon labels the event
+/// `android:<pkg>` or `ios:<pkg>`.
 ///
 /// The platform supplies `capture`: fetch a snapshot, and write a screenshot to the
 /// given path if one can be taken. A screenshot goes to a file rather than through
@@ -53,9 +53,12 @@ public struct ActionTraceWriter {
     // ponytail: a before-capture whose gesture then throws leaves its staged PNG in
     // the temp dir for the OS to sweep; clean up explicitly if that ever matters.
     public func record() async -> TraceCapture? {
-        let staged = FileManager.default.temporaryDirectory
-            .appendingPathComponent("reticle-trace-\(UUID().uuidString).png")
-        return await capture(staged)
+        await capture(Self.stagedScreenshot())
+    }
+
+    /// A fresh temp path for one side's screenshot, moved into the trace on write.
+    public static func stagedScreenshot() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("reticle-trace-\(UUID().uuidString).png")
     }
 
     /// Write the before/after artifacts and `trace.json`, returning the compact
@@ -156,7 +159,34 @@ public struct ActionTraceWriter {
         if let v = s.ref { o["ref"] = v }
         if let p = s.point { o["point"] = ["x": p.x, "y": p.y] }
         if let v = s.region { o["region"] = v }
+        if let v = s.label { o["label"] = v }
         return o.isEmpty ? nil : o
+    }
+
+    /// The selector an action named, for its manifest — nil for a bare coordinate
+    /// gesture. `label` counts: a `--label` tap used to record no selector at all.
+    public static func selector(_ params: [String: Any]) -> ReticleProtocol.Selector? {
+        let s = ActParams.selector(params)
+        let empty = s.testId == nil && s.resourceId == nil && s.cssSelector == nil
+            && s.ref == nil && s.point == nil && s.region == nil && s.label == nil
+        return empty ? nil : s
+    }
+
+    /// One result value as the manifest's string-valued `result` holds it: scalars
+    /// as their plain text (a JSON boolean as `true`/`false`, never NSNumber's `1`),
+    /// and a nested object — `coverage`, `obstruction` — as compact JSON, so a reader
+    /// can parse it back rather than meet a language's debug description.
+    public static func traceString(_ value: Any) -> String {
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber {
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+            return n.stringValue
+        }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes]) {
+            return String(decoding: data, as: UTF8.self)
+        }
+        return "\(value)"
     }
 
     private func targetJSON(point: Point?, source: String?, ref: String?) -> [String: Any]? {
@@ -168,11 +198,11 @@ public struct ActionTraceWriter {
     }
 }
 
-/// Pure snapshot diffing for action traces — a faithful port of
-/// `dev.reticle.core.trace.ActionTraceDiff` so both platforms emit the same
-/// compact before/after change list. Each change is `{ref?, field, before?,
+/// Pure snapshot diffing for action traces — the one implementation (the Kotlin
+/// port it began as went with #326), so both platforms emit the same compact
+/// before/after change list. Each change is `{ref?, field, before?,
 /// after?, node?, note?}`; nil fields are omitted (a missing key decodes to
-/// null). Both ports are pinned by
+/// null). Pinned by
 /// `reticle-protocol/fixtures/action-trace-diff.cases.json`.
 public enum ActionTraceDiff {
     /// Longest node text carried as identity before clipping.

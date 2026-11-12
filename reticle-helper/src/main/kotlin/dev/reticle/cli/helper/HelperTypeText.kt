@@ -13,7 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * `act type`, `act hide-keyboard`, and everything typing needs to prove it worked.
+ * `act type`, and everything typing needs to prove it worked.
  *
  * Split out of [HelperDeviceCommands], which had reached 1181 lines and eight
  * concerns. This is the Kotlin half of the same split the iOS backend just finished
@@ -28,9 +28,9 @@ import kotlinx.serialization.json.put
  * burst — serves nothing else in the helper.
  *
  * Kotlin cannot spread one `object` over two files, so these are members of a new
- * object rather than an extension. `typeText` and `hideKeyboard` are `internal`
- * because [HelperDeviceCommands.act] dispatches to them; `liveSnapshot` stays there
- * and is called back into, since `domTapLanding` needs it too.
+ * object rather than an extension. `typeText` is `internal` because
+ * [HelperDeviceCommands.act] dispatches to it; `liveSnapshot` stays there and is
+ * called back into.
  */
 internal object HelperTypeText {
     fun typeText(
@@ -210,38 +210,6 @@ internal object HelperTypeText {
         val client = runtimeClientFor(device, pkg, params)
         if (client.probe() is RuntimeHealth.Healthy) client.keyboard().visible else null
     }.getOrNull()
-
-    /**
-     * Dismiss the system keyboard. Preferred path is the in-app agent's
-     * InputMethodManager (deterministic, reports settled before/after state);
-     * when the agent is unreachable we fall back to KEYCODE_ESCAPE — unlike
-     * KEYCODE_BACK it does not navigate back when the keyboard is already gone.
-     */
-    fun hideKeyboard(
-        input: InputDispatcher,
-        device: DeviceController,
-        pkg: String,
-        params: JsonObject,
-    ): JsonObject {
-        val client = runtimeClientFor(device, pkg, params)
-        if (client.probe() is RuntimeHealth.Healthy) {
-            val result = client.hideKeyboard()
-            return buildJsonObject {
-                put("gesture", "hideKeyboard")
-                put("via", "agent imm")
-                put("wasVisible", result.wasVisible)
-                put("keyboardVisible", result.keyboard.visible)
-            }
-        }
-        val r = input.keyevent("KEYCODE_ESCAPE")
-        if (!r.ok) {
-            throw CliError("agent unreachable and keyevent fallback failed: ${r.stderr.ifBlank { "adb shell did not complete" }}")
-        }
-        return buildJsonObject {
-            put("gesture", "hideKeyboard")
-            put("via", "keyevent ESCAPE (agent unreachable; state unknown)")
-        }
-    }
 
     /**
      * Classify where focus went in [snapshot]. Best-effort by design: a runtime

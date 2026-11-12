@@ -1,6 +1,7 @@
 package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
+import dev.reticle.core.CssSelectorMatch
 import dev.reticle.core.Node
 import dev.reticle.core.Point
 import dev.reticle.core.PortMap
@@ -252,62 +253,6 @@ private fun withReach(snapshot: Snapshot, target: ResolvedInputTarget): Resolved
     return target.copy(point = point, reachNote = reach.explain(ref))
 }
 
-/** A target plus whether its position was confirmed to have stopped moving. */
-internal data class SettledInputTarget(val target: ResolvedInputTarget, val stable: Boolean)
-
-/**
- * Re-resolve [first] until the selector lands on the same point twice in a row —
- * the target has stopped moving — or the budget runs out.
- *
- * Why a tap needs this at all. Resolution and dispatch are two steps, and between
- * them the screen can move: a popup or a sheet animating in is captured at an
- * intermediate rect, so the point is stale by the time the touch is synthesized and
- * the touch lands on the neighbouring row (measured on an emulator: a `PopupMenu`
- * tap aimed at "Delete item" the moment it was first captured fired "Rename"). This
- * is `act scroll-to`'s stabilize step, made available to `tap` on request: same
- * resolution path as the tap itself, no `isVisible` proxy — which is why it does not
- * revive the dropped `wait --for appears` proposal.
- *
- * Never blocks forever and never refuses to tap: on a lapsed budget it returns the
- * freshest target flagged `stable = false`, and the caller reports that as evidence.
- */
-internal fun settleInputTarget(
-    device: DeviceController,
-    pkg: String,
-    params: JsonObject,
-    first: ResolvedInputTarget,
-    budgetMs: Long = 2_000L,
-    pollMs: Long = 150L,
-): SettledInputTarget = settleTarget(first, budgetMs, pollMs) {
-    // A target that vanishes mid-settle (a popup dismissed under us) is not a
-    // failure of the tap yet — report the freshest point and let the dispatch, or
-    // the caller's own verification, be the judge.
-    runCatching { resolveInputTarget(device, pkg, params) }.getOrNull()
-}
-
-/** The settle loop itself, with the clock and the resolver injected so it is testable. */
-internal fun settleTarget(
-    first: ResolvedInputTarget,
-    budgetMs: Long,
-    pollMs: Long,
-    nowMs: () -> Long = System::currentTimeMillis,
-    sleep: (Long) -> Unit = { Thread.sleep(it) },
-    resolve: () -> ResolvedInputTarget?,
-): SettledInputTarget {
-    val deadline = nowMs() + budgetMs
-    var previous = first
-    while (nowMs() < deadline) {
-        sleep(pollMs)
-        val current = resolve() ?: return SettledInputTarget(previous, false)
-        if (samePoint(current.point, previous.point)) return SettledInputTarget(current, true)
-        previous = current
-    }
-    return SettledInputTarget(previous, false)
-}
-
-private fun samePoint(a: Point, b: Point): Boolean =
-    kotlin.math.abs(a.x - b.x) < 1.0 && kotlin.math.abs(a.y - b.y) < 1.0
-
 /**
  * Re-resolve a cached outline entry against the live tree. Match by the
  * entry's stable selector (testId / resourceId / css) first, then by
@@ -325,7 +270,7 @@ private fun aliasLiveTarget(
 ): ResolvedInputTarget? = runCatching {
     val client = runtimeClientFor(device, pkg, params)
     if (client.probe() !is RuntimeHealth.Healthy) return null
-    val nearest = aliasLiveMatch(client.snapshot().nodes.values, entry) ?: return null
+    val nearest = aliasLiveMatch(client.snapshot(), entry) ?: return null
     val frame = nearest.frame!!
     ResolvedInputTarget(Point(frame.centerX, frame.centerY), "outline:$alias->live", nearest.ref)
 }.getOrNull()
@@ -334,13 +279,20 @@ private fun aliasLiveTarget(
  * The live node a cached outline entry points at, or null when it is gone.
  * Pure matching half of [aliasLiveTarget], separated so it can be tested
  * without a device.
+ *
+ * The cached `css` is the SHORTEST unique handle `CssHandle` cut from the node's
+ * path (`#pay`, or a suffix of it), so it is matched structurally — never by string
+ * equality against the full path, which almost never held and left every DOM alias
+ * to the label+role fallback. A handle the matcher cannot parse is a miss, not an
+ * error. Twin of the host's `AliasMatch` (which `tap --alias` uses); this one only
+ * serves `type --alias` until `type` moves to the host too.
  */
-internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: AliasEntry): Node? {
-    val nodes = liveNodes.filter { it.isVisible && it.frame != null }
+internal fun aliasLiveMatch(live: Snapshot, entry: AliasEntry): Node? {
+    val nodes = live.nodes.values.filter { it.isVisible && it.frame != null }
     val matched = nodes.filter { node ->
         (entry.testId != null && node.testId == entry.testId) ||
             (entry.resourceId != null && node.resourceId == entry.resourceId) ||
-            (entry.css != null && node.domCssSelector() == entry.css)
+            (entry.css != null && runCatching { CssSelectorMatch.matches(live, node, entry.css) }.getOrDefault(false))
     }.ifEmpty {
         val label = entry.label ?: return null
         nodes.filter { (it.contentDescription ?: it.text) == label && (it.role ?: it.typeName) == entry.role }
@@ -350,52 +302,5 @@ internal fun aliasLiveMatch(liveNodes: Collection<Node>, entry: AliasEntry): Nod
         val dx = f.centerX - entry.frame.centerX
         val dy = f.centerY - entry.frame.centerY
         dx * dx + dy * dy
-    }
-}
-
-/**
- * When a selector tap re-resolves before dispatching, and for how long.
- *
- * Split out from the act handler because it is the whole of the policy change and
- * the part worth pinning: resolution and dispatch are two steps, and between them
- * the screen can move. `--settle` was introduced for a target ANIMATING IN, but
- * the same staleness comes from a relayout caused by an EARLIER command — a
- * `type` that raised the keyboard, a `hide-keyboard`, a scroll — and a caller has
- * no cue to reach for a flag in that case. Measured on a physical device: a form
- * row resolved to a rect already 161px stale and the touch opened the sheet of the
- * row below it, reported as a plain success.
- *
- * So the confirm is the default, and the flags now mean:
- *  - nothing        -> confirm with a short budget (one agreeing re-resolve ends it);
- *  - `--settle`     -> this target IS animating; give it the full budget;
- *  - `--no-settle`  -> single-read dispatch, the pre-existing behaviour;
- *  - `--point`      -> nothing to re-resolve; never confirm.
- */
-internal object TapSettlePolicy {
-    /** Budget for the default confirm — bounds the animating case, not the common one. */
-    const val CONFIRM_BUDGET_MS = 800L
-
-    /** Budget for an explicit `--settle`, for a target known to be sliding in. */
-    const val SETTLE_BUDGET_MS = 2_000L
-
-    /** Whether to re-resolve before dispatch, and the budget to do it in. */
-    data class Plan(val confirm: Boolean, val budgetMs: Long)
-
-    fun plan(rawPoint: Boolean, settle: Boolean, noSettle: Boolean, timeoutMs: Int?): Plan {
-        if (rawPoint || noSettle) return Plan(confirm = false, budgetMs = 0L)
-        val budget = timeoutMs?.toLong() ?: if (settle) SETTLE_BUDGET_MS else CONFIRM_BUDGET_MS
-        return Plan(confirm = true, budgetMs = budget)
-    }
-
-    /**
-     * How far the confirm moved the tap point, as `dx,dy` — or null when it did not
-     * move (whole pixels; a sub-pixel difference is not a relayout). Reported so the
-     * confirm does not SILENTLY fix a stale rect: the caller reasoned about the
-     * screen as it was before, and needs to know that changed.
-     */
-    fun movedBy(first: Point, dispatched: Point): String? {
-        val dx = (dispatched.x - first.x).toInt()
-        val dy = (dispatched.y - first.y).toInt()
-        return if (dx == 0 && dy == 0) null else "$dx,$dy"
     }
 }

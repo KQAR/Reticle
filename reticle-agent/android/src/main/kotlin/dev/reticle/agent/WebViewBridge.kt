@@ -101,7 +101,8 @@ object WebViewBridge {
      *
      * Empty when the page has witnessed no touch at all — which is a different fact
      * from a touch that landed off-tree (`domPointerMatched=false`), and the pair is
-     * what makes a missed selector tap visible instead of silent. See [DomTapWitness].
+     * what makes a missed selector tap visible instead of silent. The host judges it
+     * (`ReticleProtocol.DomTapWitness`, Swift).
      */
     private fun pointerFacts(json: JSONObject): Map<String, MetadataValue> {
         val ts = json.optLong("pointerTs", 0L)

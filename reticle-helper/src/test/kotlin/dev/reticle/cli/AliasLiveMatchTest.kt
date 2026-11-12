@@ -1,8 +1,12 @@
 package dev.reticle.cli
 
+import dev.reticle.core.MetadataValue
 import dev.reticle.core.Node
 import dev.reticle.core.NodeKind
 import dev.reticle.core.Rect
+import dev.reticle.core.ScreenInfo
+import dev.reticle.core.Size
+import dev.reticle.core.Snapshot
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -21,7 +25,7 @@ class AliasLiveMatchTest {
             node("r2", testId = "login.submit", frame = Rect(10.0, 600.0, 100.0, 40.0)),
         )
 
-        val matched = aliasLiveMatch(live, entry)
+        val matched = aliasLiveMatch(snapshot(live), entry)
 
         assertEquals("r2", matched?.ref)
     }
@@ -36,7 +40,7 @@ class AliasLiveMatchTest {
             node("r3", testId = "row", frame = Rect(20.0, 230.0, 300.0, 48.0)),
         )
 
-        assertEquals("r2", aliasLiveMatch(live, entry)?.ref)
+        assertEquals("r2", aliasLiveMatch(snapshot(live), entry)?.ref)
     }
 
     @Test
@@ -47,7 +51,7 @@ class AliasLiveMatchTest {
             node("r2", text = "Dalej", role = "button", frame = Rect(10.0, 640.0, 100.0, 40.0)),
         )
 
-        assertEquals("r2", aliasLiveMatch(live, entry)?.ref)
+        assertEquals("r2", aliasLiveMatch(snapshot(live), entry)?.ref)
     }
 
     @Test
@@ -57,7 +61,7 @@ class AliasLiveMatchTest {
             node("r1", testId = "login.otp", frame = Rect(10.0, 100.0, 100.0, 40.0)),
         )
 
-        assertNull(aliasLiveMatch(live, entry))
+        assertNull(aliasLiveMatch(snapshot(live), entry))
     }
 
     @Test
@@ -67,7 +71,27 @@ class AliasLiveMatchTest {
             node("r1", testId = "login.submit", frame = Rect(10.0, 200.0, 100.0, 40.0), visible = false),
         )
 
-        assertNull(aliasLiveMatch(live, entry))
+        assertNull(aliasLiveMatch(snapshot(live), entry))
+    }
+
+    @Test
+    fun aShortenedCssHandleMatchesTheFullPathStructurally() {
+        // `ui outline` caches the shortest unique handle (`#pay`), while the live node
+        // carries its full path. String equality never held, so every DOM alias fell
+        // back to label+role; the structural match finds it.
+        val entry = entry(frame = Rect(10.0, 200.0, 100.0, 40.0)).copy(css = "#pay")
+        val live = listOf(
+            node("d1", frame = Rect(10.0, 210.0, 100.0, 40.0)).copy(
+                kind = NodeKind.domNode,
+                custom = mapOf(
+                    "domTag" to MetadataValue.Text("button"),
+                    "domId" to MetadataValue.Text("pay"),
+                    "domCssSelector" to MetadataValue.Text("html > body > div > button#pay"),
+                ),
+            ),
+        )
+
+        assertEquals("d1", aliasLiveMatch(snapshot(live), entry)?.ref)
     }
 
     @Test
@@ -90,6 +114,13 @@ class AliasLiveMatchTest {
         assertEquals("pay", entry.testId)
         assertEquals(220.0, entry.frame.centerY)
     }
+
+    private fun snapshot(nodes: List<Node>) = Snapshot(
+        capturedAtMillis = 0L,
+        screen = ScreenInfo(size = Size(1080.0, 2400.0), density = 3.0),
+        rootRef = "app",
+        nodes = linkedMapOf(*nodes.map { it.ref to it }.toTypedArray()),
+    )
 
     private fun entry(
         testId: String? = null,
