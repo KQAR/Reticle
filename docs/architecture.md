@@ -1031,7 +1031,11 @@ whole node: on an agreement row the node's centre toggles the checkbox instead o
 opening the terms, so a silent downgrade there is a successful-looking tap on the
 wrong target. A `--label` matching two visible nodes in different subtrees is an
 error for the same reason; nested duplicates (a row repeating its child's text)
-resolve to the innermost.
+resolve to the innermost — except that a control wrapping a caption which only
+repeats its name resolves to the control. The caption's centre is not the control's:
+on iOS 26's Liquid Glass tab bar it sits 14pt lower, inside the home-indicator band
+where the system swallows the tap, so `--label Orders` reported success and the tab
+never changed.
 
 Note this is the *opposite default* from inspection: actions prefer the
 semantic tree (it's the honest input surface, and the only one Compose
