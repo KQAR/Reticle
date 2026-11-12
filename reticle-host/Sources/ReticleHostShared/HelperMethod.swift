@@ -28,6 +28,8 @@ public enum HelperMethod: String, CaseIterable, Sendable {
     case inject
     case launch
     case uiReport
+    /// One raw agent `/snapshot`, for the loops the host runs itself (`act wait`).
+    case snapshot
     case act
     case mutate
     case logs

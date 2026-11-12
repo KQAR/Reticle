@@ -110,8 +110,8 @@ The scroll case is scoped to the topmost window on purpose: a background window'
 scroller can never bring the target into view, and citing it was measured both
 making `absent` nearly unreachable and producing misleading advice
 (`scroll-to --css …` for a DOM element behind a blocking JS modal). `WaitVerdict`
-in `reticle-core`, mirrored in `ReticleProtocol`, owns this mapping for both
-platforms and is pinned by
+in `ReticleProtocol` owns this mapping for both platforms (one implementation,
+run in the host) and is pinned by
 `reticle-protocol/fixtures/wait-classification.cases.json`.
 
 Two rules keep this list honest. A boundary earns a row only when the mechanism is

@@ -110,8 +110,8 @@ that entry against the live tree before use (matched by the entry's selector,
 then label+role, nearest-to-cached-frame on ties) so a relayout between
 `ui outline` and `act` does not land on stale coordinates; the cached frame is
 only used when the runtime is unreachable, and the result's `source` says which
-path was taken (`outline:@N->live` vs cached frame). `wait` gets the bare
-`alias` only, and refuses it by name.
+path was taken (`outline:@N->live` vs cached frame). `act wait` never reaches
+the helper's `act`: the host runs it over `snapshot` and refuses an `alias` by name.
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -122,6 +122,7 @@ path was taken (`outline:@N->live` vs cached frame). `wait` gets the bare
 | `inject` | `package` (req), `payloadDex?`, `restartUnderDebugger?` (mark the app as being debugged so AMS relaxes the input-dispatch ANR during the JDWP suspension — **force-stops and relaunches the target**, so it is opt-in) | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
+| `snapshot` | `package` (req), `probe?` (default `true`: the `/runtime` health + pid identity check `uiReport` does; a polling loop passes `false` after its first fetch) | `{ "snapshot": <Snapshot> }` — the agent's `/snapshot` body forwarded as-is, not decoded by the helper. The host's own loops (`act wait`) poll this and judge in Swift |
 | `act` | `gesture` (tap/swipe/drag/type/hide-keyboard), `package` (req); tap: selector or `alias`; a selector tap re-resolves its point before dispatch **by default** (800ms budget) so a rect made stale by an earlier relayout cannot land the touch on the neighbour — `settle?` raises the budget to 2s for a target that is animating in, `settleTimeoutMs?` overrides either, `noSettle?` opts out, and a raw `point` never confirms (`settle` with `point` is refused); swipe/drag: `from`,`to`,`duration?`; type: `text`, `submit?` (perform the focused field's IME editor action after typing — agent `/editor-action` preferred, `KEYCODE_ENTER` fallback); optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries; a confirming tap adds `"settled": bool` (false = still moving when the budget lapsed, so the point may already be stale) and, only when the re-resolve moved the point, `"rectMoved": "<dx>,<dy>"` — the evidence that the first read WAS stale; type with `submit` adds `"submit": { "via", "action?" }`. Every tap adds `"tapProbe": { "x", "y", "point": bool, "snapshot": <Snapshot> }` (or `"error"` instead of `snapshot` when the tree could not be read) — the tree the touch was dispatched against, captured BEFORE it (the trace's pre-action snapshot when tracing is on). The helper judges nothing: the host computes `coverage` (only when `point`) and `obstruction` from it with `ReticleProtocol.ScreenCoverage`, puts those on the result and strips `tapProbe`. `tapProbe` never reaches trace.json; the host backfills the two verdicts into the manifest's `result` (compact JSON strings) after the helper has written it. Host `act batch --file` expands a JSON array into repeated `act` RPC calls; it is not a separate helper method — step keys are these protocol field names (so `resourceId`, `ref`, `point`, `alias`, `region` all work in steps). |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
@@ -168,7 +169,7 @@ path was taken (`outline:@N->live` vs cached frame). `wait` gets the bare
 The Swift host (`reticle-host/`) now reaches functional parity with the Kotlin
 CLI's one-shot command surface through these methods: device control
 (status/inject/launch), evidence (uiReport/screenshot/logs/logcat), and
-action (act/mutate). Binary screenshots cross as base64 (`pngBase64`). There is
+action (act/mutate), plus `snapshot` for the loops the host runs itself (`act wait`). Binary screenshots cross as base64 (`pngBase64`). There is
 no render method: every `ui <view>` (including `outline` and its alias cache)
 renders in the host from a snapshot file or a `uiReport` capture.
 

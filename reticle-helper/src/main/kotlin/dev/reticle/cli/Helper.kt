@@ -114,6 +114,7 @@ object Helper {
         "inject" -> HelperDeviceCommands.inject(params)
         "launch" -> HelperDeviceCommands.launch(params)
         "uiReport" -> HelperDeviceCommands.uiReport(params)
+        "snapshot" -> HelperDeviceCommands.snapshot(params)
         "act" -> HelperDeviceCommands.act(params)
         "mutate" -> HelperDeviceCommands.mutate(params)
         "logs" -> HelperDeviceCommands.logs(params)

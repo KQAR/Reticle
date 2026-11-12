@@ -73,6 +73,9 @@ public struct WaitRunner {
             // Never sleep past the deadline: a 500ms backoff with 80ms of budget
             // left would report a timeout later than the caller asked for.
             await sleep(min(delay, max(1, deadline - now())))
+            // `sleep` swallows cancellation, so without this a cancelled wait would
+            // keep polling back-to-back until its deadline.
+            try Task.checkCancellation()
             probe = try await probeOnce(predicate)
         }
     }
@@ -84,7 +87,7 @@ public struct WaitRunner {
         // cap (item #201 of a long list appearing) must still count as a change —
         // a capped digest reports "quiet" while the screen is visibly moving.
         let compact = CompactObservation.from(snapshot, maxItems: .max)
-        // Screen-level half comes from ReticleProtocol, shared with the Android helper.
+        // Screen-level half comes from ReticleProtocol.
         let base = WaitProbe.screenState(snapshot, compact)
         guard let selector = predicate.selector else { return base }
 
@@ -167,7 +170,7 @@ public struct WaitRunner {
     }
 
     /// Concrete follow-ups, so an `unknowable` hands back a tactic instead of just a
-    /// complaint. Mirrors the Kotlin helper's list.
+    /// complaint.
     public static func nextSteps(predicate: WaitPredicate, verdict: WaitVerdict) -> [String] {
         var out: [String] = []
         func add(_ step: String) { if !out.contains(step) { out.append(step) } }
@@ -215,8 +218,8 @@ public struct WaitRunner {
         return out
     }
 
-    /// Build the predicate the caller stated. Mirrors `HelperWait.predicateFrom`,
-    /// including every refusal, so the two platforms reject the same inputs.
+    /// Build the predicate the caller stated, with every refusal — the one
+    /// implementation both platforms run.
     public static func predicate(from params: [String: Any]) throws -> WaitPredicate {
         let token = params["for"] as? String
         var selector: ReticleProtocol.Selector?
@@ -247,7 +250,7 @@ public struct WaitRunner {
         }
         // These two are checked BEFORE the missing-predicate error, so a caller who
         // passed something unusable gets told why it is unusable rather than the
-        // generic "needs a predicate". Same order as the Kotlin helper.
+        // generic "needs a predicate".
         if params["point"] != nil {
             throw HelperError(
                 "wait cannot take --point: a raw coordinate always 'resolves', so there is nothing to wait for"
@@ -298,7 +301,8 @@ public struct WaitRunner {
             resourceId: params["resourceId"] as? String,
             cssSelector: (params["css"] as? String) ?? (params["cssSelector"] as? String),
             ref: params["ref"] as? String,
-            label: params["label"] as? String
+            label: params["label"] as? String,
+            region: params["region"] as? String
         )
     }
 }

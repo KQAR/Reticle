@@ -97,6 +97,21 @@ internal object HelperDeviceCommands {
         return reportJson(report.snapshot, report.semantics, report.compact)
     }
 
+    /**
+     * One raw `/snapshot`, for the host's own polling loops (`act wait`). Forwarded
+     * as parsed JSON, never decoded into [Snapshot]: the host decodes it, so a field
+     * the Kotlin model lacks still reaches it. `probe=false` skips the `/runtime`
+     * health + pid check — a loop probes on its first fetch only.
+     */
+    fun snapshot(params: JsonObject): JsonElement {
+        val pkg = params.str("package") ?: throw CliError("snapshot needs 'package'")
+        val device = Adb.forSerial(params.str("serial"))
+        device.ensureDeviceReady()
+        val client = runtimeClientFor(device, pkg, params)
+        if (params["probe"] == null || params.bool("probe")) assertHealthy(client, pkg)
+        return buildJsonObject { put("snapshot", ReticleJson.instance.parseToJsonElement(client.snapshotJson())) }
+    }
+
     fun launch(params: JsonObject): JsonElement {
         val pkg = params.str("package") ?: throw CliError("launch needs 'package'")
         val device = Adb.forSerial(params.str("serial"))
@@ -149,12 +164,8 @@ internal object HelperDeviceCommands {
         // Watch the system Toast Queue across the action. A text toast is in no
         // window of this app, so an action answered by one produced a byte-identical
         // before/after pair — `0 change(s)`, the documented signal for a gesture that
-        // hit nothing. `wait` is excluded because it dispatches no input: a toast
-        // during a wait is not that command's answer. See [ToastProbe].
-        val toastProbe = ToastProbe.start(
-            device, pkg,
-            enabled = sub != "wait" && !params.bool("noToastProbe"),
-        )
+        // hit nothing. See [ToastProbe].
+        val toastProbe = ToastProbe.start(device, pkg, enabled = !params.bool("noToastProbe"))
 
         val result: JsonObject = when (sub) {
             "tap" -> {
@@ -271,10 +282,6 @@ internal object HelperDeviceCommands {
             "wheel" -> HelperWheel.run(input, device, pkg, params)
             "type" -> HelperTypeText.typeText(input, device, pkg, params)
             "hideKeyboard", "hide-keyboard" -> HelperTypeText.hideKeyboard(input, device, pkg, params)
-            // The one gesture that dispatches no input: it only observes. Kept
-            // under `act` because it is part of an action sequence (act, then wait
-            // for the consequence) and shares the selector/trace surface.
-            "wait" -> HelperWait.run(device, pkg, params)
             // `activate` is iOS-only and exists BECAUSE iOS lacks what Android has.
             // It drives a control in-process (`sendActions`, the agent's /activate
             // endpoint) — the only input path on a real iOS device, and the fallback
@@ -291,8 +298,8 @@ internal object HelperDeviceCommands {
             )
             else -> throw CliError(
                 "unknown act gesture '$sub' " +
-                    "(tap/swipe/drag/scroll-to/wheel/type/hide-keyboard/wait; " +
-                    "activate is iOS-only)"
+                    "(tap/swipe/drag/scroll-to/wheel/type/hide-keyboard; " +
+                    "wait runs in the host; activate is iOS-only)"
             )
         }
 

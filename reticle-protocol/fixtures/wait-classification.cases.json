@@ -1,5 +1,5 @@
 {
-  "$comment": "Authoritative decision table for act wait's three-state outcome. Read by BOTH the Kotlin (reticle-core WaitClassificationTest) and Swift (ReticleProtocol WaitClassificationTests) suites, so the Android helper and the iOS host cannot drift on what an answer means. Adding a branch to classify() without adding a case here leaves that branch unpinned on one platform. Note the success test throughout: `resolved` means the selector resolved through the same path an `act` uses — never `isVisible`, which is the proxy an earlier wait proposal was dropped over.",
+  "$comment": "Authoritative decision table for act wait's three-state outcome. Read by the Swift ReticleProtocol WaitClassificationTests: classify() has one implementation, run in the host for both Android and iOS. Adding a branch to classify() without adding a case here leaves it unpinned. Note the success test throughout: `resolved` means the selector resolved through the same path an `act` uses — never `isVisible`, which is the proxy an earlier wait proposal was dropped over.",
   "cases": [
     {
       "name": "appear satisfied on a clean screen",

@@ -55,8 +55,11 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   and `reticle-core` no `Render` / `StyleObservation`. Selector-miss diagnostics
   are `ReticleProtocol.SelectorDiagnostics`. A tap's `coverage` / `obstruction`
   verdicts are judged in the host by `ReticleProtocol.ScreenCoverage` from the
-  snapshot the helper dispatched against (`tapProbe`). Still paired: selector
-  resolution, `WaitVerdict`, `TapReach` — only what the in-app agent itself
+  snapshot the helper dispatched against (`tapProbe`). `act wait` runs in the
+  host for Android too: `WaitRunner` (`ReticleHostAct`) polls the helper's
+  `snapshot` primitive, and `WaitVerdict` has no Kotlin twin. The rest of
+  Android's `act` follows the plan in #326. Still paired: selector
+  resolution, `TapReach` — only what the in-app agent itself
   calls has to stay in Kotlin. `reticle-core` keeps what the in-app Android agent
   needs (models, capture-side derivations). Do not add new pure logic to
   `reticle-core` or the helper.
@@ -259,10 +262,10 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
     not have been seen — lost window focus, an unbound list row, an unreadable
     DOM, a screen that never settled, an ambiguous label). Collapsing `unknowable`
     into `absent` is how an observer lies: an agent reads `absent` as "the feature
-    is broken". `WaitVerdict.classify` in `reticle-core` (mirrored in
-    `ReticleProtocol`) decides this, pinned for BOTH platforms by
+    is broken". `WaitVerdict.classify` in `ReticleProtocol` decides this for
+    both platforms (the host runs every wait), pinned by
     `reticle-protocol/fixtures/wait-classification.cases.json` — add a branch
-    there or it ships unpinned on one side.
+    there or it ships unpinned.
   - The outcome is a FIELD; `--json` stays `{"ok":true}` on a timeout, because a
     predicate that did not come true is an observation, not a tool failure. Exit
     codes are an opt-in lossy projection for shell/CI (`--strict`: 3 = absent,
