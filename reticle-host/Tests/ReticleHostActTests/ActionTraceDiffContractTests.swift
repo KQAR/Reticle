@@ -7,13 +7,9 @@ import ReticleHostShared
 /// The action-trace diff contract, driven by the language-neutral fixture at
 /// reticle-protocol/fixtures/action-trace-diff.cases.json.
 ///
-/// The Kotlin twin (`dev.reticle.core.trace.ActionTraceDiff`, exercised by
-/// `ActionTraceDiffContractTest`) reads the same file. Both are hand-written 1:1
-/// ports, and this diff is what a reader — often a small model with no budget to
-/// open a 100KB snapshot — uses to decide whether an action landed. A rule
-/// changed on one side only would let the two platforms describe the same action
-/// differently; that is the failure the selector-resolution fixture exists to
-/// stop happening a second time.
+/// The only implementation since #326 (both platforms' traces are written by the
+/// host), and this diff is what a reader — often a small model with no budget to
+/// open a 100KB snapshot — uses to decide whether an action landed.
 ///
 /// Order is asserted, not just membership: ranking decides what survives the
 /// cap, so a diff with the right changes in the wrong order is a different
@@ -44,10 +40,8 @@ struct ActionTraceDiffContractTests {
             .appendingPathComponent("reticle-protocol/fixtures/action-trace-diff.cases.json")
     }
 
-    /// The recorded-param allow-list exists by hand here and in Kotlin
-    /// (`ActionTraceParams.RECORDED`). A key added to one side only would make
-    /// the same gesture record differently on iOS and Android, and nothing in the
-    /// diff cases would notice.
+    /// The recorded-param allow-list decides what lands on disk for every action
+    /// on both platforms; pinned so a key added or reordered is deliberate.
     @Test func recordedParamAllowListMatchesTheFixture() async throws {
         let decoded = try ReticleJSON.decode(Cases.self, from: Data(contentsOf: fixtureURL()))
         #expect(ActionTraceParamNames.recorded == decoded.recordedParams)

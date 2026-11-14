@@ -50,16 +50,20 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   projection has ONE implementation instead of a Kotlin/Swift pair kept honest by
   fixtures. Done so far: every `ui <view>` renders in the host for Android too
   (`SnapshotRender`, `Outline`), and the `@N` alias cache is the host's
-  (`OutlineAliasCache`): `act --alias` resolves it and sends the helper the cached
-  entry (`aliasEntry`) to re-find in the live tree. The helper has no `render` RPC
+  (`OutlineAliasCache`): `tap --alias` re-finds the entry in the live tree in the
+  host (`AliasMatch`). The helper has no `render` RPC
   and `reticle-core` no `Render` / `StyleObservation`. Selector-miss diagnostics
-  are `ReticleProtocol.SelectorDiagnostics`. A tap's `coverage` / `obstruction`
-  verdicts are judged in the host by `ReticleProtocol.ScreenCoverage` from the
-  snapshot the helper dispatched against (`tapProbe`). `act wait` runs in the
-  host for Android too: `WaitRunner` (`ReticleHostAct`) polls the helper's
-  `snapshot` primitive, and `WaitVerdict` has no Kotlin twin. The rest of
-  Android's `act` follows the plan in #326. Still paired: selector
-  resolution, `TapReach` — only what the in-app agent itself
+  are `ReticleProtocol.SelectorDiagnostics`. Android's `act` is orchestrated in
+  the host over the helper's capture and input primitives (`snapshot`, `input`,
+  `toastWatch`, `hideKeyboard`): `wait` (`WaitRunner`), `tap` (`ActTap` — resolve,
+  settle confirm, and every piece of evidence, `coverage` / `obstruction` from
+  `ScreenCoverage` included), `swipe` / `drag` / `hide-keyboard`, and the envelope
+  around every gesture — `--verify` (`ActVerify`), the trace (`ActionTraceWriter`,
+  the iOS writer), the Toast Queue watch — all in `ReticleHostAct`, shared with
+  iOS. `WaitVerdict`, `DomTapWitness`, `DomRectCheck` and `ActionTraceDiff` have
+  no Kotlin twin. The helper's `act` still runs `scroll-to`, `wheel` and `type`
+  (unwrapped; the rest of #326 moves them). Still paired: selector
+  resolution, `TapReach` (and `aliasLiveMatch`, for `type --alias`) — only what the in-app agent itself
   calls has to stay in Kotlin. `reticle-core` keeps what the in-app Android agent
   needs (models, capture-side derivations). Do not add new pure logic to
   `reticle-core` or the helper.
@@ -253,7 +257,7 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   change), and refuses both by name.
   - **The success test is resolution through the act's own path, never
     `isVisible`.** An earlier `wait --for appears` proposal was dropped over that
-    proxy (see the comments on `HelperScrollTo` and `settleInputTarget`); the
+    proxy (see the comments on `HelperScrollTo` and `ActTap.aim`); the
     guarantee this one carries instead is that a `resolved` wait means the very
     next `act` resolves the same way. Visibility and occlusion are reported as
     caveats, not as the verdict.
@@ -273,8 +277,8 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
 - Keep full snapshots on disk. Send compact observations to agents by default,
   then query or inspect specific refs on demand.
 - **A coordinate is a reported degradation, never a quiet path.** `act tap --point`
-  attaches a `ScreenCoverage.at` verdict, judged in the host for both platforms (on
-  Android from the helper's `tapProbe` snapshot), and the host prints it as a warning: either
+  attaches a `ScreenCoverage.at` verdict, judged in the host for both platforms
+  from the snapshot the tap was aimed in, and the host prints it as a warning: either
   the boundary that justified the coordinate, or the flag that would have worked
   (which is the worse case — a coordinate skips the re-resolve, the settle confirm
   and the stale-rect evidence). `ui coverage` is the whole-screen form. Both come

@@ -2,8 +2,8 @@ import XCTest
 @testable import ReticleProtocol
 
 /// Where a tap actually landed, driven by the shared fixture at
-/// `reticle-protocol/fixtures/dom-tap-witness.cases.json` — the Swift half of the pair;
-/// the Kotlin half is `DomTapWitnessContractTest` in reticle-core.
+/// `reticle-protocol/fixtures/dom-tap-witness.cases.json` — the only suite reading it
+/// since the Kotlin twin went with #326.
 final class DomTapWitnessContractTests: XCTestCase {
 
     private struct ExpectedVerdict: Decodable {

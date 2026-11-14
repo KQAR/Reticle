@@ -5,7 +5,8 @@ import Testing
 @testable import ReticleHostShared
 
 /// `ui outline` and `act --alias` on Android, now that the alias cache is the
-/// host's: outline writes it, act resolves it and sends the helper `aliasEntry`.
+/// host's: outline writes it; a tap re-finds the entry in the live tree here, and a
+/// helper-run gesture (`type`) is sent the entry as `aliasEntry`.
 @Suite(.serialized)
 struct OutlineAliasTests {
     private final class Recording: HelperCalling, @unchecked Sendable {
@@ -45,10 +46,18 @@ struct OutlineAliasTests {
         #expect(text.contains("@1 #checkout.payButton button \"Pay\" [10,200 100x40] tappable"))
         #expect(transport.calls.map(\.method) == ["uiReport"], "outline renders in the host")
 
-        transport.reply = ["ok": true]
-        _ = try await backend.act(ActRequest(
+        // A tap re-finds the entry in the live tree (it is where the cache says).
+        let tap = try await backend.act(ActRequest(
             gesture: "tap", package: "dev.reticle.sample", selector: HostSelector(alias: "@1")
         ))
+        #expect(tap.raw["source"] as? String == "outline:@1->live")
+        #expect(tap.raw["ref"] as? String == "button")
+        #expect(transport.calls.map(\.method).last == "input")
+
+        transport.reply = ["gesture": "type"]
+        var type = ActRequest(gesture: "type", package: "dev.reticle.sample", selector: HostSelector(alias: "@1"))
+        type.text = "x"
+        _ = try await backend.act(type)
         let sent = try #require(transport.calls.last?.params)
         #expect(sent["alias"] as? String == "@1")
         let entry = try #require(sent["aliasEntry"] as? [String: Any])

@@ -2,8 +2,8 @@ import Foundation
 
 /// Is a DOM node's rect consistent with the web view that draws it?
 ///
-/// Twin of the Kotlin `DomRectCheck`, where the measurement is written down: on one
-/// page of a real hybrid flow the DOM rects were offset from what was on screen by
+/// The one implementation; the host judges both platforms' taps with it. Measured: on
+/// one page of a real hybrid flow the DOM rects were offset from what was on screen by
 /// roughly 130px, a css tap missed twice reporting `settled=1`, and only a
 /// screenshot revealed it.
 ///

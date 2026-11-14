@@ -17,9 +17,9 @@ package dev.reticle.core
  * point would have to be un-folded back into page coordinates by the same arithmetic
  * that was wrong, so the two errors cancel and it always agrees with itself. Comparing
  * the rect against its host web view catches only the extreme case (a centre folded
- * clean outside the view that draws it — `DomRectCheck`). The only INDEPENDENT source
- * for where a touch went is the page's own account of receiving it, and that needs a
- * listener.
+ * clean outside the view that draws it — the Swift host's `DomRectCheck`). The only
+ * INDEPENDENT source for where a touch went is the page's own account of receiving
+ * it, and that needs a listener.
  *
  * ## What it costs the page
  *

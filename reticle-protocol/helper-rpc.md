@@ -102,16 +102,24 @@ end of the forward; defaults to a port derived from serial + package, never the
 device port). Selector
 params (where noted): `testId`, `resourceId`, `css` (WebView DOM selector),
 `ref`, `point` ("x,y"), `region`, `alias` + `aliasEntry`. The `@N` alias cache
-is the HOST's (`ui outline` renders and writes it there), so on an `act` the host
-resolves `alias` against it and sends the cached entry as `aliasEntry` (the
-cache-entry object: `ref`, `role`, `label?`, `frame`, `testId?`, `resourceId?`,
-`css?`, …); an `alias` arriving without one is refused. The helper re-resolves
-that entry against the live tree before use (matched by the entry's selector,
-then label+role, nearest-to-cached-frame on ties) so a relayout between
+is the HOST's (`ui outline` renders and writes it there). A `tap --alias` never
+reaches the helper: the host re-finds the entry in a `snapshot` itself
+(`AliasMatch`). For the helper-run gestures (`type`) the host sends the cached
+entry as `aliasEntry` (the cache-entry object: `ref`, `role`, `label?`, `frame`,
+`testId?`, `resourceId?`, `css?`, …); an `alias` arriving without one is refused.
+Either side re-resolves the entry against the live tree before use (matched by
+the entry's selector — `css` structurally, since the cache holds a shortened
+handle — then label+role, nearest-to-cached-frame on ties) so a relayout between
 `ui outline` and `act` does not land on stale coordinates; the cached frame is
-only used when the runtime is unreachable, and the result's `source` says which
-path was taken (`outline:@N->live` vs cached frame). `act wait` never reaches
-the helper's `act`: the host runs it over `snapshot` and refuses an `alias` by name.
+used when the node is gone or the runtime is unreachable, and the result's
+`source` says which path was taken (`outline:@N->live` vs cached frame).
+
+**Who runs `act` (#326).** The host orchestrates every gesture and the envelope
+around it — `--verify`, the action trace, the Toast Queue watch — over the
+capture and input primitives below. `wait`, `tap`, `swipe`, `drag` and
+`hide-keyboard` never reach the helper's `act`; `scroll-to`, `wheel` and `type`
+still run there, and the host sends them WITHOUT any envelope key (`verify*`,
+`trace*`, `noToastProbe`), so the helper's `act` returns the bare gesture result.
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -122,8 +130,11 @@ the helper's `act`: the host runs it over `snapshot` and refuses an `alias` by n
 | `inject` | `package` (req), `payloadDex?`, `restartUnderDebugger?` (mark the app as being debugged so AMS relaxes the input-dispatch ANR during the JDWP suspension — **force-stops and relaunches the target**, so it is opt-in) | `{ "pid", "packageName", "port", "agentVersion", "reportedPort" }` |
 | `launch` | `package` (req) | `{ "pid", "packageName", "port", "agentVersion" }` — monkey-launches a LINKED app and waits for its runtime |
 | `uiReport` | `package` (req) | `{ "nodeCount", "compactItemCount", "semanticNodeCount", "snapshot": <Snapshot>, "semantics": <SemanticTree>, "compact": <CompactObservation> }` |
-| `snapshot` | `package` (req), `probe?` (default `true`: the `/runtime` health + pid identity check `uiReport` does; a polling loop passes `false` after its first fetch) | `{ "snapshot": <Snapshot> }` — the agent's `/snapshot` body forwarded as-is, not decoded by the helper. The host's own loops (`act wait`) poll this and judge in Swift |
-| `act` | `gesture` (tap/swipe/drag/type/hide-keyboard), `package` (req); tap: selector or `alias`; a selector tap re-resolves its point before dispatch **by default** (800ms budget) so a rect made stale by an earlier relayout cannot land the touch on the neighbour — `settle?` raises the budget to 2s for a target that is animating in, `settleTimeoutMs?` overrides either, `noSettle?` opts out, and a raw `point` never confirms (`settle` with `point` is refused); swipe/drag: `from`,`to`,`duration?`; type: `text`, `submit?` (perform the focused field's IME editor action after typing — agent `/editor-action` preferred, `KEYCODE_ENTER` fallback); optional `verify`, `verifyTimeoutMs`, `traceOutput`, `traceDelayMs` | `{ "gesture", ... }`, optionally `verify` and `trace` summaries; a confirming tap adds `"settled": bool` (false = still moving when the budget lapsed, so the point may already be stale) and, only when the re-resolve moved the point, `"rectMoved": "<dx>,<dy>"` — the evidence that the first read WAS stale; type with `submit` adds `"submit": { "via", "action?" }`. Every tap adds `"tapProbe": { "x", "y", "point": bool, "snapshot": <Snapshot> }` (or `"error"` instead of `snapshot` when the tree could not be read) — the tree the touch was dispatched against, captured BEFORE it (the trace's pre-action snapshot when tracing is on). The helper judges nothing: the host computes `coverage` (only when `point`) and `obstruction` from it with `ReticleProtocol.ScreenCoverage`, puts those on the result and strips `tapProbe`. `tapProbe` never reaches trace.json; the host backfills the two verdicts into the manifest's `result` (compact JSON strings) after the helper has written it. Host `act batch --file` expands a JSON array into repeated `act` RPC calls; it is not a separate helper method — step keys are these protocol field names (so `resourceId`, `ref`, `point`, `alias`, `region` all work in steps). |
+| `snapshot` | `package` (req), `probe?` (default `true`: the `/runtime` health + pid identity check `uiReport` does; a polling loop passes `false` after its first fetch), `screenshotPath?` (also fetch the agent's `/screenshot` and write it to this path — host and helper share a machine) | `{ "snapshot": <Snapshot> }`, plus `"screenshot": bool` when `screenshotPath` was given (false = no picture could be taken; the snapshot still stands) — the agent's `/snapshot` body forwarded as-is, not decoded by the helper. The host's own loops (`act wait`, a tap's settle confirm, `--verify`) poll this and judge in Swift; a trace side is one call with `screenshotPath` |
+| `input` | `kind` (req): `tap` (`x`, `y`), `swipe` / `drag` (`from`, `to` as "x,y", `durationMs?` — 300 / 1000), `text` (`text`, `perCharDelayMs?`), `keyevent` (`keys`: array of key codes), `paste` | `{ "ok": bool, "stderr"? }` — one `adb shell input`, nothing decided. The ASCII check and shell escaping of `text` stay here (device I/O) |
+| `toastWatch` | `op: "start"`, `package` → `{ "token" }`; `op: "stop"`, `token` → `{ "toasts": [ { "summary", "kind", "duration?" } ] }` | The Toast Queue watch an action is wrapped in (a text toast is in no window of the app). The sampling thread and dumpsys parsing stay in the helper. A token not stopped within 60s is reaped — the helper is shared across commands — and `stop` of an unknown token is an empty list |
+| `hideKeyboard` | `package` (req) | `{ "gesture": "hideKeyboard", "via", "wasVisible"?, "keyboardVisible"? }` — agent IMM first; `KEYCODE_ESCAPE` when the agent is unreachable (`via` says so, and the state is then unknown) |
+| `act` | `gesture` (`scroll-to` / `wheel` / `type` — every other gesture runs in the host), `package` (req); selector or `alias` + `aliasEntry`; scroll-to: `container?`, `direction?`, `maxSwipes?`; wheel: `to` (a value) or `toIndex`; type: `text`, `submit?` (perform the focused field's IME editor action after typing — agent `/editor-action` preferred, `KEYCODE_ENTER` fallback), `clear?`, `typeDelayMs?` | `{ "gesture", ... }` — the bare gesture result; the host adds `verify`, `trace` and any `toast*` fields. type with `submit` adds `"submit": { "via", "action?" }`. Host `act batch --file` hands each step to the same host orchestration; it is not a separate helper method — step keys are these protocol field names (so `resourceId`, `ref`, `point`, `alias`, `region` all work in steps). |
 | `mutate` | `package` (req), `property`, `value`, selector | `{ "applied", "ref", "previousValue" }` |
 | `logs` | `package` (req) | `{ "entries": [ { "level", "message" }, ... ] }` (app-authored runtime logs) |
 | `logcat` | `serial?` | `{ "lines": [ "<agent logcat>", ... ] }` (process-wide; works without a runtime) |
@@ -149,13 +160,11 @@ the helper's `act`: the host runs it over `snapshot` and refuses an `alias` by n
   derive `SemanticTree` / `CompactObservation` from that exact snapshot; the
   helper forwards the finished JSON and the host writes it to `snapshot.json` /
   `semantics.json` / `compact.json`.
-- **`act.traceOutput` writes an evidence package.** When present, the helper
-  captures before/after snapshots and screenshots around the action, writes them
-  under `<traceOutput>/<actionId>/`, and returns a small `trace` summary with the
-  manifest path. The on-disk manifest is `trace.json` and uses the
-  `dev.reticle.core.trace.ActionTrace` shape from `reticle-core`; large artifacts
-  are referenced by relative filename instead of being inlined in the RPC
-  response.
+- **The action trace is the host's.** `--trace-output` (or the automatic session
+  trace) is written by the host's `ActionTraceWriter` — the iOS writer — from two
+  `snapshot` calls with `screenshotPath`, under `<traceOutput>/<actionId>/`. A tap
+  reuses the pre-action capture as its first resolution, so tracing costs it no
+  extra read. The helper never sees `traceOutput`.
 - **`proxySet` is host-owned device configuration.** The helper only applies the
   Android setting and optional `adb reverse`; it does not inspect traffic. The
   Swift daemon owns the actual proxy listener and restores the prior value on
@@ -169,7 +178,9 @@ the helper's `act`: the host runs it over `snapshot` and refuses an `alias` by n
 The Swift host (`reticle-host/`) now reaches functional parity with the Kotlin
 CLI's one-shot command surface through these methods: device control
 (status/inject/launch), evidence (uiReport/screenshot/logs/logcat), and
-action (act/mutate), plus `snapshot` for the loops the host runs itself (`act wait`). Binary screenshots cross as base64 (`pngBase64`). There is
+action (act/mutate), plus the primitives the host orchestrates `act` over
+(`snapshot`, `input`, `toastWatch`, `hideKeyboard`). `screenshot` crosses as
+base64 (`pngBase64`); a trace's screenshots go to a file (`snapshot.screenshotPath`). There is
 no render method: every `ui <view>` (including `outline` and its alias cache)
 renders in the host from a snapshot file or a `uiReport` capture.
 

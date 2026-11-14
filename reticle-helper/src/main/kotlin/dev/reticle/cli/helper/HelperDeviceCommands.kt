@@ -1,24 +1,21 @@
 package dev.reticle.cli
 
 import dev.reticle.cli.platform.DeviceController
-import dev.reticle.cli.platform.InputDispatcher
 import dev.reticle.cli.platform.android.Adb
 import dev.reticle.cli.platform.android.Injector
 import dev.reticle.cli.platform.android.InputBackend
 import dev.reticle.core.CompactObservation
-import dev.reticle.core.DomRectCheck
-import dev.reticle.core.DomTapWitness
 import dev.reticle.core.MutationRequest
-import dev.reticle.core.Node
-import dev.reticle.core.NodeKind
 import dev.reticle.core.ReticleJson
-import dev.reticle.core.SelectorResolver
 import dev.reticle.core.SemanticTree
 import dev.reticle.core.Snapshot
+import java.io.File
 import java.util.Base64
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -109,7 +106,120 @@ internal object HelperDeviceCommands {
         device.ensureDeviceReady()
         val client = runtimeClientFor(device, pkg, params)
         if (params["probe"] == null || params.bool("probe")) assertHealthy(client, pkg)
-        return buildJsonObject { put("snapshot", ReticleJson.instance.parseToJsonElement(client.snapshotJson())) }
+        val snapshot = ReticleJson.instance.parseToJsonElement(client.snapshotJson())
+        val screenshotPath = params.str("screenshotPath")
+        return buildJsonObject {
+            put("snapshot", snapshot)
+            // A trace side: the picture goes to a FILE the host named (same machine),
+            // never base64 down the pipe. Best effort, like the trace it serves — a
+            // picture that cannot be taken is `false`, not a failed snapshot.
+            if (screenshotPath != null) {
+                val wrote = runCatching { File(screenshotPath).writeBytes(client.screenshotBytes()) }.isSuccess
+                put("screenshot", wrote)
+            }
+        }
+    }
+
+    /**
+     * One `adb shell input` dispatch, for the host's own gesture orchestration. The
+     * helper decides nothing here: no resolution, no settle, no evidence — those are
+     * the host's. Only the device-I/O details stay (the shell escaping of `text`).
+     */
+    fun input(params: JsonObject): JsonElement {
+        val kind = params.str("kind") ?: throw CliError("input needs 'kind'")
+        val device = Adb.forSerial(params.str("serial"))
+        device.ensureDeviceReady()
+        val input = InputBackend(device)
+        fun point(key: String) = parseXY(params.str(key) ?: throw CliError("input $kind needs '$key'"))
+        val r = when (kind) {
+            "tap" -> input.tap(
+                params.intOrNull("x") ?: throw CliError("input tap needs 'x'"),
+                params.intOrNull("y") ?: throw CliError("input tap needs 'y'"),
+            )
+            "swipe", "drag" -> {
+                val (fx, fy) = point("from")
+                val (tx, ty) = point("to")
+                val dur = params.intOrNull("durationMs") ?: if (kind == "drag") 1000 else 300
+                if (kind == "drag") input.drag(fx, fy, tx, ty, dur) else input.swipe(fx, fy, tx, ty, dur)
+            }
+            "text" -> input.text(
+                params.str("text") ?: throw CliError("input text needs 'text'"),
+                params.intOrNull("perCharDelayMs") ?: 0,
+            )
+            "keyevent" -> {
+                val keys = (params["keys"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                if (keys.isNullOrEmpty()) throw CliError("input keyevent needs 'keys'")
+                input.keyevent(*keys.toTypedArray())
+            }
+            "paste" -> input.paste()
+            else -> throw CliError("unknown input kind '$kind' (tap/swipe/drag/text/keyevent/paste)")
+        }
+        return buildJsonObject {
+            put("ok", r.ok)
+            if (!r.ok && r.stderr.isNotBlank()) put("stderr", r.stderr)
+        }
+    }
+
+    /**
+     * The Toast Queue watch, split across two calls so the host can wrap any action
+     * in it. `start` returns a token; `stop` returns what was seen. The sampling
+     * thread and the dumpsys parsing stay here — they read device text, not a
+     * snapshot. See [ToastWatches] for why a token is reaped on its own.
+     */
+    fun toastWatch(params: JsonObject): JsonElement = when (val op = params.str("op")) {
+        "start" -> {
+            val pkg = params.str("package") ?: throw CliError("toastWatch start needs 'package'")
+            val device = Adb.forSerial(params.str("serial"))
+            device.ensureDeviceReady()
+            buildJsonObject { put("token", ToastWatches.start(device, pkg)) }
+        }
+        "stop" -> {
+            val token = params.str("token") ?: throw CliError("toastWatch stop needs 'token'")
+            buildJsonObject {
+                put("toasts", buildJsonArray {
+                    ToastWatches.stop(token).forEach { t ->
+                        add(buildJsonObject {
+                            put("summary", ToastQueue.summary(t))
+                            put("kind", t.kind)
+                            t.duration?.let { put("duration", it) }
+                        })
+                    }
+                })
+            }
+        }
+        else -> throw CliError("toastWatch needs 'op': start or stop (got '$op')")
+    }
+
+    /**
+     * Dismiss the system keyboard. Preferred path is the in-app agent's
+     * InputMethodManager (deterministic, reports settled before/after state);
+     * when the agent is unreachable we fall back to KEYCODE_ESCAPE — unlike
+     * KEYCODE_BACK it does not navigate back when the keyboard is already gone.
+     * The fallback is Android-specific device I/O, which is why this stays a
+     * helper call rather than a host-side composition of two primitives.
+     */
+    fun hideKeyboard(params: JsonObject): JsonElement {
+        val pkg = params.str("package") ?: throw CliError("hideKeyboard needs 'package'")
+        val device = Adb.forSerial(params.str("serial"))
+        device.ensureDeviceReady()
+        val client = runtimeClientFor(device, pkg, params)
+        if (client.probe() is RuntimeHealth.Healthy) {
+            val result = client.hideKeyboard()
+            return buildJsonObject {
+                put("gesture", "hideKeyboard")
+                put("via", "agent imm")
+                put("wasVisible", result.wasVisible)
+                put("keyboardVisible", result.keyboard.visible)
+            }
+        }
+        val r = InputBackend(device).keyevent("KEYCODE_ESCAPE")
+        if (!r.ok) {
+            throw CliError("agent unreachable and keyevent fallback failed: ${r.stderr.ifBlank { "adb shell did not complete" }}")
+        }
+        return buildJsonObject {
+            put("gesture", "hideKeyboard")
+            put("via", "keyevent ESCAPE (agent unreachable; state unknown)")
+        }
     }
 
     fun launch(params: JsonObject): JsonElement {
@@ -131,202 +241,27 @@ internal object HelperDeviceCommands {
         }
     }
 
+    /**
+     * The gestures that still run in the helper: `scroll-to`, `wheel` and `type`.
+     * Everything else — tap, swipe, drag, hide-keyboard, wait — is orchestrated by
+     * the host over `snapshot` / `input` / `hideKeyboard`, and so is the envelope
+     * around EVERY gesture (`--verify`, the trace, the Toast Queue watch): the host
+     * wraps these three too, so this returns the bare gesture result.
+     */
     fun act(params: JsonObject): JsonElement {
         val sub = params.str("gesture") ?: throw CliError("act needs 'gesture'")
         val pkg = params.str("package") ?: throw CliError("act needs 'package'")
         val device = Adb.forSerial(params.str("serial"))
         device.ensureDeviceReady()
         val input = InputBackend(device)
-
-        val verifySel = HelperVerify.watchSelectorFrom(params)
-        val traceRequested = params.str("traceOutput") != null
-        val traceAuto = params.bool("traceAuto")
-        val evidenceClient = if (verifySel != null || traceRequested) {
-            runCatching { runtimeClientFor(device, pkg, params).also { c -> assertHealthy(c, pkg) } }
-                .getOrElse { error ->
-                    if (traceAuto && verifySel == null) null else throw error
-                }
-        } else {
-            null
-        }
-        val traceRecorder = if (traceAuto && evidenceClient == null) {
-            null
-        } else {
-            HelperActionTrace.from(params, pkg, evidenceClient)
-        }
-        val traceBefore = traceRecorder?.capture()
-        val before = verifySel?.let { HelperVerify.captureState(evidenceClient!!, it) }
-        var target: ResolvedInputTarget? = null
-        // The tree a tap was judged against, for the host's coverage/obstruction
-        // verdicts. Held outside `result` so it never lands in trace.json.
-        var probe: JsonObject? = null
-
-        // Watch the system Toast Queue across the action. A text toast is in no
-        // window of this app, so an action answered by one produced a byte-identical
-        // before/after pair — `0 change(s)`, the documented signal for a gesture that
-        // hit nothing. See [ToastProbe].
-        val toastProbe = ToastProbe.start(device, pkg, enabled = !params.bool("noToastProbe"))
-
-        val result: JsonObject = when (sub) {
-            "tap" -> {
-                val first = resolveInputTarget(device, pkg, params)
-                target = first
-                // Confirm the resolved point has stopped moving BEFORE dispatching.
-                //
-                // Resolution and dispatch are two steps, and between them the screen
-                // can move — not only because the target itself is animating in (the
-                // popup case `--settle` was introduced for) but because a PREVIOUS
-                // command relayouted the page: a `type` that showed the keyboard, a
-                // `hide-keyboard` that took it away, a scroll. Measured on a physical
-                // device: a form row tapped by its unique test id resolved to a rect
-                // already 161px stale and opened the sheet belonging to the row below
-                // it, reporting an unqualified success. Nothing in the result said so,
-                // and the trace diff is equally large for the right sheet and the
-                // wrong one.
-                //
-                // So the confirm is now the DEFAULT for selector-based taps rather
-                // than opt-in: it costs one extra tree read against a resolution that
-                // had to happen anyway, and the failure it prevents is silent and
-                // expensive to detect. `--settle` keeps its meaning — give it the full
-                // budget, for a target known to be animating — and `--no-settle` opts
-                // out for a caller who wants the single-read dispatch.
-                var stable: Boolean? = null
-                val rawPoint = params.str("point") != null
-                if (params.bool("settle") && rawPoint) {
-                    throw CliError(
-                        "--settle needs a selector: a raw --point has nothing to re-resolve, " +
-                            "so there is no way to tell whether it has stopped moving"
-                    )
-                }
-                val plan = TapSettlePolicy.plan(
-                    rawPoint = rawPoint,
-                    settle = params.bool("settle"),
-                    noSettle = params.bool("noSettle"),
-                    timeoutMs = params.intOrNull("settleTimeoutMs"),
-                )
-                if (plan.confirm) {
-                    val settled = settleInputTarget(device, pkg, params, first = first, budgetMs = plan.budgetMs)
-                    target = settled.target
-                    stable = settled.stable
-                }
-                val x = target!!.point.x.toInt()
-                val y = target!!.point.y.toInt()
-                // Captured BEFORE the touch, for EVERY tap: the host judges a
-                // coordinate's coverage and any tap's obstruction from it (see
-                // [tapProbe]); after the touch the screen may not exist any more.
-                probe = tapProbe(
-                    device, pkg, params, traceBefore?.snapshot,
-                    target!!.point.x, target!!.point.y, rawPoint,
-                )
-                input.tap(x, y)
-                // Asked AFTER the touch, because the answer only exists once the page has
-                // received one. The one fact about a tap that comes from the page rather
-                // than from Reticle's own arithmetic.
-                val landing = domTapLanding(device, pkg, params, traceBefore?.snapshot, target!!)
-                buildJsonObject {
-                    put("gesture", "tap")
-                    put("x", x)
-                    put("y", y)
-                    put("source", target!!.source)
-                    target!!.ref?.let { put("ref", it) }
-                    // The frame was only partly reachable and the tap was aimed at
-                    // the visible part instead of at its centre. Said out loud: the
-                    // coordinate no longer matches the rect the caller can read in
-                    // the tree, and the difference is the evidence.
-                    target!!.reachNote?.let { put("reach", it) }
-                    // Honest flag, as in scroll-to: false means the target was still
-                    // moving when the budget lapsed, so this tap may have been aimed
-                    // at a point that had already changed.
-                    stable?.let { put("settled", it) }
-                    // The evidence that the first read WAS stale: the same selector,
-                    // same ref, different coordinates. Without this the confirm would
-                    // silently fix the tap and the caller would never learn that the
-                    // screen it reasoned about had moved under it.
-                    TapSettlePolicy.movedBy(first.point, target!!.point)?.let { put("rectMoved", it) }
-                    // A DOM rect folded to a point outside the web view that draws
-                    // it: impossible for a correct fold, and silent until now — the
-                    // tap dispatches at the reported centre and reports settled=1.
-                    domRectComplaint(traceBefore?.snapshot, target!!.ref)?.let {
-                        put("rectSuspect", it)
-                    }
-                    // Where the touch ACTUALLY landed, according to the page. Quiet when
-                    // it landed on the element aimed at (or inside it), which is every
-                    // ordinary tap — a warning that fires everywhere is one nobody reads.
-                    landing?.let { put("landed", it) }
-                    // The node this selector resolved publishes NO control of its
-                    // own: it is a caption, a wrapper, a plain row. The touch was
-                    // still dispatched — a framework-built field binds its handler in
-                    // JS and publishes no role, no tabindex and no `aria-*`, so the
-                    // row really is driven this way — but "I tapped a control" and "I
-                    // tapped a caption and relied on the app's own handler" are
-                    // different claims, and only the first one is evidence.
-                    //
-                    // Measured on a real Vue form: five field rows (`Education level`,
-                    // `Employment type`, …) captured as plain `div`/`label` with no
-                    // tappable marker, so an agent went to coordinates for all five
-                    // — four commands per field — while a `--label` tap on the caption
-                    // drives them in one.
-                    inertTargetNote(traceBefore?.snapshot, target!!.ref)?.let {
-                        put("targetInert", it)
-                    }
-                }
-            }
-            "swipe", "drag" -> {
-                val (fx, fy) = parseXY(params.str("from") ?: throw CliError("$sub needs 'from'"))
-                val (tx, ty) = parseXY(params.str("to") ?: throw CliError("$sub needs 'to'"))
-                val dur = params.intOrNull("duration") ?: if (sub == "drag") 1000 else 300
-                if (sub == "drag") input.drag(fx, fy, tx, ty, dur) else input.swipe(fx, fy, tx, ty, dur)
-                buildJsonObject { put("gesture", sub); put("from", "$fx,$fy"); put("to", "$tx,$ty"); put("durationMs", dur) }
-            }
+        return when (sub) {
             "scrollTo", "scroll-to" -> HelperScrollTo.run(input, device, pkg, params)
             "wheel" -> HelperWheel.run(input, device, pkg, params)
             "type" -> HelperTypeText.typeText(input, device, pkg, params)
-            "hideKeyboard", "hide-keyboard" -> HelperTypeText.hideKeyboard(input, device, pkg, params)
-            // `activate` is iOS-only and exists BECAUSE iOS lacks what Android has.
-            // It drives a control in-process (`sendActions`, the agent's /activate
-            // endpoint) — the only input path on a real iOS device, and the fallback
-            // when a simulator's private HID surface will not initialize. Android
-            // synthesizes real input through `adb shell input`, so there is nothing
-            // for it to fall back FROM. Saying "unknown gesture" for it sent the
-            // caller looking for a typo, and `docs/boundaries.md` plus a line in the
-            // skill recommend it without naming the platform, so a reader arrives
-            // here honestly.
-            "activate" -> throw CliError(
-                "act activate is iOS-only: it activates a control in-process because a real iOS device " +
-                    "exposes no host-reachable HID surface. Android synthesizes real input instead — use " +
-                    "`act tap` with the same selector (`--css` included), which dispatches an actual touch."
-            )
             else -> throw CliError(
-                "unknown act gesture '$sub' " +
-                    "(tap/swipe/drag/scroll-to/wheel/type/hide-keyboard; " +
-                    "wait runs in the host; activate is iOS-only)"
+                "unknown act gesture '$sub' (the helper runs scroll-to/wheel/type; " +
+                    "tap/swipe/drag/hide-keyboard/wait run in the host)"
             )
-        }
-
-        val verify = verifySel?.let { HelperVerify.pollForChange(evidenceClient!!, it, before, params) }
-        // Collected before the trace is written so the toast is IN the manifest for
-        // that step — the place a later `trace log` reads, and the whole point: the
-        // step that says "no observable change" must be the step that also says the
-        // app answered out of tree.
-        val toasts = toastProbe?.stop().orEmpty()
-        val withToast = if (toasts.isEmpty()) result else buildJsonObject {
-            result.forEach { (k, v) -> put(k, v) }
-            val first = toasts.first()
-            put("toast", ToastQueue.summary(first))
-            put("toastKind", first.kind)
-            first.duration?.let { put("toastDuration", it) }
-            if (toasts.size > 1) put("toastCount", toasts.size)
-        }
-        val trace = traceRecorder?.let {
-            val settleMs = if (verify == null) (params.intOrNull("traceDelayMs") ?: 250).toLong() else 0L
-            it.write(sub, selectorOrNull(params), target, withToast, traceBefore!!, settleMs)
-        }
-        if (verify == null && trace == null && probe == null) return withToast
-        return buildJsonObject {
-            withToast.forEach { (k, v) -> put(k, v) }
-            verify?.let { put("verify", it) }
-            trace?.let { put("trace", it) }
-            probe?.let { put("tapProbe", it) }
         }
     }
 
@@ -441,73 +376,6 @@ internal object HelperDeviceCommands {
         out
     }.getOrElse { emptyList() }
 
-    /**
-     * The rect-fold complaint for a DOM target, when the pre-action snapshot is at
-     * hand. Silent otherwise: a check that could not run is not evidence, and the
-     * trace's own capture is the one already paid for.
-     */
-    private fun domRectComplaint(before: Snapshot?, ref: String?): String? {
-        val snapshot = before ?: return null
-        val target = ref ?: return null
-        return DomRectCheck.outsideHost(snapshot, target)
-    }
-
-    /**
-     * Ask the PAGE where the touch went, for a tap that resolved to a DOM node.
-     *
-     * The one check on a tap that is not Reticle's own arithmetic. Every other answer a
-     * tap gives is about its intent: the selector resolved, the rect was re-read and had
-     * stopped moving, the coordinate was dispatched. If the page-to-device fold is wrong,
-     * all of that stays true while the touch lands somewhere else and the result still
-     * reads `settled=1` — measured at roughly 130px on a real hybrid page (#234).
-     *
-     * Costs one snapshot, and only on a DOM tap: the witness's record lives in the page,
-     * so it has to be read after the gesture. Silent whenever it cannot judge — a
-     * selector that no longer resolves (the tap navigated), an unreadable page, a sealed
-     * frame — because a check that could not run is not evidence. See [DomTapWitness].
-     */
-    private fun domTapLanding(
-        device: DeviceController,
-        pkg: String,
-        params: JsonObject,
-        before: Snapshot?,
-        target: ResolvedInputTarget,
-    ): String? {
-        if (!target.source.startsWith("dom")) {
-            // A `--css` selector always resolves through the DOM; anything else is only
-            // a DOM tap if the node it hit is one, which the pre-action capture knows.
-            val ref = target.ref ?: return null
-            val node = before?.nodes?.get(ref) ?: return null
-            if (node.kind != NodeKind.domNode) return null
-        }
-        val selector = selectorOrNull(params) ?: return null
-        // Let the page's own handler run before asking it what it received.
-        Thread.sleep(DOM_LANDING_SETTLE_MS)
-        val after = runCatching { liveSnapshot(device, pkg, params) }.getOrNull() ?: return null
-        val resolved = runCatching {
-            SelectorResolver(after, SemanticTree.build(after)).resolve(selector)?.ref
-        }.getOrNull() ?: return null
-        return runCatching { DomTapWitness.describe(after, resolved) }.getOrNull()
-    }
-
-    /** Re-find [field] in a fresh tree; null when the runtime or the node is gone. */
-    /**
-     * A note when the tap's resolved node published no interactivity of its own.
-     *
-     * Null for an ordinary control, so the marker means exactly one thing when it
-     * appears. Not a refusal and not a warning about the touch: nothing says the tap
-     * is wrong, only that the tree did not vouch for the target. See the call site
-     * for the measurement.
-     */
-    private fun inertTargetNote(snapshot: Snapshot?, ref: String?): String? {
-        val node = ref?.let { snapshot?.nodes?.get(it) } ?: return null
-        if (node.isInteractive) return null
-        val what = node.role ?: node.typeName
-        return "the resolved node ($ref, $what) publishes no control of its own — the touch was " +
-            "dispatched at its centre and only the app's own handler can act on it, so treat this " +
-            "as a coordinate-grade tap and verify the effect"
-    }
-
     /** A fresh snapshot, or null when the runtime cannot answer for one. */
     fun liveSnapshot(device: DeviceController, pkg: String, params: JsonObject): Snapshot? =
         runCatching {
@@ -529,11 +397,4 @@ internal object HelperDeviceCommands {
         // The client already returns PNG bytes; no need to round-trip through a
         // temp file (write + read back) as this used to.
         runCatching { client.screenshotBytes() }.getOrNull()
-
-    /**
-     * Time for the page to receive the touch before asking it what it received. The
-     * dispatch returns as soon as the event is injected; the page's own listener runs
-     * after that, and reading too early would report an absence as a miss.
-     */
-    private const val DOM_LANDING_SETTLE_MS = 200L
 }

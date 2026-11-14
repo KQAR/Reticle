@@ -37,15 +37,21 @@ public enum ActTargeting {
 
     /// Ask the PAGE where the touch went, for a tap that resolved to a DOM node.
     ///
-    /// Twin of the Android helper's `domTapLanding`. Costs one snapshot and only on a
-    /// DOM tap: the witness's record lives in the page, so it can only be read after the
-    /// gesture. Silent whenever it cannot judge — a selector that no longer resolves
-    /// (the tap navigated), an unreadable page, a sealed frame — because a check that
-    /// could not run is not evidence. See `DomTapWitness`.
+    /// The one answer a tap has that is not Reticle's own arithmetic: if the
+    /// page-to-device fold is wrong, the selector, the settle and the dispatch all
+    /// stay true while the touch lands elsewhere (measured ~130px on a real page).
+    /// Costs one snapshot and only on a DOM tap — a `--css` hit, or any selector
+    /// whose node in `dispatched` is a DOM node (a `--label` that matched page text).
+    /// Silent whenever it cannot judge — a selector that no longer resolves (the tap
+    /// navigated), an unreadable page, a sealed frame — because a check that could
+    /// not run is not evidence. See `DomTapWitness`.
     public static func domTapLanding(
-        _ params: [String: Any], target: SelectorResolution.Resolved, fetch: SnapshotFetch
+        _ params: [String: Any], target: SelectorResolution.Resolved, dispatched: Snapshot?,
+        fetch: SnapshotFetch
     ) async -> String? {
-        guard target.source.hasPrefix("dom") else { return nil }
+        let isDom = target.source.hasPrefix("dom")
+            || target.ref.flatMap { dispatched?.nodes[$0] }?.kind == .domNode
+        guard isDom else { return nil }
         // Let the page's own handler run before asking it what it received.
         try? await Task.sleep(nanoseconds: 200_000_000)
         guard let after = try? await fetch(),
@@ -99,38 +105,19 @@ public enum ActTargeting {
     public static func settleRequested(_ params: [String: Any]) -> Bool { ActParams.isTruthy(params["settle"]) }
 
     /// Re-resolve the tap target until it lands on the same point twice in a row —
-    /// it has stopped moving — or the budget runs out.
-    ///
-    /// Resolution and dispatch are two steps, and a sheet or menu animating in moves
-    /// between them: the captured rect is intermediate, so the synthesized touch can
-    /// land on the neighbouring row. This is the same stabilize step `scroll-to`
-    /// already performs, on the tap's own resolution path (no `isVisible` proxy).
-    /// It never refuses to tap — a lapsed budget returns the freshest point flagged
-    /// `stable = false`, which the caller reports as evidence.
+    /// it has stopped moving — or the budget runs out. The point-only face of
+    /// `ActTap.confirm`, for the iOS tap, which aims from its own first capture.
     public static func settleTapPoint(
-        _ params: [String: Any], first: Point, fetch: SnapshotFetch
+        _ params: [String: Any], first: Point, snapshot: Snapshot, fetch: SnapshotFetch
     ) async -> SettledPoint {
-        // Short default budget: on a settled screen the loop returns as soon as one
-        // re-resolve agrees, so this bounds the animating case, not the common one.
-        // An explicit `--settle` means "this IS animating" and gets the full 2s.
-        let fallback = settleRequested(params) ? 2_000 : 800
-        let budget = Double((params["settleTimeoutMs"] as? Int) ?? fallback) / 1000.0
-        let deadline = Date().addingTimeInterval(budget)
-        var previous = first
-        while Date() < deadline {
-            try? await Task.sleep(for: .seconds(0.15))
-            // A target that vanishes mid-settle (a menu dismissed under us) is not a
-            // failure of the tap yet: report the freshest point and let the dispatch,
-            // or the caller's own verification, be the judge.
-            guard let snapshot = try? await fetch(),
-                  let current = try? resolveTapPoint(params, snapshot: snapshot) else {
-                return SettledPoint(point: previous, stable: false)
-            }
-            if abs(current.x - previous.x) < 1, abs(current.y - previous.y) < 1 {
-                return SettledPoint(point: current, stable: true)
-            }
-            previous = current
-        }
-        return SettledPoint(point: previous, stable: false)
+        let fallback = settleRequested(params) ? ActTap.settleBudgetMs : ActTap.confirmBudgetMs
+        let aim = await ActTap.confirm(
+            SelectorResolution.Resolved(point: first, source: "", ref: nil),
+            in: snapshot,
+            budgetMs: (params["settleTimeoutMs"] as? Int) ?? fallback,
+            resolve: { try resolveTarget(params, snapshot: $0) },
+            fetch: fetch
+        )
+        return SettledPoint(point: aim.target.point, stable: aim.stable ?? false)
     }
 }
