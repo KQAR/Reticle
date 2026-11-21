@@ -402,7 +402,8 @@ all. It matches visible text / the a11y label (exact, then substring) in the top
 window that has a match and **refuses an ambiguous match** rather than tapping the
 first candidate.
 Two matches that are NOT an ambiguity: a nested duplicate (a row container repeating
-its child's text — the innermost wins), and several views stacked on the same rect
+its child's text — the innermost wins, unless the outer one is a control and the
+inner one only its caption: then the control wins, and the tap lands on its centre), and several views stacked on the same rect
 (an iOS `UIPickerView` draws its magnifier bands as separate table views, so a row
 near the selection exists 2-3× at one spot). The second reports
 `source=label:coincident`, so you can see the match was layered. Prefer `--test-id`

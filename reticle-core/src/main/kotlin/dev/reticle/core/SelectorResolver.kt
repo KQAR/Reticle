@@ -141,7 +141,16 @@ class SelectorResolver(
         // (almost) the same point. Drop any match that is an ANCESTOR of another
         // and keep the innermost. Two matches in DIFFERENT subtrees stay ambiguous
         // — that is the case worth refusing.
-        val leaves = matches.filter { node -> matches.none { isAncestor(node, it) } }
+        // ...except a CONTROL over a caption that only repeats its name: there the
+        // CONTROL is the target and the caption drops out. Measured on iOS 26's
+        // Liquid Glass tab bar: the tab button "Orders" wraps a label "Orders" whose
+        // centre sits 14pt lower — inside the home-indicator band, where a tap is
+        // swallowed by the system — so `--label Orders` "succeeded" and changed
+        // nothing, while the button's own centre switched the tab. See the Swift twin.
+        val leaves = matches.filter { node ->
+            if (!node.isInteractive && matches.any { it.isInteractive && isAncestor(it, node) }) return@filter false
+            matches.none { isAncestor(node, it) && (it.isInteractive || !node.isInteractive) }
+        }
         // A caption and the control it names are not an ambiguity either. A form
         // states a field's name in a separate element and points the control at it
         // (`aria-labelledby`, `<label for>`), so ONE string legitimately belongs to
