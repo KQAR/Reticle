@@ -145,58 +145,58 @@ panel's visual language — the token spec (colors, type, surface ladder) the
   platforms rather than argued about. `SampleAppNoAgent` is the unlinked flavor,
   the target for the DYLD-injection path.
 
-## Claude Code plugin packaging
+## Distribution and the agent skill
 
-The repo is ALSO a Claude Code plugin (and its own single-plugin marketplace),
-so it installs over the network with `/plugin marketplace add KQAR/Reticle` then
-`/plugin install reticle@reticle`.
+One artifact: the release zip (`reticle-macos-arm64.zip`, host + native helper +
+`reticle-device` + payload dex, built by `release.yml` on a `v*` tag from a macOS
+arm64 runner; no JDK to run, macOS 15+ arm64 only). The agent skill is inside it,
+so a user upgrades the CLI and the skill with one `reticle update`.
 
-- `.claude-plugin/plugin.json` — plugin manifest (`name: reticle`).
-- `.claude-plugin/marketplace.json` — marketplace catalog; the plugin entry uses
-  `source: "./"` (the repo root is the plugin).
-- `.cursor-plugin/plugin.json` + `.cursor-plugin/marketplace.json` — the Cursor
-  mirror of the two above. Same `name`/`version`/`source: "./"`; the plugin
-  manifest adds `displayName` and relative dir pointers (`skills`, `commands`).
-  Both editors share ONE `skills/` and `commands/` — never fork the content; only
-  the manifests differ. `claude plugin validate .` covers the Claude pair;
-  `scripts/validate_plugin.py` covers BOTH pairs.
-- `bin/reticle` — launcher added to the Bash PATH when the plugin is enabled.
-  `reticle` IS the Swift host; the launcher resolves/execs `reticle-host` with the
-  native `reticle-helper` beside it. The resolution order and its env overrides
-  are documented once, in README.md -> **How the CLI is obtained** — edit there,
-  not here. What is AGENTS' job is the packaging end of it:
-  `release.yml` publishes `reticle-macos-arm64.zip` (host + native helper) + the
-  agent AAR on a `v*` tag, from a macOS arm64 runner. No JDK to run. macOS 15+
-  arm64 only.
-- `skills/reticle/SKILL.md` — model-invoked skill describing the workflow. It is
-  the read-and-drive path only; the heavier machinery sits in
-  `skills/reticle/references/*.md`, which the skill loads on demand through the
-  index table at its top. Put a new topic in `references/` unless it is needed to
-  inspect a screen or tap a button, and give it a row saying **when** to open it —
-  a reference nothing points at is unreachable.
+- `install.sh` (repo root, `curl … | bash`) only downloads and verifies the first
+  zip, then runs the unpacked host's `reticle update --from <dir>`. The install
+  layout (`~/.reticle/versions/<v>`, `~/.reticle/current`, `~/.local/bin/reticle`,
+  keep current + previous) is written once, in
+  `reticle-host/Sources/ReticleHostCore/CLI/ReticleUpdateCommand.swift`; do not
+  restate it in the script. README.md -> **How the CLI is obtained** is the
+  user-facing copy.
+- **The Claude Code / Cursor plugin is being retired** (it is removed once a
+  release has told its users how to migrate). Until then: `.claude-plugin/` and
+  `.cursor-plugin/` hold the manifests (`source: "./"`, the repo root is the
+  plugin), `skills/reticle/SKILL.md` is the same stub `reticle skill setup`
+  writes, `commands/report.md` / `commands/verify.md` are thin slash commands
+  deferring to the skill, and `bin/reticle` is the plugin's launcher (it fetches
+  the pinned release, or with `RETICLE_FROM_SOURCE=1` builds this tree — that is
+  also the source-development entry point). `claude plugin validate .` locally;
+  CI runs `scripts/validate_plugin.py` (manifests of both pairs + version
+  lockstep). Do not add to the plugin.
+- `reticle-host/Sources/ReticleHostCore/SkillGuide/` — the skill, embedded into
+  the host with `.embedInCode` and printed by `reticle skill show [<topic>]`.
+  `SKILL.md` is the read-and-drive path only; the heavier machinery sits in
+  `SkillGuide/references/*.md`, which the guide sends an agent to through the
+  index table at its top (`reticle skill show <topic>`). Put a new topic in
+  `references/` unless it is needed to inspect a screen or tap a button, add it to
+  `ReticleSkill.topics` (the embed cannot be enumerated), and give it a row saying
+  **when** to open it — `SkillGuideTests` fails on a file missing from the table
+  and on a topic no row names.
   A **new command family, or a surface that is gated to one platform, is not
   shipped until the skill says so.** `ReticleCLI.help` is pinned against the
-  dispatch switches by `CommandSurfaceTests`, but nothing compares either to
-  `skills/` — measured: `system` shipped, and `ui outline` / `--alias` became
+  dispatch switches by `CommandSurfaceTests`, but nothing compares either to the
+  guide — measured: `system` shipped, and `ui outline` / `--alias` became
   Android-only, while the skill still described the old world, so an agent reading
   only the skill could not reach the one channel that answers "what is covering the
   app" and would spend its turns on a refusal instead.
-- `commands/report.md`, `commands/verify.md` — slash commands (`/reticle:report`,
-  `/reticle:verify`). Thin wrappers: each one defers to the skill for the workflow
-  instead of restating it, so the two cannot drift apart. A command must be a
-  whole **scenario** ("what is on screen", "does this flow work"), never a single
-  verb — a lone tap or inject is a step inside a goal, and the skill already
-  routes those, so a command for one only adds a drift surface.
-
-Validate after changing any manifest/skill/command: `claude plugin validate .`
-locally. CI runs a dependency-free check instead
-(`python3 scripts/validate_plugin.py`): well-formed JSON + required fields +
-in-repo source paths exist, across BOTH the Claude and Cursor manifests, plus a
-**version-lockstep** check — every manifest version, the `bin/reticle` launcher
-default, and the `RETICLE_VERSION`/`VERSION` constants must all agree. When you
-bump the version, change all of them together (the validator fails loudly on
-skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
-`skills/`, `commands/`, `bin/` stay at the repo (plugin) root and are shared.
+- `reticle skill setup` writes a stub `SKILL.md` (name + description copied from
+  the guide's frontmatter, `metadata.reticle-stub`, and "run `reticle skill
+  show`") into `~/.claude/skills/reticle` and the shared `~/.agents/skills/reticle`
+  (Codex, OpenCode, Pi, Cursor). `status` compares the installed file to what this
+  binary would write, and `update` rewrites outdated stubs through the NEW binary.
+  Bump `ReticleSkill.stubVersion` only when the stub's own text changes shape.
+  Cursor has no row of its own on evidence: its agent loads `~/.agents/skills`
+  (always) and `~/.claude/skills` (unless third-party extensibility is off).
+- Version lockstep: `python3 scripts/validate_plugin.py` (CI and the release
+  gate) checks `ReticleVersion.current`, the `bin/reticle` default and every
+  manifest version against the repo-root `VERSION`; the Kotlin side reads a
+  constant generated from `VERSION`. Bump them together.
 
 ## Architecture Rules
 
@@ -295,7 +295,7 @@ skew). Only the manifests live under `.claude-plugin/` and `.cursor-plugin/`;
   drive declarative UI through app-owned state. Do not restate the allowlist here:
   it is `allowedProperties` in
   `reticle-agent/android/src/main/kotlin/dev/reticle/agent/MutationEngine.kt`, and
-  `skills/reticle/SKILL.md` -> **Logs and live UI patching** carries the
+  `reticle-host/Sources/ReticleHostCore/SkillGuide/SKILL.md` -> **Logs and live UI patching** carries the
   agent-facing copy. Adding a property means touching both, in that order.
 
 ## Toolchain

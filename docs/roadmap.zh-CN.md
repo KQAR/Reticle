@@ -51,7 +51,7 @@
 | **网络** | `reticle serve` 抓包线跑在 Loom 的 `ProxyEngine` 上，HTTPS MITM + CA 签发，session 级流量规则（`mock`/`block`/`mapRemote`/`passthrough` + 修饰符），flow replay + diff。Android 与 iOS（模拟器与真机）均可用 |
 | **面板** | 本地只读证据面板：trace、产物、网络卡片（过滤、按规则分组、"copy as rule"）。设计上只展示 |
 | **协议** | `reticle-protocol/` 内的 JSON Schema(2020-12) 为权威，附 golden fixtures；Kotlin 与 Swift 是手写实现，两侧同时对 schema 校验 |
-| **分发** | Swift host + GraalVM 原生 Kotlin helper，以预编译 release 分发；Claude Code / Cursor 插件清单版本锁步 |
+| **分发** | Swift host + GraalVM 原生 Kotlin helper，以一个预编译 release 分发，agent skill 也在其中（`install.sh` 安装，之后 `reticle update`；`reticle skill setup` 让各 agent 指向它） |
 | **覆盖** | `scripts/e2e-android.sh` 与 `scripts/e2e-ios.sh` 在真机/模拟器上跑遍每个 scenario，每步都断言一个可观察副作用；`scripts/e2e-proxy.sh` 在 CI 守住抓包线 |
 
 以上每一项的操作细节都在 `docs/architecture.md`。

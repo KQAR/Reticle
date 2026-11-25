@@ -109,49 +109,68 @@ reticle act tap --package <pkg> --test-id agreement --region "隐私政策"
 reticle act tap --package <pkg> --test-id agreement --region "服务条款"
 ```
 
-## 作为 Claude Code 插件安装
+## 安装
 
-Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace 并安装:
-
-```text
-/plugin marketplace add KQAR/Reticle
-/plugin install reticle@reticle
+```bash
+curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash
 ```
 
-这会把 `reticle` CLI 放到 Bash PATH 上,并添加:
+仅支持 Apple 芯片上的 macOS 15+;不需要 JDK、Gradle 或 Swift。它把 `reticle` 放到
+PATH 上,并让找到的编码 agent 指向 Reticle skill。升级用 `reticle update`,只此一步,
+因为 skill 来自二进制本身。
 
-- **`reticle`** skill——教 agent 何时以及如何检查/驱动一个运行中的应用;
-- **`/reticle:report`**——捕获一份运行时 UI 报告并概括当前屏幕;
-- **`/reticle:verify`**——端到端驱动一条流程,再逐步基于捕获到的证据下判断。
+Claude Code / Cursor 插件(`/plugin install reticle@reticle`)正在退役:它的 skill 现在
+就是 `reticle skill setup` 写的那个 stub。装过插件的话,执行上面那行,再
+`/plugin uninstall reticle@reticle`。
 
-### 在 Cursor 中安装
+### Agent skill
 
-同一个仓库也是一个 Cursor 插件——`.cursor-plugin/` 下的清单镜像了
-`.claude-plugin/`,并共享完全相同的 `skills/` 与 `commands/`,因此两个编辑器只有
-一份事实来源。像安装任何 Cursor 插件一样添加 marketplace 并安装 `reticle`;
-下面的启动器与 CLI 获取流程完全一致。
+教 agent 何时以及如何检查/驱动运行中应用的指南,编译在 `reticle` 里:
+
+- `reticle skill show [<topic>]` 打印它(不带 topic 是主指南;带 topic 是主指南索引表
+  里列出的某篇深入参考)。
+- `reticle skill setup` 往每个 agent 的 skills 目录写一个很短的 stub `SKILL.md`,内容
+  就是"运行 `reticle skill show`"。`reticle skill status` 显示写在哪、是否最新;
+  `reticle skill remove` 删除它们。
+
+| Agent | 目录 |
+| --- | --- |
+| Claude Code | `~/.claude/skills/reticle` |
+| Codex、OpenCode、Pi、Cursor | `~/.agents/skills/reticle`(共用一份) |
+
+Cursor 在第三方扩展设置未关闭时也会读 `~/.claude/skills`,所以同时装了 Claude Code
+和 Cursor 时,它会列出两次这个 skill。两份是同一个 stub,用哪份都一样。
+
+stub 只写 skill 的名字并指向 `reticle skill show`,所以 `reticle update` 升级的就是
+agent 遵循的内容。某个版本改了 stub 本身(比如它的 description)时,`update` 会重写
+已装的 stub。
 
 ### CLI 如何获取
 
 `reticle` 是 **Swift host**——一个无 JDK 的原生 macOS 15+ arm64 二进制,它通过相邻的
 **原生 helper**(`reticle-helper`,即由 GraalVM native-image 编译的 Kotlin Android
-层)驱动 Android。
+层)驱动 Android。一个 release zip 里带着这两者,外加 `reticle-device`(iOS 真机
+`system` 通道)和 JDWP payload。
 
-启动器按以下顺序解析它(命中即止):
+- `install.sh` 从 [GitHub Releases](https://github.com/KQAR/Reticle/releases) 下载最新
+  release zip,用该 release 的 `SHA256SUMS` 校验,再交给 zip 里自带的 host
+  (`reticle update --from <dir>`)完成安装。`RETICLE_VERSION=<v>` 可锁定版本。
+- 各版本放在 `~/.reticle/versions/<v>`,`~/.reticle/current` 链到当前版本,
+  `~/.local/bin/reticle` 链到 `current/bin/reticle-host`。`~/.local/bin` 不在 PATH
+  上时,安装器会打印需要加的那一行。
+- `reticle update` 切到最新 release,`reticle update --to <v>` 切到指定版本(回滚到
+  上一版不用重新下载)。保留当前版和上一版,更旧的删除。
+- `reticle version` 会提示有新版本(每天最多查一次;`RETICLE_NO_UPDATE_CHECK=1`
+  关闭)。不做后台自动更新。
+- `RETICLE_REPO` 让 `update` 指向某个 fork。
 
-1. `$RETICLE_HOST`——指向某个 `reticle-host` 二进制的显式路径。
-2. `$RETICLE_HOME/bin`——一个已解包的 release(`reticle-host` + `reticle-helper`)。
-3. `RETICLE_FROM_SOURCE=1`——**显式选择**的源码构建(Swift host 用 `swift`,原生
-   helper 用内置 Gradle + 一个 GraalVM)。仅用于开发。
-4. 一个**预编译 release**——缓存在 `~/.reticle/cli`,或新鲜下载(带 SHA256 校验)
-   自 [GitHub Releases](https://github.com/KQAR/Reticle/releases)。**这是默认项**;
-   需要 `curl`+`unzip` 和网络,但**不需要 JDK**。
-
-默认情况下 Reticle 总是使用预编译 release——无需工具链,且**不会静默地从源码构建**。
-若无法获取下载,启动器会停下并给出指引,而不是回退。用 `reticle version` 确认;
-用 `reticle doctor` 检查 adb 与设备。用 `RETICLE_REPO` 锁定到某个 fork。
-
-要在不安装的情况下本地开发或测试:在仓库根目录运行 `claude --plugin-dir ./`。
+**从源码运行**(开发 Reticle 本身):`RETICLE_FROM_SOURCE=1 bin/reticle` 构建当前源码树并运行它,需要 Swift
+工具链和一个 GraalVM。Swift 构建每次都跑(空操作约一秒);`reticle-helper/`、
+`reticle-core/`、`reticle-agent/android/` 或 `reticle-protocol/` 下有比二进制新的源码时
+重建 helper。构建出的 host 报告的版本与 `VERSION` 不一致时,启动器**直接停下**,因为
+那个二进制不是这棵树的代码。PATH 上有 `cargo` 时也会构建 `reticle-device`;没有也不
+影响其他功能。指南在 `reticle-host/Sources/ReticleHostCore/SkillGuide/`,源码构建自带
+一份。
 
 发布就是推一个 `v*` tag:`.github/workflows/release.yml` 在 macOS arm64 runner 上构建
 `reticle-macos-arm64.zip` 发行包、agent AAR 与 `SHA256SUMS`。打包与版本一致性规则见
@@ -196,8 +215,8 @@ Reticle 以 Claude Code 插件形式发布。把本仓库添加为 marketplace �
 # 在已启动的模拟器/设备上安装 linked 示例应用
 adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# `reticle` 启动器即 Swift host;RETICLE_FROM_SOURCE=1 时它从源码构建并运行 host
-# 与原生 helper(需 Swift 工具链 + 一个 GraalVM)。这是面向用户的 CLI。
+# `bin/reticle` 配合 RETICLE_FROM_SOURCE=1 从当前源码树构建并运行 CLI(需 Swift 工具链
+# + 一个 GraalVM);已安装的 `reticle` 用法相同。
 export RETICLE_FROM_SOURCE=1
 CLI="bin/reticle"
 

@@ -60,7 +60,7 @@ language fits.
 | **Network** | `reticle serve` capture lane on Loom's `ProxyEngine`, HTTPS MITM with CA issuance, session-scoped traffic rules (`mock`/`block`/`mapRemote`/`passthrough` + modifiers), flow replay + diff. Android and iOS (simulator and device) |
 | **Panel** | Localhost read-only evidence panel: traces, artifacts, network cards with filters and rule grouping, "copy as rule". Display-only by design |
 | **Protocol** | JSON Schema (2020-12) authoritative in `reticle-protocol/`, with golden fixtures; Kotlin and Swift are hand-written implementations pinned to it from both sides |
-| **Distribution** | Swift host + native (GraalVM) Kotlin helper, shipped as a prebuilt release; Claude Code / Cursor plugin manifests in lockstep |
+| **Distribution** | Swift host + native (GraalVM) Kotlin helper, shipped as one prebuilt release that also carries the agent skill (`install.sh`, then `reticle update`; `reticle skill setup` points agents at it) |
 | **Coverage** | `scripts/e2e-android.sh` and `scripts/e2e-ios.sh` drive every scenario against a real device/emulator, each step asserting an observable side effect; `scripts/e2e-proxy.sh` guards the capture lane in CI |
 
 `docs/architecture.md` carries the operational detail for all of the above.

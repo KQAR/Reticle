@@ -130,6 +130,9 @@ let package = Package(
                 .product(name: "ReticleProtocol", package: "reticle-swift"),
             ],
             path: "Sources/ReticleHostCore",
+            // The agent guide (`reticle skill show`), compiled into the binary so
+            // upgrading the CLI upgrades the guide with it — no second artifact.
+            resources: [.embedInCode("SkillGuide")],
             swiftSettings: strictConcurrency
         ),
         // Private CoreSimulator HID input synthesis for the iOS simulator. Isolated
