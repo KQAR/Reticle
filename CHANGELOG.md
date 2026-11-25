@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.23.1 - 2026-11-25
+
+A PATCH whose only change is for people still on the Claude Code / Cursor plugin.
+
+- **The plugin now tells its users how to move off it.** Since 0.23.0, Reticle
+  installs with `install.sh` and carries its skill inside the binary, so one
+  `reticle update` upgrades both. The plugin's launcher now prints the two steps
+  to stderr on every run: install the CLI, then uninstall the plugin. Plugin users
+  do not read changelogs, but every agent that runs `reticle` reads its stderr.
+  stdout, `--json` included, is unchanged, and a source build
+  (`RETICLE_FROM_SOURCE=1`) prints nothing. The plugin itself is removed in a
+  later release.
+
 ## 0.23.0 - 2026-11-25
 
 Two themes. **Reticle installs and upgrades as one thing**: the agent skill is
