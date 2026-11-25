@@ -2,9 +2,8 @@ name: Release
 
 # Build the no-JDK macOS arm64 distribution (Swift host + native helper) plus the
 # agent AAR, and attach them to a GitHub Release so users install Reticle with no
-# JDK/Gradle/Swift toolchain. `install.sh` and `reticle update` download these (as
-# does the retiring plugin launcher, bin/reticle); the agent guide (`reticle skill
-# show`) is compiled into the host, so it ships too.
+# JDK/Gradle/Swift toolchain. `install.sh` and `reticle update` download these;
+# the agent guide (`reticle skill show`) is compiled into the host, so it ships too.
 #
 # Trigger: push a semver tag (e.g. `v0.1.0`). macOS arm64 is the only target.
 on:
@@ -60,7 +59,7 @@ jobs:
 
       # Gate the release on the same checks CI runs on main: nothing forces a
       # tag to sit on a green commit, and an unvalidated tag previously
-      # published broken artifacts (including version skew validate_plugin.py
+      # published broken artifacts (including version skew validate_versions.py
       # exists to catch).
       - name: "Gate: JVM unit tests"
         run: ./gradlew :reticle-core:test :reticle-helper:test :reticle-agent:android:testDebugUnitTest --stacktrace
@@ -82,8 +81,8 @@ jobs:
           done
           exit 1
 
-      - name: "Gate: plugin manifests + version lockstep"
-        run: python3 scripts/validate_plugin.py
+      - name: "Gate: version lockstep"
+        run: python3 scripts/validate_versions.py
 
       - name: "Gate: architecture map (two copies agree, version matches)"
         run: python3 scripts/validate_architecture_map.py
@@ -130,7 +129,7 @@ jobs:
           test -x "$DEVICE" || { echo "reticle-device missing: $DEVICE"; exit 1; }
           test -f "$PAYLOAD" || { echo "payload dex missing: $PAYLOAD"; exit 1; }
 
-          # Lay out the dist the launcher expects: <root>/reticle/bin/{reticle-host,reticle-helper,reticle-device}.
+          # Lay out the dist `reticle update` installs: <root>/reticle/bin/{reticle-host,reticle-helper,reticle-device}.
           # The native helper resolves its payload dex from <install>/lib, so place it there too.
           work="$(mktemp -d)"
           mkdir -p "$work/reticle/bin" "$work/reticle/lib"

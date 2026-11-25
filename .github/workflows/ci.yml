@@ -56,18 +56,16 @@ jobs:
             reticle-agent/android/build/reports/tests/
           if-no-files-found: ignore
 
-  plugin-validate:
-    name: Validate plugin manifests
+  validate:
+    name: Validate versions and docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      # Lightweight, dependency-free check of the plugin/marketplace manifests:
-      # well-formed JSON + required fields. The full `claude plugin validate`
-      # is run locally before publishing; CI just guards against a broken
-      # manifest (the most common cause of a plugin failing to install).
-      - name: Validate plugin & marketplace manifests
-        run: python3 scripts/validate_plugin.py
+      # VERSION and the Swift host's ReticleVersion.current must agree: the host
+      # names its install directory after it and `reticle version` prints it.
+      - name: Validate version lockstep
+        run: python3 scripts/validate_versions.py
 
       # The architecture map is a projection kept in two copies (map.json for
       # agents, an embedded copy for the interactive page). They drifted while
@@ -96,8 +94,8 @@ jobs:
 
       # The macOS job below costs ~14 minutes on a single runner, and a change
       # that only edits prose cannot break a Swift build. Docs still keep their
-      # guard: the validators in `plugin-validate` (map sync, translated
-      # headings, manifest/version lockstep) run on EVERY change, docs included.
+      # guard: the validators in `validate` (map sync, translated
+      # headings, version lockstep) run on EVERY change, docs included.
       #
       # Fails OPEN on purpose: an unknown diff range (a force-push, a first
       # push, a shallow fetch) answers `code=true` and the full job runs. The
@@ -123,7 +121,7 @@ jobs:
           fi
           # Everything outside this set is code as far as the macOS build is
           # concerned — including the workflow itself and the e2e scripts it runs.
-          if echo "$files" | grep -qvE '^(docs/|skills/|commands/|[^/]*\.md$|LICENSE$)'; then
+          if echo "$files" | grep -qvE '^(docs/|[^/]*\.md$|LICENSE$)'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"

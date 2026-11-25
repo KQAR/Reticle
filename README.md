@@ -137,9 +137,8 @@ macOS 15+ on Apple silicon only; no JDK, Gradle or Swift needed. This puts
 Upgrade with `reticle update`; that is the only step, because the skill comes
 from the binary.
 
-The Claude Code / Cursor plugin (`/plugin install reticle@reticle`) is being
-retired: its skill is now the same stub `reticle skill setup` writes. If you
-installed it, run the line above and then `/plugin uninstall reticle@reticle`.
+Installed the old Claude Code plugin? Remove it after installing:
+`/plugin uninstall reticle@reticle` and `/plugin marketplace remove reticle`.
 
 ### Agent skill
 
@@ -186,8 +185,8 @@ layer compiled by GraalVM native-image). A release zip carries both, plus
   `RETICLE_NO_UPDATE_CHECK=1` turns it off). Nothing updates in the background.
 - `RETICLE_REPO` points `update` at a fork.
 
-**From source** (developing Reticle itself): `RETICLE_FROM_SOURCE=1 bin/reticle`
-builds what is in the tree *now* and runs it. It needs the Swift toolchain and a GraalVM. The Swift
+**From source** (developing Reticle itself): `bin/reticle` builds what is in the
+tree *now* and runs it. It needs the Swift toolchain and a GraalVM. The Swift
 build always runs (a no-op costs about a second), and the helper is rebuilt when
 any source under `reticle-helper/`, `reticle-core/`, `reticle-agent/android/` or
 `reticle-protocol/` is newer than the binary. If the built host then reports a
@@ -250,9 +249,8 @@ arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
 # Install the linked sample app on a booted emulator/device
 adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# `bin/reticle` with RETICLE_FROM_SOURCE=1 builds the CLI from this tree and runs
-# it (needs the Swift toolchain + a GraalVM); an installed `reticle` works the same way.
-export RETICLE_FROM_SOURCE=1
+# `bin/reticle` builds the CLI from this tree and runs it (needs the Swift
+# toolchain + a GraalVM); an installed `reticle` works the same way.
 CLI="bin/reticle"
 
 # Launch + forward + wait for the in-app runtime (apps that LINK the agent)
