@@ -49,6 +49,21 @@ if [[ -z "${RETICLE_NO_REDIRECT:-}" ]]; then
   fi
 fi
 
+# --- the plugin is retired: say how to migrate, on every run ----------------
+# Reticle now installs as a CLI that carries its own skill, so one `reticle
+# update` upgrades both. Plugin users never read a changelog, but every agent
+# that runs `reticle` reads its stderr, so the notice goes there. Not for a
+# source build, which is someone developing Reticle in this tree. Below the
+# stale-cache redirect, so a redirected run prints it once.
+if [[ "${RETICLE_FROM_SOURCE:-0}" != "1" ]]; then
+  cat >&2 <<'NOTICE'
+reticle: the Claude Code / Cursor plugin is retired. Install the CLI directly (it
+reticle: carries the skill, and `reticle update` upgrades both), then remove the plugin:
+reticle:   curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash
+reticle:   Claude Code: /plugin uninstall reticle@reticle    Cursor: remove it in plugin settings
+NOTICE
+fi
+
 # Pin this to the plugin version; bump in lockstep with plugin.json / RETICLE_VERSION.
 RETICLE_VERSION="${RETICLE_VERSION:-0.23.0}"
 REPO="${RETICLE_REPO:-KQAR/Reticle}"
