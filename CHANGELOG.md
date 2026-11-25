@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.23.0 - 2026-11-25
+
+Two themes. **Reticle installs and upgrades as one thing**: the agent skill is
+compiled into the CLI, so the binary and the guide that describes it can no longer
+be at two versions. And **a real iPhone's system UI is reached from the Mac**, with
+nothing installed on the device, while the Android `act` path finishes moving its
+logic into the Swift host, so most of the act logic now has one implementation
+instead of a Kotlin/Swift pair.
+
+Numbered a MINOR: new commands (`skill`, `update`, `system type`) and a new install
+path. Nothing existing changes shape.
+
+- **Install with `install.sh`, upgrade with `reticle update`, and the skill comes
+  along.** `curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash`
+  verifies the release against `SHA256SUMS` and lays it out as
+  `~/.reticle/versions/<v>` + `~/.reticle/current` + `~/.local/bin/reticle`.
+  `reticle update [--to <v>]` switches releases, keeps the current one and the one
+  before it (rolling back needs no download), and deletes older ones.
+  `reticle version` says when a newer release exists (checked at most once a day;
+  `RETICLE_NO_UPDATE_CHECK=1` turns the check off).
+  - `reticle skill show [<topic>]` prints the guide, or one of the references its
+    index names. `reticle skill setup|status|remove` manages a stub `SKILL.md` that
+    says "run `reticle skill show`". The stub goes in `~/.claude/skills/reticle` for
+    Claude Code, and in one shared `~/.agents/skills/reticle` for Codex, OpenCode,
+    Pi and Cursor; Cursor's agent reads that directory itself. `update` rewrites
+    outdated stubs using the new binary.
+  - The Claude Code / Cursor plugin still works, and its skill is now the same stub.
+    It is being retired: the next release tells plugin users how to move. Releases
+    before this one have no `update`, so moving to 0.23.0 takes one `install.sh`.
+  - The installed `reticle` is a symlink. Lookup of the helper and `reticle-device`
+    now resolves the real path of the binary; it used the bare `argv[0]`, which
+    would never have found them through the link.
+- **The system channel runs from the Mac (`reticle-device`), with nothing on the
+  device.** A CoreDevice tunnel gives the host a HID connection that backboardd
+  routes into any process, the device's cross-process accessibility tree, app
+  launch and a display screenshot. The XCUITest runner is now the fallback
+  (`--via runner`).
+  - The first call starts one resident session per device. Each later tap reuses
+    the open tunnel, display stream and HID connection: 30 of 30 landed at about
+    52 ms each, against about 2.2 s for a cold one-shot.
+  - `system type` pastes text into the focused field of an app that does not link
+    the agent. It answers the paste prompt itself; any other modal stops it.
+  - A remoteAX read that returns no tree resubscribes instead of failing, and a
+    modal that covers the screen is named.
+- **Two devices driving the same app no longer read each other.** The host end of
+  `adb forward` is now derived from the serial and the package, and the runtime
+  gate refuses an answer from the same package on a different device. Before,
+  `runtime: healthy` could be reporting the other phone. On iOS, each device gets
+  its own runner tunnel port, and `stop` only kills that device's tunnel.
+- **Android `act` is orchestrated in the host.** All `ui <view>` rendering,
+  coverage and obstruction for a tap, `act wait`, and the envelope around every
+  gesture (`--verify`, the trace, the Toast Queue watch) now run in Swift
+  (`ReticleHostAct`, shared with iOS). The helper keeps only capture and input
+  primitives, plus `scroll-to`, `wheel` and `type` for now. No output format
+  changes.
+- **iOS fixes.** The simulator builds and runs under Xcode 27 (SimulatorKit
+  moved). Simulator HID typing is read back, and rewritten in-process when an
+  IME or autocorrect changed it on the way. The runner starts from the newest
+  xctestrun, gets the screen size from SpringBoard's frame instead of a
+  screenshot, and no longer leaves diagnostic screen recordings behind;
+  `doctor --target ios` reports the recordings older runners left.
+- **Network and panel.** A session's stored response bodies are capped at
+  256 MB, oldest first, and a dropped body is reported. The rule translation
+  layer has unit coverage, which surfaced a rule that never matched, now fixed.
+  The web panel uses the DESIGN.md color, radius, type and spacing tokens, and
+  works at phone width.
+
 ## 0.22.0 - 2026-08-14
 
 One theme: **what an in-process observer structurally cannot see stopped being the end
