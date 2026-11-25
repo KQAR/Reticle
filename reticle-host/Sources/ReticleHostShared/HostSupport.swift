@@ -90,3 +90,14 @@ public final class ResultBox<T>: @unchecked Sendable {
         lock.unlock()
     }
 }
+
+/// The directory holding the running host binary, symlinks resolved.
+///
+/// An installed `reticle` is a link chain (`~/.local/bin/reticle` ->
+/// `~/.reticle/current/bin/reticle-host`), and `argv[0]` is whatever the shell
+/// typed — often the bare word `reticle`. The siblings the host looks for
+/// (`reticle-helper`, `reticle-device`) live beside the real file, not the link.
+public func hostExecutableDirectory() -> URL {
+    let path = Bundle.main.executablePath ?? CommandLine.arguments[0]
+    return URL(fileURLWithPath: path).resolvingSymlinksInPath().deletingLastPathComponent()
+}

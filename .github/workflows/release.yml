@@ -2,7 +2,9 @@ name: Release
 
 # Build the no-JDK macOS arm64 distribution (Swift host + native helper) plus the
 # agent AAR, and attach them to a GitHub Release so users install Reticle with no
-# JDK/Gradle/Swift toolchain. The launcher (bin/reticle) downloads and runs these.
+# JDK/Gradle/Swift toolchain. `install.sh` and `reticle update` download these (as
+# does the retiring plugin launcher, bin/reticle); the agent guide (`reticle skill
+# show`) is compiled into the host, so it ships too.
 #
 # Trigger: push a semver tag (e.g. `v0.1.0`). macOS arm64 is the only target.
 on:

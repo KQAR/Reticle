@@ -4,7 +4,7 @@ import Foundation
 public enum ReticleCLI {
     /// The shared release constant; `ReticleVersion.current` is the source.
     public static let version = ReticleVersion.current
-    public static let usage = "usage: reticle <doctor|devices|status|app|act|system|mutate|debug|ui|trace|rule|replay|serve|version> [--serial <id>] [options]"
+    public static let usage = "usage: reticle <doctor|devices|status|app|act|system|mutate|debug|ui|trace|rule|replay|serve|skill|update|version> [--serial <id>] [options]"
 
     /// What each command is for, and the subcommands that are otherwise only
     /// discoverable by guessing one and reading the error.
@@ -41,7 +41,12 @@ public enum ReticleCLI {
       rule / replay           network mocking and request replay
                               (`replay gif|flow`)
       serve                   session daemon + read-only web panel
-      version                 print the release
+      skill show [<topic>]|setup|status|remove
+                              the agent guide built into this binary; `setup`
+                              points Claude Code / Codex / OpenCode / Pi / Cursor
+                              at it, so `update` upgrades the guide too
+      update [--to <version>] switch to the latest (or a given) release
+      version                 print the release (and whether a newer one exists)
 
     Every command takes --serial <id> (or ANDROID_SERIAL) and --json.
     iOS: pass --target ios.
@@ -62,7 +67,26 @@ public enum ReticleCLI {
         switch command {
         case "version", "--version", "-v":
             print("reticle \(version)")
+            if let notice = await ReticleInstall.newerReleaseNotice() {
+                writeError("\(notice)\n")
+            }
             return 0
+        case "skill":
+            do {
+                try cmdSkill(args)
+                return 0
+            } catch {
+                writeError("error: \(error)\n")
+                return 1
+            }
+        case "update":
+            do {
+                try await cmdUpdate(args)
+                return 0
+            } catch {
+                writeError("error: \(error)\n")
+                return 1
+            }
         case "help", "--help", "-h":
             print(help)
             return 0
@@ -265,7 +289,7 @@ public func resolveHelper(_ args: Args) -> String? {
     let fm = FileManager.default
     if let explicit = args.option("helper") { return explicit }
     if let env = ProcessInfo.processInfo.environment["RETICLE_HELPER"] { return env }
-    let selfDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+    let selfDir = hostExecutableDirectory().path
     let beside = "\(selfDir)/reticle-helper"
     if fm.isExecutableFile(atPath: beside) { return beside }
     let devJvm = "reticle-helper/build/install/reticle-helper/bin/reticle-helper"

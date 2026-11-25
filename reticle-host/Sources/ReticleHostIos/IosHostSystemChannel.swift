@@ -236,8 +236,7 @@ public struct IosHostSystemChannel: Sendable {
 func resolveDeviceTool() -> String? {
     let fm = FileManager.default
     if let env = ProcessInfo.processInfo.environment["RETICLE_DEVICE"] { return env }
-    let selfURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-    let selfDir = selfURL.deletingLastPathComponent()
+    let selfDir = hostExecutableDirectory()
     let candidates = [
         selfDir.appendingPathComponent("reticle-device").path,
         // reticle-host/.build/<config>/ReticleHost -> repo root is three up.

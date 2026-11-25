@@ -126,66 +126,76 @@ reticle act tap --package <pkg> --test-id agreement --region "Privacy"
 reticle act tap --package <pkg> --test-id agreement --region "Terms"
 ```
 
-## Install as a Claude Code plugin
+## Install
 
-Reticle ships as a Claude Code plugin. Add this repo as a marketplace and
-install:
-
-```text
-/plugin marketplace add KQAR/Reticle
-/plugin install reticle@reticle
+```bash
+curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash
 ```
 
-This makes the `reticle` CLI available on the Bash PATH and adds:
+macOS 15+ on Apple silicon only; no JDK, Gradle or Swift needed. This puts
+`reticle` on PATH and points the coding agents it finds at the Reticle skill.
+Upgrade with `reticle update`; that is the only step, because the skill comes
+from the binary.
 
-- the **`reticle`** skill — teaches the agent when and how to inspect/drive a
-  running Android or iOS app;
-- **`/reticle:report`** — capture a runtime UI report and summarize the screen;
-- **`/reticle:verify`** — drive a flow end to end and assert on the captured
-  evidence, step by step.
+The Claude Code / Cursor plugin (`/plugin install reticle@reticle`) is being
+retired: its skill is now the same stub `reticle skill setup` writes. If you
+installed it, run the line above and then `/plugin uninstall reticle@reticle`.
 
-### Install in Cursor
+### Agent skill
 
-The same repo doubles as a Cursor plugin — the manifests under `.cursor-plugin/`
-mirror `.claude-plugin/` and share the identical `skills/` and `commands/`, so
-there is one source of truth for both editors. Add the marketplace and install
-`reticle` the same way you would any Cursor plugin; the launcher and CLI
-acquisition below are identical.
+The guide that teaches an agent when and how to inspect or drive a running app
+is compiled into `reticle`:
+
+- `reticle skill show [<topic>]` prints it (no topic: the main guide; a topic:
+  one of the deeper references the guide's index names).
+- `reticle skill setup` writes a short stub `SKILL.md` into each agent's skills
+  directory that says "run `reticle skill show`". `reticle skill status` shows
+  where, and whether each stub is current; `reticle skill remove` deletes them.
+
+| Agent | Directory |
+| --- | --- |
+| Claude Code | `~/.claude/skills/reticle` |
+| Codex, OpenCode, Pi, Cursor | `~/.agents/skills/reticle` (one shared copy) |
+
+Cursor also reads `~/.claude/skills` unless its third-party extensibility
+setting is off, so with both Claude Code and Cursor present it lists the skill
+twice. Both copies are the same stub, so either one works.
+
+The stub only names the skill and points at `reticle skill show`, so
+`reticle update` upgrades what an agent follows. When a release changes the stub
+itself (its description, say), `update` rewrites the installed ones.
 
 ### How the CLI is obtained
 
-`reticle` is the **Swift host** — a no-JDK native macOS 15+ arm64 binary that drives
+`reticle` is the **Swift host**, a no-JDK native macOS 15+ arm64 binary that drives
 Android through a sibling **native helper** (`reticle-helper`, the Kotlin Android
-layer compiled by GraalVM native-image).
+layer compiled by GraalVM native-image). A release zip carries both, plus
+`reticle-device` (the iOS real-device `system` channel) and the JDWP payload.
 
-The launcher resolves it in this order (first hit wins):
+- `install.sh` downloads the latest release zip from
+  [GitHub Releases](https://github.com/KQAR/Reticle/releases), checks it against
+  the release's `SHA256SUMS`, and hands it to its own host
+  (`reticle update --from <dir>`). `RETICLE_VERSION=<v>` pins a release.
+- Releases live in `~/.reticle/versions/<v>`, `~/.reticle/current` links the
+  active one, and `~/.local/bin/reticle` links `current/bin/reticle-host`. If
+  `~/.local/bin` is not on PATH, the installer prints the line to add.
+- `reticle update` switches to the latest release, and `reticle update --to <v>`
+  to a given one (a rollback to the previous release needs no download). The
+  active release and the one before it are kept; older ones are deleted.
+- `reticle version` says when a newer release exists (checked at most once a day;
+  `RETICLE_NO_UPDATE_CHECK=1` turns it off). Nothing updates in the background.
+- `RETICLE_REPO` points `update` at a fork.
 
-1. `$RETICLE_HOST` — explicit path to a `reticle-host` binary.
-2. `$RETICLE_HOME/bin` — an unpacked release (`reticle-host` + `reticle-helper` +
-   `reticle-device`).
-3. `RETICLE_FROM_SOURCE=1` — **opt-in** source build (Swift host via `swift`,
-   native helper via the bundled Gradle + a GraalVM). For development only. It
-   builds what is in the tree *now*: the Swift build always runs (a no-op costs
-   about a second) and the helper is rebuilt when any source under
-   `reticle-helper/`, `reticle-core/`, `reticle-agent/android/` or
-   `reticle-protocol/` is newer than the binary — a leftover binary used to be
-   exec'd unchanged, so an edited tree ran the old code. If the built host then
-   reports a different release than `VERSION`, the launcher **stops** rather than
-   driving a device with a binary that is not this tree's code. With `cargo` on
-   PATH it also builds `reticle-device` (the iOS real-device `system` channel);
-   without it, everything else still works.
-4. A **prebuilt release** — cached under `~/.reticle/cli`, or freshly downloaded
-   (SHA256-verified) from
-   [GitHub Releases](https://github.com/KQAR/Reticle/releases). **This is the
-   default**; it needs `curl`+`unzip` and network, but **no JDK**.
-
-By default Reticle always uses the prebuilt release — no toolchain required and
-**no silent source build**. If the download can't be obtained, the launcher
-stops with guidance rather than falling back. Verify with `reticle version`; run
-`reticle doctor` to check adb and devices. Pin a fork with `RETICLE_REPO`.
-
-To develop or test locally without installing: `claude --plugin-dir ./` from the
-repo root.
+**From source** (developing Reticle itself): `RETICLE_FROM_SOURCE=1 bin/reticle`
+builds what is in the tree *now* and runs it. It needs the Swift toolchain and a GraalVM. The Swift
+build always runs (a no-op costs about a second), and the helper is rebuilt when
+any source under `reticle-helper/`, `reticle-core/`, `reticle-agent/android/` or
+`reticle-protocol/` is newer than the binary. If the built host then reports a
+different release than `VERSION`, the launcher **stops**, because a binary that
+is not this tree's code would be driving the device. With `cargo` on PATH it also
+builds `reticle-device`; without it, everything else still works. The guide is in
+`reticle-host/Sources/ReticleHostCore/SkillGuide/`, so a source build carries its
+own copy.
 
 Releasing is a `v*` tag: `.github/workflows/release.yml` builds the
 `reticle-macos-arm64.zip` distribution, the agent AAR, and `SHA256SUMS` on a macOS
@@ -240,8 +250,8 @@ arm64 runner. `AGENTS.md` has the packaging and version-lockstep rules.
 # Install the linked sample app on a booted emulator/device
 adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# `bin/reticle` is the launcher; RETICLE_FROM_SOURCE=1 opts into a source build
-# (needs the Swift toolchain + a GraalVM) instead of a prebuilt release.
+# `bin/reticle` with RETICLE_FROM_SOURCE=1 builds the CLI from this tree and runs
+# it (needs the Swift toolchain + a GraalVM); an installed `reticle` works the same way.
 export RETICLE_FROM_SOURCE=1
 CLI="bin/reticle"
 
