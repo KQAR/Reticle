@@ -65,7 +65,7 @@ NOTICE
 fi
 
 # Pin this to the plugin version; bump in lockstep with plugin.json / RETICLE_VERSION.
-RETICLE_VERSION="${RETICLE_VERSION:-0.23.0}"
+RETICLE_VERSION="${RETICLE_VERSION:-0.23.1}"
 REPO="${RETICLE_REPO:-KQAR/Reticle}"
 CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
 
