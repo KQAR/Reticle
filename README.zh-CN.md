@@ -119,9 +119,8 @@ curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash
 PATH 上,并让找到的编码 agent 指向 Reticle skill。升级用 `reticle update`,只此一步,
 因为 skill 来自二进制本身。
 
-Claude Code / Cursor 插件(`/plugin install reticle@reticle`)正在退役:它的 skill 现在
-就是 `reticle skill setup` 写的那个 stub。装过插件的话,执行上面那行,再
-`/plugin uninstall reticle@reticle`。
+装过旧的 Claude Code 插件的话，装好之后把它删掉：
+`/plugin uninstall reticle@reticle`，再 `/plugin marketplace remove reticle`。
 
 ### Agent skill
 
@@ -164,7 +163,7 @@ agent 遵循的内容。某个版本改了 stub 本身(比如它的 description)
   关闭)。不做后台自动更新。
 - `RETICLE_REPO` 让 `update` 指向某个 fork。
 
-**从源码运行**(开发 Reticle 本身):`RETICLE_FROM_SOURCE=1 bin/reticle` 构建当前源码树并运行它,需要 Swift
+**从源码运行**(开发 Reticle 本身):`bin/reticle` 构建当前源码树并运行它,需要 Swift
 工具链和一个 GraalVM。Swift 构建每次都跑(空操作约一秒);`reticle-helper/`、
 `reticle-core/`、`reticle-agent/android/` 或 `reticle-protocol/` 下有比二进制新的源码时
 重建 helper。构建出的 host 报告的版本与 `VERSION` 不一致时,启动器**直接停下**,因为
@@ -215,9 +214,8 @@ agent 遵循的内容。某个版本改了 stub 本身(比如它的 description)
 # 在已启动的模拟器/设备上安装 linked 示例应用
 adb install sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# `bin/reticle` 配合 RETICLE_FROM_SOURCE=1 从当前源码树构建并运行 CLI(需 Swift 工具链
-# + 一个 GraalVM);已安装的 `reticle` 用法相同。
-export RETICLE_FROM_SOURCE=1
+# `bin/reticle` 从当前源码树构建并运行 CLI(需 Swift 工具链 + 一个 GraalVM);
+# 已安装的 `reticle` 用法相同。
 CLI="bin/reticle"
 
 # 启动 + forward + 等待进程内运行时(对于**链接了** agent 的应用)

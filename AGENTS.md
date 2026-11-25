@@ -159,16 +159,9 @@ so a user upgrades the CLI and the skill with one `reticle update`.
   `reticle-host/Sources/ReticleHostCore/CLI/ReticleUpdateCommand.swift`; do not
   restate it in the script. README.md -> **How the CLI is obtained** is the
   user-facing copy.
-- **The Claude Code / Cursor plugin is being retired** (it is removed once a
-  release has told its users how to migrate). Until then: `.claude-plugin/` and
-  `.cursor-plugin/` hold the manifests (`source: "./"`, the repo root is the
-  plugin), `skills/reticle/SKILL.md` is the same stub `reticle skill setup`
-  writes, `commands/report.md` / `commands/verify.md` are thin slash commands
-  deferring to the skill, and `bin/reticle` is the plugin's launcher (it fetches
-  the pinned release, or with `RETICLE_FROM_SOURCE=1` builds this tree — that is
-  also the source-development entry point). `claude plugin validate .` locally;
-  CI runs `scripts/validate_plugin.py` (manifests of both pairs + version
-  lockstep). Do not add to the plugin.
+- `bin/reticle` is the source-tree launcher for developing Reticle (builds helper,
+  `reticle-device` and host from this tree, refuses a host whose version is not
+  `VERSION`). Installed users never run it.
 - `reticle-host/Sources/ReticleHostCore/SkillGuide/` — the skill, embedded into
   the host with `.embedInCode` and printed by `reticle skill show [<topic>]`.
   `SKILL.md` is the read-and-drive path only; the heavier machinery sits in
@@ -193,10 +186,9 @@ so a user upgrades the CLI and the skill with one `reticle update`.
   Bump `ReticleSkill.stubVersion` only when the stub's own text changes shape.
   Cursor has no row of its own on evidence: its agent loads `~/.agents/skills`
   (always) and `~/.claude/skills` (unless third-party extensibility is off).
-- Version lockstep: `python3 scripts/validate_plugin.py` (CI and the release
-  gate) checks `ReticleVersion.current`, the `bin/reticle` default and every
-  manifest version against the repo-root `VERSION`; the Kotlin side reads a
-  constant generated from `VERSION`. Bump them together.
+- Version lockstep: `python3 scripts/validate_versions.py` (CI and the release
+  gate) checks `ReticleVersion.current` against the repo-root `VERSION`; the
+  Kotlin side reads a constant generated from `VERSION`. Bump them together.
 
 ## Architecture Rules
 
@@ -369,9 +361,8 @@ Prove the runtime round trip on a booted device/emulator:
 ./gradlew :sample-app:assembleDebug
 adb install -r -t sample-app/build/outputs/apk/linked/debug/sample-app-linked-debug.apk
 
-# `bin/reticle` is the Swift host launcher; RETICLE_FROM_SOURCE=1 builds the host
-# (swift) + native helper (gradle native-image) from source. Needs Swift + a GraalVM.
-export RETICLE_FROM_SOURCE=1 RETICLE_NO_REDIRECT=1
+# `bin/reticle` builds the host (swift) + native helper (gradle native-image) from
+# this tree and runs it. Needs Swift + a GraalVM.
 export RETICLE_ADB="$ANDROID_HOME/platform-tools/adb"
 CLI="bin/reticle"
 
@@ -420,7 +411,6 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew \
 adb install -r -t sample-app/build/outputs/apk/noagent/debug/sample-app-noagent-debug.apk
 adb shell monkey -p dev.reticle.sample.noagent -c android.intent.category.LAUNCHER 1
 
-export RETICLE_FROM_SOURCE=1 RETICLE_NO_REDIRECT=1
 CLI="bin/reticle"
 $CLI app inject --package dev.reticle.sample.noagent   # loads the dex over JDWP, starts the runtime
 $CLI ui report  --package dev.reticle.sample.noagent --output /tmp/reticle-noagent

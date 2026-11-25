@@ -1,85 +1,22 @@
 #!/usr/bin/env bash
 #
-# Reticle CLI launcher, shipped inside the Claude Code / Cursor plugin so
-# `reticle …` works on the Bash PATH once the plugin is enabled.
+# Reticle from THIS source tree, for developing Reticle itself.
 #
-# What `reticle` IS now: the **Swift host** (`reticle-host`), a no-JDK native
-# macOS arm64 binary. It owns no device code — it drives Android through a
-# sibling **native helper** (`reticle-helper`, the Kotlin Android layer compiled
-# by GraalVM native-image). The launcher's job is to put a working host on PATH
-# with its helper beside it, then exec it. macOS arm64 only.
-#
-# Policy: ALWAYS use the published prebuilt release by default; no JDK/toolchain
-# needed. A source build happens ONLY when the user opts in with
-# RETICLE_FROM_SOURCE=1 (developers; needs the Swift toolchain + a GraalVM).
-#
-# Resolution order (first hit wins):
-#   1. $RETICLE_HOST             — explicit path to a reticle-host binary.
-#   2. $RETICLE_HOME/bin         — an unpacked release (reticle-host + reticle-helper).
-#   3. RETICLE_FROM_SOURCE=1     — build host (swift) + helper (gradle native).
-#   4. A prebuilt release, cached under ~/.reticle/cli or downloaded (SHA256). DEFAULT.
-#
-# If the default path can't produce a host, we hard-stop with guidance — we do
-# NOT silently fall back to a source build.
+# An installed Reticle does not use this file: `install.sh` puts the release on
+# PATH as ~/.local/bin/reticle and `reticle update` switches releases (see
+# README.md -> "How the CLI is obtained"). This launcher builds what changed —
+# the native helper (gradle + GraalVM native-image), reticle-device (cargo, if
+# present) and the Swift host — then execs the host with the helper beside it.
+# macOS arm64 only. RETICLE_FROM_SOURCE=1 is accepted and no longer needed.
 set -euo pipefail
 
-# --- locate the plugin/repo root ---------------------------------------------
-ROOT="${CLAUDE_PLUGIN_ROOT:-}"
-if [[ -z "${ROOT}" ]]; then
-  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-fi
-
-# --- 0. self-heal against stale plugin-cache version skew --------------------
-# Claude Code unpacks each plugin version into its own cache dir and puts that
-# dir's bin/ on PATH. When the plugin updates, an OLD cache dir can stay first
-# on PATH while a newer version sits beside it. Re-exec into the newest so
-# `reticle` always matches the newest installed version.
-if [[ -z "${RETICLE_NO_REDIRECT:-}" ]]; then
-  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  _parent="$(dirname "${_self_dir}")"
-  _self_ver="$(basename "${_self_dir}")"
-  if [[ "${_parent}" == */reticle/reticle ]]; then
-    _newest="$(ls -1 "${_parent}" 2>/dev/null | sort -V | tail -1)"
-    if [[ -n "${_newest}" && "${_newest}" != "${_self_ver}" ]] \
-       && [[ "$(printf '%s\n%s\n' "${_self_ver}" "${_newest}" | sort -V | tail -1)" == "${_newest}" ]] \
-       && [[ -x "${_parent}/${_newest}/bin/reticle" ]]; then
-      echo "reticle: this PATH entry is the stale ${_self_ver}; redirecting to the newer cached ${_newest}." >&2
-      RETICLE_NO_REDIRECT=1 exec "${_parent}/${_newest}/bin/reticle" "$@"
-    fi
-  fi
-fi
-
-# --- the plugin is retired: say how to migrate, on every run ----------------
-# Reticle now installs as a CLI that carries its own skill, so one `reticle
-# update` upgrades both. Plugin users never read a changelog, but every agent
-# that runs `reticle` reads its stderr, so the notice goes there. Not for a
-# source build, which is someone developing Reticle in this tree. Below the
-# stale-cache redirect, so a redirected run prints it once.
-if [[ "${RETICLE_FROM_SOURCE:-0}" != "1" ]]; then
-  cat >&2 <<'NOTICE'
-reticle: the Claude Code / Cursor plugin is retired. Install the CLI directly (it
-reticle: carries the skill, and `reticle update` upgrades both), then remove the plugin:
-reticle:   curl -fsSL https://raw.githubusercontent.com/KQAR/Reticle/main/install.sh | bash
-reticle:   Claude Code: /plugin uninstall reticle@reticle    Cursor: remove it in plugin settings
-NOTICE
-fi
-
-# Pin this to the plugin version; bump in lockstep with plugin.json / RETICLE_VERSION.
-RETICLE_VERSION="${RETICLE_VERSION:-0.23.1}"
-REPO="${RETICLE_REPO:-KQAR/Reticle}"
-CACHE_DIR="${RETICLE_CACHE_DIR:-${HOME}/.reticle/cli}"
-
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRADLEW="${ROOT}/gradlew"
 SRC_HOST_BIN="${ROOT}/reticle-host/.build/release/ReticleHost"
 SRC_HELPER_BIN="${ROOT}/reticle-helper/build/native/reticle-helper"
-CACHED_DIR="${CACHE_DIR}/${RETICLE_VERSION}/reticle"
-CACHED_HOST="${CACHED_DIR}/bin/reticle-host"
 
 log() { echo "reticle: $*" >&2; }
 
-# Exec the host with the helper located beside it (unless the caller pinned one).
-# `reticle-host` resolves its helper as: $RETICLE_HELPER, then a `reticle-helper`
-# next to itself. We export RETICLE_HELPER when we know where it is.
 exec_host() {
   local host="$1"; shift
   local helper="$1"; shift
@@ -90,25 +27,9 @@ exec_host() {
   fi
 }
 
-# --- 1. explicit override -----------------------------------------------------
-if [[ -n "${RETICLE_HOST:-}" ]]; then
-  if [[ ! -x "${RETICLE_HOST}" ]]; then
-    log "RETICLE_HOST is set but not executable: ${RETICLE_HOST}"
-    exit 1
-  fi
-  exec_host "${RETICLE_HOST}" "${RETICLE_HELPER:-}" "$@"
-fi
-
-# --- 2. an unpacked release dir ----------------------------------------------
-if [[ -n "${RETICLE_HOME:-}" && -x "${RETICLE_HOME}/bin/reticle-host" ]]; then
-  exec_host "${RETICLE_HOME}/bin/reticle-host" "${RETICLE_HOME}/bin/reticle-helper" "$@"
-fi
-
-# --- 3. explicit source build (opt-in only) ----------------------------------
-
 # Is ${1} missing, or older than any source file under the remaining arguments?
 #
-# The whole point of RETICLE_FROM_SOURCE=1 is "run what is in this tree", and the
+# The whole point of this launcher is "run what is in this tree", and the
 # check used to be `-x` alone: a binary left over from an earlier build was
 # exec'd unchanged, so an edited tree ran the OLD code while the flag said
 # otherwise. Measured: a host built hours earlier answered `reticle version` with
@@ -128,104 +49,48 @@ stale_against() {
   return 1
 }
 
-if [[ "${RETICLE_FROM_SOURCE:-0}" == "1" ]]; then
-  if stale_against "${SRC_HELPER_BIN}" \
-    "${ROOT}/reticle-helper/src" "${ROOT}/reticle-core/src" "${ROOT}/reticle-agent/android/src" \
-    "${ROOT}/reticle-protocol" "${ROOT}/gradle/libs.versions.toml"; then
-    if [[ ! -x "${GRADLEW}" ]]; then
-      log "RETICLE_FROM_SOURCE=1 but no gradlew at ${GRADLEW} (install from the full repo)."
-      exit 1
-    fi
-    log "building the native helper from source (needs a GraalVM with native-image)…"
-    ( cd "${ROOT}" && ./gradlew --quiet :reticle-helper:nativeHelper :reticle-agent:android:dexPayload ) >&2
-  fi
-  # reticle-device (the iOS real-device system channel) is Rust. Optional: without
-  # cargo the rest of the CLI still works and `system` says what is missing.
-  if command -v cargo >/dev/null 2>&1; then
-    ( cd "${ROOT}" && cargo build --quiet --release --manifest-path reticle-device/Cargo.toml ) >&2 \
-      || log "reticle-device did not build; \`system\` on a real iOS device needs it (or --via runner)."
-  fi
-  # The Swift build is its own incremental check and a no-op costs about a second,
-  # so it always runs rather than being guarded by timestamps.
-  if command -v swift >/dev/null 2>&1; then
-    log "building the Swift host from source…"
-    ( cd "${ROOT}/reticle-host" && swift build -c release ) >&2
-  elif [[ ! -x "${SRC_HOST_BIN}" ]]; then
-    log "RETICLE_FROM_SOURCE=1 but \`swift\` is not on PATH (needed to build the host)."
-    exit 1
-  else
-    log "\`swift\` is not on PATH — running the host already in the tree, which may be stale."
-  fi
-  if [[ ! -x "${SRC_HOST_BIN}" ]]; then
-    log "source build did not produce ${SRC_HOST_BIN}"
+if stale_against "${SRC_HELPER_BIN}" \
+  "${ROOT}/reticle-helper/src" "${ROOT}/reticle-core/src" "${ROOT}/reticle-agent/android/src" \
+  "${ROOT}/reticle-protocol" "${ROOT}/gradle/libs.versions.toml"; then
+  if [[ ! -x "${GRADLEW}" ]]; then
+    log "no gradlew at ${GRADLEW} (install from the full repo)."
     exit 1
   fi
-  # A source build must not report a different release than the tree it came from.
-  # Hard-stop rather than warn: a version skew here means the binary is not this
-  # tree's code, and every answer it gives would be attributed to code that is.
-  if [[ -f "${ROOT}/VERSION" ]]; then
-    _tree_version="$(tr -d '[:space:]' < "${ROOT}/VERSION")"
-    _built_version="$("${SRC_HOST_BIN}" version 2>/dev/null | awk '{print $NF}')"
-    if [[ -n "${_tree_version}" && -n "${_built_version}" && "${_tree_version}" != "${_built_version}" ]]; then
-      log "the host built from this tree reports ${_built_version} but VERSION says ${_tree_version}."
-      log "That binary is not this tree's code. Rebuild it:"
-      log "  ( cd ${ROOT}/reticle-host && rm -rf .build && swift build -c release )"
-      exit 1
-    fi
-  fi
-  exec_host "${SRC_HOST_BIN}" "${SRC_HELPER_BIN}" "$@"
+  log "building the native helper from source (needs a GraalVM with native-image)…"
+  ( cd "${ROOT}" && ./gradlew --quiet :reticle-helper:nativeHelper :reticle-agent:android:dexPayload ) >&2
 fi
-
-# --- 4. prebuilt release (DEFAULT) -------------------------------------------
-download_release() {
-  command -v curl >/dev/null 2>&1 || { log "curl not found; cannot download the prebuilt release"; return 1; }
-  command -v unzip >/dev/null 2>&1 || { log "unzip not found; cannot unpack the prebuilt release"; return 1; }
-  local base="https://github.com/${REPO}/releases/download/v${RETICLE_VERSION}"
-  local dest="${CACHE_DIR}/${RETICLE_VERSION}"
-  local tmp; tmp="$(mktemp -d)"
-  log "downloading prebuilt Reticle ${RETICLE_VERSION} (macOS arm64) from ${REPO}…"
-  if ! curl -fsSL "${base}/reticle-macos-arm64.zip" -o "${tmp}/reticle.zip"; then
-    log "download failed (${base}/reticle-macos-arm64.zip)"
-    rm -rf "${tmp}"; return 1
-  fi
-  if curl -fsSL "${base}/SHA256SUMS" -o "${tmp}/SHA256SUMS" 2>/dev/null; then
-    local expected actual
-    expected="$(awk '/reticle-macos-arm64\.zip$/ {print $1; exit}' "${tmp}/SHA256SUMS")"
-    if [[ -n "${expected}" ]]; then
-      if command -v shasum >/dev/null 2>&1; then
-        actual="$(shasum -a 256 "${tmp}/reticle.zip" | awk '{print $1}')"
-      elif command -v sha256sum >/dev/null 2>&1; then
-        actual="$(sha256sum "${tmp}/reticle.zip" | awk '{print $1}')"
-      fi
-      if [[ -n "${actual:-}" && "${actual}" != "${expected}" ]]; then
-        log "checksum MISMATCH for reticle-macos-arm64.zip (expected ${expected}, got ${actual}); refusing it"
-        rm -rf "${tmp}"; return 1
-      fi
-      [[ -z "${actual:-}" ]] && log "no sha256 tool; skipping checksum verification"
-    fi
-  else
-    log "no SHA256SUMS published; skipping checksum verification"
-  fi
-  mkdir -p "${dest}"
-  if ! unzip -q -o "${tmp}/reticle.zip" -d "${dest}"; then
-    log "unpack failed"; rm -rf "${tmp}"; return 1
-  fi
-  rm -rf "${tmp}"
-  [[ -x "${CACHED_HOST}" ]]
-}
-
-if [[ -x "${CACHED_HOST}" ]]; then
-  exec_host "${CACHED_HOST}" "${CACHED_DIR}/bin/reticle-helper" "$@"
+# reticle-device (the iOS real-device system channel) is Rust. Optional: without
+# cargo the rest of the CLI still works and `system` says what is missing.
+if command -v cargo >/dev/null 2>&1; then
+  ( cd "${ROOT}" && cargo build --quiet --release --manifest-path reticle-device/Cargo.toml ) >&2 \
+    || log "reticle-device did not build; \`system\` on a real iOS device needs it (or --via runner)."
 fi
-
-if download_release; then
-  exec_host "${CACHED_HOST}" "${CACHED_DIR}/bin/reticle-helper" "$@"
+# The Swift build is its own incremental check and a no-op costs about a second,
+# so it always runs rather than being guarded by timestamps.
+if command -v swift >/dev/null 2>&1; then
+  log "building the Swift host from source…"
+  ( cd "${ROOT}/reticle-host" && swift build -c release ) >&2
+elif [[ ! -x "${SRC_HOST_BIN}" ]]; then
+  log "\`swift\` is not on PATH (needed to build the host)."
+  exit 1
+else
+  log "\`swift\` is not on PATH — running the host already in the tree, which may be stale."
 fi
-
-log "could not obtain the prebuilt Reticle ${RETICLE_VERSION} (macOS arm64)."
-log "fix one of:"
-log "  • restore network access so the release can be downloaded from ${REPO};"
-log "  • download it manually and point RETICLE_HOME at the unpacked dir:"
-log "      https://github.com/${REPO}/releases/tag/v${RETICLE_VERSION}"
-log "  • build from source (developers): re-run with RETICLE_FROM_SOURCE=1 (needs Swift + GraalVM)."
-exit 1
+if [[ ! -x "${SRC_HOST_BIN}" ]]; then
+  log "source build did not produce ${SRC_HOST_BIN}"
+  exit 1
+fi
+# A source build must not report a different release than the tree it came from.
+# Hard-stop rather than warn: a version skew here means the binary is not this
+# tree's code, and every answer it gives would be attributed to code that is.
+if [[ -f "${ROOT}/VERSION" ]]; then
+  _tree_version="$(tr -d '[:space:]' < "${ROOT}/VERSION")"
+  _built_version="$(RETICLE_NO_UPDATE_CHECK=1 "${SRC_HOST_BIN}" version 2>/dev/null | awk '{print $NF}')"
+  if [[ -n "${_tree_version}" && -n "${_built_version}" && "${_tree_version}" != "${_built_version}" ]]; then
+    log "the host built from this tree reports ${_built_version} but VERSION says ${_tree_version}."
+    log "That binary is not this tree's code. Rebuild it:"
+    log "  ( cd ${ROOT}/reticle-host && rm -rf .build && swift build -c release )"
+    exit 1
+  fi
+fi
+exec_host "${SRC_HOST_BIN}" "${SRC_HELPER_BIN}" "$@"
